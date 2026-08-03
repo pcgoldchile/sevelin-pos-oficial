@@ -33,6 +33,8 @@ const elProdEsRepuesto = document.getElementById('prodEsRepuesto');
 const elProdStockMinimo = document.getElementById('prodStockMinimo');
 const elProdSinAlertaStock = document.getElementById('prodSinAlertaStock');
 const elProdStockActualizado = document.getElementById('prodStockActualizado');
+const elProdStockIlimitado = document.getElementById('prodStockIlimitado');
+const elGridProdStockControl = document.getElementById('gridProdStockControl');
 const elProdPeso = document.getElementById('prodPeso');
 const elProdAlto = document.getElementById('prodAlto');
 const elProdAncho = document.getElementById('prodAncho');
@@ -93,6 +95,7 @@ function setupProductosEventListeners() {
   }
 
   if (elBtnValorizacion) elBtnValorizacion.addEventListener('click', abrirValorizacion);
+  if (elProdStockIlimitado) elProdStockIlimitado.addEventListener('change', aplicarStockIlimitadoProductoUI);
   if (elBtnCerrarValorizacion) elBtnCerrarValorizacion.addEventListener('click', cerrarValorizacion);
   if (elModalValorizacion) {
     elModalValorizacion.addEventListener('click', (e) => { if (e.target === elModalValorizacion) cerrarValorizacion(); });
@@ -133,11 +136,12 @@ function limiteStock(p) {
    Los servicios o ítems sin inventario físico se excluyen con el switch
    "Desactivar alerta" del modal de producto. */
 function tieneAlertaStock(p) {
-  if (p.alerta_stock === false) return false;
+  if (p.stock_ilimitado || p.alerta_stock === false) return false;
   return Number(p.stock || 0) <= limiteStock(p);
 }
 
 function badgeStock(p) {
+  if (p.stock_ilimitado) return `<span class="stock-badge stock-ok">♾️ Ilimitado</span>`;
   const stock = Number(p.stock) || 0;
   if (p.alerta_stock === false) return `<span class="stock-badge stock-ok">${stock}</span>`;
   if (stock <= 0) return `<span class="stock-badge stock-agotado">Agotado</span>`;
@@ -178,13 +182,18 @@ function renderPanelBajoStock() {
 }
 
 function calcularValorizacion() {
-  const costo = productsList.reduce((a, p) => a + (Number(p.stock) || 0) * (Number(p.costo_unitario) || 0), 0);
-  const venta = productsList.reduce((a, p) => a + (Number(p.stock) || 0) * (Number(p.precio_unitario) || 0), 0);
-  const ganancia = venta - costo;
-  const unidades = productsList.reduce((a, p) => a + (Number(p.stock) || 0), 0);
-  const sinCosto = productsList.filter(p => (Number(p.stock) || 0) > 0 && !(Number(p.costo_unitario) > 0)).length;
+  // Los productos de stock ilimitado (servicios) no aportan a la
+  // valorización: su "stock" no representa unidades físicas reales.
+  const conStockReal = productsList.filter(p => !p.stock_ilimitado);
+  const ilimitados = productsList.length - conStockReal.length;
 
-  return { costo, venta, ganancia, margen: venta > 0 ? (ganancia / venta) * 100 : 0, unidades, sinCosto };
+  const costo = conStockReal.reduce((a, p) => a + (Number(p.stock) || 0) * (Number(p.costo_unitario) || 0), 0);
+  const venta = conStockReal.reduce((a, p) => a + (Number(p.stock) || 0) * (Number(p.precio_unitario) || 0), 0);
+  const ganancia = venta - costo;
+  const unidades = conStockReal.reduce((a, p) => a + (Number(p.stock) || 0), 0);
+  const sinCosto = conStockReal.filter(p => (Number(p.stock) || 0) > 0 && !(Number(p.costo_unitario) > 0)).length;
+
+  return { costo, venta, ganancia, margen: venta > 0 ? (ganancia / venta) * 100 : 0, unidades, sinCosto, ilimitados };
 }
 
 function abrirValorizacion() {
@@ -199,9 +208,10 @@ function abrirValorizacion() {
     elValorizacionDetalle.textContent = `${productsList.length} producto(s) · ${v.unidades} unidad(es) en stock · actualizado al ${fechaHoraISOChile()}`;
   }
   if (elValorizacionNota) {
-    elValorizacionNota.textContent = v.sinCosto > 0
-      ? `Atención: ${v.sinCosto} producto(s) con stock no tienen costo unitario cargado, por lo que la ganancia proyectada aparece más alta de lo real.`
-      : '';
+    const notas = [];
+    if (v.ilimitados > 0) notas.push(`${v.ilimitados} producto(s) con stock ilimitado quedaron fuera de este cálculo.`);
+    if (v.sinCosto > 0) notas.push(`${v.sinCosto} producto(s) con stock no tienen costo unitario cargado, por lo que la ganancia proyectada aparece más alta de lo real.`);
+    elValorizacionNota.textContent = notas.join(' ');
   }
 
   elModalValorizacion.classList.add('show');
@@ -398,6 +408,21 @@ function handleBuscarProductoTabla() {
 }
 
 // ---------- Modal Crear / Editar ----------
+
+/* Cuando el producto es de stock ilimitado (ej. un servicio), el campo
+   Stock deja de tener sentido: se deshabilita y se ocultan los controles
+   de alerta de bajo stock. */
+function aplicarStockIlimitadoProductoUI() {
+  const ilimitado = !!(elProdStockIlimitado && elProdStockIlimitado.checked);
+
+  if (elProdStock) {
+    elProdStock.disabled = ilimitado;
+    elProdStock.placeholder = ilimitado ? 'Ilimitado' : '0';
+    if (ilimitado) elProdStock.value = '';
+  }
+  if (elGridProdStockControl) elGridProdStockControl.style.display = ilimitado ? 'none' : '';
+}
+
 function abrirModalProducto(producto = null) {
   if (!elModalProducto) return;
   if (!esAdmin()) { showToast('Solo el administrador puede editar productos', 'err'); return; }
@@ -416,6 +441,7 @@ function abrirModalProducto(producto = null) {
     if (elProdEsRepuesto) elProdEsRepuesto.checked = !!producto.es_repuesto;
     if (elProdStockMinimo) elProdStockMinimo.value = producto.stock_minimo ?? STOCK_MINIMO_POR_DEFECTO;
     if (elProdSinAlertaStock) elProdSinAlertaStock.checked = producto.alerta_stock === false;
+    if (elProdStockIlimitado) elProdStockIlimitado.checked = !!producto.stock_ilimitado;
     if (elProdStockActualizado) {
       elProdStockActualizado.textContent = producto.stock_actualizado_en
         ? `Última actualización de stock: ${tsAChile(producto.stock_actualizado_en)}`
@@ -437,8 +463,11 @@ function abrirModalProducto(producto = null) {
     if (elProdEsRepuesto) elProdEsRepuesto.checked = false;
     if (elProdStockMinimo) elProdStockMinimo.value = STOCK_MINIMO_POR_DEFECTO;
     if (elProdSinAlertaStock) elProdSinAlertaStock.checked = false;
+    if (elProdStockIlimitado) elProdStockIlimitado.checked = false;
     if (elProdStockActualizado) elProdStockActualizado.textContent = 'Última actualización de stock: se registrará al guardar.';
   }
+
+  aplicarStockIlimitadoProductoUI();
 
   elModalProducto.classList.add('show');
   setTimeout(() => elProdNombre?.focus(), 80);
@@ -465,6 +494,7 @@ async function guardarProducto() {
     es_repuesto: !!(elProdEsRepuesto && elProdEsRepuesto.checked),
     stock_minimo: Number(elProdStockMinimo?.value) || 0,
     alerta_stock: !(elProdSinAlertaStock && elProdSinAlertaStock.checked),
+    stock_ilimitado: !!(elProdStockIlimitado && elProdStockIlimitado.checked),
     peso_kg: Number(elProdPeso?.value) || 0,
     alto_cm: Number(elProdAlto?.value) || 0,
     ancho_cm: Number(elProdAncho?.value) || 0,
@@ -675,6 +705,7 @@ function filaProductoParaExportar(p) {
     'Requiere S/N': p.requiere_sn ? 'Sí' : 'No',
     'Stock Mínimo': Number(p.stock_minimo) || 0,
     'Alerta de Stock': p.alerta_stock === false ? 'Desactivada' : 'Activa',
+    'Stock Ilimitado': p.stock_ilimitado ? 'Sí' : 'No',
     'Última Act. Stock': p.stock_actualizado_en ? tsAChile(p.stock_actualizado_en) : ''
   };
 }

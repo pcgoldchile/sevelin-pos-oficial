@@ -82,6 +82,8 @@ const API = {
       return apiRequest('/ventas' + (cadena ? `?${cadena}` : ''));
     },
     registrarPago: (id, metodo) => apiRequest(`/ventas/${id}/pago`, { method: 'POST', body: { metodo_pago_final: metodo } }),
+    // Cambia solo el tipo de DTE (edición rápida desde el Historial)
+    cambiarDTE: (id, tipo) => apiRequest(`/ventas/${id}/dte`, { method: 'POST', body: { tipo_dte: tipo } }),
     importar: (ventas) => apiRequest('/ventas/importar', { method: 'POST', body: { ventas } }),
     detalle: (id) => apiRequest(`/ventas/${id}`),
     crear: (venta) => apiRequest('/ventas', { method: 'POST', body: venta }),
@@ -116,7 +118,18 @@ const API = {
     },
     crear: (r) => apiRequest('/repuestos', { method: 'POST', body: r }),
     actualizar: (id, r) => apiRequest(`/repuestos/${id}`, { method: 'PUT', body: r }),
-    eliminar: (id) => apiRequest(`/repuestos/${id}`, { method: 'DELETE' })
+    eliminar: (id) => apiRequest(`/repuestos/${id}`, { method: 'DELETE' }),
+
+    // Catálogo administrable de Área/Tipo y Categoría Base
+    listarAreas: () => apiRequest('/repuestos/areas'),
+    crearArea: (nombre) => apiRequest('/repuestos/areas', { method: 'POST', body: { nombre } }),
+    renombrarArea: (id, nombre) => apiRequest(`/repuestos/areas/${id}`, { method: 'PUT', body: { nombre } }),
+    eliminarArea: (id) => apiRequest(`/repuestos/areas/${id}`, { method: 'DELETE' }),
+
+    listarCategorias: () => apiRequest('/repuestos/categorias'),
+    crearCategoria: (nombre) => apiRequest('/repuestos/categorias', { method: 'POST', body: { nombre } }),
+    renombrarCategoria: (id, nombre) => apiRequest(`/repuestos/categorias/${id}`, { method: 'PUT', body: { nombre } }),
+    eliminarCategoria: (id) => apiRequest(`/repuestos/categorias/${id}`, { method: 'DELETE' })
   },
 
   encargos: {

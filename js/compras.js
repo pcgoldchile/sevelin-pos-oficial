@@ -58,6 +58,21 @@ const elBtnNuevaCompra = document.getElementById('btnNuevaCompra');
 const elBtnCancelarCompra = document.getElementById('btnCancelarCompra');
 const elBtnGuardarCompra = document.getElementById('btnGuardarCompra');
 
+// Exportar: botón único → período → formato (Excel / CSV / PDF)
+const elBtnExportarCompras = document.getElementById('btnExportarCompras');
+const elModalExportarCompras = document.getElementById('modalExportarCompras');
+const elComprasExportChips = document.getElementById('comprasExportChips');
+const elComprasExportFechasPersonalizadas = document.getElementById('comprasExportFechasPersonalizadas');
+const elComprasExportFechaDesde = document.getElementById('comprasExportFechaDesde');
+const elComprasExportFechaHasta = document.getElementById('comprasExportFechaHasta');
+const elComprasExportResumen = document.getElementById('comprasExportResumen');
+const elBtnCancelarExportarCompras = document.getElementById('btnCancelarExportarCompras');
+const elBtnExportarComprasExcelModal = document.getElementById('btnExportarComprasExcelModal');
+const elBtnExportarComprasCSVModal = document.getElementById('btnExportarComprasCSVModal');
+const elBtnExportarComprasPDFModal = document.getElementById('btnExportarComprasPDFModal');
+
+let periodoExportCompras = 'hoy';
+
 document.addEventListener('DOMContentLoaded', () => {
   setDefaultDatesCompras();
   setupComprasEventListeners();
@@ -105,6 +120,26 @@ function setupComprasEventListeners() {
   if (elBtnSubirComprobante) elBtnSubirComprobante.addEventListener('click', () => elCompraArchivoComprobante?.click());
   if (elCompraArchivoDocumento) elCompraArchivoDocumento.addEventListener('change', (e) => subirArchivoCompra(e, 'url_documento'));
   if (elCompraArchivoComprobante) elCompraArchivoComprobante.addEventListener('change', (e) => subirArchivoCompra(e, 'url_comprobante'));
+
+  // Exportar: período → formato
+  if (elBtnExportarCompras) elBtnExportarCompras.addEventListener('click', abrirModalExportarCompras);
+  if (elBtnCancelarExportarCompras) elBtnCancelarExportarCompras.addEventListener('click', () => elModalExportarCompras?.classList.remove('show'));
+  if (elModalExportarCompras) {
+    elModalExportarCompras.addEventListener('click', (e) => { if (e.target === elModalExportarCompras) elModalExportarCompras.classList.remove('show'); });
+  }
+  if (elComprasExportChips) {
+    elComprasExportChips.querySelectorAll('.chip').forEach(chip => {
+      chip.addEventListener('click', () => seleccionarPeriodoExportCompras(chip.dataset.periodo));
+    });
+  }
+  [elComprasExportFechaDesde, elComprasExportFechaHasta].forEach(el => {
+    if (!el) return;
+    el.addEventListener('click', () => { if (typeof el.showPicker === 'function') { try { el.showPicker(); } catch (_) {} } });
+    el.addEventListener('change', actualizarResumenExportCompras);
+  });
+  if (elBtnExportarComprasExcelModal) elBtnExportarComprasExcelModal.addEventListener('click', () => ejecutarExportarCompras('xlsx'));
+  if (elBtnExportarComprasCSVModal) elBtnExportarComprasCSVModal.addEventListener('click', () => ejecutarExportarCompras('csv'));
+  if (elBtnExportarComprasPDFModal) elBtnExportarComprasPDFModal.addEventListener('click', () => ejecutarExportarCompras('pdf'));
 }
 
 // ---------- Carga y filtros ----------
@@ -456,4 +491,150 @@ async function eliminarCompra(id) {
     console.error('Error al eliminar la compra:', err.message || err);
     showToast(err.message || 'No se pudo eliminar la compra', 'err');
   }
+}
+
+// ============================================================
+// EXPORTAR: botón único → período → formato (Excel / CSV / PDF)
+// Reutiliza calcularRangoPeriodo(), definida en historial.js.
+// ============================================================
+function abrirModalExportarCompras() {
+  if (!elModalExportarCompras) return;
+
+  periodoExportCompras = 'hoy';
+  marcarChipActivo(elComprasExportChips, 'hoy');
+  const { desde, hasta } = calcularRangoPeriodo('hoy');
+  if (elComprasExportFechaDesde) elComprasExportFechaDesde.value = desde;
+  if (elComprasExportFechaHasta) elComprasExportFechaHasta.value = hasta;
+  if (elComprasExportFechasPersonalizadas) elComprasExportFechasPersonalizadas.style.display = 'none';
+
+  actualizarResumenExportCompras();
+  elModalExportarCompras.classList.add('show');
+}
+
+function seleccionarPeriodoExportCompras(periodo) {
+  periodoExportCompras = periodo;
+  marcarChipActivo(elComprasExportChips, periodo);
+
+  if (periodo !== 'personalizado') {
+    const { desde, hasta } = calcularRangoPeriodo(periodo);
+    if (elComprasExportFechaDesde) elComprasExportFechaDesde.value = desde;
+    if (elComprasExportFechaHasta) elComprasExportFechaHasta.value = hasta;
+  }
+  if (elComprasExportFechasPersonalizadas) {
+    elComprasExportFechasPersonalizadas.style.display = periodo === 'personalizado' ? 'grid' : 'none';
+  }
+  actualizarResumenExportCompras();
+}
+
+function actualizarResumenExportCompras() {
+  if (!elComprasExportResumen) return;
+  const d = elComprasExportFechaDesde?.value || todayISO();
+  const h = elComprasExportFechaHasta?.value || todayISO();
+  elComprasExportResumen.textContent = d === h
+    ? `Período seleccionado: ${d}`
+    : `Período seleccionado: ${d} a ${h}`;
+}
+
+async function ejecutarExportarCompras(formato) {
+  const desde = elComprasExportFechaDesde?.value;
+  const hasta = elComprasExportFechaHasta?.value;
+  if (!desde || !hasta) { showToast('Selecciona ambas fechas', 'err'); return; }
+  if (desde > hasta) { showToast('La fecha "Desde" no puede ser mayor que "Hasta"', 'err'); return; }
+
+  try {
+    const compras = await API.compras.listar({ desde, hasta });
+    if (!compras || compras.length === 0) { showToast('No hay compras en ese período', 'err'); return; }
+
+    if (formato === 'pdf') exportarComprasPDF(compras, desde, hasta);
+    else exportarComprasPlanilla(formato, compras, desde, hasta);
+
+    elModalExportarCompras?.classList.remove('show');
+  } catch (err) {
+    console.error('Error al exportar compras:', err.message || err);
+    showToast(err.message || 'Error al exportar', 'err');
+  }
+}
+
+function filasComprasParaExportar(compras) {
+  return (compras || []).map(c => ({
+    Fecha: tsAChile(c.fecha),
+    Proveedor: c.proveedor || '',
+    Clasificación: c.clasificacion || '',
+    Detalle: c.descripcion || '',
+    'Costo Total': Number(c.costo_total) || 0,
+    'Factura / Boleta': c.url_documento || 'SIN DOCUMENTO',
+    'Comprobante de Pago': c.url_comprobante || 'SIN COMPROBANTE'
+  }));
+}
+
+function exportarComprasPlanilla(formato, compras, desde, hasta) {
+  const filas = filasComprasParaExportar(compras);
+  const libro = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(libro, XLSX.utils.json_to_sheet(filas), 'Compras');
+  XLSX.writeFile(libro, `compras_${desde}_a_${hasta}.${formato}`, { bookType: formato === 'csv' ? 'csv' : 'xlsx' });
+  showToast('Exportación generada', 'ok');
+}
+
+function exportarComprasPDF(compras, desde, hasta) {
+  if (typeof window.jspdf === 'undefined') { showToast('No se pudo cargar el generador de PDF', 'err'); return; }
+
+  const total = compras.reduce((a, c) => a + (Number(c.costo_total) || 0), 0);
+  const sinDoc = compras.filter(c => !c.url_documento).length;
+  const sinComp = compras.filter(c => !c.url_comprobante).length;
+
+  const porClasificacion = {};
+  compras.forEach(c => {
+    const k = c.clasificacion || 'Sin clasificar';
+    porClasificacion[k] = (porClasificacion[k] || 0) + (Number(c.costo_total) || 0);
+  });
+  const desglose = Object.entries(porClasificacion)
+    .sort((a, b) => b[1] - a[1])
+    .map(([nombre, monto]) => `${total > 0 ? ((monto / total) * 100).toFixed(0) : 0}% ${nombre}`)
+    .join('   ·   ');
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape' });
+
+  doc.setFontSize(15);
+  doc.setTextColor(15, 23, 42);
+  doc.text(`Historial de Compras - ${NEGOCIO_NOMBRE}`, 14, 15);
+
+  doc.setFontSize(9);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Período: ${desde} a ${hasta}   ·   ${compras.length} compra(s)   ·   Generado: ${fechaHoraISOChile()} (hora de Chile)`, 14, 21);
+
+  const anchoUtil = doc.internal.pageSize.getWidth() - 28;
+  doc.setDrawColor(203, 213, 225);
+  doc.setFillColor(241, 245, 249);
+  doc.roundedRect(14, 25, anchoUtil, 22, 2, 2, 'FD');
+
+  doc.setFontSize(10);
+  doc.setTextColor(15, 23, 42);
+  doc.setFont(undefined, 'bold');
+  doc.text(`Total del Período: ${fmtCLP(total)}`, 19, 32);
+  doc.text(`Sin Factura: ${sinDoc}`, 140, 32);
+  doc.text(`Sin Comprobante: ${sinComp}`, 210, 32);
+
+  doc.setFont(undefined, 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(51, 65, 85);
+  doc.text(`Por clasificación:  ${desglose || 'Sin registros'}`, 19, 41, { maxWidth: anchoUtil - 10 });
+
+  doc.autoTable({
+    startY: 52,
+    head: [['Fecha', 'Proveedor', 'Clasificación', 'Detalle', 'Costo', 'Factura', 'Comprobante']],
+    body: compras.map(c => [
+      tsAChile(c.fecha), c.proveedor || '—', c.clasificacion || '', (c.descripcion || '').slice(0, 40),
+      fmtCLP(c.costo_total), c.url_documento ? 'Sí' : 'No', c.url_comprobante ? 'Sí' : 'No'
+    ]),
+    styles: { fontSize: 8, cellPadding: 2.5 },
+    headStyles: { fillColor: [30, 41, 59], textColor: [248, 250, 252] },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    columnStyles: { 4: { halign: 'right' } },
+    foot: [['', '', '', 'TOTAL', fmtCLP(total), '', '']],
+    footStyles: { fillColor: [15, 23, 42], textColor: [251, 191, 36], fontStyle: 'bold', halign: 'right' }
+  });
+
+  doc.save(`compras_${desde}_a_${hasta}.pdf`);
+  showToast('PDF generado', 'ok');
 }

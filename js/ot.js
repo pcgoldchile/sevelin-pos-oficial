@@ -512,7 +512,8 @@ async function agregarRepuestoAOT() {
       precio_unitario: precio
     });
 
-    otRepuestosActuales = await API.ot.listarRepuestos(otId);
+    const creado = await API.ot.listarRepuestos(otId);
+    otRepuestosActuales = creado;
     renderRepuestosDeOT();
     limpiarFormularioRepuestoOT();
     showToast('Agregado a la orden', 'ok');
@@ -534,8 +535,8 @@ function renderRepuestosDeOT() {
           <b>${r.nombre}</b>
           <div style="font-size:12px; color:var(--text-muted);">
             ${r.cantidad} × ${fmtCLP(r.precio_unitario)}
-            ${r.repuesto_id ? ' · repuesto de taller' : (r.producto_id ? ' · catálogo' : ' · servicio')}
-            ${r.cobrado ? ' · <span style="color:var(--green);">cobrado</span>' : ''}
+            ${r.repuesto_id ? ' · repuesto de taller' : (r.producto_id ? ' · catálogo' : ' · manual (no afecta inventario)')}
+            ${r.stock_descontado ? ' · <span style="color:var(--green);">stock descontado</span>' : ''}
           </div>
         </div>
         <div class="edit-item-sub">
@@ -555,9 +556,13 @@ function renderRepuestosDeOT() {
     const total = otRepuestosActuales.reduce((a, r) => a + (Number(r.precio_unitario) || 0) * (Number(r.cantidad) || 0), 0);
     const pendiente = otRepuestosActuales.filter(r => !r.cobrado)
       .reduce((a, r) => a + (Number(r.precio_unitario) || 0) * (Number(r.cantidad) || 0), 0);
+    const yaDescontado = otRepuestosActuales.some(r => r.stock_descontado);
     elOtRepuestosTotales.innerHTML = `
       <span>Total asignado <b>${fmtCLP(total)}</b></span>
       <span>Por cobrar <b style="color:var(--red);">${fmtCLP(pendiente)}</b></span>
+      <span style="color:var(--text-muted); font-size:12.5px;">
+        ${yaDescontado ? '📦 Stock ya descontado (orden entregada)' : '📦 El stock se descuenta al entregar la orden'}
+      </span>
     `;
   }
 }
@@ -638,9 +643,7 @@ async function cobrarEnPOS(id) {
   const btnPos = document.querySelector('.nav-btn[data-view="view-pos"]');
   if (btnPos) btnPos.click();
 
-  showToast(pendientes.length
-    ? `${ot.numero_ot} vinculada: ${pendientes.length} ítem(s) en el carrito`
-    : `${ot.numero_ot} vinculada. Agrega los ítems a cobrar.`, 'ok');
+  showToast(`${ot.numero_ot} vinculada. Ingresa el servicio a cobrar.`, 'ok');
 }
 
 // ============================================================

@@ -45,9 +45,30 @@ const elBtnNuevoRepuesto = document.getElementById('btnNuevoRepuesto');
 const elBtnCancelarRepuesto = document.getElementById('btnCancelarRepuesto');
 const elBtnGuardarRepuesto = document.getElementById('btnGuardarRepuesto');
 
-const elListaAreas = document.getElementById('listaAreasRepuesto');
-const elListaCategorias = document.getElementById('listaCategoriasRepuesto');
-const elListaModelos = document.getElementById('listaModelosRepuesto');
+// Autocompletado propio (reemplaza el <datalist> nativo)
+const elSugerenciasRepuestoArea = document.getElementById('sugerenciasRepuestoArea');
+const elSugerenciasRepuestoCategoria = document.getElementById('sugerenciasRepuestoCategoria');
+const elSugerenciasRepuestoModelo = document.getElementById('sugerenciasRepuestoModelo');
+
+// Stock ilimitado
+const elRepuestoStockIlimitado = document.getElementById('repuestoStockIlimitado');
+const elGridRepuestoStockControl = document.getElementById('gridRepuestoStockControl');
+const elItemRepuestoStockIlimitado = document.getElementById('itemRepuestoStockIlimitado');
+
+// Administrar Áreas / Categorías
+const elBtnAdminCategoriasRepuesto = document.getElementById('btnAdminCategoriasRepuesto');
+const elModalAdminCategorias = document.getElementById('modalAdminCategorias');
+const elBtnCerrarAdminCategorias = document.getElementById('btnCerrarAdminCategorias');
+const elListaAdminAreas = document.getElementById('listaAdminAreas');
+const elListaAdminCategorias = document.getElementById('listaAdminCategorias');
+const elNuevaAreaInput = document.getElementById('nuevaAreaInput');
+const elBtnNuevaArea = document.getElementById('btnNuevaArea');
+const elNuevaCategoriaInput = document.getElementById('nuevaCategoriaInput');
+const elBtnNuevaCategoria = document.getElementById('btnNuevaCategoria');
+
+// Listas cargadas desde el catálogo administrable (áreas/categorías con conteo de uso)
+let areasAdminList = [];
+let categoriasAdminList = [];
 
 document.addEventListener('DOMContentLoaded', () => {
   if (elBtnNuevoRepuesto) elBtnNuevoRepuesto.addEventListener('click', () => abrirModalRepuesto());
@@ -65,9 +86,27 @@ document.addEventListener('DOMContentLoaded', () => {
     if (el) el.addEventListener('input', actualizarMargenRepuesto);
   });
 
+  if (elRepuestoStockIlimitado) elRepuestoStockIlimitado.addEventListener('change', aplicarStockIlimitadoRepuestoUI);
+
   if (elModalRepuesto) {
     elModalRepuesto.addEventListener('click', (e) => { if (e.target === elModalRepuesto) cerrarModalRepuesto(); });
   }
+
+  // Autocompletado con estilo propio para Área, Categoría y Modelo
+  activarAutocompletoTexto(elRepuestoArea, elSugerenciasRepuestoArea, () => areasAdminList.map(a => a.nombre));
+  activarAutocompletoTexto(elRepuestoCategoria, elSugerenciasRepuestoCategoria, () => categoriasAdminList.map(c => c.nombre));
+  activarAutocompletoTexto(elRepuestoModelo, elSugerenciasRepuestoModelo, () => valoresUnicos('modelo'));
+
+  // Administrar Áreas y Categorías
+  if (elBtnAdminCategoriasRepuesto) elBtnAdminCategoriasRepuesto.addEventListener('click', abrirModalAdminCategorias);
+  if (elBtnCerrarAdminCategorias) elBtnCerrarAdminCategorias.addEventListener('click', () => elModalAdminCategorias?.classList.remove('show'));
+  if (elModalAdminCategorias) {
+    elModalAdminCategorias.addEventListener('click', (e) => { if (e.target === elModalAdminCategorias) elModalAdminCategorias.classList.remove('show'); });
+  }
+  if (elBtnNuevaArea) elBtnNuevaArea.addEventListener('click', () => agregarValorCatalogo('areas'));
+  if (elBtnNuevaCategoria) elBtnNuevaCategoria.addEventListener('click', () => agregarValorCatalogo('categorias'));
+  if (elNuevaAreaInput) elNuevaAreaInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); agregarValorCatalogo('areas'); } });
+  if (elNuevaCategoriaInput) elNuevaCategoriaInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); agregarValorCatalogo('categorias'); } });
 });
 
 // ============================================================
@@ -78,12 +117,28 @@ async function cargarRepuestos() {
 
   try {
     repuestosList = await API.repuestos.listar();
+    await cargarCatalogoAreasYCategorias();
     poblarFiltrosRepuestos();
     renderRepuestosTabla(repuestosList);
     renderPanelBajoStockRepuestos();
   } catch (err) {
     console.error('Error al cargar repuestos:', err.message || err);
     showToast(err.message || 'No se pudieron cargar los repuestos', 'err');
+  }
+}
+
+/* Trae el catálogo administrable (con conteo de uso) para alimentar los
+   filtros, el autocompletado y el panel de administración. */
+async function cargarCatalogoAreasYCategorias() {
+  try {
+    [areasAdminList, categoriasAdminList] = await Promise.all([
+      API.repuestos.listarAreas(),
+      API.repuestos.listarCategorias()
+    ]);
+  } catch (err) {
+    console.error('Error al cargar áreas/categorías:', err.message || err);
+    areasAdminList = areasAdminList.length ? areasAdminList : [];
+    categoriasAdminList = categoriasAdminList.length ? categoriasAdminList : [];
   }
 }
 
@@ -94,9 +149,8 @@ function valoresUnicos(campo, sugeridos = []) {
 }
 
 function poblarFiltrosRepuestos() {
-  const areas = valoresUnicos('area', AREAS_SUGERIDAS);
-  const categorias = valoresUnicos('categoria', CATEGORIAS_SUGERIDAS);
-  const modelos = valoresUnicos('modelo');
+  const areas = areasAdminList.length ? areasAdminList.map(a => a.nombre).sort((a, b) => a.localeCompare(b)) : valoresUnicos('area', AREAS_SUGERIDAS);
+  const categorias = categoriasAdminList.length ? categoriasAdminList.map(c => c.nombre).sort((a, b) => a.localeCompare(b)) : valoresUnicos('categoria', CATEGORIAS_SUGERIDAS);
 
   const pintarSelect = (select, valores, etiqueta) => {
     if (!select) return;
@@ -108,15 +162,6 @@ function poblarFiltrosRepuestos() {
 
   pintarSelect(elRepuestosFiltroArea, areas, 'Todas las áreas');
   pintarSelect(elRepuestosFiltroCategoria, categorias, 'Todas las categorías');
-
-  const pintarDatalist = (lista, valores) => {
-    if (!lista) return;
-    lista.innerHTML = valores.map(v => `<option value="${v}"></option>`).join('');
-  };
-
-  pintarDatalist(elListaAreas, areas);
-  pintarDatalist(elListaCategorias, categorias);
-  pintarDatalist(elListaModelos, modelos);
 }
 
 function limiteStockRepuesto(r) {
@@ -125,11 +170,12 @@ function limiteStockRepuesto(r) {
 }
 
 function enAlertaRepuesto(r) {
-  if (r.alerta_stock === false) return false;
+  if (r.stock_ilimitado || r.alerta_stock === false) return false;
   return Number(r.stock || 0) <= limiteStockRepuesto(r);
 }
 
 function badgeStockRepuesto(r) {
+  if (r.stock_ilimitado) return `<span class="stock-badge stock-ok">♾️ Ilimitado</span>`;
   const stock = Number(r.stock) || 0;
   if (r.alerta_stock === false) return `<span class="stock-badge stock-ok">${stock}</span>`;
   if (stock <= 0) return `<span class="stock-badge stock-agotado">Agotado</span>`;
@@ -239,12 +285,17 @@ const elBtnCerrarValorizacionRepuestos = document.getElementById('btnCerrarValor
 function mostrarValorizacionRepuestos() {
   if (!elModalValorizacionRepuestos) return;
 
-  const costo = repuestosList.reduce((a, r) => a + (Number(r.stock) || 0) * (Number(r.costo_unitario) || 0), 0);
-  const venta = repuestosList.reduce((a, r) => a + (Number(r.stock) || 0) * (Number(r.precio_venta) || 0), 0);
+  // Los ítems de stock ilimitado no aportan a la valorización: su "stock"
+  // no representa unidades físicas reales.
+  const conStockReal = repuestosList.filter(r => !r.stock_ilimitado);
+  const ilimitados = repuestosList.length - conStockReal.length;
+
+  const costo = conStockReal.reduce((a, r) => a + (Number(r.stock) || 0) * (Number(r.costo_unitario) || 0), 0);
+  const venta = conStockReal.reduce((a, r) => a + (Number(r.stock) || 0) * (Number(r.precio_venta) || 0), 0);
   const ganancia = venta - costo;
-  const unidades = repuestosList.reduce((a, r) => a + (Number(r.stock) || 0), 0);
+  const unidades = conStockReal.reduce((a, r) => a + (Number(r.stock) || 0), 0);
   const margen = venta > 0 ? (ganancia / venta) * 100 : 0;
-  const sinCosto = repuestosList.filter(r => (Number(r.stock) || 0) > 0 && !(Number(r.costo_unitario) > 0)).length;
+  const sinCosto = conStockReal.filter(r => (Number(r.stock) || 0) > 0 && !(Number(r.costo_unitario) > 0)).length;
 
   if (elValorRepCosto) elValorRepCosto.textContent = fmtCLP(costo);
   if (elValorRepVenta) elValorRepVenta.textContent = fmtCLP(venta);
@@ -255,9 +306,10 @@ function mostrarValorizacionRepuestos() {
       `${repuestosList.length} repuesto(s) · ${unidades} unidad(es) en stock · actualizado al ${fechaHoraISOChile()}`;
   }
   if (elValorizacionRepNota) {
-    elValorizacionRepNota.textContent = sinCosto > 0
-      ? `Atención: ${sinCosto} repuesto(s) con stock no tienen costo unitario cargado, por lo que la ganancia proyectada aparece más alta de lo real.`
-      : '';
+    const notas = [];
+    if (ilimitados > 0) notas.push(`${ilimitados} repuesto(s) con stock ilimitado quedaron fuera de este cálculo.`);
+    if (sinCosto > 0) notas.push(`${sinCosto} repuesto(s) con stock no tienen costo unitario cargado, por lo que la ganancia proyectada aparece más alta de lo real.`);
+    elValorizacionRepNota.textContent = notas.join(' ');
   }
 
   elModalValorizacionRepuestos.classList.add('show');
@@ -277,6 +329,20 @@ document.addEventListener('DOMContentLoaded', () => {
 // ============================================================
 // MODAL CREAR / EDITAR
 // ============================================================
+/* Cuando el repuesto es de stock ilimitado (ej. mano de obra), el campo
+   Stock deja de tener sentido: se deshabilita y se ocultan los controles
+   de alerta de bajo stock. */
+function aplicarStockIlimitadoRepuestoUI() {
+  const ilimitado = !!(elRepuestoStockIlimitado && elRepuestoStockIlimitado.checked);
+
+  if (elRepuestoStock) {
+    elRepuestoStock.disabled = ilimitado;
+    elRepuestoStock.placeholder = ilimitado ? 'Ilimitado' : '0';
+    if (ilimitado) elRepuestoStock.value = '';
+  }
+  if (elGridRepuestoStockControl) elGridRepuestoStockControl.style.display = ilimitado ? 'none' : '';
+}
+
 function abrirModalRepuesto(repuesto = null) {
   if (!elModalRepuesto) return;
   if (!esAdmin()) { showToast('Solo el administrador gestiona el inventario de taller', 'err'); return; }
@@ -297,6 +363,7 @@ function abrirModalRepuesto(repuesto = null) {
     if (elRepuestoStockMinimo) elRepuestoStockMinimo.value = repuesto.stock_minimo ?? STOCK_MINIMO_REPUESTO;
     if (elRepuestoUbicacion) elRepuestoUbicacion.value = repuesto.ubicacion || '';
     if (elRepuestoSinAlerta) elRepuestoSinAlerta.checked = repuesto.alerta_stock === false;
+    if (elRepuestoStockIlimitado) elRepuestoStockIlimitado.checked = !!repuesto.stock_ilimitado;
   } else {
     editandoRepuestoId = null;
     if (elRepuestoFormTitle) elRepuestoFormTitle.textContent = 'Nuevo Repuesto de Taller';
@@ -306,8 +373,10 @@ function abrirModalRepuesto(repuesto = null) {
     [elRepuestoCosto, elRepuestoPrecio, elRepuestoStock].forEach(el => { if (el) el.value = ''; });
     if (elRepuestoStockMinimo) elRepuestoStockMinimo.value = STOCK_MINIMO_REPUESTO;
     if (elRepuestoSinAlerta) elRepuestoSinAlerta.checked = false;
+    if (elRepuestoStockIlimitado) elRepuestoStockIlimitado.checked = false;
   }
 
+  aplicarStockIlimitadoRepuestoUI();
   actualizarMargenRepuesto();
   elModalRepuesto.classList.add('show');
   setTimeout(() => elRepuestoArea?.focus(), 80);
@@ -340,7 +409,8 @@ async function guardarRepuesto() {
     stock: Number(elRepuestoStock?.value) || 0,
     stock_minimo: Number(elRepuestoStockMinimo?.value) || 0,
     ubicacion: elRepuestoUbicacion?.value.trim() || null,
-    alerta_stock: !(elRepuestoSinAlerta && elRepuestoSinAlerta.checked)
+    alerta_stock: !(elRepuestoSinAlerta && elRepuestoSinAlerta.checked),
+    stock_ilimitado: !!(elRepuestoStockIlimitado && elRepuestoStockIlimitado.checked)
   };
 
   if (!payload.area) { showToast('Indica el área o tipo', 'err'); elRepuestoArea?.focus(); return; }
@@ -386,3 +456,141 @@ function buscarRepuestosPorTexto(texto, limite = 8) {
 }
 
 document.addEventListener('pos:sesion-iniciada', () => cargarRepuestos());
+
+// ============================================================
+// ADMINISTRAR ÁREAS Y CATEGORÍAS (renombrar / eliminar / agregar)
+// ============================================================
+async function abrirModalAdminCategorias() {
+  if (!elModalAdminCategorias) return;
+  if (!esAdmin()) { showToast('Solo el administrador gestiona estas categorías', 'err'); return; }
+
+  await cargarCatalogoAreasYCategorias();
+  renderListaAdminCategoria('areas');
+  renderListaAdminCategoria('categorias');
+  elModalAdminCategorias.classList.add('show');
+}
+
+function configCatalogo(tipo) {
+  return tipo === 'areas'
+    ? { lista: areasAdminList, contenedor: elListaAdminAreas, api: 'listarAreas', crear: 'crearArea', renombrar: 'renombrarArea', eliminar: 'eliminarArea', etiqueta: 'área' }
+    : { lista: categoriasAdminList, contenedor: elListaAdminCategorias, api: 'listarCategorias', crear: 'crearCategoria', renombrar: 'renombrarCategoria', eliminar: 'eliminarCategoria', etiqueta: 'categoría' };
+}
+
+function renderListaAdminCategoria(tipo) {
+  const cfg = configCatalogo(tipo);
+  if (!cfg.contenedor) return;
+
+  const lista = tipo === 'areas' ? areasAdminList : categoriasAdminList;
+
+  if (!lista || lista.length === 0) {
+    cfg.contenedor.innerHTML = `<p class="admin-cat-vacio">Aún no hay ${cfg.etiqueta}s registradas.</p>`;
+    return;
+  }
+
+  cfg.contenedor.innerHTML = lista.map(v => `
+    <div class="admin-cat-row" data-id="${v.id}">
+      <span class="admin-cat-nombre" data-nombre>${v.nombre}</span>
+      <span class="admin-cat-usos">${v.usos} ${v.usos === 1 ? 'repuesto' : 'repuestos'}</span>
+      <div class="cell-actions">
+        <button class="btn btn-icon btn-icon-edit" data-renombrar title="Renombrar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+        </button>
+        <button class="btn btn-icon btn-icon-del" data-eliminar title="Eliminar${v.usos > 0 ? ' (en uso, no se puede)' : ''}" ${v.usos > 0 ? 'disabled style="opacity:.4;cursor:not-allowed;"' : ''}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+        </button>
+      </div>
+    </div>
+  `).join('');
+
+  cfg.contenedor.querySelectorAll('[data-renombrar]').forEach(btn => {
+    btn.addEventListener('click', () => iniciarRenombreCategoria(tipo, btn.closest('.admin-cat-row')));
+  });
+  cfg.contenedor.querySelectorAll('[data-eliminar]:not(:disabled)').forEach(btn => {
+    btn.addEventListener('click', () => eliminarValorCatalogo(tipo, btn.closest('.admin-cat-row').dataset.id));
+  });
+}
+
+function iniciarRenombreCategoria(tipo, fila) {
+  if (!fila) return;
+  const spanNombre = fila.querySelector('[data-nombre]');
+  const nombreActual = spanNombre.textContent;
+
+  spanNombre.innerHTML = `
+    <input type="text" value="${nombreActual.replace(/"/g, '&quot;')}" class="admin-cat-input-edit">
+  `;
+  const input = spanNombre.querySelector('input');
+  input.focus();
+  input.select();
+
+  // Reemplaza los botones de esa fila por Guardar / Cancelar mientras se edita
+  const acciones = fila.querySelector('.cell-actions');
+  const accionesOriginal = acciones.innerHTML;
+  acciones.innerHTML = `
+    <button class="btn btn-icon btn-icon-view" data-guardar title="Guardar">✔</button>
+    <button class="btn btn-icon btn-icon-del" data-cancelar title="Cancelar">✖</button>
+  `;
+
+  const confirmar = () => guardarRenombreCategoria(tipo, fila.dataset.id, input.value.trim());
+  const cancelar = () => renderListaAdminCategoria(tipo);
+
+  acciones.querySelector('[data-guardar]').addEventListener('click', confirmar);
+  acciones.querySelector('[data-cancelar]').addEventListener('click', cancelar);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); confirmar(); }
+    if (e.key === 'Escape') { e.preventDefault(); cancelar(); }
+  });
+}
+
+async function guardarRenombreCategoria(tipo, id, nuevoNombre) {
+  if (!nuevoNombre) { showToast('Escribe un nombre', 'err'); return; }
+  const cfg = configCatalogo(tipo);
+
+  try {
+    await API.repuestos[cfg.renombrar](id, nuevoNombre);
+    showToast(`Se actualizó en todos los repuestos que usaban ese valor`, 'ok');
+    await cargarCatalogoAreasYCategorias();
+    renderListaAdminCategoria(tipo);
+    poblarFiltrosRepuestos();
+    renderRepuestosTabla(repuestosList); // por si algún repuesto en pantalla cambió de nombre
+    await cargarRepuestos();
+  } catch (err) {
+    console.error('Error al renombrar:', err.message || err);
+    showToast(err.message || 'No se pudo renombrar', 'err');
+    renderListaAdminCategoria(tipo);
+  }
+}
+
+async function eliminarValorCatalogo(tipo, id) {
+  const cfg = configCatalogo(tipo);
+  if (!confirm(`¿Eliminar esta ${cfg.etiqueta} de la lista?`)) return;
+
+  try {
+    await API.repuestos[cfg.eliminar](id);
+    showToast(`${cfg.etiqueta[0].toUpperCase()}${cfg.etiqueta.slice(1)} eliminada`, 'ok');
+    await cargarCatalogoAreasYCategorias();
+    renderListaAdminCategoria(tipo);
+    poblarFiltrosRepuestos();
+  } catch (err) {
+    console.error('Error al eliminar:', err.message || err);
+    showToast(err.message || 'No se pudo eliminar', 'err');
+  }
+}
+
+async function agregarValorCatalogo(tipo) {
+  const input = tipo === 'areas' ? elNuevaAreaInput : elNuevaCategoriaInput;
+  const nombre = (input?.value || '').trim();
+  if (!nombre) { showToast('Escribe un nombre', 'err'); input?.focus(); return; }
+
+  const cfg = configCatalogo(tipo);
+  try {
+    await API.repuestos[cfg.crear](nombre);
+    if (input) input.value = '';
+    showToast(`${cfg.etiqueta[0].toUpperCase()}${cfg.etiqueta.slice(1)} agregada`, 'ok');
+    await cargarCatalogoAreasYCategorias();
+    renderListaAdminCategoria(tipo);
+    poblarFiltrosRepuestos();
+  } catch (err) {
+    console.error('Error al agregar:', err.message || err);
+    showToast(err.message || 'No se pudo agregar', 'err');
+  }
+}

@@ -22,6 +22,22 @@ let ventasSeleccionadas = new Set();
 /* El medio de pago real: si la venta nació "Por Pagar" y luego se cobró,
    manda el metodo_pago_final. */
 const metodoDeVenta = v => v.metodo_pago_final || v.metodo_pago || 'Sin especificar';
+
+/* ---------- DTE e IVA ----------
+   Los precios del sistema son BRUTOS (IVA incluido), así que el IVA
+   contenido en un monto es: monto / 1,19 * 0,19. */
+const TIPOS_DTE = ['SIN DTE', 'BOLETA', 'FACTURA'];
+const IVA_TASA = 0.19;
+
+const dteDeVenta = v => TIPOS_DTE.includes(v.tipo_dte) ? v.tipo_dte : 'SIN DTE';
+const ivaDeMonto = monto => (Number(monto) || 0) / (1 + IVA_TASA) * IVA_TASA;
+const netoDeMonto = monto => (Number(monto) || 0) / (1 + IVA_TASA);
+
+function claseDte(tipo) {
+  if (tipo === 'BOLETA') return 'boleta';
+  if (tipo === 'FACTURA') return 'factura';
+  return 'sin';
+}
 const estaPendiente = v => (v.estado || 'PAGADA') === 'PENDIENTE';
 
 /* ---------- Referencias del DOM ---------- */
@@ -61,6 +77,8 @@ const elModalExportarHistorial = document.getElementById('modalExportarHistorial
 const elTituloModalPeriodo = document.getElementById('tituloModalPeriodo');
 const elHintModalPeriodo = document.getElementById('hintModalPeriodo');
 const elModalPeriodoChips = document.getElementById('modalPeriodoChips');
+const elExportDteChips = document.getElementById('exportDteChips');
+const elExportDteBloque = document.getElementById('exportDteBloque');
 const elModalPeriodoResumen = document.getElementById('modalPeriodoResumen');
 const elExportFechasPersonalizadas = document.getElementById('exportFechasPersonalizadas');
 const elExportFechaDesde = document.getElementById('exportFechaDesde');
@@ -77,6 +95,7 @@ const elModalEditarVenta = document.getElementById('modalEditarVenta');
 const elEditVentaId = document.getElementById('editVentaId');
 const elEditVentaNumero = document.getElementById('editVentaNumero');
 const elEditVentaFecha = document.getElementById('editVentaFecha');
+const elEditVentaHora = document.getElementById('editVentaHora');
 const elEditVentaCliente = document.getElementById('editVentaCliente');
 const elEditVentaMetodoPago = document.getElementById('editVentaMetodoPago');
 const elEditVentaItemsList = document.getElementById('editVentaItemsList');
@@ -166,6 +185,15 @@ function setupHistorialEventListeners() {
   if (elModalPeriodoChips) {
     elModalPeriodoChips.querySelectorAll('.chip').forEach(chip => {
       chip.addEventListener('click', () => seleccionarPeriodoModal(chip.dataset.periodo));
+    });
+  }
+
+  if (elExportDteChips) {
+    elExportDteChips.querySelectorAll('.chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        filtroDteExport = chip.dataset.dte || 'TODAS';
+        elExportDteChips.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c === chip));
+      });
     });
   }
 
@@ -268,6 +296,13 @@ function abrirModalPeriodo(accion, formatoSugerido) {
       : 'Elige el período y luego el formato de exportación.';
   }
 
+  // El filtro tributario solo aplica al exportar
+  filtroDteExport = 'TODAS';
+  if (elExportDteChips) {
+    elExportDteChips.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c.dataset.dte === 'TODAS'));
+  }
+  if (elExportDteBloque) elExportDteBloque.style.display = esEliminar ? 'none' : '';
+
   if (elBtnExportarExcelModal) elBtnExportarExcelModal.style.display = esEliminar ? 'none' : '';
   if (elBtnExportarPDFModal) elBtnExportarPDFModal.style.display = esEliminar ? 'none' : '';
   if (elBtnConfirmarEliminarPeriodo) elBtnConfirmarEliminarPeriodo.style.display = esEliminar ? '' : 'none';
@@ -318,10 +353,67 @@ async function ejecutarAccionModal(formato) {
   else await ejecutarExportarPorPeriodo(formato, desde, hasta);
 }
 
+/* Aplica el filtro tributario elegido en el modal de exportación */
+function filtrarPorDte(ventas) {
+  const lista = ventas || [];
+  if (filtroDteExport === 'TODAS') return lista;
+  if (filtroDteExport === 'EMITIDOS') return lista.filter(v => dteDeVenta(v) !== 'SIN DTE');
+  return lista.filter(v => dteDeVenta(v) === filtroDteExport);
+}
+
+/* Resumen tributario del conjunto exportado.
+   Los precios son brutos: el IVA contenido es monto / 1,19 * 0,19.
+   El IVA de las ventas SIN DTE se informa aparte como "IVA pendiente",
+   porque todavía no se emitió documento por él. */
+function resumenTributario(ventas) {
+  const lista = ventas || [];
+  const emitidas = lista.filter(v => dteDeVenta(v) !== 'SIN DTE');
+  const sinDte = lista.filter(v => dteDeVenta(v) === 'SIN DTE');
+
+  const totalOf = arr => arr.reduce((a, v) => a + (Number(v.total) || 0), 0);
+
+  const totalGeneral = totalOf(lista);
+  const totalEmitido = totalOf(emitidas);
+  const totalSinDte = totalOf(sinDte);
+
+  return {
+    cantidad: lista.length,
+    totalGeneral,
+    neto: netoDeMonto(totalGeneral),
+    ivaTotal: ivaDeMonto(totalGeneral),
+
+    boletas: lista.filter(v => dteDeVenta(v) === 'BOLETA').length,
+    facturas: lista.filter(v => dteDeVenta(v) === 'FACTURA').length,
+    sinDteCantidad: sinDte.length,
+
+    totalEmitido,
+    ivaEmitido: ivaDeMonto(totalEmitido),
+    totalSinDte,
+    ivaPendiente: ivaDeMonto(totalSinDte)
+  };
+}
+
+function etiquetaFiltroDte() {
+  const etiquetas = {
+    TODAS: 'Todas las ventas',
+    BOLETA: 'Solo boletas',
+    FACTURA: 'Solo facturas',
+    'SIN DTE': 'Solo ventas sin DTE',
+    EMITIDOS: 'Boletas + facturas'
+  };
+  return etiquetas[filtroDteExport] || 'Todas las ventas';
+}
+
 async function ejecutarExportarPorPeriodo(formato, desde, hasta) {
   try {
-    const ventas = await API.ventas.listar(desde, hasta);
-    if (!ventas || ventas.length === 0) { showToast('No hay ventas en ese período', 'err'); return; }
+    const todas = await API.ventas.listar(desde, hasta);
+    if (!todas || todas.length === 0) { showToast('No hay ventas en ese período', 'err'); return; }
+
+    const ventas = filtrarPorDte(todas);
+    if (ventas.length === 0) {
+      showToast(`No hay ventas de tipo "${etiquetaFiltroDte()}" en ese período`, 'err');
+      return;
+    }
 
     if (formato === 'pdf') exportarHistorialPDF(ventas, desde, hasta);
     else exportarHistorial(formato, ventas, desde, hasta);
@@ -469,6 +561,9 @@ function obtenerFilasHistorialParaExportar(ventas) {
     Cliente: v.cliente || 'Consumidor Final',
     'Método de Pago': metodoDeVenta(v),
     Estado: estaPendiente(v) ? 'PENDIENTE' : 'PAGADA',
+    DTE: dteDeVenta(v),
+    'Neto (sin IVA)': Math.round(netoDeMonto(v.total)),
+    'IVA (19%)': Math.round(ivaDeMonto(v.total)),
     Total: Number(v.total) || 0,
     'Costo Total': Number(v.costo_total) || 0,
     Utilidad: Number(v.utilidad) || 0
@@ -480,6 +575,7 @@ function exportarHistorial(formato, ventas, desde, hasta) {
   if (filas.length === 0) { showToast('No hay ventas en este rango para exportar', 'err'); return; }
 
   const r = calcularResumen(ventas);
+  const t = resumenTributario(ventas);
   const libro = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(libro, XLSX.utils.json_to_sheet(filas), 'Ventas');
 
@@ -492,6 +588,18 @@ function exportarHistorial(formato, ventas, desde, hasta) {
     { Concepto: 'Margen (%)', Valor: Number(r.margen.toFixed(1)) },
     { Concepto: 'Pendientes por cobrar', Valor: r.totalPendiente },
     { Concepto: 'Cantidad pendientes', Valor: r.cantidadPendiente },
+    { Concepto: '', Valor: '' },
+    { Concepto: 'RESUMEN TRIBUTARIO', Valor: etiquetaFiltroDte() },
+    { Concepto: 'Total General (bruto)', Valor: Math.round(t.totalGeneral) },
+    { Concepto: 'Neto (sin IVA)', Valor: Math.round(t.neto) },
+    { Concepto: 'IVA Total (19%)', Valor: Math.round(t.ivaTotal) },
+    { Concepto: 'Boletas', Valor: t.boletas },
+    { Concepto: 'Facturas', Valor: t.facturas },
+    { Concepto: 'Sin DTE', Valor: t.sinDteCantidad },
+    { Concepto: 'Total con DTE emitido', Valor: Math.round(t.totalEmitido) },
+    { Concepto: 'IVA Emitido', Valor: Math.round(t.ivaEmitido) },
+    { Concepto: 'Total sin DTE', Valor: Math.round(t.totalSinDte) },
+    { Concepto: 'IVA PENDIENTE (sin documentar)', Valor: Math.round(t.ivaPendiente) },
     { Concepto: '', Valor: '' },
     { Concepto: 'MEDIOS DE PAGO', Valor: '% del período' }
   ].concat(r.metodos.map(m => ({ Concepto: m.nombre, Valor: `${m.pct.toFixed(1)}% (${fmtCLP(m.monto)})` })));
@@ -510,6 +618,7 @@ function exportarHistorialPDF(ventas, desde, hasta) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'landscape' });
   const r = calcularResumen(ventas);
+  const t = resumenTributario(ventas);
 
   doc.setFontSize(15);
   doc.setTextColor(15, 23, 42);
@@ -517,7 +626,7 @@ function exportarHistorialPDF(ventas, desde, hasta) {
 
   doc.setFontSize(9);
   doc.setTextColor(71, 85, 105);
-  doc.text(`Período: ${desde} a ${hasta}   ·   ${r.cantidad} venta(s) cobrada(s)   ·   Generado: ${fechaHoraISOChile()} (hora de Chile)`, 14, 21);
+  doc.text(`Período: ${desde} a ${hasta}   ·   ${r.cantidad} venta(s) cobrada(s)   ·   Filtro: ${etiquetaFiltroDte()}   ·   Generado: ${fechaHoraISOChile()} (hora de Chile)`, 14, 21);
 
   const anchoUtil = doc.internal.pageSize.getWidth() - 28;
   doc.setDrawColor(203, 213, 225);
@@ -545,20 +654,67 @@ function exportarHistorialPDF(ventas, desde, hasta) {
     doc.setTextColor(51, 65, 85);
   }
 
+  /* Recuadro tributario. Su contenido cambia según el filtro elegido:
+     - Solo Sin DTE  → destaca el IVA PENDIENTE de documentar.
+     - Todas         → Total General + IVA emitido + IVA pendiente.
+     - Boleta/Factura/Emitidos → neto e IVA del documento emitido. */
+  let cursorY = 52;
+  const soloSinDte = filtroDteExport === 'SIN DTE';
+  const esTodas = filtroDteExport === 'TODAS';
+
+  doc.setDrawColor(soloSinDte ? 220 : 203, soloSinDte ? 160 : 213, soloSinDte ? 160 : 225);
+  doc.setFillColor(soloSinDte ? 254 : 241, soloSinDte ? 242 : 245, soloSinDte ? 242 : 249);
+  doc.roundedRect(14, cursorY, anchoUtil, esTodas ? 20 : 15, 2, 2, 'FD');
+
+  doc.setFontSize(10);
+  doc.setFont(undefined, 'bold');
+
+  if (soloSinDte) {
+    doc.setTextColor(153, 27, 27);
+    doc.text(`IVA PENDIENTE DE DOCUMENTAR: ${fmtCLP(t.ivaPendiente)}`, 19, cursorY + 7);
+    doc.setFont(undefined, 'normal');
+    doc.setFontSize(9);
+    doc.text(`Sobre ${fmtCLP(t.totalSinDte)} en ${t.sinDteCantidad} venta(s) sin documento tributario emitido.`, 19, cursorY + 12);
+    cursorY += 15;
+  } else if (esTodas) {
+    doc.setTextColor(15, 23, 42);
+    doc.text(`Total General: ${fmtCLP(t.totalGeneral)}`, 19, cursorY + 7);
+    doc.text(`IVA Emitido: ${fmtCLP(t.ivaEmitido)}`, 110, cursorY + 7);
+    doc.setTextColor(153, 27, 27);
+    doc.text(`IVA Pendiente: ${fmtCLP(t.ivaPendiente)}`, 195, cursorY + 7);
+
+    doc.setFont(undefined, 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(51, 65, 85);
+    doc.text(`${t.boletas} boleta(s) · ${t.facturas} factura(s) · ${t.sinDteCantidad} sin DTE   |   Documentado: ${fmtCLP(t.totalEmitido)}   ·   Sin documentar: ${fmtCLP(t.totalSinDte)}`,
+      19, cursorY + 14, { maxWidth: anchoUtil - 10 });
+    cursorY += 20;
+  } else {
+    doc.setTextColor(15, 23, 42);
+    doc.text(`Neto: ${fmtCLP(t.neto)}`, 19, cursorY + 7);
+    doc.text(`IVA (19%): ${fmtCLP(t.ivaTotal)}`, 110, cursorY + 7);
+    doc.text(`Total Bruto: ${fmtCLP(t.totalGeneral)}`, 195, cursorY + 7);
+    cursorY += 15;
+  }
+
+  doc.setFont(undefined, 'normal');
+  doc.setTextColor(51, 65, 85);
+
   doc.autoTable({
-    startY: 52,
-    head: [['N° Orden', 'Fecha y Hora', 'Cliente', 'Método de Pago', 'Estado', 'Total', 'Costo', 'Utilidad']],
+    startY: cursorY + 4,
+    head: [['N° Orden', 'Fecha y Hora', 'Cliente', 'Método de Pago', 'DTE', 'Neto', 'IVA', 'Total', 'Utilidad']],
     body: filas.map(f => [
       String(f['N° Orden']).padStart(5, '0'),
       `${f.Fecha}${f.Hora ? ' ' + f.Hora : ''}`,
-      f.Cliente, f['Método de Pago'], f.Estado,
-      fmtCLP(f.Total), fmtCLP(f['Costo Total']), fmtCLP(f.Utilidad)
+      f.Cliente, f['Método de Pago'], f.DTE,
+      fmtCLP(f['Neto (sin IVA)']), fmtCLP(f['IVA (19%)']),
+      fmtCLP(f.Total), fmtCLP(f.Utilidad)
     ]),
     styles: { fontSize: 8, cellPadding: 2.5 },
     headStyles: { fillColor: [30, 41, 59], textColor: [248, 250, 252] },
     alternateRowStyles: { fillColor: [248, 250, 252] },
-    columnStyles: { 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' } },
-    foot: [['', '', '', '', 'COBRADAS', fmtCLP(r.total), fmtCLP(r.costo), fmtCLP(r.utilidad)]],
+    columnStyles: { 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' }, 8: { halign: 'right' } },
+    foot: [['', '', '', '', 'TOTALES', fmtCLP(t.neto), fmtCLP(t.ivaTotal), fmtCLP(t.totalGeneral), fmtCLP(r.utilidad)]],
     footStyles: { fillColor: [15, 23, 42], textColor: [251, 191, 36], fontStyle: 'bold', halign: 'right' }
   });
 
@@ -758,12 +914,40 @@ function pagarVentaPendiente(id) {
     // Aquí ya no tiene sentido "Por Pagar"
     metodos: ['Efectivo', 'Tarjeta Débito', 'Tarjeta Crédito', 'Transferencia'],
     textoConfirmar: '✅ Registrar Pago',
-    onConfirmar: async (metodo) => {
+    onConfirmar: async (metodo, datos) => {
       await API.ventas.registrarPago(venta.id, metodo);
+
+      // El documento tributario se emite al cobrar, así que se guarda aquí
+      const dte = datos?.tipoDte || 'SIN DTE';
+      if (dte !== (venta.tipo_dte || 'SIN DTE')) {
+        await API.ventas.cambiarDTE(venta.id, dte);
+      }
+
       showToast(`Venta cobrada con ${metodo}`, 'ok');
       await cargarHistorial();
     }
   });
+}
+
+/* Cambio rápido del documento tributario desde la propia fila */
+async function cambiarDteVenta(id, tipo, selectEl) {
+  const venta = salesHistory.find(v => String(v.id) === String(id));
+  const anterior = venta ? dteDeVenta(venta) : 'SIN DTE';
+
+  try {
+    if (selectEl) selectEl.disabled = true;
+    await API.ventas.cambiarDTE(id, tipo);
+
+    if (venta) venta.tipo_dte = tipo;
+    if (selectEl) selectEl.className = `dte-select dte-${claseDte(tipo)}`;
+    showToast(`Documento actualizado a ${tipo}`, 'ok');
+  } catch (err) {
+    console.error('Error al cambiar el DTE:', err.message || err);
+    showToast(err.message || 'No se pudo cambiar el documento', 'err');
+    if (selectEl) { selectEl.value = anterior; selectEl.className = `dte-select dte-${claseDte(anterior)}`; }
+  } finally {
+    if (selectEl) selectEl.disabled = false;
+  }
 }
 
 function ventasVisibles() {
@@ -866,7 +1050,7 @@ function renderHistorialTabla(ventas) {
     const msg = filtroEstado === 'PENDIENTE'
       ? 'No hay ventas pendientes de pago en este período.'
       : 'No hay ventas en este período. Prueba con otro filtro o registra una venta nueva.';
-    elHistorialTableBody.innerHTML = `<tr class="empty-row"><td colspan="9">${msg}</td></tr>`;
+    elHistorialTableBody.innerHTML = `<tr class="empty-row"><td colspan="10">${msg}</td></tr>`;
     actualizarBarraVentas();
     return;
   }
@@ -881,6 +1065,11 @@ function renderHistorialTabla(ventas) {
       <td>${v.fecha || '-'}${v.hora ? ' · ' + v.hora : ''}</td>
       <td>${v.cliente || 'Consumidor Final'}</td>
       <td><span class="badge ${pendiente ? 'badge-gold' : 'badge-blue'}">${metodoDeVenta(v)}</span></td>
+      <td>
+        <select class="dte-select dte-${claseDte(dteDeVenta(v))}" data-dte="${v.id}" title="Cambiar el documento tributario">
+          ${TIPOS_DTE.map(t => `<option value="${t}" ${dteDeVenta(v) === t ? 'selected' : ''}>${t}</option>`).join('')}
+        </select>
+      </td>
       <td>
         <span class="badge ${pendiente ? 'badge-red' : 'badge-green'}">${pendiente ? 'PENDIENTE' : 'PAGADA'}</span>
       </td>
@@ -907,6 +1096,10 @@ function renderHistorialTabla(ventas) {
   });
 
   actualizarBarraVentas();
+
+  elHistorialTableBody.querySelectorAll('select[data-dte]').forEach(sel => {
+    sel.addEventListener('change', () => cambiarDteVenta(sel.dataset.dte, sel.value, sel));
+  });
 
   elHistorialTableBody.querySelectorAll('button[data-pagar]').forEach(btn => {
     btn.addEventListener('click', () => pagarVentaPendiente(btn.dataset.pagar));
@@ -973,6 +1166,7 @@ async function abrirModalEditarVenta(ventaId) {
     if (elEditVentaId) elEditVentaId.value = venta.id;
     if (elEditVentaNumero) elEditVentaNumero.textContent = String(venta.numero_orden ?? venta.id).padStart(5, '0');
     if (elEditVentaFecha) elEditVentaFecha.value = venta.fecha || todayISO();
+    if (elEditVentaHora) elEditVentaHora.value = (venta.hora || '').slice(0, 5);
     if (elEditVentaCliente) elEditVentaCliente.value = venta.cliente || '';
     if (elEditVentaMetodoPago) elEditVentaMetodoPago.value = venta.metodo_pago || 'Efectivo';
 
@@ -1085,6 +1279,7 @@ async function guardarEdicionVenta() {
     // El backend reemplaza el detalle y recalcula total, costo_total y utilidad
     await API.ventas.actualizar(id, {
       fecha: elEditVentaFecha?.value || todayISO(),
+      hora: elEditVentaHora?.value || null,
       cliente: elEditVentaCliente?.value.trim() || null,
       metodo_pago: elEditVentaMetodoPago?.value || null,
       items: itemsEditando

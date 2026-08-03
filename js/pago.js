@@ -17,6 +17,7 @@ const METODOS_PAGO = [
 
 let configPago = null;
 let metodoPagoElegido = null;
+let tipoDteElegido = 'SIN DTE';   // por defecto, como pidió el negocio
 
 const elModalPago = document.getElementById('modalPago');
 const elPagoTitulo = document.getElementById('pagoTitulo');
@@ -29,6 +30,8 @@ const elPagoVuelto = document.getElementById('pagoVuelto');
 const elPagoVueltoBox = document.getElementById('pagoVueltoBox');
 const elPagoSugerencias = document.getElementById('pagoSugerencias');
 const elPagoAviso = document.getElementById('pagoAviso');
+const elPagoDteBox = document.getElementById('pagoDteBox');
+const elPagoDteBotones = document.getElementById('pagoDteBotones');
 const elBtnCancelarPago = document.getElementById('btnCancelarPago');
 const elBtnConfirmarPago = document.getElementById('btnConfirmarPago');
 
@@ -36,6 +39,12 @@ document.addEventListener('DOMContentLoaded', () => {
   if (elBtnCancelarPago) elBtnCancelarPago.addEventListener('click', cerrarSelectorPago);
   if (elBtnConfirmarPago) elBtnConfirmarPago.addEventListener('click', confirmarSelectorPago);
   if (elPagoMontoRecibido) elPagoMontoRecibido.addEventListener('input', actualizarVuelto);
+
+  if (elPagoDteBotones) {
+    elPagoDteBotones.querySelectorAll('.dte-btn').forEach(btn => {
+      btn.addEventListener('click', () => elegirTipoDte(btn.dataset.dte));
+    });
+  }
   if (elModalPago) elModalPago.addEventListener('click', (e) => { if (e.target === elModalPago) cerrarSelectorPago(); });
 });
 
@@ -59,6 +68,11 @@ function abrirSelectorPago(opciones) {
   }
   if (elPagoMontoRecibido) elPagoMontoRecibido.value = '';
   if (elPagoEfectivoBox) elPagoEfectivoBox.style.display = 'none';
+
+  // El DTE solo aplica al cobrar una venta, no al registrar un abono
+  const pideDte = configPago.pedirDte !== false;
+  if (elPagoDteBox) elPagoDteBox.style.display = pideDte ? '' : 'none';
+  elegirTipoDte('SIN DTE');
 
   renderMetodosPago();
   if (elModalPago) elModalPago.classList.add('show');
@@ -142,12 +156,21 @@ function actualizarVuelto() {
   if (elBtnConfirmarPago) elBtnConfirmarPago.disabled = recibido <= 0 || diferencia < 0;
 }
 
+function elegirTipoDte(valor) {
+  tipoDteElegido = valor || 'SIN DTE';
+  if (!elPagoDteBotones) return;
+  elPagoDteBotones.querySelectorAll('.dte-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.dte === tipoDteElegido);
+  });
+}
+
 function datosPagoActuales() {
   const total = Number(configPago?.total) || 0;
   const recibido = metodoPagoElegido === 'Efectivo' ? (Number(elPagoMontoRecibido?.value) || 0) : 0;
   return {
     montoRecibido: recibido,
-    vuelto: metodoPagoElegido === 'Efectivo' ? Math.max(recibido - total, 0) : 0
+    vuelto: metodoPagoElegido === 'Efectivo' ? Math.max(recibido - total, 0) : 0,
+    tipoDte: tipoDteElegido
   };
 }
 

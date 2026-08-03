@@ -22,6 +22,8 @@ const elItemSN = document.getElementById('itemSN');
 const elUtilidadPreview = document.getElementById('utilidadPreview');
 const elBtnAgregarItem = document.getElementById('btnAgregarItem');
 const elPosFecha = document.getElementById('posFecha');
+const elPosEditarHora = document.getElementById('posEditarHora');
+const elPosHora = document.getElementById('posHora');
 const elPosCliente = document.getElementById('posCliente');
 const elCartTableBody = document.getElementById('cartTableBody');
 const elCartTotalText = document.getElementById('cartTotalText');
@@ -96,6 +98,16 @@ function setupPosEventListeners() {
     if (ultimaVentaRegistrada) imprimirTicketVenta(ultimaVentaRegistrada, ultimaVentaRegistrada.items);
   });
   if (elBtnCloseVentaExitosa) elBtnCloseVentaExitosa.addEventListener('click', cerrarModalVentaExitosa);
+
+  // Hora personalizada: por defecto se usa la hora actual del sistema
+  if (elPosEditarHora) elPosEditarHora.addEventListener('change', () => {
+    if (!elPosHora) return;
+    elPosHora.disabled = !elPosEditarHora.checked;
+    if (elPosEditarHora.checked) {
+      if (!elPosHora.value) elPosHora.value = horaActualCorta();
+      elPosHora.focus();
+    }
+  });
 
   // Vinculación manual de una OT a la venta en curso
   if (elPosSincronizarOT) elPosSincronizarOT.addEventListener('change', () => {
@@ -325,7 +337,8 @@ function renderCart() {
     elCartTableBody.innerHTML = cart.map((item, idx) => `
       <tr class="row-in">
         <td>${item.cantidad}</td>
-        <td>${item.nombre}${item.serial_number ? '<br><small style="color:var(--text-muted);">S/N: ' + item.serial_number + '</small>' : ''}</td>
+        <td>${item.nombre}
+          ${item.serial_number ? '<br><small style="color:var(--text-muted);">S/N: ' + item.serial_number + '</small>' : ''}</td>
         <td>${fmtCLP(item.precio_unitario)}</td>
         <td>${fmtCLP(item.subtotal)}</td>
         <td>
@@ -366,11 +379,17 @@ function abrirModalPago() {
 }
 
 async function confirmarVenta(metodoPago, datosPago = {}) {
+  // Hora: la actual del sistema, salvo que el usuario marque "Editar hora"
+  const horaPersonalizada = (elPosEditarHora && elPosEditarHora.checked && elPosHora?.value)
+    ? elPosHora.value
+    : horaActualCorta();
+
   // El backend calcula total, costo_total y utilidad a partir de los ítems,
   // y deja la venta en PENDIENTE si el método es "Por Pagar".
   const venta = await API.ventas.crear({
     fecha: elPosFecha?.value || todayISO(),
-    hora: horaActualCorta(),
+    hora: horaPersonalizada,
+    tipo_dte: datosPago.tipoDte || 'SIN DTE',
     cliente: elPosCliente?.value.trim() || null,
     metodo_pago: metodoPago,
     // El backend descuenta el stock (comercial e interno) recién aquí
@@ -387,6 +406,8 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
   limpiarFormularioItem();
   desvincularOT();
   if (elPosCliente) elPosCliente.value = '';
+  if (elPosEditarHora) elPosEditarHora.checked = false;
+  if (elPosHora) { elPosHora.value = ''; elPosHora.disabled = true; }
 
   mostrarModalVentaExitosa(venta, datosPago);
 
@@ -432,36 +453,18 @@ function precargarVentaDesdeOT(ot, itemsAsignados = []) {
   if (elPosCliente) elPosCliente.value = ot.cliente_nombre || '';
   mostrarOTVinculadaPOS();
 
-  // Los ítems ya asignados en el taller entran al carrito desglosados
-  (itemsAsignados || []).forEach(item => {
-    const cantidad = Number(item.cantidad) || 1;
-    const precio = Number(item.precio_unitario) || 0;
-    cart.push({
-      producto_id: item.producto_id || null,
-      repuesto_id: item.repuesto_id || null,
-      sku: null,
-      nombre: item.nombre,
-      cantidad,
-      costo_unitario: esAdmin() ? (Number(item.costo_unitario) || 0) : 0,
-      precio_unitario: precio,
-      subtotal: precio * cantidad,
-      serial_number: null
-    });
-  });
-
-  if ((itemsAsignados || []).length === 0) {
-    // Sin repuestos asignados en el taller: NO se rellena el campo Producto
-    // con el texto de la OT (antes aparecía como si fuera un ítem ya
-    // cargado). Solo queda vinculada la venta; el usuario escribe o busca
-    // el ítem a cobrar como en cualquier venta normal.
-    limpiarFormularioItem();
-    setTimeout(() => elItemNombre?.focus(), 60);
-  }
+  /* Los repuestos de la OT NO entran al carrito: el cliente paga el
+     servicio, no un desglose de piezas. Su stock se descuenta aparte,
+     cuando la orden pasa a ENTREGADO. Aquí solo se deja el campo listo
+     para que se escriba el servicio o se busque en el catálogo. */
+  limpiarFormularioItem();
+  setTimeout(() => elItemNombre?.focus(), 60);
 
   productoSeleccionado = null;
   renderCart();
   actualizarUtilidadPreview();
 }
+
 
 function cerrarModalVentaExitosa() {
   if (elModalVentaExitosa) elModalVentaExitosa.classList.remove('show');

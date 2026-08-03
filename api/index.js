@@ -69,6 +69,47 @@ app.use(cors({
 const num = v => Number(v) || 0;
 const enviarError = (res, code, msg) => res.status(code).json({ error: msg });
 
+const TIPOS_DTE = ['BOLETA', 'FACTURA', 'SIN DTE'];
+
+/* El DTE es tributario: si llega algo no reconocido, se guarda 'SIN DTE'
+   en vez de fallar, para no bloquear una venta en caja. */
+function tipoDteValido(valor) {
+  const v = String(valor || '').trim().toUpperCase();
+  return TIPOS_DTE.includes(v) ? v : 'SIN DTE';
+}
+
+/* Acepta "HH:MM" o "HH:MM:SS"; devuelve null si no es una hora válida */
+function horaValida(valor) {
+  const v = String(valor || '').trim();
+  const m = v.match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  const hh = Number(m[1]), mm = Number(m[2]);
+  if (hh > 23 || mm > 59) return null;
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
+/* Hora actual en Chile, en formato HH:MM (el servidor de Vercel corre en UTC) */
+function horaChileActual() {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'America/Santiago', hour: '2-digit', minute: '2-digit', hour12: false
+  }).format(new Date());
+}
+
+/* Construye el TIMESTAMP real a partir de la fecha y hora elegidas por el
+   usuario, interpretadas como hora de Chile. Se calcula el desfase real de
+   ese día (Chile cambia entre UTC-4 y UTC-3 según el horario de verano). */
+function marcaDeTiempoChile(fecha, hora) {
+  const h = horaValida(hora) || '12:00';
+  const tentativa = new Date(`${fecha}T${h}:00Z`);   // punto de partida en UTC
+  if (isNaN(tentativa.getTime())) return null;
+
+  const comoChile = new Date(tentativa.toLocaleString('en-US', { timeZone: 'America/Santiago' }));
+  const comoUTC = new Date(tentativa.toLocaleString('en-US', { timeZone: 'UTC' }));
+  const desfase = comoUTC.getTime() - comoChile.getTime();
+
+  return new Date(tentativa.getTime() + desfase).toISOString();
+}
+
 function firmarToken(rol) {
   return jwt.sign({ rol }, JWT_SECRET || 'dev-secret-cambiar', { expiresIn: TOKEN_TTL });
 }
@@ -165,7 +206,7 @@ app.get('/api/health', (_req, res) => res.json({
 const CAMPOS_PRODUCTO = [
   'sku', 'codigo_barras', 'nombre', 'costo_unitario', 'precio_unitario', 'stock',
   'requiere_sn', 'peso_kg', 'alto_cm', 'ancho_cm', 'profundidad_cm', 'descripcion',
-  'stock_minimo', 'alerta_stock', 'es_repuesto'
+  'stock_minimo', 'alerta_stock', 'es_repuesto', 'stock_ilimitado'
 ];
 
 function sanearProducto(body = {}) {
@@ -179,6 +220,7 @@ function sanearProducto(body = {}) {
   p.requiere_sn = !!p.requiere_sn;
   if (body.alerta_stock !== undefined) p.alerta_stock = !!body.alerta_stock;
   if (body.es_repuesto !== undefined) p.es_repuesto = !!body.es_repuesto;
+  if (body.stock_ilimitado !== undefined) p.stock_ilimitado = !!body.stock_ilimitado;
 
   // Cada vez que se toca el stock queda registrada la fecha del cambio
   if (p.stock !== undefined) p.stock_actualizado_en = new Date().toISOString();
@@ -283,6 +325,9 @@ async function normalizarItems(items, rolSolicitante) {
     return {
       producto_id: it.producto_id || null,
       repuesto_id: it.repuesto_id || null,
+      // Si el ítem viene de un repuesto ya reservado en la OT, su stock
+      // se descontó al momento de asociarlo: acá NO se vuelve a tocar.
+      ot_repuesto_id: it.ot_repuesto_id || null,
       sku: it.sku || null,
       nombre: String(it.nombre || 'Producto').trim(),
       cantidad,
@@ -297,7 +342,8 @@ async function normalizarItems(items, rolSolicitante) {
 /* Ajusta el stock del catálogo a partir de los ítems de una venta.
    signo = -1 descuenta (venta), signo = +1 repone (anulación).
    El producto se busca por id, luego por SKU y finalmente por código de
-   barras, de modo que también funcione con ventas importadas. */
+   barras, de modo que también funcione con ventas importadas. Los ítems
+   marcados como stock_ilimitado (servicios) se omiten por completo. */
 async function ajustarStock(items, signo = -1) {
   const ajustados = [];
 
@@ -305,22 +351,22 @@ async function ajustarStock(items, signo = -1) {
     let producto = null;
 
     if (item.producto_id) {
-      const { data } = await db.from('productos').select('id, stock').eq('id', item.producto_id).maybeSingle();
+      const { data } = await db.from('productos').select('id, stock, stock_ilimitado').eq('id', item.producto_id).maybeSingle();
       producto = data || null;
     }
     if (!producto && item.sku) {
-      const { data } = await db.from('productos').select('id, stock').eq('sku', String(item.sku).trim()).limit(1);
+      const { data } = await db.from('productos').select('id, stock, stock_ilimitado').eq('sku', String(item.sku).trim()).limit(1);
       producto = (data && data[0]) || null;
     }
     if (!producto && item.codigo_barras) {
-      const { data } = await db.from('productos').select('id, stock').eq('codigo_barras', String(item.codigo_barras).trim()).limit(1);
+      const { data } = await db.from('productos').select('id, stock, stock_ilimitado').eq('codigo_barras', String(item.codigo_barras).trim()).limit(1);
       producto = (data && data[0]) || null;
     }
 
     // Repuestos internos del taller: viven en su propia tabla
     if (!producto && item.repuesto_id) {
-      const { data } = await db.from('repuestos').select('id, stock').eq('id', item.repuesto_id).maybeSingle();
-      if (data) {
+      const { data } = await db.from('repuestos').select('id, stock, stock_ilimitado').eq('id', item.repuesto_id).maybeSingle();
+      if (data && !data.stock_ilimitado) {
         const nuevo = num(data.stock) + signo * num(item.cantidad);
         await db.from('repuestos')
           .update({ stock: nuevo, stock_actualizado_en: new Date().toISOString() })
@@ -330,7 +376,7 @@ async function ajustarStock(items, signo = -1) {
       continue;
     }
 
-    if (!producto) continue; // producto libre (no está en el catálogo)
+    if (!producto || producto.stock_ilimitado) continue; // libre o sin control de stock
 
     const nuevoStock = num(producto.stock) + signo * num(item.cantidad);
     await db.from('productos')
@@ -341,6 +387,38 @@ async function ajustarStock(items, signo = -1) {
   }
 
   return ajustados;
+}
+
+/* Revierte los efectos de una o varias ventas eliminadas:
+   - a los ítems que NO vienen de una reserva de OT, les repone el stock
+     (como antes).
+   - a los ítems que SÍ vienen de una reserva de OT (ot_repuesto_id), NO
+     se les repone stock — esa pieza sigue físicamente usada en el
+     taller — pero se reabre la reserva (cobrado = false) para que la OT
+     vuelva a mostrarla como pendiente de cobro.
+   Se usa desde el borrado individual, el borrado masivo y el borrado por
+   período/total, que antes no revertían nada de esto de forma pareja. */
+async function revertirEfectosDeVentas(ventaIds) {
+  const ids = (ventaIds || []).filter(Boolean);
+  if (ids.length === 0) return { stock_repuesto: 0, items_borrados: 0 };
+
+  const { data: items } = await db.from('venta_items').select('*').in('venta_id', ids);
+  const lista = items || [];
+
+  // Todo lo vendido en caja devuelve su stock. Los repuestos de una OT no
+  // pasan por el carrito, así que aquí no hay nada especial que reabrir.
+  const repuestos = await ajustarStock(lista, +1);
+
+  // Se borran los ítems ANTES que la venta. Con el script 07 la relación ya
+  // tiene ON DELETE CASCADE, pero si esa migración todavía no se ejecutó,
+  // este borrado explícito evita el error "venta_items_venta_id_fkey".
+  let itemsBorrados = 0;
+  if (lista.length) {
+    const { error } = await db.from('venta_items').delete().in('venta_id', ids);
+    if (!error) itemsBorrados = lista.length;
+  }
+
+  return { stock_repuesto: repuestos.length, items_borrados: itemsBorrados };
 }
 
 function totalizar(items) {
@@ -384,14 +462,20 @@ app.post('/api/ventas', auth(), async (req, res) => {
     const metodoPago = req.body?.metodo_pago || 'Efectivo';
     const esPendiente = metodoPago === 'Por Pagar';
 
+    const fecha = req.body?.fecha || new Date().toISOString().slice(0, 10);
+    const hora = horaValida(req.body?.hora) || horaChileActual();
+
     const cabecera = {
-      fecha: req.body?.fecha || new Date().toISOString().slice(0, 10),
-      hora: req.body?.hora || null,
+      fecha,
+      hora,
+      // Marca de tiempo real (fecha + hora elegida), interpretada en Chile
+      vendida_en: marcaDeTiempoChile(fecha, hora),
       cliente: (req.body?.cliente || '').trim() || null,
       metodo_pago: metodoPago,
       estado: esPendiente ? 'PENDIENTE' : 'PAGADA',
       fecha_pago: esPendiente ? null : new Date().toISOString(),
       metodo_pago_final: esPendiente ? null : metodoPago,
+      tipo_dte: tipoDteValido(req.body?.tipo_dte),
       // Vínculo opcional con la orden de trabajo que se está cobrando
       ot_id: req.body?.ot_id || null,
       numero_ot: (req.body?.numero_ot || '').trim() || null,
@@ -411,12 +495,10 @@ app.post('/api/ventas', auth(), async (req, res) => {
       throw new Error(errItems.message);
     }
 
-    // El stock (comercial e interno) se descuenta recién aquí, al cerrar la venta
+    // El stock de lo vendido en caja se descuenta aquí. Los repuestos de una
+    // OT NO viajan en el carrito (solo el servicio cobrado): su stock se
+    // descuenta cuando la orden pasa a ENTREGADO.
     await ajustarStock(items, -1);
-
-    if (cabecera.ot_id) {
-      await db.from('ot_repuestos').update({ cobrado: true }).eq('ot_id', cabecera.ot_id);
-    }
 
     res.status(201).json({ ...venta, items });
   } catch (err) {
@@ -528,9 +610,18 @@ app.put('/api/ventas/:id', auth(true), async (req, res) => {
     const id = req.params.id;
     const cambios = {};
     if (req.body?.fecha) cambios.fecha = req.body.fecha;
-    if (req.body?.hora !== undefined) cambios.hora = req.body.hora || null;
+    if (req.body?.hora !== undefined) cambios.hora = horaValida(req.body.hora) || null;
     if (req.body?.cliente !== undefined) cambios.cliente = (req.body.cliente || '').trim() || null;
     if (req.body?.metodo_pago) cambios.metodo_pago = req.body.metodo_pago;
+    if (req.body?.tipo_dte !== undefined) cambios.tipo_dte = tipoDteValido(req.body.tipo_dte);
+
+    // Si cambió la fecha o la hora, se recalcula la marca de tiempo real
+    if (cambios.fecha || cambios.hora !== undefined) {
+      const { data: actual } = await db.from('ventas').select('fecha, hora').eq('id', id).maybeSingle();
+      const fechaFinal = cambios.fecha || actual?.fecha;
+      const horaFinal = cambios.hora !== undefined ? cambios.hora : actual?.hora;
+      if (fechaFinal) cambios.vendida_en = marcaDeTiempoChile(fechaFinal, horaFinal);
+    }
 
     if (Array.isArray(req.body?.items)) {
       const items = await normalizarItems(req.body.items, 'admin');
@@ -555,30 +646,21 @@ app.put('/api/ventas/:id', auth(true), async (req, res) => {
 });
 
 /* Eliminación masiva de ventas.
-   Antes de borrar se devuelve al catálogo el stock de cada ítem que tenga
-   producto asociado (por id, SKU o código de barras), de modo que el
-   inventario quede como estaba antes de esas ventas. */
+   A los ítems normales se les repone el stock; a los que venían de una
+   reserva de repuesto en una OT, se les reabre la reserva (esa pieza
+   sigue físicamente usada, pero vuelve a quedar "pendiente de cobro"). */
 app.post('/api/ventas/eliminar-lote', auth(true), async (req, res) => {
   const ids = (Array.isArray(req.body?.ids) ? req.body.ids : []).map(Number).filter(Boolean);
   if (ids.length === 0) return enviarError(res, 400, 'No hay ventas seleccionadas');
   if (ids.length > 300) return enviarError(res, 413, 'Elimina como máximo 300 ventas por vez');
 
-  const resultado = { eliminadas: 0, stock_repuesto: 0, errores: [] };
-
   try {
-    const { data: items, error: errItems } = await db
-      .from('venta_items').select('*').in('venta_id', ids);
-    if (errItems) throw new Error(errItems.message);
-
-    // El stock se repone antes del borrado: si el DELETE falla, no se perdió nada
-    const repuestos = await ajustarStock(items || [], +1);
-    resultado.stock_repuesto = repuestos.length;
+    const resultado = await revertirEfectosDeVentas(ids);
 
     const { error } = await db.from('ventas').delete().in('id', ids);
     if (error) throw new Error(error.message);
 
-    resultado.eliminadas = ids.length;
-    res.json(resultado);
+    res.json({ eliminadas: ids.length, ...resultado });
   } catch (err) {
     enviarError(res, 500, err.message || 'No se pudieron eliminar las ventas');
   }
@@ -588,17 +670,27 @@ app.post('/api/ventas/eliminar-lote', auth(true), async (req, res) => {
 app.delete('/api/ventas', auth(true), async (req, res) => {
   const { desde, hasta, todo } = req.query;
 
-  let q = db.from('ventas').delete();
-  if (todo === 'true') q = q.gt('id', 0);
-  else if (desde && hasta) q = q.gte('fecha', desde).lte('fecha', hasta);
+  let qSelect = db.from('ventas').select('id');
+  if (todo === 'true') qSelect = qSelect.gt('id', 0);
+  else if (desde && hasta) qSelect = qSelect.gte('fecha', desde).lte('fecha', hasta);
   else return enviarError(res, 400, 'Indica un rango de fechas o todo=true');
 
-  const { error } = await q;
+  const { data: filas, error: errSel } = await qSelect;
+  if (errSel) return enviarError(res, 500, errSel.message);
+
+  const ids = (filas || []).map(f => f.id);
+  if (ids.length === 0) return res.json({ ok: true, eliminadas: 0 });
+
+  await revertirEfectosDeVentas(ids);
+
+  const { error } = await db.from('ventas').delete().in('id', ids);
   if (error) return enviarError(res, 500, error.message);
-  res.json({ ok: true });
+  res.json({ ok: true, eliminadas: ids.length });
 });
 
 app.delete('/api/ventas/:id', auth(true), async (req, res) => {
+  await revertirEfectosDeVentas([Number(req.params.id)]);
+
   const { error } = await db.from('ventas').delete().eq('id', req.params.id);
   if (error) return enviarError(res, 500, error.message);
   res.json({ ok: true });
@@ -624,6 +716,23 @@ app.post('/api/ventas/:id/pago', auth(), async (req, res) => {
       metodo_pago_final: metodo,
       fecha_pago: new Date().toISOString()
     })
+    .eq('id', req.params.id)
+    .select()
+    .single();
+
+  if (error) return enviarError(res, 500, error.message);
+  res.json(limpiarParaRol(data, req.usuario.rol));
+});
+
+/* Cambia únicamente el tipo de DTE de una venta ya registrada.
+   Se usa desde el selector rápido del Historial (guarda con 1 clic).
+   Lo puede hacer cualquier usuario autenticado: es una corrección
+   tributaria de caja, no una edición de montos. */
+app.post('/api/ventas/:id/dte', auth(), async (req, res) => {
+  const tipo = tipoDteValido(req.body?.tipo_dte);
+
+  const { data, error } = await db.from('ventas')
+    .update({ tipo_dte: tipo })
     .eq('id', req.params.id)
     .select()
     .single();
@@ -835,7 +944,31 @@ app.post('/api/ot/:id/entrega', auth(), async (req, res) => {
     .single();
 
   if (error) return enviarError(res, 500, error.message);
-  res.json(data);
+
+  /* ESTE es el momento en que el stock sale del inventario: al entregar.
+     Se descuentan solo los repuestos/productos del catálogo que aún no se
+     hayan descontado. Los ítems escritos a mano (sin repuesto_id ni
+     producto_id) no afectan inventario, y los marcados como
+     stock_ilimitado los ignora ajustarStock(). */
+  const { data: asignados } = await db.from('ot_repuestos')
+    .select('*').eq('ot_id', req.params.id).eq('stock_descontado', false);
+
+  const conInventario = (asignados || []).filter(r => r.repuesto_id || r.producto_id);
+  let descontados = [];
+
+  if (conInventario.length) {
+    descontados = await ajustarStock(conInventario.map(r => ({
+      producto_id: r.producto_id,
+      repuesto_id: r.repuesto_id,
+      cantidad: r.cantidad
+    })), -1);
+
+    await db.from('ot_repuestos')
+      .update({ stock_descontado: true })
+      .in('id', conInventario.map(r => r.id));
+  }
+
+  res.json({ ...data, stock_descontado_en: descontados.length });
 });
 
 app.delete('/api/ot/:id', auth(true), async (req, res) => {
@@ -851,7 +984,7 @@ app.delete('/api/ot/:id', auth(true), async (req, res) => {
    ============================================================ */
 const CAMPOS_REPUESTO = [
   'area', 'categoria', 'modelo', 'descripcion', 'costo_unitario',
-  'precio_venta', 'stock', 'stock_minimo', 'alerta_stock', 'ubicacion'
+  'precio_venta', 'stock', 'stock_minimo', 'alerta_stock', 'ubicacion', 'stock_ilimitado'
 ];
 
 function sanearRepuesto(body = {}) {
@@ -869,10 +1002,24 @@ function sanearRepuesto(body = {}) {
   if (!(num(r.precio_venta) > 0)) return { error: 'El precio de venta (con mano de obra) debe ser mayor a 0' };
 
   if (body.alerta_stock !== undefined) r.alerta_stock = !!body.alerta_stock;
+  if (body.stock_ilimitado !== undefined) r.stock_ilimitado = !!body.stock_ilimitado;
   ['descripcion', 'ubicacion'].forEach(k => { if (r[k] !== undefined) r[k] = String(r[k]).trim() || null; });
 
   if (r.stock !== undefined) r.stock_actualizado_en = new Date().toISOString();
   return { datos: r };
+}
+
+/* Si el área o categoría escritas a mano todavía no existen en el
+   catálogo administrable, se agregan solas (así el usuario puede seguir
+   escribiendo valores nuevos libremente y quedan disponibles después como
+   sugerencia y en el panel de "Administrar Categorías"). */
+async function asegurarAreaYCategoria(area, categoria) {
+  if (area) {
+    await db.from('repuesto_areas').upsert([{ nombre: area }], { onConflict: 'nombre', ignoreDuplicates: true });
+  }
+  if (categoria) {
+    await db.from('repuesto_categorias').upsert([{ nombre: categoria }], { onConflict: 'nombre', ignoreDuplicates: true });
+  }
 }
 
 app.get('/api/repuestos', auth(), async (req, res) => {
@@ -896,6 +1043,8 @@ app.post('/api/repuestos', auth(true), async (req, res) => {
     return enviarError(res, duplicado ? 409 : 500,
       duplicado ? 'Ya existe un repuesto con esa área, categoría y modelo' : error.message);
   }
+
+  await asegurarAreaYCategoria(datos.area, datos.categoria);
   res.status(201).json(data);
 });
 
@@ -905,6 +1054,8 @@ app.put('/api/repuestos/:id', auth(true), async (req, res) => {
 
   const { data, error } = await db.from('repuestos').update(datos).eq('id', req.params.id).select().single();
   if (error) return enviarError(res, 500, error.message);
+
+  await asegurarAreaYCategoria(datos.area, datos.categoria);
   res.json(data);
 });
 
@@ -913,6 +1064,87 @@ app.delete('/api/repuestos/:id', auth(true), async (req, res) => {
   if (error) return enviarError(res, 500, error.message);
   res.json({ ok: true });
 });
+
+/* ============================================================
+   ADMINISTRACIÓN DE ÁREAS/TIPO Y CATEGORÍAS BASE (repuestos)
+   Catálogo aparte para poder renombrar o eliminar estos valores en todos
+   los repuestos que los usan, sin tener que editarlos uno por uno.
+   Ver: admin y trabajador (para el autocompletado) · Escribir: solo admin
+   ============================================================ */
+function fabricarRutasCatalogoRepuesto(nombreTabla, columnaEnRepuestos) {
+  // GET: lista con cuántos repuestos usan cada valor
+  app.get(`/api/repuestos/${nombreTabla}`, auth(), async (req, res) => {
+    const { data: valores, error } = await db.from(nombreTabla).select('*').order('nombre');
+    if (error) return enviarError(res, 500, error.message);
+
+    const { data: repuestos } = await db.from('repuestos').select(columnaEnRepuestos);
+    const conteo = {};
+    (repuestos || []).forEach(r => {
+      const v = r[columnaEnRepuestos];
+      if (v) conteo[v] = (conteo[v] || 0) + 1;
+    });
+
+    res.json((valores || []).map(v => ({ ...v, usos: conteo[v.nombre] || 0 })));
+  });
+
+  app.post(`/api/repuestos/${nombreTabla}`, auth(true), async (req, res) => {
+    const nombre = String(req.body?.nombre || '').trim();
+    if (!nombre) return enviarError(res, 400, 'Escribe un nombre');
+
+    const { data, error } = await db.from(nombreTabla).insert([{ nombre }]).select().single();
+    if (error) {
+      const duplicado = /duplicate|unique/i.test(error.message);
+      return enviarError(res, duplicado ? 409 : 500, duplicado ? 'Ese valor ya existe' : error.message);
+    }
+    res.status(201).json(data);
+  });
+
+  // Renombrar: además de actualizar el catálogo, actualiza en cascada
+  // todos los repuestos que tenían el nombre anterior.
+  app.put(`/api/repuestos/${nombreTabla}/:id`, auth(true), async (req, res) => {
+    const nuevoNombre = String(req.body?.nombre || '').trim();
+    if (!nuevoNombre) return enviarError(res, 400, 'Escribe un nombre');
+
+    const { data: actual, error: errActual } = await db.from(nombreTabla).select('*').eq('id', req.params.id).single();
+    if (errActual) return enviarError(res, 404, 'No se encontró ese valor');
+
+    const nombreAnterior = actual.nombre;
+    if (nombreAnterior === nuevoNombre) return res.json(actual);
+
+    const { data, error } = await db.from(nombreTabla).update({ nombre: nuevoNombre }).eq('id', req.params.id).select().single();
+    if (error) {
+      const duplicado = /duplicate|unique/i.test(error.message);
+      return enviarError(res, duplicado ? 409 : 500, duplicado ? 'Ya existe otro valor con ese nombre' : error.message);
+    }
+
+    const { error: errCascada } = await db.from('repuestos')
+      .update({ [columnaEnRepuestos]: nuevoNombre }).eq(columnaEnRepuestos, nombreAnterior);
+    if (errCascada) return enviarError(res, 500, errCascada.message);
+
+    res.json(data);
+  });
+
+  // Eliminar: solo si ningún repuesto lo está usando actualmente
+  app.delete(`/api/repuestos/${nombreTabla}/:id`, auth(true), async (req, res) => {
+    const { data: actual, error: errActual } = await db.from(nombreTabla).select('*').eq('id', req.params.id).single();
+    if (errActual) return enviarError(res, 404, 'No se encontró ese valor');
+
+    const { count } = await db.from('repuestos')
+      .select('id', { count: 'exact', head: true }).eq(columnaEnRepuestos, actual.nombre);
+
+    if ((count || 0) > 0) {
+      return enviarError(res, 400,
+        `No se puede eliminar: ${count} repuesto(s) todavía usan "${actual.nombre}". Renómbralos primero o cámbiales el valor.`);
+    }
+
+    const { error } = await db.from(nombreTabla).delete().eq('id', req.params.id);
+    if (error) return enviarError(res, 500, error.message);
+    res.json({ ok: true });
+  });
+}
+
+fabricarRutasCatalogoRepuesto('areas', 'area');
+fabricarRutasCatalogoRepuesto('categorias', 'categoria');
 
 /* ---------- Repuestos y mano de obra asignados a una OT ---------- */
 app.get('/api/ot/:id/repuestos', auth(), async (req, res) => {
@@ -924,29 +1156,71 @@ app.get('/api/ot/:id/repuestos', auth(), async (req, res) => {
 app.post('/api/ot/:id/repuestos', auth(), async (req, res) => {
   const nombre = String(req.body?.nombre || '').trim();
   const precio = num(req.body?.precio_unitario);
+  const cantidad = Math.max(1, Math.round(num(req.body?.cantidad) || 1));
   if (!nombre) return enviarError(res, 400, 'Indica el repuesto o servicio');
   if (precio <= 0) return enviarError(res, 400, 'El precio debe ser mayor a 0');
 
-  const registro = {
-    ot_id: Number(req.params.id),
-    repuesto_id: req.body?.repuesto_id || null,
-    producto_id: req.body?.producto_id || null,
-    nombre,
-    cantidad: Math.max(1, Math.round(num(req.body?.cantidad) || 1)),
-    costo_unitario: num(req.body?.costo_unitario),
-    precio_unitario: precio,
-    cobrado: false
-  };
+  const repuestoId = req.body?.repuesto_id || null;
+  const productoId = req.body?.producto_id || null;
 
-  const { data, error } = await db.from('ot_repuestos').insert([registro]).select().single();
-  if (error) return enviarError(res, 500, error.message);
-  res.status(201).json(data);
+  try {
+    // Al asociar NO se toca el stock: el descuento ocurre cuando la orden
+    // pasa a ENTREGADO. Aquí solo se avisa si el stock disponible no
+    // alcanzaría, para que el técnico lo sepa antes de comprometerlo.
+    let aviso = null;
+    if (repuestoId) {
+      const { data: rep } = await db.from('repuestos')
+        .select('stock, stock_ilimitado').eq('id', repuestoId).maybeSingle();
+      if (rep && !rep.stock_ilimitado && num(rep.stock) < cantidad) {
+        aviso = `Atención: solo quedan ${rep.stock} unidad(es) en el taller.`;
+      }
+    } else if (productoId) {
+      const { data: prod } = await db.from('productos')
+        .select('stock, stock_ilimitado').eq('id', productoId).maybeSingle();
+      if (prod && !prod.stock_ilimitado && num(prod.stock) < cantidad) {
+        aviso = `Atención: solo quedan ${prod.stock} unidad(es) en el catálogo.`;
+      }
+    }
+
+    const registro = {
+      ot_id: Number(req.params.id),
+      repuesto_id: repuestoId,
+      producto_id: productoId,
+      nombre,
+      cantidad,
+      costo_unitario: num(req.body?.costo_unitario),
+      precio_unitario: precio,
+      cobrado: false,
+      stock_descontado: false
+    };
+
+    const { data, error } = await db.from('ot_repuestos').insert([registro]).select().single();
+    if (error) throw new Error(error.message);
+    res.status(201).json({ ...data, aviso });
+  } catch (err) {
+    enviarError(res, 500, err.message || 'No se pudo agregar el repuesto a la orden');
+  }
 });
 
 app.delete('/api/ot/:otId/repuestos/:id', auth(), async (req, res) => {
+  const { data: fila, error: errFila } = await db.from('ot_repuestos')
+    .select('*').eq('id', req.params.id).eq('ot_id', req.params.otId).maybeSingle();
+  if (errFila) return enviarError(res, 500, errFila.message);
+  if (!fila) return enviarError(res, 404, 'No se encontró ese ítem en la orden');
+
+  // Si la orden ya se entregó, su stock ya salió del inventario: se devuelve
+  // al quitar el ítem. Si aún no se entregaba, nunca se descontó nada.
+  if (fila.stock_descontado) {
+    await ajustarStock([{
+      producto_id: fila.producto_id,
+      repuesto_id: fila.repuesto_id,
+      cantidad: fila.cantidad
+    }], +1);
+  }
+
   const { error } = await db.from('ot_repuestos').delete().eq('id', req.params.id).eq('ot_id', req.params.otId);
   if (error) return enviarError(res, 500, error.message);
-  res.json({ ok: true });
+  res.json({ ok: true, stock_devuelto: !!fila.stock_descontado });
 });
 
 /* ============================================================

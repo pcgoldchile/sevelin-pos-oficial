@@ -119,6 +119,12 @@
                 <label>Fecha</label>
                 <input type="date" id="posFecha">
               </div>
+              <div class="field" style="min-width:170px;">
+                <label class="sn-toggle" style="height:auto; padding:0; background:none; border:none; margin-bottom:6px;">
+                  <input type="checkbox" id="posEditarHora"> Editar hora
+                </label>
+                <input type="time" id="posHora" disabled title="Marca “Editar hora” para fijar una hora distinta a la actual">
+              </div>
               <div class="field">
                 <label>Cliente</label>
                 <input type="text" id="posCliente" placeholder="Cliente Opcional / Particular">
@@ -267,6 +273,7 @@
                 <th>Fecha / Hora</th>
                 <th>Cliente</th>
                 <th>Medio Pago</th>
+                <th>DTE</th>
                 <th>Estado</th>
                 <th class="num">Total</th>
                 <th class="num admin-only">Utilidad</th>
@@ -274,7 +281,7 @@
               </tr>
             </thead>
             <tbody id="historialTableBody">
-              <tr class="empty-row"><td colspan="9">Cargando ventas...</td></tr>
+              <tr class="empty-row"><td colspan="10">Cargando ventas...</td></tr>
             </tbody>
           </table>
         </div>
@@ -574,7 +581,10 @@
             <h2>Compras y Gastos</h2>
             <p class="subtitle" id="comprasPeriodoLabel">Registro de mercadería, activos, insumos y gastos operativos.</p>
           </div>
-          <button class="btn btn-primary" id="btnNuevaCompra">➕ Registrar Compra</button>
+          <div class="toolbar-group">
+            <button class="btn btn-outline" id="btnExportarCompras">📤 Exportar</button>
+            <button class="btn btn-primary" id="btnNuevaCompra">➕ Registrar Compra</button>
+          </div>
         </div>
 
         <div class="kpi-grid">
@@ -736,6 +746,7 @@
           </div>
           <div class="toolbar-group">
             <button class="btn btn-gold" id="btnValorizacionRepuestos">💎 Valorización</button>
+            <button class="btn btn-outline admin-only" id="btnAdminCategoriasRepuesto">🗂️ Administrar Categorías</button>
             <button class="btn btn-primary admin-only" id="btnNuevoRepuesto">➕ Nuevo Repuesto</button>
           </div>
         </div>
@@ -818,6 +829,16 @@
         <p class="modal-hint" id="pagoAviso">El vuelto es solo referencial: no se imprime en el ticket.</p>
       </div>
 
+      <!-- Documento tributario. No se imprime en el ticket del cliente. -->
+      <div class="pago-dte" id="pagoDteBox">
+        <span class="section-label">Documento tributario</span>
+        <div class="dte-botones" id="pagoDteBotones">
+          <button type="button" class="dte-btn active" data-dte="SIN DTE">SIN DTE</button>
+          <button type="button" class="dte-btn" data-dte="BOLETA">BOLETA</button>
+          <button type="button" class="dte-btn" data-dte="FACTURA">FACTURA</button>
+        </div>
+      </div>
+
       <div class="modal-foot">
         <button class="btn btn-ghost" id="btnCancelarPago">Cancelar</button>
         <button class="btn btn-green" id="btnConfirmarPago">Confirmar Venta</button>
@@ -885,7 +906,11 @@
       </div>
 
       <span class="section-label" style="margin-top:18px;">Control de stock</span>
-      <div class="grid grid-2">
+      <label class="check-item" id="itemProdStockIlimitado" style="margin-bottom:10px;">
+        <input type="checkbox" id="prodStockIlimitado">
+        <span>♾️ Stock ilimitado (para servicios o ítems sin inventario físico — no se descuenta al vender)</span>
+      </label>
+      <div class="grid grid-2" id="gridProdStockControl">
         <div class="field">
           <label>Alerta de bajo stock cuando queden</label>
           <input type="number" id="prodStockMinimo" min="0" step="1" placeholder="3">
@@ -979,6 +1004,17 @@
         </div>
       </div>
 
+      <div id="exportDteBloque" style="margin-bottom:14px;">
+        <span class="section-label">Documento tributario</span>
+        <div class="chip-group chip-group-block" id="exportDteChips">
+          <button class="chip active" data-dte="TODAS">Todas</button>
+          <button class="chip" data-dte="BOLETA">Solo Boletas</button>
+          <button class="chip" data-dte="FACTURA">Solo Facturas</button>
+          <button class="chip" data-dte="SIN DTE">Solo Sin DTE</button>
+          <button class="chip" data-dte="EMITIDOS">Boletas + Facturas</button>
+        </div>
+      </div>
+
       <p class="modal-hint" id="modalPeriodoResumen">Período seleccionado: hoy</p>
 
       <div class="modal-foot">
@@ -1004,6 +1040,10 @@
         <div class="field">
           <label>Fecha</label>
           <input type="date" id="editVentaFecha">
+        </div>
+        <div class="field">
+          <label>Hora</label>
+          <input type="time" id="editVentaHora">
         </div>
         <div class="field">
           <label>Cliente</label>
@@ -1032,6 +1072,45 @@
       <div class="modal-foot">
         <button class="btn btn-ghost" id="btnCancelarEditarVenta">Cancelar</button>
         <button class="btn btn-primary" id="btnGuardarEdicionVenta">Guardar Cambios</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: EXPORTAR COMPRAS (período → formato) -->
+  <div id="modalExportarCompras" class="modal-overlay">
+    <div class="modal-box" style="max-width: 540px;">
+      <h2>📤 Exportar Compras</h2>
+      <p class="modal-hint">Elige el período y luego el formato de exportación.</p>
+
+      <div style="margin: 18px 0 14px;">
+        <span class="section-label">Período</span>
+        <div class="chip-group chip-group-block" id="comprasExportChips">
+          <button class="chip active" data-periodo="hoy">Hoy</button>
+          <button class="chip" data-periodo="semana">Esta Semana</button>
+          <button class="chip" data-periodo="mes">Este Mes</button>
+          <button class="chip" data-periodo="anio">Este Año</button>
+          <button class="chip" data-periodo="personalizado">📅 Personalizado</button>
+        </div>
+      </div>
+
+      <div class="grid grid-2" id="comprasExportFechasPersonalizadas" style="display:none; margin-bottom:8px;">
+        <div class="field">
+          <label>Desde</label>
+          <input type="date" id="comprasExportFechaDesde">
+        </div>
+        <div class="field">
+          <label>Hasta</label>
+          <input type="date" id="comprasExportFechaHasta">
+        </div>
+      </div>
+
+      <p class="modal-hint" id="comprasExportResumen">Período seleccionado: hoy</p>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarExportarCompras">Cancelar</button>
+        <button class="btn btn-outline" id="btnExportarComprasExcelModal">📊 Excel</button>
+        <button class="btn btn-outline" id="btnExportarComprasCSVModal">📄 CSV</button>
+        <button class="btn btn-green" id="btnExportarComprasPDFModal">🧾 PDF</button>
       </div>
     </div>
   </div>
@@ -1420,18 +1499,18 @@
       <div class="grid grid-3" style="margin-top:18px;">
         <div class="field" style="position:relative;">
           <label>Área / Tipo *</label>
-          <input type="text" id="repuestoArea" list="listaAreasRepuesto" placeholder="Teléfonos, Laptops, Consolas, Componentes SMD">
-          <datalist id="listaAreasRepuesto"></datalist>
+          <input type="text" id="repuestoArea" placeholder="Teléfonos, Laptops, Consolas, Componentes SMD" autocomplete="off">
+          <div id="sugerenciasRepuestoArea" class="suggestions-box"></div>
         </div>
-        <div class="field">
+        <div class="field" style="position:relative;">
           <label>Categoría Base *</label>
-          <input type="text" id="repuestoCategoria" list="listaCategoriasRepuesto" placeholder="Batería, Pantalla, FPC, Sub-Board, BIOS">
-          <datalist id="listaCategoriasRepuesto"></datalist>
+          <input type="text" id="repuestoCategoria" placeholder="Batería, Pantalla, FPC, Sub-Board, BIOS" autocomplete="off">
+          <div id="sugerenciasRepuestoCategoria" class="suggestions-box"></div>
         </div>
-        <div class="field">
+        <div class="field" style="position:relative;">
           <label>Modelo Exacto / Ficha *</label>
-          <input type="text" id="repuestoModelo" list="listaModelosRepuesto" placeholder="25Q128JVPQ, BN53...">
-          <datalist id="listaModelosRepuesto"></datalist>
+          <input type="text" id="repuestoModelo" placeholder="25Q128JVPQ, BN53..." autocomplete="off">
+          <div id="sugerenciasRepuestoModelo" class="suggestions-box"></div>
         </div>
       </div>
 
@@ -1455,7 +1534,12 @@
         </div>
       </div>
 
-      <div class="grid grid-3" style="margin-top:12px;">
+      <label class="check-item" id="itemRepuestoStockIlimitado" style="margin-top:12px;">
+        <input type="checkbox" id="repuestoStockIlimitado">
+        <span>♾️ Stock ilimitado (mano de obra u otro ítem sin inventario físico — no se descuenta ni se reserva)</span>
+      </label>
+
+      <div class="grid grid-3" id="gridRepuestoStockControl" style="margin-top:12px;">
         <div class="field">
           <label>Alerta de bajo stock cuando queden</label>
           <input type="number" id="repuestoStockMinimo" min="0" step="1" placeholder="2">
@@ -1477,6 +1561,37 @@
       <div class="modal-foot">
         <button class="btn btn-ghost" id="btnCancelarRepuesto">Cancelar</button>
         <button class="btn btn-primary" id="btnGuardarRepuesto">Guardar Repuesto</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: ADMINISTRAR ÁREAS Y CATEGORÍAS DE REPUESTOS -->
+  <div id="modalAdminCategorias" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <h2>🗂️ Administrar Áreas y Categorías</h2>
+      <p class="modal-hint">Renombrar actualiza automáticamente todos los repuestos que usan ese valor. Solo se puede eliminar un valor si ningún repuesto lo está usando.</p>
+
+      <div class="grid grid-2" style="margin-top:18px; align-items:start;">
+        <div>
+          <span class="section-label">Áreas / Tipo</span>
+          <div class="admin-cat-lista" id="listaAdminAreas"></div>
+          <div class="admin-cat-nuevo">
+            <input type="text" id="nuevaAreaInput" placeholder="Nueva área / tipo...">
+            <button class="btn btn-outline btn-sm" id="btnNuevaArea">➕ Agregar</button>
+          </div>
+        </div>
+        <div>
+          <span class="section-label">Categorías Base</span>
+          <div class="admin-cat-lista" id="listaAdminCategorias"></div>
+          <div class="admin-cat-nuevo">
+            <input type="text" id="nuevaCategoriaInput" placeholder="Nueva categoría base...">
+            <button class="btn btn-outline btn-sm" id="btnNuevaCategoria">➕ Agregar</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCerrarAdminCategorias">Cerrar</button>
       </div>
     </div>
   </div>

@@ -225,6 +225,52 @@ function descargarArchivo(nombre, contenido, tipo = 'application/json') {
   setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
+/* ------------------------------------------------------------
+   AUTOCOMPLETADO DE TEXTO CON ESTILO PROPIO
+   Sugiere valores existentes mientras se escribe (mismo look que el
+   buscador de productos), pero SIEMPRE permite quedarse con lo que el
+   usuario haya tecleado — no fuerza a elegir una opción de la lista.
+   Reemplaza el <datalist> nativo, que en el celular (sobre todo iOS)
+   se ve y filtra de forma inconsistente.
+   ------------------------------------------------------------ */
+function activarAutocompletoTexto(input, sugerenciasEl, obtenerOpciones) {
+  if (!input || !sugerenciasEl) return;
+
+  function render() {
+    const q = (input.value || '').trim().toLowerCase();
+    const opciones = obtenerOpciones() || [];
+    const filtradas = (q ? opciones.filter(v => v.toLowerCase().includes(q)) : opciones).slice(0, 8);
+
+    if (filtradas.length === 0) {
+      sugerenciasEl.classList.remove('show');
+      sugerenciasEl.innerHTML = '';
+      return;
+    }
+
+    sugerenciasEl.innerHTML = filtradas.map(v =>
+      `<div class="suggestion-item" data-valor="${v.replace(/"/g, '&quot;')}"><span>${v}</span></div>`
+    ).join('');
+    sugerenciasEl.classList.add('show');
+
+    sugerenciasEl.querySelectorAll('[data-valor]').forEach(item => {
+      // mousedown (no click): evita que el input pierda foco antes de leer el valor
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        input.value = item.dataset.valor;
+        sugerenciasEl.classList.remove('show');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.focus();
+      });
+    });
+  }
+
+  input.addEventListener('focus', render);
+  input.addEventListener('input', render);
+  document.addEventListener('click', (e) => {
+    if (e.target !== input && !sugerenciasEl.contains(e.target)) sugerenciasEl.classList.remove('show');
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   initTema();
   initNavegacion();
