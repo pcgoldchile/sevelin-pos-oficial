@@ -107,7 +107,28 @@ const API = {
     actualizar: (id, c) => apiRequest(`/compras/${id}`, { method: 'PUT', body: c }),
     eliminar: (id) => apiRequest(`/compras/${id}`, { method: 'DELETE' }),
     eliminarLote: (ids, pin) => apiRequest('/compras/eliminar-lote', { method: 'POST', body: { ids, pin } }),
-    subirArchivo: (nombre, tipo, base64) => apiRequest('/compras/archivo', { method: 'POST', body: { nombre, tipo, base64 } })
+    subirArchivo: (nombre, tipo, base64) => apiRequest('/compras/archivo', { method: 'POST', body: { nombre, tipo, base64 } }),
+
+    // Clasificaciones dinámicas de gastos
+    listarClasificaciones: (incluirInactivas) =>
+      apiRequest('/compras/clasificaciones' + (incluirInactivas ? '?incluir_inactivas=true' : '')),
+    crearClasificacion: (nombre, descripcion) =>
+      apiRequest('/compras/clasificaciones', { method: 'POST', body: { nombre, descripcion } }),
+    actualizarClasificacion: (id, cambios) =>
+      apiRequest(`/compras/clasificaciones/${id}`, { method: 'PUT', body: cambios }),
+    eliminarClasificacion: (id) =>
+      apiRequest(`/compras/clasificaciones/${id}`, { method: 'DELETE' })
+  },
+
+  mermas: {
+    listar: (desde, hasta) => {
+      const q = new URLSearchParams();
+      if (desde) q.set('desde', desde);
+      if (hasta) q.set('hasta', hasta);
+      const cadena = q.toString();
+      return apiRequest('/mermas' + (cadena ? `?${cadena}` : ''));
+    },
+    registrar: (datos) => apiRequest('/mermas', { method: 'POST', body: datos })
   },
 
   repuestos: {

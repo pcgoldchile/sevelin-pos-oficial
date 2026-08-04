@@ -228,8 +228,8 @@ app.get('/api/me', auth(), (req, res) => {
 app.get('/api/health', (_req, res) => res.json({
   ok: true,
   servicio: 'sevelin-pos-api',
-  version: '2026-08-03',
-  modulos: ['productos', 'ventas', 'compras', 'ot', 'repuestos', 'encargos']
+  version: '2026-08-04',
+  modulos: ['productos', 'ventas', 'gastos', 'ot', 'repuestos', 'encargos', 'mermas', 'clasificaciones']
 }));
 
 /* ============================================================
@@ -781,23 +781,54 @@ app.post('/api/ventas/:id/dte', auth(), async (req, res) => {
 /* ============================================================
    COMPRAS Y GASTOS  (solo admin: son datos de costos)
    ============================================================ */
-const CLASIFICACIONES = [
-  'Mercadería / Productos para Reventa',
-  'Activo Fijo (Maquinaria, Herramientas, Equipamiento)',
-  'Insumos / Consumibles Taller',
-  'Gastos Operativos (Servicios, Arriendo, etc.)'
-];
+const CLASIFICACION_MERMA = 'Mermas / Pérdidas de Inventario';
 
-function sanearCompra(body = {}) {
+/* Las clasificaciones ahora viven en su propia tabla y se validan contra
+   ella (antes eran una lista fija en el código y un CHECK en la base). */
+async function clasificacionValida(nombre) {
+  const { data } = await db.from('compra_clasificaciones')
+    .select('nombre, activo').eq('nombre', nombre).maybeSingle();
+  return !!(data && data.activo);
+}
+
+/* Convierte lo que llega del formulario en una marca de tiempo correcta.
+   Acepta:
+     - "2026-08-04T15:30"      (input datetime-local)
+     - "2026-08-04" + hora     (fecha + campo de hora aparte)
+   BUG CORREGIDO: antes se hacía new Date('2026-08-04').toISOString(), que
+   interpreta la fecha como medianoche UTC; en Chile eso caía el día
+   anterior a las 20:00 o 21:00, así que el gasto quedaba con fecha
+   equivocada. Ahora se interpreta explícitamente en America/Santiago. */
+function fechaHoraDeGasto(valorFecha, valorHora) {
+  const texto = String(valorFecha || '').trim();
+  if (!texto) return new Date().toISOString();
+
+  // datetime-local: "YYYY-MM-DDTHH:MM"
+  const conHora = texto.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{1,2}:\d{2})/);
+  if (conHora) return marcaDeTiempoChile(conHora[1], conHora[2]);
+
+  // solo fecha: se usa la hora indicada aparte, o la hora actual de Chile
+  const soloFecha = texto.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (soloFecha) return marcaDeTiempoChile(soloFecha[1], horaValida(valorHora) || horaChileActual());
+
+  // Cualquier otro formato (ISO completo, por ejemplo) se respeta tal cual
+  const d = new Date(texto);
+  return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+}
+
+async function sanearCompra(body = {}) {
   const clasificacion = String(body.clasificacion || '').trim();
-  if (!CLASIFICACIONES.includes(clasificacion)) return { error: 'Clasificación no válida' };
+  if (!clasificacion) return { error: 'Indica la clasificación del gasto' };
+  if (!(await clasificacionValida(clasificacion))) {
+    return { error: `La clasificación "${clasificacion}" no existe o está desactivada` };
+  }
 
   const costo = num(body.costo_total);
   if (costo <= 0) return { error: 'El costo total debe ser mayor a 0' };
 
   return {
     datos: {
-      fecha: body.fecha ? new Date(body.fecha).toISOString() : new Date().toISOString(),
+      fecha: fechaHoraDeGasto(body.fecha, body.hora),
       proveedor: (body.proveedor || '').trim() || null,
       clasificacion,
       costo_total: costo,
@@ -824,7 +855,7 @@ app.get('/api/compras', auth(true), async (req, res) => {
 });
 
 app.post('/api/compras', auth(true), async (req, res) => {
-  const { datos, error: errValidacion } = sanearCompra(req.body);
+  const { datos, error: errValidacion } = await sanearCompra(req.body);
   if (errValidacion) return enviarError(res, 400, errValidacion);
 
   const { data, error } = await db.from('compras').insert([datos]).select().single();
@@ -833,7 +864,7 @@ app.post('/api/compras', auth(true), async (req, res) => {
 });
 
 app.put('/api/compras/:id', auth(true), async (req, res) => {
-  const { datos, error: errValidacion } = sanearCompra(req.body);
+  const { datos, error: errValidacion } = await sanearCompra(req.body);
   if (errValidacion) return enviarError(res, 400, errValidacion);
 
   const { data, error } = await db.from('compras').update(datos).eq('id', req.params.id).select().single();
@@ -859,6 +890,106 @@ app.delete('/api/compras/:id', auth(true), async (req, res) => {
 /* Subida de factura / comprobante al bucket "compras-documentos".
    El archivo llega en base64 y sube con service_role: la llave nunca
    pasa por el navegador. */
+/* ---------- Clasificaciones de gastos (CRUD dinámico) ----------
+   No colisionan con "/api/compras/:id" porque tienen un segmento más
+   ("/compras/clasificaciones/5" vs "/compras/5"), así que Express las
+   distingue sin importar el orden de registro. */
+app.get('/api/compras/clasificaciones', auth(), async (req, res) => {
+  const { incluir_inactivas } = req.query;
+
+  let q = db.from('compra_clasificaciones').select('*').order('nombre');
+  if (incluir_inactivas !== 'true') q = q.eq('activo', true);
+
+  const { data, error } = await q;
+  if (error) return enviarError(res, 500, error.message);
+
+  // Cuántos gastos usa cada clasificación (para avisar antes de borrar)
+  const { data: compras } = await db.from('compras').select('clasificacion');
+  const usos = {};
+  (compras || []).forEach(c => { if (c.clasificacion) usos[c.clasificacion] = (usos[c.clasificacion] || 0) + 1; });
+
+  res.json((data || []).map(c => ({ ...c, usos: usos[c.nombre] || 0 })));
+});
+
+app.post('/api/compras/clasificaciones', auth(true), async (req, res) => {
+  const nombre = String(req.body?.nombre || '').trim();
+  if (!nombre) return enviarError(res, 400, 'Escribe el nombre de la clasificación');
+
+  const { data, error } = await db.from('compra_clasificaciones')
+    .insert([{ nombre, descripcion: (req.body?.descripcion || '').trim() || null, activo: true }])
+    .select().single();
+
+  if (error) {
+    const duplicado = /duplicate|unique/i.test(error.message);
+    return enviarError(res, duplicado ? 409 : 500, duplicado ? 'Ya existe una clasificación con ese nombre' : error.message);
+  }
+  res.status(201).json(data);
+});
+
+/* Renombrar arrastra el cambio a todos los gastos que la usan, para no
+   dejar registros históricos apuntando a un nombre que ya no existe. */
+app.put('/api/compras/clasificaciones/:id', auth(true), async (req, res) => {
+  const nombre = String(req.body?.nombre || '').trim();
+  if (!nombre) return enviarError(res, 400, 'Escribe el nombre de la clasificación');
+
+  const { data: actual, error: errActual } = await db.from('compra_clasificaciones')
+    .select('*').eq('id', req.params.id).single();
+  if (errActual) return enviarError(res, 404, 'No se encontró esa clasificación');
+
+  // Se guarda el nombre anterior ANTES de actualizar: después de la
+  // escritura, "actual" ya refleja el nombre nuevo y la comparación para
+  // decidir la cascada nunca se cumpliría.
+  const nombreAnterior = actual.nombre;
+
+  const cambios = {
+    nombre,
+    descripcion: req.body?.descripcion !== undefined ? ((req.body.descripcion || '').trim() || null) : actual.descripcion,
+    activo: req.body?.activo !== undefined ? !!req.body.activo : actual.activo
+  };
+
+  const { data, error } = await db.from('compra_clasificaciones')
+    .update(cambios).eq('id', req.params.id).select().single();
+
+  if (error) {
+    const duplicado = /duplicate|unique/i.test(error.message);
+    return enviarError(res, duplicado ? 409 : 500, duplicado ? 'Ya existe otra clasificación con ese nombre' : error.message);
+  }
+
+  if (nombreAnterior !== nombre) {
+    const { error: errCascada } = await db.from('compras')
+      .update({ clasificacion: nombre }).eq('clasificacion', nombreAnterior);
+    if (errCascada) return enviarError(res, 500, errCascada.message);
+  }
+
+  res.json(data);
+});
+
+/* Si la clasificación ya tiene gastos asociados NO se borra: se desactiva,
+   para no romper el historial contable. Solo se elimina de verdad cuando
+   no la usa ningún registro. */
+app.delete('/api/compras/clasificaciones/:id', auth(true), async (req, res) => {
+  const { data: actual, error: errActual } = await db.from('compra_clasificaciones')
+    .select('*').eq('id', req.params.id).single();
+  if (errActual) return enviarError(res, 404, 'No se encontró esa clasificación');
+
+  const { count } = await db.from('compras')
+    .select('id', { count: 'exact', head: true }).eq('clasificacion', actual.nombre);
+
+  if ((count || 0) > 0) {
+    const { error } = await db.from('compra_clasificaciones')
+      .update({ activo: false }).eq('id', req.params.id);
+    if (error) return enviarError(res, 500, error.message);
+    return res.json({
+      ok: true, desactivada: true, usos: count,
+      mensaje: `Tiene ${count} gasto(s) asociados: se desactivó en vez de eliminarse, para no alterar el historial.`
+    });
+  }
+
+  const { error } = await db.from('compra_clasificaciones').delete().eq('id', req.params.id);
+  if (error) return enviarError(res, 500, error.message);
+  res.json({ ok: true, desactivada: false });
+});
+
 app.post('/api/compras/archivo', auth(true), async (req, res) => {
   try {
     const { nombre, tipo, base64 } = req.body || {};
@@ -1258,6 +1389,108 @@ app.delete('/api/ot/:otId/repuestos/:id', auth(), async (req, res) => {
   const { error } = await db.from('ot_repuestos').delete().eq('id', req.params.id).eq('ot_id', req.params.otId);
   if (error) return enviarError(res, 500, error.message);
   res.json({ ok: true, stock_devuelto: !!fila.stock_descontado });
+});
+
+/* ============================================================
+   MERMAS / PÉRDIDAS DE INVENTARIO  (solo admin)
+   Dar de baja stock dañado, robado o vencido. Cada merma:
+     1. descuenta el stock del producto o repuesto,
+     2. genera automáticamente un gasto en "compras" con la clasificación
+        "Mermas / Pérdidas de Inventario" por (cantidad × costo unitario),
+     3. queda registrada en la tabla "mermas" para auditoría.
+   NO genera venta ni toca utilidades comerciales.
+   ============================================================ */
+app.get('/api/mermas', auth(true), async (req, res) => {
+  const { desde, hasta } = req.query;
+
+  let q = db.from('mermas').select('*').order('id', { ascending: false });
+  if (desde) q = q.gte('creado_en', desde);
+  if (hasta) q = q.lte('creado_en', hasta + 'T23:59:59');
+
+  const { data, error } = await q;
+  if (error) return enviarError(res, 500, error.message);
+  res.json(data || []);
+});
+
+app.post('/api/mermas', auth(true), async (req, res) => {
+  const tipo = String(req.body?.tipo || '').trim().toUpperCase();
+  const cantidad = num(req.body?.cantidad);
+  const observacion = String(req.body?.observacion || '').trim();
+  const itemId = req.body?.item_id;
+
+  if (!['PRODUCTO', 'REPUESTO'].includes(tipo)) return enviarError(res, 400, 'Indica si la merma es de un producto o de un repuesto');
+  if (!itemId) return enviarError(res, 400, 'Selecciona el ítem a dar de baja');
+  if (cantidad <= 0) return enviarError(res, 400, 'La cantidad debe ser mayor a 0');
+  if (!observacion) return enviarError(res, 400, 'La observación / motivo es obligatoria');
+
+  const esProducto = tipo === 'PRODUCTO';
+  const tabla = esProducto ? 'productos' : 'repuestos';
+
+  try {
+    const { data: item, error: errItem } = await db.from(tabla)
+      .select('*').eq('id', itemId).maybeSingle();
+    if (errItem) throw new Error(errItem.message);
+    if (!item) return enviarError(res, 404, 'No se encontró el ítem indicado');
+
+    const nombre = esProducto ? item.nombre : `${item.area} · ${item.categoria} · ${item.modelo}`;
+
+    // Los ítems de stock ilimitado (servicios) no tienen inventario que dar de baja
+    if (item.stock_ilimitado) {
+      return enviarError(res, 400, `"${nombre}" está marcado como stock ilimitado: no tiene inventario físico que dar de baja.`);
+    }
+    if (num(item.stock) < cantidad) {
+      return enviarError(res, 400, `No hay stock suficiente: solo quedan ${item.stock} unidad(es) de "${nombre}".`);
+    }
+
+    // Ambas tablas guardan el costo en 'costo_unitario'
+    const costoUnitario = num(item.costo_unitario);
+    const costoTotal = costoUnitario * cantidad;
+
+    // 1) Se descuenta el stock
+    const { error: errStock } = await db.from(tabla)
+      .update({ stock: num(item.stock) - cantidad, stock_actualizado_en: new Date().toISOString() })
+      .eq('id', itemId);
+    if (errStock) throw new Error(errStock.message);
+
+    // 2) Gasto automático. Se asegura que la clasificación exista, por si
+    //    el script 08 no se ha ejecutado o alguien la desactivó.
+    await db.from('compra_clasificaciones')
+      .upsert([{ nombre: CLASIFICACION_MERMA, descripcion: 'Stock dado de baja por daño, robo o vencimiento', activo: true }],
+              { onConflict: 'nombre', ignoreDuplicates: true });
+
+    const detalle = `Merma de ${cantidad} × ${nombre} — ${observacion}`;
+    const { data: gasto, error: errGasto } = await db.from('compras').insert([{
+      fecha: new Date().toISOString(),
+      proveedor: 'Ajuste interno de inventario',
+      clasificacion: CLASIFICACION_MERMA,
+      costo_total: costoTotal,
+      descripcion: detalle,
+      origen: 'MERMA'
+    }]).select().single();
+    if (errGasto) throw new Error(errGasto.message);
+
+    // 3) Registro de la merma
+    const { data: merma, error: errMerma } = await db.from('mermas').insert([{
+      tipo,
+      producto_id: esProducto ? itemId : null,
+      repuesto_id: esProducto ? null : itemId,
+      nombre,
+      cantidad,
+      costo_unitario: costoUnitario,
+      costo_total: costoTotal,
+      observacion,
+      compra_id: gasto.id
+    }]).select().single();
+    if (errMerma) throw new Error(errMerma.message);
+
+    res.status(201).json({
+      ...merma,
+      stock_restante: num(item.stock) - cantidad,
+      gasto_registrado: { id: gasto.id, clasificacion: gasto.clasificacion, costo_total: gasto.costo_total }
+    });
+  } catch (err) {
+    enviarError(res, 500, err.message || 'No se pudo registrar la merma');
+  }
 });
 
 /* ============================================================

@@ -46,7 +46,7 @@
         <button class="nav-btn" data-view="view-encargos">💰 Abonos y Encargos</button>
         <button class="nav-btn" data-view="view-repuestos">🔩 Repuestos Taller</button>
         <button class="nav-btn admin-only" data-view="view-productos">📦 Productos</button>
-        <button class="nav-btn admin-only" data-view="view-compras">🧾 Compras</button>
+        <button class="nav-btn admin-only" data-view="view-compras">🧾 Gastos</button>
       </nav>
       <button class="theme-toggle" id="btnTema" title="Cambiar tema" aria-label="Cambiar tema">🌙</button>
       <button class="btn btn-outline btn-sm" id="btnLogout" title="Cerrar sesión">🚪 Cerrar Sesión</button>
@@ -165,7 +165,10 @@
               <span>Total</span>
               <strong id="cartTotalText">$0</strong>
             </div>
-            <button class="btn btn-green btn-lg" id="btnFinalizarVenta">💳 Finalizar Venta</button>
+            <div class="toolbar-group">
+              <button class="btn btn-outline admin-only" id="btnMermaPOS" title="Dar de baja stock dañado, robado o vencido">📉 Registrar Merma</button>
+              <button class="btn btn-green btn-lg" id="btnFinalizarVenta">💳 Finalizar Venta</button>
+            </div>
           </div>
         </div>
 
@@ -578,12 +581,13 @@
       <div class="card">
         <div class="card-head">
           <div>
-            <h2>Compras y Gastos</h2>
-            <p class="subtitle" id="comprasPeriodoLabel">Registro de mercadería, activos, insumos y gastos operativos.</p>
+            <h2>Gastos y Compras</h2>
+            <p class="subtitle" id="comprasPeriodoLabel">Registro de mercadería, activos, insumos, gastos operativos y mermas.</p>
           </div>
           <div class="toolbar-group">
+            <button class="btn btn-outline" id="btnAdminClasificaciones">🗂️ Clasificaciones</button>
             <button class="btn btn-outline" id="btnExportarCompras">📤 Exportar</button>
-            <button class="btn btn-primary" id="btnNuevaCompra">➕ Registrar Compra</button>
+            <button class="btn btn-primary" id="btnNuevaCompra">➕ Registrar Gasto</button>
           </div>
         </div>
 
@@ -618,10 +622,6 @@
             <label>Clasificación</label>
             <select id="comprasClasificacionFiltro">
               <option value="">Todas las clasificaciones</option>
-              <option value="Mercadería / Productos para Reventa">Mercadería / Productos para Reventa</option>
-              <option value="Activo Fijo (Maquinaria, Herramientas, Equipamiento)">Activo Fijo (Maquinaria, Herramientas, Equipamiento)</option>
-              <option value="Insumos / Consumibles Taller">Insumos / Consumibles Taller</option>
-              <option value="Gastos Operativos (Servicios, Arriendo, etc.)">Gastos Operativos (Servicios, Arriendo, etc.)</option>
             </select>
           </div>
           <div class="field" style="min-width:240px;">
@@ -745,6 +745,7 @@
             <p class="subtitle" id="repuestosResumenLabel">Inventario propio del taller, fuera del catálogo comercial.</p>
           </div>
           <div class="toolbar-group">
+            <button class="btn btn-outline admin-only" id="btnMermaRepuestos" title="Dar de baja repuestos dañados o perdidos">📉 Registrar Merma</button>
             <button class="btn btn-gold" id="btnValorizacionRepuestos">💎 Valorización</button>
             <button class="btn btn-outline admin-only" id="btnAdminCategoriasRepuesto">🗂️ Administrar Categorías</button>
             <button class="btn btn-primary admin-only" id="btnNuevoRepuesto">➕ Nuevo Repuesto</button>
@@ -1118,14 +1119,14 @@
   <!-- MODAL: REGISTRAR COMPRA -->
   <div id="modalCompra" class="modal-overlay">
     <div class="modal-box modal-lg">
-      <h2 id="compraFormTitle">Registrar Compra</h2>
+      <h2 id="compraFormTitle">Registrar Gasto</h2>
       <p class="modal-hint">Adjunta la factura y el comprobante para dejar el gasto respaldado.</p>
       <input type="hidden" id="compraEditId">
 
       <div class="grid grid-2" style="margin-top:18px;">
         <div class="field">
-          <label>Fecha *</label>
-          <input type="date" id="compraFecha">
+          <label>Fecha y hora *</label>
+          <input type="datetime-local" id="compraFecha">
         </div>
         <div class="field">
           <label>Proveedor</label>
@@ -1135,12 +1136,7 @@
 
       <div class="field" style="margin-top:12px;">
         <label>Clasificación *</label>
-        <select id="compraClasificacion">
-          <option value="Mercadería / Productos para Reventa">Mercadería / Productos para Reventa</option>
-          <option value="Activo Fijo (Maquinaria, Herramientas, Equipamiento)">Activo Fijo (Maquinaria, Herramientas, Equipamiento)</option>
-          <option value="Insumos / Consumibles Taller">Insumos / Consumibles Taller</option>
-          <option value="Gastos Operativos (Servicios, Arriendo, etc.)">Gastos Operativos (Servicios, Arriendo, etc.)</option>
-        </select>
+        <select id="compraClasificacion"></select>
       </div>
 
       <div class="grid grid-2" style="margin-top:12px;">
@@ -1178,7 +1174,7 @@
 
       <div class="modal-foot">
         <button class="btn btn-ghost" id="btnCancelarCompra">Cancelar</button>
-        <button class="btn btn-primary" id="btnGuardarCompra">Guardar Compra</button>
+        <button class="btn btn-primary" id="btnGuardarCompra">Guardar Gasto</button>
       </div>
     </div>
   </div>
@@ -1671,6 +1667,78 @@
     </div>
   </div>
 
+  <!-- MODAL: REGISTRAR MERMA / PÉRDIDA -->
+  <div id="modalMerma" class="modal-overlay">
+    <div class="modal-box" style="max-width: 560px;">
+      <h2>📉 Registrar Merma / Pérdida</h2>
+      <p class="modal-hint">
+        Da de baja stock dañado, robado o vencido. Se descuenta el inventario y se
+        registra automáticamente un gasto por el costo de lo perdido.
+      </p>
+
+      <div class="chip-group chip-group-block" id="mermaTipoChips" style="margin-top:16px;">
+        <button class="chip active" data-tipo="PRODUCTO">📦 Producto del catálogo</button>
+        <button class="chip" data-tipo="REPUESTO">🔩 Repuesto de taller</button>
+      </div>
+
+      <div class="field" style="position:relative; margin-top:14px;">
+        <label>Buscar ítem *</label>
+        <input type="text" id="mermaBuscar" placeholder="Nombre, SKU, modelo o categoría..." autocomplete="off">
+        <div id="mermaSugerencias" class="suggestions-box"></div>
+      </div>
+
+      <div class="confirmar-pin-resumen" id="mermaSeleccion" style="display:none;"></div>
+
+      <div class="grid grid-2" style="margin-top:12px;">
+        <div class="field">
+          <label>Cantidad a dar de baja *</label>
+          <input type="number" id="mermaCantidad" min="1" step="1" value="1">
+        </div>
+        <div class="field">
+          <label>Costo que se registrará</label>
+          <input type="text" id="mermaCostoTotal" value="$0" disabled>
+        </div>
+      </div>
+
+      <div class="field" style="margin-top:12px;">
+        <label>Observación / Motivo <span class="obligatorio">*</span></label>
+        <textarea id="mermaObservacion" rows="3" placeholder="Ej: se mojaron en la bodega, batería inflada, robo en vitrina..."></textarea>
+      </div>
+
+      <p class="modal-hint" id="mermaAviso">
+        Esta operación no genera una venta ni afecta las utilidades comerciales.
+      </p>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarMerma">Cancelar</button>
+        <button class="btn btn-red" id="btnConfirmarMerma">📉 Registrar Merma</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: ADMINISTRAR CLASIFICACIONES DE GASTOS -->
+  <div id="modalClasificaciones" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <h2>🗂️ Clasificaciones de Gastos</h2>
+      <p class="modal-hint">
+        Renombrar actualiza automáticamente todos los gastos que la usan. Si una
+        clasificación tiene gastos asociados, se desactiva en vez de eliminarse
+        para no alterar el historial contable.
+      </p>
+
+      <div class="admin-cat-lista" id="listaClasificaciones" style="max-height:320px; margin-top:16px;"></div>
+
+      <div class="admin-cat-nuevo">
+        <input type="text" id="nuevaClasificacionInput" placeholder="Nueva clasificación de gasto...">
+        <button class="btn btn-outline btn-sm" id="btnNuevaClasificacion">➕ Agregar</button>
+      </div>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCerrarClasificaciones">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL: CONFIRMAR CON PIN DE ADMINISTRADOR (acciones destructivas) -->
   <div id="modalConfirmarPin" class="modal-overlay">
     <div class="modal-box" style="max-width: 460px;">
@@ -1726,6 +1794,7 @@
   <script src="js/escaner.js"></script>
   <script src="js/etiquetas.js"></script>
   <script src="js/compras.js"></script>
+  <script src="js/mermas.js"></script>
   <script src="js/encargos.js"></script>
   <script src="js/repuestos.js"></script>
   <script src="js/ot.js"></script>

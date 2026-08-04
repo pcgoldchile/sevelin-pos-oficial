@@ -12,12 +12,10 @@ let archivosPendientes = { url_documento: null, url_comprobante: null };
 let comprasSeleccionadas = new Set();
 let campoArchivoPendiente = null;   // atajo desde el ✖ de la tabla
 
-const CLASIFICACIONES_COMPRA = [
-  'Mercadería / Productos para Reventa',
-  'Activo Fijo (Maquinaria, Herramientas, Equipamiento)',
-  'Insumos / Consumibles Taller',
-  'Gastos Operativos (Servicios, Arriendo, etc.)'
-];
+/* Las clasificaciones se cargan desde el backend (tabla administrable).
+   La lista local solo actúa de respaldo si la API aún no respondió. */
+let clasificacionesList = [];
+const CLASIFICACION_MERMA = 'Mermas / Pérdidas de Inventario';
 
 const ICO_EDITAR_COMPRA = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
 const ICO_ELIMINAR_COMPRA = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>`;
@@ -73,6 +71,14 @@ const elBtnExportarComprasPDFModal = document.getElementById('btnExportarCompras
 
 let periodoExportCompras = 'hoy';
 
+// Administración de clasificaciones
+const elBtnAdminClasificaciones = document.getElementById('btnAdminClasificaciones');
+const elModalClasificaciones = document.getElementById('modalClasificaciones');
+const elListaClasificaciones = document.getElementById('listaClasificaciones');
+const elNuevaClasificacionInput = document.getElementById('nuevaClasificacionInput');
+const elBtnNuevaClasificacion = document.getElementById('btnNuevaClasificacion');
+const elBtnCerrarClasificaciones = document.getElementById('btnCerrarClasificaciones');
+
 document.addEventListener('DOMContentLoaded', () => {
   setDefaultDatesCompras();
   setupComprasEventListeners();
@@ -111,6 +117,16 @@ function setupComprasEventListeners() {
     renderComprasTabla(comprasList);
   });
 
+  if (elBtnAdminClasificaciones) elBtnAdminClasificaciones.addEventListener('click', abrirModalClasificaciones);
+  if (elBtnCerrarClasificaciones) elBtnCerrarClasificaciones.addEventListener('click', () => elModalClasificaciones?.classList.remove('show'));
+  if (elModalClasificaciones) {
+    elModalClasificaciones.addEventListener('click', (e) => { if (e.target === elModalClasificaciones) elModalClasificaciones.classList.remove('show'); });
+  }
+  if (elBtnNuevaClasificacion) elBtnNuevaClasificacion.addEventListener('click', agregarClasificacion);
+  if (elNuevaClasificacionInput) elNuevaClasificacionInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); agregarClasificacion(); }
+  });
+
   if (elBtnNuevaCompra) elBtnNuevaCompra.addEventListener('click', () => abrirModalCompra());
   if (elBtnCancelarCompra) elBtnCancelarCompra.addEventListener('click', cerrarModalCompra);
   if (elBtnGuardarCompra) elBtnGuardarCompra.addEventListener('click', guardarCompra);
@@ -145,6 +161,8 @@ function setupComprasEventListeners() {
 // ---------- Carga y filtros ----------
 async function cargarCompras() {
   if (!tokenActual() || !esAdmin()) return;
+
+  await cargarClasificaciones();
 
   const filtros = {
     desde: elComprasDesde?.value,
@@ -314,7 +332,10 @@ function renderComprasTabla(listaOriginal) {
         ${c.proveedor || '—'}
         ${c.descripcion ? `<br><small style="color:var(--text-muted);">${c.descripcion}</small>` : ''}
       </td>
-      <td><span class="badge badge-blue">${c.clasificacion}</span></td>
+      <td>
+        <span class="badge ${c.origen === 'MERMA' ? 'badge-red' : 'badge-blue'}">${c.clasificacion}</span>
+        ${c.origen === 'MERMA' ? '<br><small style="color:var(--text-muted);">📉 generado por merma</small>' : ''}
+      </td>
       <td class="num strong">${fmtCLP(c.costo_total)}</td>
       <td>${marcaDocumento(c.url_documento, 'Factura / Boleta', c.id, 'url_documento')}</td>
       <td>${marcaDocumento(c.url_comprobante, 'Comprobante de pago', c.id, 'url_comprobante')}</td>
@@ -366,9 +387,10 @@ function abrirModalCompra(compra = null, campoFoco = null) {
     editandoCompraId = compra.id;
     if (elCompraFormTitle) elCompraFormTitle.textContent = 'Editar Compra';
     if (elCompraEditId) elCompraEditId.value = compra.id;
-    if (elCompraFecha) elCompraFecha.value = String(compra.fecha || '').slice(0, 10);
+    // datetime-local necesita "YYYY-MM-DDTHH:MM" en hora local de Chile
+    if (elCompraFecha) elCompraFecha.value = tsAChile(compra.fecha).replace(' ', 'T');
     if (elCompraProveedor) elCompraProveedor.value = compra.proveedor || '';
-    if (elCompraClasificacion) elCompraClasificacion.value = compra.clasificacion || CLASIFICACIONES_COMPRA[0];
+    if (elCompraClasificacion) elCompraClasificacion.value = compra.clasificacion || '';
     if (elCompraCosto) elCompraCosto.value = compra.costo_total || 0;
     if (elCompraDescripcion) elCompraDescripcion.value = compra.descripcion || '';
     if (elCompraUrlDocumento) elCompraUrlDocumento.value = compra.url_documento || '';
@@ -377,10 +399,11 @@ function abrirModalCompra(compra = null, campoFoco = null) {
     editandoCompraId = null;
     if (elCompraFormTitle) elCompraFormTitle.textContent = 'Registrar Compra';
     if (elCompraEditId) elCompraEditId.value = '';
-    if (elCompraFecha) elCompraFecha.value = todayISO();
+    // Por defecto: hoy con la hora actual de Chile
+    if (elCompraFecha) elCompraFecha.value = `${todayISO()}T${horaActualCorta()}`;
     [elCompraProveedor, elCompraCosto, elCompraDescripcion, elCompraUrlDocumento, elCompraUrlComprobante]
       .forEach(el => { if (el) el.value = ''; });
-    if (elCompraClasificacion) elCompraClasificacion.value = CLASIFICACIONES_COMPRA[0];
+    if (elCompraClasificacion && elCompraClasificacion.options.length) elCompraClasificacion.selectedIndex = 0;
   }
 
   actualizarEstadoArchivo('url_documento');
@@ -460,7 +483,8 @@ async function guardarCompra() {
   if (costo <= 0) { showToast('Ingresa el costo total de la compra', 'err'); return; }
 
   const payload = {
-    fecha: elCompraFecha?.value || todayISO(),
+    // Viaja como "YYYY-MM-DDTHH:MM"; el backend lo interpreta en hora de Chile
+    fecha: elCompraFecha?.value || `${todayISO()}T${horaActualCorta()}`,
     proveedor: elCompraProveedor?.value.trim() || null,
     clasificacion: elCompraClasificacion?.value,
     costo_total: costo,
@@ -643,4 +667,174 @@ function exportarComprasPDF(compras, desde, hasta) {
 
   doc.save(`compras_${desde}_a_${hasta}.pdf`);
   showToast('PDF generado', 'ok');
+}
+
+// ============================================================
+// CLASIFICACIONES DE GASTOS (carga dinámica + CRUD)
+// ============================================================
+async function cargarClasificaciones() {
+  try {
+    clasificacionesList = await API.compras.listarClasificaciones(true);
+  } catch (err) {
+    console.error('Error al cargar clasificaciones:', err.message || err);
+    clasificacionesList = clasificacionesList.length ? clasificacionesList : [];
+  }
+  poblarSelectoresClasificacion();
+}
+
+/* Llena tanto el filtro de la tabla como el selector del modal.
+   En el modal solo se ofrecen las ACTIVAS; en el filtro se incluyen las
+   desactivadas, porque puede haber gastos históricos que las usen. */
+function poblarSelectoresClasificacion() {
+  const activas = clasificacionesList.filter(c => c.activo);
+
+  if (elCompraClasificacion) {
+    const actual = elCompraClasificacion.value;
+    elCompraClasificacion.innerHTML = activas.length
+      ? activas.map(c => `<option value="${c.nombre}">${c.nombre}</option>`).join('')
+      : '<option value="">(sin clasificaciones: crea una primero)</option>';
+    if (actual && activas.some(c => c.nombre === actual)) elCompraClasificacion.value = actual;
+  }
+
+  if (elComprasClasificacionFiltro) {
+    const actual = elComprasClasificacionFiltro.value;
+    elComprasClasificacionFiltro.innerHTML = '<option value="">Todas las clasificaciones</option>' +
+      clasificacionesList.map(c =>
+        `<option value="${c.nombre}">${c.nombre}${c.activo ? '' : ' (desactivada)'}</option>`).join('');
+    elComprasClasificacionFiltro.value = actual;
+  }
+}
+
+async function abrirModalClasificaciones() {
+  if (!elModalClasificaciones) return;
+  if (!esAdmin()) { showToast('Solo el administrador gestiona las clasificaciones', 'err'); return; }
+
+  await cargarClasificaciones();
+  renderListaClasificaciones();
+  elModalClasificaciones.classList.add('show');
+}
+
+function renderListaClasificaciones() {
+  if (!elListaClasificaciones) return;
+
+  if (clasificacionesList.length === 0) {
+    elListaClasificaciones.innerHTML = '<p class="admin-cat-vacio">Aún no hay clasificaciones registradas.</p>';
+    return;
+  }
+
+  elListaClasificaciones.innerHTML = clasificacionesList.map(c => `
+    <div class="admin-cat-row" data-id="${c.id}" style="${c.activo ? '' : 'opacity:.55;'}">
+      <span class="admin-cat-nombre" data-nombre>${c.nombre}${c.activo ? '' : ' <small>(desactivada)</small>'}</span>
+      <span class="admin-cat-usos">${c.usos} ${c.usos === 1 ? 'gasto' : 'gastos'}</span>
+      <div class="cell-actions">
+        <button class="btn btn-icon ${c.activo ? 'btn-icon-view' : 'btn-icon-edit'}" data-activar title="${c.activo ? 'Desactivar' : 'Reactivar'}">
+          ${c.activo ? '👁️' : '🚫'}
+        </button>
+        <button class="btn btn-icon btn-icon-edit" data-renombrar title="Renombrar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+        </button>
+        <button class="btn btn-icon btn-icon-del" data-eliminar title="${c.usos > 0 ? 'Tiene gastos: se desactivará' : 'Eliminar'}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+        </button>
+      </div>
+    </div>
+  `).join('');
+
+  elListaClasificaciones.querySelectorAll('[data-renombrar]').forEach(btn => {
+    btn.addEventListener('click', () => iniciarRenombreClasificacion(btn.closest('.admin-cat-row')));
+  });
+  elListaClasificaciones.querySelectorAll('[data-eliminar]').forEach(btn => {
+    btn.addEventListener('click', () => eliminarClasificacion(btn.closest('.admin-cat-row').dataset.id));
+  });
+  elListaClasificaciones.querySelectorAll('[data-activar]').forEach(btn => {
+    btn.addEventListener('click', () => alternarClasificacion(btn.closest('.admin-cat-row').dataset.id));
+  });
+}
+
+function iniciarRenombreClasificacion(fila) {
+  if (!fila) return;
+  const clasif = clasificacionesList.find(c => String(c.id) === fila.dataset.id);
+  if (!clasif) return;
+
+  const spanNombre = fila.querySelector('[data-nombre]');
+  spanNombre.innerHTML = `<input type="text" class="admin-cat-input-edit" value="${clasif.nombre.replace(/"/g, '&quot;')}">`;
+  const input = spanNombre.querySelector('input');
+  input.focus();
+  input.select();
+
+  const acciones = fila.querySelector('.cell-actions');
+  acciones.innerHTML = `
+    <button class="btn btn-icon btn-icon-view" data-guardar title="Guardar">✔</button>
+    <button class="btn btn-icon btn-icon-del" data-cancelar title="Cancelar">✖</button>
+  `;
+
+  const confirmar = async () => {
+    const nuevoNombre = input.value.trim();
+    if (!nuevoNombre) { showToast('Escribe un nombre', 'err'); return; }
+    try {
+      await API.compras.actualizarClasificacion(clasif.id, { nombre: nuevoNombre });
+      showToast('Se actualizó en todos los gastos que la usaban', 'ok');
+      await cargarClasificaciones();
+      renderListaClasificaciones();
+      cargarCompras();
+    } catch (err) {
+      showToast(err.message || 'No se pudo renombrar', 'err');
+      renderListaClasificaciones();
+    }
+  };
+
+  acciones.querySelector('[data-guardar]').addEventListener('click', confirmar);
+  acciones.querySelector('[data-cancelar]').addEventListener('click', renderListaClasificaciones);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); confirmar(); }
+    if (e.key === 'Escape') { e.preventDefault(); renderListaClasificaciones(); }
+  });
+}
+
+async function alternarClasificacion(id) {
+  const clasif = clasificacionesList.find(c => String(c.id) === String(id));
+  if (!clasif) return;
+
+  try {
+    await API.compras.actualizarClasificacion(clasif.id, { nombre: clasif.nombre, activo: !clasif.activo });
+    showToast(clasif.activo ? 'Clasificación desactivada' : 'Clasificación reactivada', 'ok');
+    await cargarClasificaciones();
+    renderListaClasificaciones();
+  } catch (err) {
+    showToast(err.message || 'No se pudo cambiar el estado', 'err');
+  }
+}
+
+async function eliminarClasificacion(id) {
+  const clasif = clasificacionesList.find(c => String(c.id) === String(id));
+  if (!clasif) return;
+
+  const aviso = clasif.usos > 0
+    ? `"${clasif.nombre}" tiene ${clasif.usos} gasto(s) asociados.\n\nNo se eliminará: se desactivará para conservar el historial contable. ¿Continuar?`
+    : `¿Eliminar la clasificación "${clasif.nombre}"?`;
+  if (!confirm(aviso)) return;
+
+  try {
+    const r = await API.compras.eliminarClasificacion(clasif.id);
+    showToast(r.desactivada ? 'Clasificación desactivada (tenía gastos asociados)' : 'Clasificación eliminada', 'ok');
+    await cargarClasificaciones();
+    renderListaClasificaciones();
+  } catch (err) {
+    showToast(err.message || 'No se pudo eliminar', 'err');
+  }
+}
+
+async function agregarClasificacion() {
+  const nombre = (elNuevaClasificacionInput?.value || '').trim();
+  if (!nombre) { showToast('Escribe un nombre', 'err'); elNuevaClasificacionInput?.focus(); return; }
+
+  try {
+    await API.compras.crearClasificacion(nombre, null);
+    if (elNuevaClasificacionInput) elNuevaClasificacionInput.value = '';
+    showToast('Clasificación agregada', 'ok');
+    await cargarClasificaciones();
+    renderListaClasificaciones();
+  } catch (err) {
+    showToast(err.message || 'No se pudo agregar', 'err');
+  }
 }
