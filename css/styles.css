@@ -885,6 +885,16 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
 
     .app-header, .app-content { padding-left: 14px; padding-right: 14px; }
     .app-header { flex-direction: column; align-items: stretch; gap: 12px; }
+
+    /* Sin min-width:0 los hijos del header no pueden encogerse por debajo de
+       su ancho de contenido: la barra de navegación (flex-wrap:nowrap, 7
+       botones) imponía ~994px y arrastraba al logo y al bloque derecho fuera
+       de la pantalla, quedando recortados por el overflow-x:hidden. */
+    .app-header > * { min-width: 0; max-width: 100%; }
+    .app-header .logo,
+    .header-right { width: 100%; min-width: 0; flex-wrap: wrap; }
+    .nav-links { width: 100%; min-width: 0; max-width: 100%; }
+
     .app-header .logo { justify-content: center; text-align: center; }
     .app-header .logo h1 { font-size: 24px; }
     .header-right { justify-content: center; }
@@ -895,6 +905,10 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
 
     /* ---------- POS ---------- */
     .pos-entry-row { flex-direction: column; align-items: stretch; }
+    /* En dirección "column" el flex-basis aplica a la ALTURA: los valores
+       pensados para el ancho en escritorio (260px, 130px, 170px) dejaban
+       huecos verticales enormes entre los campos. */
+    .pos-entry-row > * { flex: 0 0 auto; }
     .pos-entry-btn .toolbar-group { flex-direction: column; }
     .pos-entry-btn .btn { width: 100%; }
     .pos-cart-foot { flex-direction: column; align-items: stretch; }
@@ -937,6 +951,8 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
     .modal-foot .btn { width: 100%; }
 
     /* ---------- Editor de ítems (venta / OT) ---------- */
+    .row-actions { flex-direction: column; }
+    .row-actions .btn { width: 100%; }
     .edit-item-row { flex-direction: column; align-items: stretch; }
     .edit-item-nombre, .edit-item-num, .edit-item-sub { width: 100%; }
     .edit-items-totales { justify-content: flex-start; }

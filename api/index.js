@@ -1071,9 +1071,9 @@ app.delete('/api/repuestos/:id', auth(true), async (req, res) => {
    los repuestos que los usan, sin tener que editarlos uno por uno.
    Ver: admin y trabajador (para el autocompletado) · Escribir: solo admin
    ============================================================ */
-function fabricarRutasCatalogoRepuesto(nombreTabla, columnaEnRepuestos) {
+function fabricarRutasCatalogoRepuesto(segmentoUrl, nombreTabla, columnaEnRepuestos) {
   // GET: lista con cuántos repuestos usan cada valor
-  app.get(`/api/repuestos/${nombreTabla}`, auth(), async (req, res) => {
+  app.get(`/api/repuestos/${segmentoUrl}`, auth(), async (req, res) => {
     const { data: valores, error } = await db.from(nombreTabla).select('*').order('nombre');
     if (error) return enviarError(res, 500, error.message);
 
@@ -1087,7 +1087,7 @@ function fabricarRutasCatalogoRepuesto(nombreTabla, columnaEnRepuestos) {
     res.json((valores || []).map(v => ({ ...v, usos: conteo[v.nombre] || 0 })));
   });
 
-  app.post(`/api/repuestos/${nombreTabla}`, auth(true), async (req, res) => {
+  app.post(`/api/repuestos/${segmentoUrl}`, auth(true), async (req, res) => {
     const nombre = String(req.body?.nombre || '').trim();
     if (!nombre) return enviarError(res, 400, 'Escribe un nombre');
 
@@ -1101,7 +1101,7 @@ function fabricarRutasCatalogoRepuesto(nombreTabla, columnaEnRepuestos) {
 
   // Renombrar: además de actualizar el catálogo, actualiza en cascada
   // todos los repuestos que tenían el nombre anterior.
-  app.put(`/api/repuestos/${nombreTabla}/:id`, auth(true), async (req, res) => {
+  app.put(`/api/repuestos/${segmentoUrl}/:id`, auth(true), async (req, res) => {
     const nuevoNombre = String(req.body?.nombre || '').trim();
     if (!nuevoNombre) return enviarError(res, 400, 'Escribe un nombre');
 
@@ -1125,7 +1125,7 @@ function fabricarRutasCatalogoRepuesto(nombreTabla, columnaEnRepuestos) {
   });
 
   // Eliminar: solo si ningún repuesto lo está usando actualmente
-  app.delete(`/api/repuestos/${nombreTabla}/:id`, auth(true), async (req, res) => {
+  app.delete(`/api/repuestos/${segmentoUrl}/:id`, auth(true), async (req, res) => {
     const { data: actual, error: errActual } = await db.from(nombreTabla).select('*').eq('id', req.params.id).single();
     if (errActual) return enviarError(res, 404, 'No se encontró ese valor');
 
@@ -1143,8 +1143,8 @@ function fabricarRutasCatalogoRepuesto(nombreTabla, columnaEnRepuestos) {
   });
 }
 
-fabricarRutasCatalogoRepuesto('areas', 'area');
-fabricarRutasCatalogoRepuesto('categorias', 'categoria');
+fabricarRutasCatalogoRepuesto('areas', 'repuesto_areas', 'area');
+fabricarRutasCatalogoRepuesto('categorias', 'repuesto_categorias', 'categoria');
 
 /* ---------- Repuestos y mano de obra asignados a una OT ---------- */
 app.get('/api/ot/:id/repuestos', auth(), async (req, res) => {
