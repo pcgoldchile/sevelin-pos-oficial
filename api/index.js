@@ -160,6 +160,39 @@ function frenoLogin(req, res, next) {
   next();
 }
 
+/* Reconfirmación del PIN de administrador para operaciones destructivas
+   masivas (borrar todo el catálogo, todo el historial, lotes completos).
+   Se valida SIEMPRE en el servidor: aunque alguien manipule el frontend o
+   llame la API directamente, sin el PIN correcto la operación se rechaza.
+   Reutiliza el mismo freno por IP que el login para evitar fuerza bruta. */
+function exigirPinAdmin(req, res, next) {
+  /* Se responde 403 (no 401) a propósito: un 401 hace que el frontend
+     asuma "sesión expirada" y cierre la sesión del administrador. Aquí la
+     sesión es válida; lo que falta es autorizar esta operación puntual. */
+  const ip = req.headers['x-forwarded-for'] || req.ip || 'anon';
+  const ahora = Date.now();
+  const reg = intentos.get(ip) || { n: 0, hasta: 0 };
+
+  if (reg.hasta > ahora) {
+    return enviarError(res, 429, 'Demasiados intentos fallidos. Espera un minuto antes de reintentar.');
+  }
+
+  const pin = String(req.body?.pin || req.headers['x-admin-pin'] || '').trim();
+  if (!pin) return enviarError(res, 403, 'Esta acción requiere confirmar el PIN de administrador');
+
+  if (pin !== String(ADMIN_PIN)) {
+    reg.n = (reg.n || 0) + 1;
+    reg.ts = ahora;
+    if (reg.n >= 5) { reg.hasta = ahora + 60 * 1000; reg.n = 0; }
+    intentos.set(ip, reg);
+    return enviarError(res, 403, 'PIN de administrador incorrecto');
+  }
+
+  reg.n = 0;
+  intentos.set(ip, reg);
+  next();
+}
+
 /* ============================================================
    SESIÓN
    ============================================================ */
@@ -267,7 +300,7 @@ app.put('/api/productos/:id', auth(true), async (req, res) => {
 
 // Eliminación masiva desde la barra de selección (lista explícita de ids).
 // Se registra ANTES de "/:id" para no chocar con esa ruta.
-app.post('/api/productos/eliminar-lote', auth(true), async (req, res) => {
+app.post('/api/productos/eliminar-lote', auth(true), exigirPinAdmin, async (req, res) => {
   const ids = (Array.isArray(req.body?.ids) ? req.body.ids : []).map(Number).filter(Boolean);
   if (ids.length === 0) return enviarError(res, 400, 'No hay productos seleccionados');
 
@@ -276,12 +309,16 @@ app.post('/api/productos/eliminar-lote', auth(true), async (req, res) => {
   res.json({ eliminadas: ids.length });
 });
 
+/* Borrado total del catálogo: ruta propia para poder exigir el PIN sin
+   afectar al borrado de un producto individual. Se registra ANTES de
+   "/:id" para que no la capture esa ruta. */
+app.delete('/api/productos/todos', auth(true), exigirPinAdmin, async (req, res) => {
+  const { error } = await db.from('productos').delete().gt('id', 0);
+  if (error) return enviarError(res, 500, error.message);
+  res.json({ ok: true, alcance: 'todos' });
+});
+
 app.delete('/api/productos/:id', auth(true), async (req, res) => {
-  if (req.params.id === 'todos') {
-    const { error } = await db.from('productos').delete().gt('id', 0);
-    if (error) return enviarError(res, 500, error.message);
-    return res.json({ ok: true, alcance: 'todos' });
-  }
   const { error } = await db.from('productos').delete().eq('id', req.params.id);
   if (error) return enviarError(res, 500, error.message);
   res.json({ ok: true });
@@ -649,7 +686,7 @@ app.put('/api/ventas/:id', auth(true), async (req, res) => {
    A los ítems normales se les repone el stock; a los que venían de una
    reserva de repuesto en una OT, se les reabre la reserva (esa pieza
    sigue físicamente usada, pero vuelve a quedar "pendiente de cobro"). */
-app.post('/api/ventas/eliminar-lote', auth(true), async (req, res) => {
+app.post('/api/ventas/eliminar-lote', auth(true), exigirPinAdmin, async (req, res) => {
   const ids = (Array.isArray(req.body?.ids) ? req.body.ids : []).map(Number).filter(Boolean);
   if (ids.length === 0) return enviarError(res, 400, 'No hay ventas seleccionadas');
   if (ids.length > 300) return enviarError(res, 413, 'Elimina como máximo 300 ventas por vez');
@@ -667,7 +704,7 @@ app.post('/api/ventas/eliminar-lote', auth(true), async (req, res) => {
 });
 
 // Eliminar por período o todo el historial (solo admin)
-app.delete('/api/ventas', auth(true), async (req, res) => {
+app.delete('/api/ventas', auth(true), exigirPinAdmin, async (req, res) => {
   const { desde, hasta, todo } = req.query;
 
   let qSelect = db.from('ventas').select('id');
@@ -804,7 +841,7 @@ app.put('/api/compras/:id', auth(true), async (req, res) => {
   res.json(data);
 });
 
-app.post('/api/compras/eliminar-lote', auth(true), async (req, res) => {
+app.post('/api/compras/eliminar-lote', auth(true), exigirPinAdmin, async (req, res) => {
   const ids = (Array.isArray(req.body?.ids) ? req.body.ids : []).map(Number).filter(Boolean);
   if (ids.length === 0) return enviarError(res, 400, 'No hay compras seleccionadas');
 

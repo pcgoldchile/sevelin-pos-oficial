@@ -426,10 +426,15 @@ async function ejecutarExportarPorPeriodo(formato, desde, hasta) {
 }
 
 async function ejecutarEliminarPorPeriodo(desde, hasta) {
-  if (!confirm(`¿Eliminar TODAS las ventas entre ${desde} y ${hasta}? Esta acción no se puede deshacer.`)) return;
+  const pin = await pedirPinAdmin({
+    titulo: 'Eliminar ventas del período',
+    mensaje: `Se eliminarán TODAS las ventas entre ${desde} y ${hasta}. Esta acción no se puede deshacer.`,
+    resumen: 'El stock de los productos vendidos en ese período volverá al inventario.'
+  });
+  if (!pin) return;
 
   try {
-    await API.ventas.eliminarPeriodo(desde, hasta);
+    await API.ventas.eliminarPeriodo(desde, hasta, pin);
     showToast('Ventas del período eliminadas', 'ok');
     cerrarModalPeriodo();
     cargarHistorial();
@@ -1021,11 +1026,16 @@ async function eliminarVentasSeleccionadas() {
   const seleccion = ventasMarcadas();
   if (seleccion.length === 0) return;
 
-  if (!confirm(`¿Estás seguro de que deseas eliminar los ${seleccion.length} registros seleccionados? Esta acción no se puede deshacer.`)) return;
-  if (!confirm('El stock de los productos vendidos volverá al inventario. ¿Confirmas la eliminación?')) return;
+  const totalSeleccion = seleccion.reduce((a, v) => a + (Number(v.total) || 0), 0);
+  const pin = await pedirPinAdmin({
+    titulo: 'Eliminar ventas seleccionadas',
+    mensaje: `¿Estás seguro de que deseas eliminar los ${seleccion.length} registros seleccionados? Esta acción no se puede deshacer.`,
+    resumen: `Total involucrado: ${fmtCLP(totalSeleccion)}\nEl stock de los productos vendidos volverá al inventario.`
+  });
+  if (!pin) return;
 
   try {
-    const r = await API.ventas.eliminarLote(seleccion.map(v => v.id));
+    const r = await API.ventas.eliminarLote(seleccion.map(v => v.id), pin);
 
     ventasSeleccionadas.clear();
     ocultarBarraSeleccion();
@@ -1130,11 +1140,16 @@ async function eliminarVentaIndividual(id) {
 }
 
 async function eliminarTodoHistorial() {
-  if (!confirm('⚠️ Esto eliminará TODO el historial de ventas (incluye el detalle de cada venta). ¿Continuar?')) return;
-  if (!confirm('Esta acción no se puede deshacer. ¿Confirmas que quieres borrar todas las ventas registradas?')) return;
+  const pin = await pedirPinAdmin({
+    titulo: 'Eliminar TODO el historial',
+    mensaje: 'Se borrarán todas las ventas registradas y el detalle de cada una. Esta acción no se puede deshacer.',
+    resumen: 'Incluye ventas de todos los períodos, no solo las que ves en pantalla.',
+    textoBoton: '🗑️ Sí, borrar todo'
+  });
+  if (!pin) return;
 
   try {
-    await API.ventas.eliminarTodo();
+    await API.ventas.eliminarTodo(pin);
     showToast('Historial de ventas eliminado', 'ok');
     salesHistory = [];
     cargarHistorial();

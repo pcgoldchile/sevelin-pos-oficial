@@ -433,6 +433,9 @@ input[type="checkbox"] { width: auto; height: auto; accent-color: var(--blue); c
     background: var(--bg-800); color: var(--text-100); padding: 13px 22px; border-radius: var(--radius-pill);
     font-size: 13.5px; font-weight: 600; box-shadow: var(--shadow); opacity: 0;
     transition: opacity .25s, transform .25s; z-index: 300; border: 1.5px solid var(--border-strong);
+    /* El aviso es informativo: nunca debe bloquear el botón que quedó debajo
+       (en el teléfono tapaba justo la zona de acciones al pie de pantalla). */
+    pointer-events: none;
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .toast.ok { border-color: var(--green); color: var(--green); }
@@ -805,6 +808,19 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
     display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     margin-top: 14px;
 }
+
+/* Resumen de lo que se va a eliminar, dentro del modal de confirmación */
+.confirmar-pin-resumen {
+    white-space: pre-line;
+    background: var(--tint-red);
+    border: 1.5px solid rgba(239, 68, 68, .4);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px; margin-top: 14px;
+    font-size: 13px; color: var(--text-300); text-align: left;
+    max-height: 160px; overflow-y: auto;
+}
+#modalConfirmarPin .modal-box { text-align: center; }
+#modalConfirmarPin .field { text-align: left; }
 
 /* ========== 15. ADMINISTRAR ÁREAS Y CATEGORÍAS DE REPUESTOS ========== */
 .admin-cat-lista {

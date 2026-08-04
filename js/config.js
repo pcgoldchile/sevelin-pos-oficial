@@ -212,6 +212,77 @@ function ocultarBarraSeleccion() {
   if (barra) barra.classList.remove('show');
 }
 
+/* ------------------------------------------------------------
+   CONFIRMACIÓN POR PIN PARA ACCIONES DESTRUCTIVAS
+   Devuelve una promesa con el PIN escrito, o null si se cancela.
+   El PIN NO se valida aquí: se envía al backend, que es quien decide.
+   Así la protección no depende de la interfaz.
+   ------------------------------------------------------------ */
+function pedirPinAdmin({ titulo, mensaje, resumen, textoBoton } = {}) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('modalConfirmarPin');
+    const input = document.getElementById('confirmarPinInput');
+    const error = document.getElementById('confirmarPinError');
+    const form = document.getElementById('formConfirmarPin');
+    const elTitulo = document.getElementById('confirmarPinTitulo');
+    const elMensaje = document.getElementById('confirmarPinMensaje');
+    const elResumen = document.getElementById('confirmarPinResumen');
+    const btnOk = document.getElementById('btnAceptarConfirmarPin');
+    const btnCancelar = document.getElementById('btnCancelarConfirmarPin');
+
+    // Sin modal en el DOM se cae a la confirmación básica del navegador
+    if (!modal || !input) {
+      const pin = window.prompt(`${mensaje || 'Confirma esta acción'}\n\nIngresa el PIN de administrador:`);
+      resolve(pin ? pin.trim() : null);
+      return;
+    }
+
+    if (elTitulo) elTitulo.textContent = titulo || 'Confirmar eliminación';
+    if (elMensaje) elMensaje.textContent = mensaje || 'Esta acción no se puede deshacer.';
+    if (elResumen) {
+      elResumen.textContent = resumen || '';
+      elResumen.style.display = resumen ? 'block' : 'none';
+    }
+    if (btnOk) btnOk.textContent = textoBoton || '🗑️ Sí, eliminar';
+
+    input.value = '';
+    error?.classList.add('hidden');
+    modal.classList.add('show');
+    setTimeout(() => input.focus(), 80);
+
+    // Se clonan los controles para no acumular listeners entre llamadas
+    const limpiar = () => {
+      modal.classList.remove('show');
+      input.value = '';
+      nuevoOk.replaceWith(nuevoOk.cloneNode(true));
+      nuevoCancelar.replaceWith(nuevoCancelar.cloneNode(true));
+    };
+
+    const nuevoOk = btnOk.cloneNode(true);
+    btnOk.replaceWith(nuevoOk);
+    const nuevoCancelar = btnCancelar.cloneNode(true);
+    btnCancelar.replaceWith(nuevoCancelar);
+
+    const aceptar = () => {
+      const pin = (input.value || '').trim();
+      if (!pin) {
+        if (error) { error.textContent = 'Escribe el PIN para continuar.'; error.classList.remove('hidden'); }
+        input.focus();
+        return;
+      }
+      limpiar();
+      resolve(pin);
+    };
+
+    const cancelar = () => { limpiar(); resolve(null); };
+
+    nuevoOk.addEventListener('click', aceptar);
+    nuevoCancelar.addEventListener('click', cancelar);
+    if (form) form.onsubmit = (e) => { e.preventDefault(); aceptar(); };
+    modal.onclick = (e) => { if (e.target === modal) cancelar(); };
+  });
+}
+
 /* Descarga un contenido generado en el navegador (JSON de respaldo, etc.) */
 function descargarArchivo(nombre, contenido, tipo = 'application/json') {
   const blob = new Blob([contenido], { type: tipo + ';charset=utf-8;' });

@@ -67,8 +67,9 @@ const API = {
     crear: (p) => apiRequest('/productos', { method: 'POST', body: p }),
     actualizar: (id, p) => apiRequest(`/productos/${id}`, { method: 'PUT', body: p }),
     eliminar: (id) => apiRequest(`/productos/${id}`, { method: 'DELETE' }),
-    eliminarTodos: () => apiRequest('/productos/todos', { method: 'DELETE' }),
-    eliminarLote: (ids) => apiRequest('/productos/eliminar-lote', { method: 'POST', body: { ids } }),
+    // Operaciones masivas: exigen reconfirmar el PIN de administrador
+    eliminarTodos: (pin) => apiRequest('/productos/todos', { method: 'DELETE', body: { pin } }),
+    eliminarLote: (ids, pin) => apiRequest('/productos/eliminar-lote', { method: 'POST', body: { ids, pin } }),
     importar: (productos) => apiRequest('/productos/bulk', { method: 'POST', body: { productos } })
   },
 
@@ -89,10 +90,10 @@ const API = {
     crear: (venta) => apiRequest('/ventas', { method: 'POST', body: venta }),
     actualizar: (id, cambios) => apiRequest(`/ventas/${id}`, { method: 'PUT', body: cambios }),
     eliminar: (id) => apiRequest(`/ventas/${id}`, { method: 'DELETE' }),
-    eliminarPeriodo: (desde, hasta) => apiRequest(`/ventas?desde=${desde}&hasta=${hasta}`, { method: 'DELETE' }),
-    eliminarTodo: () => apiRequest('/ventas?todo=true', { method: 'DELETE' }),
+    eliminarPeriodo: (desde, hasta, pin) => apiRequest(`/ventas?desde=${desde}&hasta=${hasta}`, { method: 'DELETE', body: { pin } }),
+    eliminarTodo: (pin) => apiRequest('/ventas?todo=true', { method: 'DELETE', body: { pin } }),
     // Devuelve el stock de los productos antes de borrar
-    eliminarLote: (ids) => apiRequest('/ventas/eliminar-lote', { method: 'POST', body: { ids } })
+    eliminarLote: (ids, pin) => apiRequest('/ventas/eliminar-lote', { method: 'POST', body: { ids, pin } })
   },
 
   compras: {
@@ -105,7 +106,7 @@ const API = {
     crear: (c) => apiRequest('/compras', { method: 'POST', body: c }),
     actualizar: (id, c) => apiRequest(`/compras/${id}`, { method: 'PUT', body: c }),
     eliminar: (id) => apiRequest(`/compras/${id}`, { method: 'DELETE' }),
-    eliminarLote: (ids) => apiRequest('/compras/eliminar-lote', { method: 'POST', body: { ids } }),
+    eliminarLote: (ids, pin) => apiRequest('/compras/eliminar-lote', { method: 'POST', body: { ids, pin } }),
     subirArchivo: (nombre, tipo, base64) => apiRequest('/compras/archivo', { method: 'POST', body: { nombre, tipo, base64 } })
   },
 

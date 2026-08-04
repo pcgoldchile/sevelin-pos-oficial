@@ -1671,6 +1671,32 @@
     </div>
   </div>
 
+  <!-- MODAL: CONFIRMAR CON PIN DE ADMINISTRADOR (acciones destructivas) -->
+  <div id="modalConfirmarPin" class="modal-overlay">
+    <div class="modal-box" style="max-width: 460px;">
+      <div class="icon-success" style="font-size:40px;">🛑</div>
+      <h2 id="confirmarPinTitulo">Confirmar eliminación</h2>
+      <p class="modal-hint" id="confirmarPinMensaje">Esta acción no se puede deshacer.</p>
+
+      <div class="confirmar-pin-resumen" id="confirmarPinResumen"></div>
+
+      <form id="formConfirmarPin" autocomplete="off">
+        <div class="field" style="margin-top:16px;">
+          <label for="confirmarPinInput">Ingresa el PIN de administrador para continuar</label>
+          <input type="password" id="confirmarPinInput" class="pin-input" inputmode="numeric"
+                 maxlength="6" placeholder="••••" autocomplete="off">
+        </div>
+      </form>
+
+      <div id="confirmarPinError" class="error-msg hidden">PIN incorrecto.</div>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarConfirmarPin">Cancelar</button>
+        <button class="btn btn-red" id="btnAceptarConfirmarPin">🗑️ Sí, eliminar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Áreas de impresión -->
   <div id="ticketContainer"></div>
   <div id="otPrintArea"></div>

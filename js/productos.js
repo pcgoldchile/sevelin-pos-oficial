@@ -284,10 +284,16 @@ async function eliminarProductosSeleccionados() {
   const seleccion = productosMarcados();
   if (seleccion.length === 0) return;
 
-  if (!confirm(`¿Estás seguro de que deseas eliminar los ${seleccion.length} registros seleccionados? Esta acción no se puede deshacer.`)) return;
+  const pin = await pedirPinAdmin({
+    titulo: 'Eliminar productos seleccionados',
+    mensaje: `¿Estás seguro de que deseas eliminar los ${seleccion.length} registros seleccionados? Esta acción no se puede deshacer.`,
+    resumen: seleccion.slice(0, 4).map(p => `• ${p.nombre}`).join('\n') +
+      (seleccion.length > 4 ? `\n… y ${seleccion.length - 4} más` : '')
+  });
+  if (!pin) return;
 
   try {
-    const r = await API.productos.eliminarLote(seleccion.map(p => p.id));
+    const r = await API.productos.eliminarLote(seleccion.map(p => p.id), pin);
 
     productosSeleccionados.clear();
     ocultarBarraSeleccion();
@@ -534,11 +540,17 @@ async function eliminarProducto(id) {
 }
 
 async function eliminarTodosLosProductos() {
-  if (!confirm('⚠️ Esto eliminará TODOS los productos del inventario. ¿Continuar?')) return;
-  if (!confirm('Esta acción no se puede deshacer. ¿Confirmas que quieres eliminar todo el catálogo?')) return;
+  // Acción masiva: se exige reconfirmar el PIN de administrador
+  const pin = await pedirPinAdmin({
+    titulo: 'Eliminar TODO el catálogo',
+    mensaje: 'Se borrarán todos los productos del inventario. Esta acción no se puede deshacer.',
+    resumen: `${productsList.length} producto(s) serán eliminados`,
+    textoBoton: '🗑️ Sí, eliminar todo'
+  });
+  if (!pin) return;
 
   try {
-    await API.productos.eliminarTodos();
+    await API.productos.eliminarTodos(pin);
     showToast('Todos los productos fueron eliminados', 'ok');
     cargarProductos();
   } catch (err) {

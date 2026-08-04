@@ -223,10 +223,16 @@ async function eliminarComprasSeleccionadas() {
   const seleccion = comprasMarcadas();
   if (seleccion.length === 0) return;
 
-  if (!confirm(`¿Estás seguro de que deseas eliminar los ${seleccion.length} registros seleccionados? Esta acción no se puede deshacer.`)) return;
+  const totalSeleccion = seleccion.reduce((a, c) => a + (Number(c.costo_total) || 0), 0);
+  const pin = await pedirPinAdmin({
+    titulo: 'Eliminar compras seleccionadas',
+    mensaje: `¿Estás seguro de que deseas eliminar los ${seleccion.length} registros seleccionados? Esta acción no se puede deshacer.`,
+    resumen: `Total involucrado: ${fmtCLP(totalSeleccion)}`
+  });
+  if (!pin) return;
 
   try {
-    const r = await API.compras.eliminarLote(seleccion.map(c => c.id));
+    const r = await API.compras.eliminarLote(seleccion.map(c => c.id), pin);
 
     comprasSeleccionadas.clear();
     ocultarBarraSeleccion();
