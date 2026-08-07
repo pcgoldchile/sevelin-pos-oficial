@@ -1167,3 +1167,55 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
   opacity: .75;
   font-size: .78rem;
 }
+
+/* ============================================================
+   ALTA DE PRODUCTOS POR TEXTO PEGADO (Tiendanube)
+   ============================================================ */
+
+/* Tarjetas del selector inicial: manual vs. pegar texto */
+.modo-alta-btn {
+  height: auto;
+  min-height: 84px;
+  padding: 14px 16px;
+  text-align: left;
+  line-height: 1.45;
+  white-space: normal;
+}
+.modo-alta-btn small {
+  display: block;
+  margin-top: 5px;
+  font-weight: 400;
+  opacity: .75;
+  font-size: .78rem;
+}
+
+/* Área de pegado: monoespaciada para que se note si el texto vino cortado */
+#textoTiendanube {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: .8rem;
+  line-height: 1.45;
+  resize: vertical;
+  min-height: 200px;
+}
+
+/* Resumen de lectura del modal de revisión */
+.rev-resumen {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+.rev-resumen span {
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: .8rem;
+  line-height: 1.4;
+}
+.rev-ok {
+  background: rgba(34, 197, 94, .12);
+  border: 1px solid rgba(34, 197, 94, .3);
+}
+.rev-falta {
+  background: rgba(245, 158, 11, .12);
+  border: 1px solid rgba(245, 158, 11, .35);
+}

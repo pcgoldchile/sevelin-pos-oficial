@@ -891,11 +891,19 @@
       <div class="grid grid-2" style="margin-top:18px;">
         <div class="field">
           <label>SKU</label>
-          <input type="text" id="prodSku" placeholder="Código interno">
+          <!-- El escáner escribe en el campo; útil cuando el SKU viene
+               impreso como código de barras en la etiqueta del proveedor. -->
+          <div class="input-scan">
+            <input type="text" id="prodSku" placeholder="Código interno">
+            <button class="btn btn-outline btn-scan" type="button" data-scan="prodSku" title="Escanear SKU con la cámara">📷</button>
+          </div>
         </div>
         <div class="field">
           <label>Código de Barras</label>
-          <input type="text" id="prodBarcode" placeholder="EAN / Scanner">
+          <div class="input-scan">
+            <input type="text" id="prodBarcode" placeholder="EAN / Scanner">
+            <button class="btn btn-outline btn-scan" type="button" data-scan="prodBarcode" title="Escanear código de barras con la cámara">📷</button>
+          </div>
         </div>
       </div>
 
@@ -1020,6 +1028,165 @@
         <button class="btn btn-outline" id="btnExportarProducto" style="margin-right:auto;">📤 Exportar Producto</button>
         <button class="btn btn-ghost" id="btnCancelarProducto">Cancelar</button>
         <button class="btn btn-primary" id="btnGuardarProducto">Guardar Producto</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       MODAL 1/3: ¿CÓMO QUIERES CARGAR EL PRODUCTO?
+       Se abre al pulsar "Nuevo Producto".
+       ============================================================ -->
+  <div id="modalMetodoAlta" class="modal-overlay">
+    <div class="modal-box">
+      <h2>Nuevo producto</h2>
+      <p class="modal-hint">Elige cómo quieres cargarlo.</p>
+
+      <div class="grid grid-2" style="margin-top:16px;">
+        <button class="btn btn-outline modo-alta-btn" id="btnAltaManual" type="button">
+          ✍️ Carga Manual<br>
+          <small>Formulario completo, campo por campo.</small>
+        </button>
+        <button class="btn btn-outline modo-alta-btn" id="btnAltaTiendanube" type="button">
+          📋 Carga por Comando / Tiendanube<br>
+          <small>Pega el texto copiado de la ficha y se rellena solo.</small>
+        </button>
+      </div>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarMetodoAlta">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       MODAL 2/3: PEGAR EL TEXTO CRUDO DE TIENDANUBE
+       ============================================================ -->
+  <div id="modalPegarTiendanube" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <h2>Carga por comando · Tiendanube</h2>
+      <p class="modal-hint">
+        Abre la ficha del producto en el admin de Tiendanube, pulsa <strong>Ctrl + A</strong> y
+        <strong>Ctrl + C</strong>, y pega todo aquí abajo. No importa que venga el menú lateral:
+        se descarta solo.
+      </p>
+
+      <div class="field" style="margin-top:14px;">
+        <textarea id="textoTiendanube" rows="12"
+                  placeholder="Pega aquí todo el texto copiado de Tiendanube (Ctrl+A y Ctrl+C)..."></textarea>
+      </div>
+
+      <p class="modal-hint" id="avisoPegado">Se leen: nombre, SKU, código de barras, precio, costo, stock, peso y dimensiones.</p>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarPegarTiendanube">Cancelar</button>
+        <button class="btn btn-outline" id="btnLimpiarPegado" type="button">Limpiar</button>
+        <button class="btn btn-primary" id="btnProcesarTexto" type="button">⚙️ Procesar Texto</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       MODAL 3/3: REVISIÓN ANTES DE GUARDAR
+       Nada se escribe en la base hasta confirmar aquí.
+       ============================================================ -->
+  <div id="modalRevisarTiendanube" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <h2>Revisar antes de guardar</h2>
+      <p class="modal-hint">
+        Todavía no se guardó nada. Corrige lo que haga falta y confirma.
+      </p>
+
+      <!-- Resumen de qué se pudo leer y qué no -->
+      <div id="revResumenLectura" class="rev-resumen"></div>
+
+      <div class="field" style="margin-top:14px;">
+        <label>Nombre del Producto *</label>
+        <input type="text" id="revNombre" placeholder="Nombre del producto">
+      </div>
+
+      <div class="grid grid-2" style="margin-top:12px;">
+        <div class="field">
+          <label>SKU</label>
+          <div class="input-scan">
+            <input type="text" id="revSku" placeholder="Código interno">
+            <button class="btn btn-outline btn-scan" type="button" data-scan="revSku" title="Escanear SKU con la cámara">📷</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>Código de Barras</label>
+          <div class="input-scan">
+            <input type="text" id="revBarcode" placeholder="EAN / Scanner">
+            <button class="btn btn-outline btn-scan" type="button" data-scan="revBarcode" title="Escanear código de barras con la cámara">📷</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-3" style="margin-top:12px;">
+        <div class="field">
+          <label>Costo Unit.</label>
+          <input type="number" id="revCosto" min="0" step="1">
+        </div>
+        <div class="field">
+          <label>Precio de Venta</label>
+          <input type="number" id="revPrecio" min="0" step="1">
+        </div>
+        <div class="field">
+          <label>Stock</label>
+          <input type="number" id="revStock" min="0" step="1">
+        </div>
+      </div>
+      <p class="modal-hint" id="revMargen">—</p>
+
+      <span class="section-label" style="margin-top:16px;">Medidas y envío</span>
+      <div class="grid grid-4">
+        <div class="field">
+          <label>Peso (kg)</label>
+          <input type="number" id="revPeso" min="0" step="0.001">
+        </div>
+        <div class="field">
+          <label>Alto (cm)</label>
+          <input type="number" id="revAlto" min="0" step="0.1">
+        </div>
+        <div class="field">
+          <label>Ancho (cm)</label>
+          <input type="number" id="revAncho" min="0" step="0.1">
+        </div>
+        <div class="field">
+          <label>Profundidad (cm)</label>
+          <input type="number" id="revProfundidad" min="0" step="0.1">
+        </div>
+      </div>
+
+      <span class="section-label" style="margin-top:16px;">Control de stock y opciones</span>
+      <div class="grid grid-2">
+        <div class="field">
+          <label>Alerta de bajo stock cuando queden</label>
+          <input type="number" id="revStockMinimo" min="0" step="1" placeholder="3">
+        </div>
+        <div class="field">
+          <label class="field-ghost-label">&nbsp;</label>
+          <label class="sn-toggle">
+            <input type="checkbox" id="revAlertaStock" checked> Avisarme cuando baje del mínimo
+          </label>
+        </div>
+      </div>
+
+      <div style="margin-top:12px;">
+        <label class="sn-toggle" style="width:fit-content;">
+          <input type="checkbox" id="revStockIlimitado"> ♾️ Stock ilimitado (servicios o ítems sin inventario físico)
+        </label>
+        <label class="sn-toggle" style="width:fit-content; margin-top:10px;">
+          <input type="checkbox" id="revRequiereSN"> El producto requiere registrar S/N al vender
+        </label>
+        <label class="sn-toggle" style="width:fit-content; margin-top:10px;">
+          <input type="checkbox" id="revEsRepuesto"> Es repuesto / insumo de taller
+        </label>
+      </div>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarRevision">Cancelar</button>
+        <button class="btn btn-outline" id="btnVolverAPegar" type="button">← Volver al texto</button>
+        <button class="btn btn-primary" id="btnConfirmarTiendanube" type="button">✅ Confirmar y Guardar Producto</button>
       </div>
     </div>
   </div>
@@ -1904,6 +2071,7 @@
   <script src="js/config.js"></script>
   <script src="js/auth.js"></script>
   <script src="js/pago.js"></script>
+  <script src="js/tiendanube.js"></script>
   <script src="js/lotes.js"></script>
   <script src="js/productos.js"></script>
   <script src="js/historial.js"></script>

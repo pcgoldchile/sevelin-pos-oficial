@@ -97,7 +97,13 @@ function setupProductosEventListeners() {
   if (elBtnImportActualizar) elBtnImportActualizar.addEventListener('click', () => procesarImportacion('actualizar'));
 
   if (elBuscarProductoTabla) elBuscarProductoTabla.addEventListener('input', handleBuscarProductoTabla);
-  if (elBtnNuevoProducto) elBtnNuevoProducto.addEventListener('click', () => abrirModalProducto());
+  /* "Nuevo Producto" ya no abre el formulario directo: primero pregunta si
+     la carga es manual o pegando la ficha de Tiendanube (js/tiendanube.js).
+     Si ese módulo no está cargado, se cae al formulario de siempre. */
+  if (elBtnNuevoProducto) elBtnNuevoProducto.addEventListener('click', () => {
+    if (typeof abrirSelectorAltaProducto === 'function') abrirSelectorAltaProducto();
+    else abrirModalProducto();
+  });
   if (elBtnCancelarProducto) elBtnCancelarProducto.addEventListener('click', cerrarModalProducto);
   if (elBtnGuardarProducto) elBtnGuardarProducto.addEventListener('click', guardarProducto);
   if (elBtnEliminarTodosProductos) elBtnEliminarTodosProductos.addEventListener('click', eliminarTodosLosProductos);
