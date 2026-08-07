@@ -70,7 +70,24 @@ const API = {
     // Operaciones masivas: exigen reconfirmar el PIN de administrador
     eliminarTodos: (pin) => apiRequest('/productos/todos', { method: 'DELETE', body: { pin } }),
     eliminarLote: (ids, pin) => apiRequest('/productos/eliminar-lote', { method: 'POST', body: { ids, pin } }),
-    importar: (productos) => apiRequest('/productos/bulk', { method: 'POST', body: { productos } })
+
+    /* Importación masiva. Exige el PIN de administrador y un modo:
+         'omitir'     → deja intactos los productos que ya existen
+         'actualizar' → sobrescribe datos y stock de los que ya existen  */
+    importar: (productos, modo, pin) =>
+      apiRequest('/productos/bulk', { method: 'POST', body: { productos, modo, pin } }),
+
+    /* Búsqueda exacta por código para el escáner de cámara.
+       El backend prueba código de barras, luego SKU y luego número de serie.
+       silencioso: un 404 aquí es un resultado normal ("no existe"), no un
+       error de sesión que deba cerrar la pantalla. */
+    buscarPorCodigo: (codigo) =>
+      apiRequest(`/productos/buscar?codigo=${encodeURIComponent(codigo)}`, { silencioso: true }),
+
+    // Capas de costo (PEPS / FIFO)
+    listarLotes: (id) => apiRequest(`/productos/${id}/lotes`),
+    crearLote: (id, lote) => apiRequest(`/productos/${id}/lotes`, { method: 'POST', body: lote }),
+    eliminarLote_capa: (id, loteId) => apiRequest(`/productos/${id}/lotes/${loteId}`, { method: 'DELETE' })
   },
 
   ventas: {

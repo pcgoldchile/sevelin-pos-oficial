@@ -166,6 +166,20 @@ function entregarCodigo(codigo, conSonido) {
   inputDestinoEscaner.dispatchEvent(new Event('input', { bubbles: true }));
   inputDestinoEscaner.focus();
 
+  /* Además del evento 'input' (que alimenta los buscadores por texto), se
+     anuncia la lectura con su origen. Así un módulo puede reaccionar de
+     forma distinta a un escaneo real que a alguien escribiendo a mano:
+     el POS, por ejemplo, agrega el producto al carrito de inmediato.
+     detail.manual = true cuando el código se tecleó en el campo de
+     respaldo en vez de leerse con la cámara. */
+  document.dispatchEvent(new CustomEvent('escaner:codigo', {
+    detail: {
+      codigo: limpio,
+      inputId: inputDestinoEscaner.id || null,
+      manual: !conSonido
+    }
+  }));
+
   showToast(`Código leído: ${limpio}`, 'ok');
 }
 

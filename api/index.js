@@ -71,6 +71,49 @@ const enviarError = (res, code, msg) => res.status(code).json({ error: msg });
 
 const TIPOS_DTE = ['BOLETA', 'FACTURA', 'SIN DTE'];
 
+/* ============================================================
+   COMISIÓN DEL POS TUU (HAULMER PRO 2)
+   ------------------------------------------------------------
+   Fórmula del contrato:  monto * 0,0079 + 65
+   Solo aplica a las transacciones que pasan por el POS físico, es decir
+   las tarjetas. Efectivo, Transferencia y "Por Pagar" no pagan comisión.
+
+   Se calcula SIEMPRE en el servidor: si viniera del navegador, cualquiera
+   podría alterar la utilidad neta editando el formulario.
+
+   Si Tuu cambia la tarifa, se cambia acá y en js/config.js (el frontend la
+   usa solo para previsualizar). Las ventas ya registradas conservan la
+   comisión con la que se cobraron, porque queda guardada en la venta.
+   ============================================================ */
+const COMISION_POS_TASA = 0.0079;
+const COMISION_POS_FIJO = 65;
+
+// Métodos que pasan por el POS Tuu. Deben coincidir EXACTAMENTE con los
+// <option> de index.html.
+const METODOS_CON_COMISION = ['Tarjeta Débito', 'Tarjeta Crédito'];
+
+function metodoPagaComision(metodo) {
+  return METODOS_CON_COMISION.includes(String(metodo || '').trim());
+}
+
+/* Devuelve la comisión en pesos, redondeada (el peso chileno no tiene
+   decimales). Una venta en $0 no paga el cargo fijo. */
+function calcularComisionPos(metodo, total) {
+  if (!metodoPagaComision(metodo)) return 0;
+  const monto = num(total);
+  if (monto <= 0) return 0;
+  return Math.round(monto * COMISION_POS_TASA + COMISION_POS_FIJO);
+}
+
+/* La comisión se cobra según cómo se pagó DE VERDAD: una venta que quedó
+   "Por Pagar" y después se cobró con tarjeta sí paga comisión, y el método
+   final es el que manda. */
+function comisionDeVenta(venta) {
+  if (!venta) return 0;
+  const metodo = venta.metodo_pago_final || venta.metodo_pago;
+  return calcularComisionPos(metodo, venta.total);
+}
+
 /* El DTE es tributario: si llega algo no reconocido, se guarda 'SIN DTE'
    en vez de fallar, para no bloquear una venta en caja. */
 function tipoDteValido(valor) {
@@ -136,7 +179,8 @@ function auth(requiereAdmin = false) {
 // Los trabajadores nunca reciben costos ni utilidades: se limpian en el servidor.
 function limpiarParaRol(fila, rol) {
   if (!fila || rol === 'admin') return fila;
-  const { costo_total, utilidad, costo_unitario, ...visible } = fila;
+  // La comisión del POS es información de margen: se oculta igual que los costos
+  const { costo_total, utilidad, costo_unitario, comision_pos, ...visible } = fila;
   return visible;
 }
 const limpiarLista = (filas, rol) => (filas || []).map(f => limpiarParaRol(f, rol));
@@ -239,7 +283,7 @@ app.get('/api/health', (_req, res) => res.json({
 const CAMPOS_PRODUCTO = [
   'sku', 'codigo_barras', 'nombre', 'costo_unitario', 'precio_unitario', 'stock',
   'requiere_sn', 'peso_kg', 'alto_cm', 'ancho_cm', 'profundidad_cm', 'descripcion',
-  'stock_minimo', 'alerta_stock', 'es_repuesto', 'stock_ilimitado'
+  'stock_minimo', 'alerta_stock', 'es_repuesto', 'stock_ilimitado', 'usa_lotes'
 ];
 
 function sanearProducto(body = {}) {
@@ -254,6 +298,10 @@ function sanearProducto(body = {}) {
   if (body.alerta_stock !== undefined) p.alerta_stock = !!body.alerta_stock;
   if (body.es_repuesto !== undefined) p.es_repuesto = !!body.es_repuesto;
   if (body.stock_ilimitado !== undefined) p.stock_ilimitado = !!body.stock_ilimitado;
+  /* usa_lotes solo cambia si el cliente lo manda explícitamente. Así una
+     importación masiva o un PUT parcial jamás encienden los lotes por su
+     cuenta: la única forma es el checkbox del modal de producto. */
+  if (body.usa_lotes !== undefined) p.usa_lotes = !!body.usa_lotes;
 
   // Cada vez que se toca el stock queda registrada la fecha del cambio
   if (p.stock !== undefined) p.stock_actualizado_en = new Date().toISOString();
@@ -278,15 +326,202 @@ app.post('/api/productos', auth(true), async (req, res) => {
   res.status(201).json(data);
 });
 
-// Importación masiva (CSV / Excel de Tiendanube)
-app.post('/api/productos/bulk', auth(true), async (req, res) => {
+/* Importación masiva (CSV / Excel de Tiendanube)
+   ------------------------------------------------------------
+   Exige reconfirmar el PIN de administrador: es una operación que puede
+   reescribir el catálogo entero, así que se trata igual que un borrado
+   masivo. El PIN se valida en el servidor, no en el navegador.
+
+   Dos modos, elegidos por el usuario ANTES de procesar el archivo:
+     · 'omitir'     → si el SKU o el código de barras ya existe, la fila se
+                      ignora por completo. No se toca ni un dato ni el stock.
+     · 'actualizar' → si ya existe, se sobrescriben todos los datos y el
+                      stock con lo que trae el archivo.
+   En ambos modos, las filas que no coinciden con nada se insertan nuevas.
+
+   usa_lotes NUNCA se toca aquí: sanearProducto solo lo escribe si viene en
+   el body, y el importador no lo manda. Un producto con lotes activos
+   sigue con lotes activos después de importar. */
+const MODOS_IMPORTACION = ['omitir', 'actualizar'];
+
+app.post('/api/productos/bulk', auth(true), exigirPinAdmin, async (req, res) => {
+  const modo = String(req.body?.modo || 'omitir').trim().toLowerCase();
+  if (!MODOS_IMPORTACION.includes(modo)) {
+    return enviarError(res, 400, 'Modo de importación no válido (usa "omitir" o "actualizar")');
+  }
+
   const lista = Array.isArray(req.body?.productos) ? req.body.productos : [];
   const productos = lista.map(sanearProducto).filter(Boolean);
   if (productos.length === 0) return enviarError(res, 400, 'No hay productos válidos para importar');
 
-  const { error } = await db.from('productos').insert(productos);
+  // Claves del archivo, para buscar coincidencias en una sola consulta
+  const skus = [...new Set(productos.map(p => p.sku).filter(Boolean))];
+  const barras = [...new Set(productos.map(p => p.codigo_barras).filter(Boolean))];
+
+  const existentesPorSku = new Map();
+  const existentesPorBarra = new Map();
+
+  if (skus.length) {
+    const { data } = await db.from('productos').select('id, sku').in('sku', skus);
+    (data || []).forEach(p => { if (p.sku) existentesPorSku.set(String(p.sku).trim(), p.id); });
+  }
+  if (barras.length) {
+    const { data } = await db.from('productos').select('id, codigo_barras').in('codigo_barras', barras);
+    (data || []).forEach(p => { if (p.codigo_barras) existentesPorBarra.set(String(p.codigo_barras).trim(), p.id); });
+  }
+
+  // El SKU manda sobre el código de barras cuando ambos coinciden con
+  // productos distintos: es la clave que el usuario controla a mano.
+  const idExistente = (p) =>
+    (p.sku && existentesPorSku.get(String(p.sku).trim())) ||
+    (p.codigo_barras && existentesPorBarra.get(String(p.codigo_barras).trim())) ||
+    null;
+
+  const nuevos = [];
+  const aActualizar = [];
+  let omitidos = 0;
+
+  for (const p of productos) {
+    const id = idExistente(p);
+    if (!id) { nuevos.push(p); continue; }
+    if (modo === 'omitir') { omitidos++; continue; }
+    aActualizar.push({ id, datos: p });
+  }
+
+  const resultado = { creados: 0, actualizados: 0, omitidos, errores: [] };
+
+  if (nuevos.length) {
+    const { error } = await db.from('productos').insert(nuevos);
+    if (error) return enviarError(res, 500, error.message);
+    resultado.creados = nuevos.length;
+  }
+
+  /* Los updates van uno a uno a propósito: un upsert masivo necesitaría un
+     índice único sobre sku/codigo_barras que hoy no existe, y crearlo
+     rompería los catálogos que tienen SKU repetidos o vacíos. */
+  for (const { id, datos } of aActualizar) {
+    const { error } = await db.from('productos').update(datos).eq('id', id);
+    if (error) resultado.errores.push(`${datos.nombre}: ${error.message}`);
+    else resultado.actualizados++;
+  }
+
+  // Se mantiene "importados" por compatibilidad con la versión anterior
+  resultado.importados = resultado.creados + resultado.actualizados;
+  res.status(201).json(resultado);
+});
+
+/* Búsqueda por código para el escáner de cámara.
+   Se consulta indistintamente por código de barras, SKU y número de serie.
+   El S/N no vive en el catálogo sino en venta_items (es de la unidad, no
+   del modelo), así que se busca allí y se devuelve el producto asociado.
+   Orden de prioridad: código de barras → SKU → S/N. */
+app.get('/api/productos/buscar', auth(), async (req, res) => {
+  const codigo = String(req.query?.codigo || '').trim();
+  if (!codigo) return enviarError(res, 400, 'Falta el código a buscar');
+
+  const responder = (producto, origen) => {
+    if (!producto) return null;
+    return res.json({ ...limpiarParaRol(producto, req.usuario.rol), _origen: origen });
+  };
+
+  // 1) Código de barras (lo habitual al escanear)
+  const { data: porBarra } = await db.from('productos').select('*').eq('codigo_barras', codigo).limit(1);
+  if (porBarra && porBarra[0]) return responder(porBarra[0], 'codigo_barras');
+
+  // 2) SKU
+  const { data: porSku } = await db.from('productos').select('*').eq('sku', codigo).limit(1);
+  if (porSku && porSku[0]) return responder(porSku[0], 'sku');
+
+  // 3) Número de serie de una unidad ya vendida
+  const { data: porSerie } = await db.from('venta_items')
+    .select('producto_id, nombre, serial_number')
+    .eq('serial_number', codigo)
+    .not('producto_id', 'is', null)
+    .order('id', { ascending: false })
+    .limit(1);
+
+  if (porSerie && porSerie[0]?.producto_id) {
+    const { data: prod } = await db.from('productos').select('*').eq('id', porSerie[0].producto_id).maybeSingle();
+    if (prod) return responder(prod, 'serial_number');
+  }
+
+  return enviarError(res, 404, 'No se encontró ningún producto con ese código');
+});
+
+/* ============================================================
+   LOTES DE COSTO (PEPS / FIFO)
+   Solo administrador: los costos no se exponen a trabajadores.
+   ============================================================ */
+
+// Capas vigentes de un producto, en el mismo orden en que las consume el FIFO
+app.get('/api/productos/:id/lotes', auth(true), async (req, res) => {
+  const { data, error } = await db.from('producto_lotes')
+    .select('*')
+    .eq('producto_id', req.params.id)
+    .is('agotado_en', null)
+    .gt('cantidad', 0)
+    .order('creado_en', { ascending: true })
+    .order('id', { ascending: true });
+
   if (error) return enviarError(res, 500, error.message);
-  res.status(201).json({ importados: productos.length });
+  res.json(data || []);
+});
+
+/* Carga una capa nueva. El stock del producto sube en la misma operación:
+   productos.stock sigue siendo el número que se muestra en pantalla y el
+   que usan las alertas de bajo stock; los lotes solo explican su costo. */
+app.post('/api/productos/:id/lotes', auth(true), async (req, res) => {
+  const productoId = Number(req.params.id);
+  const cantidad = num(req.body?.cantidad);
+  const costo = num(req.body?.costo_unitario);
+
+  if (cantidad <= 0) return enviarError(res, 400, 'La cantidad del lote debe ser mayor a 0');
+
+  const { data: producto } = await db.from('productos').select('id, stock, usa_lotes').eq('id', productoId).maybeSingle();
+  if (!producto) return enviarError(res, 404, 'Producto no encontrado');
+  if (!producto.usa_lotes) {
+    return enviarError(res, 400, 'Este producto no tiene los lotes habilitados. Actívalos primero en el modal de producto.');
+  }
+
+  const { data: lote, error } = await db.from('producto_lotes').insert([{
+    producto_id: productoId,
+    cantidad,
+    cantidad_inicial: cantidad,
+    costo_unitario: costo,
+    referencia: (req.body?.referencia || '').trim() || null
+  }]).select().single();
+
+  if (error) return enviarError(res, 500, error.message);
+
+  await db.from('productos')
+    .update({ stock: num(producto.stock) + cantidad, stock_actualizado_en: new Date().toISOString() })
+    .eq('id', productoId);
+
+  res.status(201).json(lote);
+});
+
+/* Elimina una capa completa (corrección de una carga mal hecha) y le resta
+   al producto el stock que esa capa tenía vivo. */
+app.delete('/api/productos/:id/lotes/:loteId', auth(true), async (req, res) => {
+  const { data: lote } = await db.from('producto_lotes')
+    .select('*').eq('id', req.params.loteId).eq('producto_id', req.params.id).maybeSingle();
+
+  if (!lote) return enviarError(res, 404, 'Lote no encontrado');
+
+  const { error } = await db.from('producto_lotes').delete().eq('id', lote.id);
+  if (error) return enviarError(res, 500, error.message);
+
+  const { data: producto } = await db.from('productos').select('stock').eq('id', req.params.id).maybeSingle();
+  if (producto) {
+    await db.from('productos')
+      .update({
+        stock: Math.max(0, num(producto.stock) - num(lote.cantidad)),
+        stock_actualizado_en: new Date().toISOString()
+      })
+      .eq('id', req.params.id);
+  }
+
+  res.json({ ok: true, unidades_retiradas: num(lote.cantidad) });
 });
 
 app.put('/api/productos/:id', auth(true), async (req, res) => {
@@ -376,16 +611,163 @@ async function normalizarItems(items, rolSolicitante) {
   });
 }
 
+/* ============================================================
+   COSTEO POR CAPAS (PEPS / FIFO)
+   ------------------------------------------------------------
+   Se ejecuta ANTES de totalizar, porque el costo real de la venta depende
+   de qué capas se consuman: no se puede calcular la utilidad primero y
+   descontar el stock después.
+
+   Para cada ítem de un producto con usa_lotes = true:
+     1. Pide a la base que consuma la cantidad por PEPS (función atómica
+        fifo_consumir, que bloquea las capas mientras reparte).
+     2. Reemplaza costo_unitario por el promedio ponderado de lo consumido.
+        Ejemplo: 8 unidades = 5 del lote a $2.000 + 3 del lote a $2.200
+                 → costo unitario de la línea = $2.075.
+     3. Devuelve el detalle capa por capa para guardarlo en venta_item_lotes.
+     4. Descuenta productos.stock (la función SQL solo toca las capas).
+
+   Los ítems que NO usan lotes salen intactos y los sigue manejando
+   ajustarStock() como siempre.
+   ============================================================ */
+async function aplicarCostosFifo(items) {
+  const lista = items || [];
+  const ids = [...new Set(lista.map(i => i.producto_id).filter(Boolean))];
+  if (ids.length === 0) return { items: lista, consumos: [] };
+
+  const { data: productos } = await db
+    .from('productos')
+    .select('id, stock, usa_lotes, stock_ilimitado')
+    .in('id', ids);
+
+  const conLotes = new Map();
+  (productos || []).forEach(p => { if (p.usa_lotes && !p.stock_ilimitado) conLotes.set(p.id, p); });
+  if (conLotes.size === 0) return { items: lista, consumos: [] };
+
+  const consumos = [];   // { indiceItem, capas: [...] }
+
+  for (let i = 0; i < lista.length; i++) {
+    const item = lista[i];
+    const producto = item.producto_id ? conLotes.get(item.producto_id) : null;
+    if (!producto) continue;
+
+    const { data: capas, error } = await db.rpc('fifo_consumir', {
+      p_producto_id: producto.id,
+      p_cantidad: num(item.cantidad)
+    });
+
+    if (error) {
+      // Sin la migración 09 la función no existe: se cae al costo del
+      // catálogo en vez de bloquear la venta en caja.
+      console.error('[FIFO] fifo_consumir falló:', error.message);
+      continue;
+    }
+
+    const detalle = capas || [];
+    const unidades = detalle.reduce((a, c) => a + num(c.cantidad), 0);
+    const costoTotal = detalle.reduce((a, c) => a + num(c.cantidad) * num(c.costo_unitario), 0);
+
+    // Promedio ponderado de las capas realmente consumidas
+    if (unidades > 0) item.costo_unitario = costoTotal / unidades;
+
+    // La función SQL toca las capas; el stock visible se ajusta acá
+    await db.from('productos')
+      .update({
+        stock: num(producto.stock) - num(item.cantidad),
+        stock_actualizado_en: new Date().toISOString()
+      })
+      .eq('id', producto.id);
+
+    // Marca para que ajustarStock no vuelva a descontar este ítem
+    item._fifo = true;
+    consumos.push({ indiceItem: i, producto_id: producto.id, capas: detalle });
+  }
+
+  return { items: lista, consumos };
+}
+
+/* Guarda el libro de consumo una vez que los venta_items ya tienen id.
+   Sin esto no se podría revertir la venta ni auditar de dónde salió el
+   costo, así que un fallo se registra pero no tumba la venta. */
+async function registrarConsumoLotes(ventaId, itemsGuardados, consumos) {
+  const filas = [];
+
+  (consumos || []).forEach(c => {
+    const itemGuardado = itemsGuardados[c.indiceItem];
+    (c.capas || []).forEach(capa => {
+      filas.push({
+        venta_id: ventaId,
+        venta_item_id: itemGuardado ? itemGuardado.id : null,
+        producto_id: c.producto_id,
+        lote_id: capa.lote_id || null,
+        cantidad: num(capa.cantidad),
+        costo_unitario: num(capa.costo_unitario)
+      });
+    });
+  });
+
+  if (filas.length === 0) return 0;
+
+  const { error } = await db.from('venta_item_lotes').insert(filas);
+  if (error) { console.error('[FIFO] no se pudo registrar el consumo:', error.message); return 0; }
+  return filas.length;
+}
+
+/* Devuelve a sus capas el stock de una o varias ventas anuladas y borra el
+   libro de consumo. Se usa junto a revertirEfectosDeVentas. */
+async function devolverConsumoLotes(ventaIds) {
+  const ids = (ventaIds || []).filter(Boolean);
+  if (ids.length === 0) return { devueltos: 0, productos: new Set() };
+
+  const { data: consumos } = await db.from('venta_item_lotes').select('*').in('venta_id', ids);
+  const lista = consumos || [];
+  if (lista.length === 0) return { devueltos: 0, productos: new Set() };
+
+  const porProducto = new Map();   // producto_id → unidades a reponer
+
+  for (const c of lista) {
+    if (c.lote_id) {
+      const { error } = await db.rpc('fifo_devolver', {
+        p_lote_id: c.lote_id,
+        p_cantidad: num(c.cantidad)
+      });
+      if (error) console.error('[FIFO] fifo_devolver falló:', error.message);
+    }
+    // El faltante sin lote (lote_id NULL) igual devuelve stock al producto
+    porProducto.set(c.producto_id, (porProducto.get(c.producto_id) || 0) + num(c.cantidad));
+  }
+
+  for (const [productoId, unidades] of porProducto.entries()) {
+    if (!productoId) continue;
+    const { data: p } = await db.from('productos').select('stock').eq('id', productoId).maybeSingle();
+    if (!p) continue;
+    await db.from('productos')
+      .update({ stock: num(p.stock) + unidades, stock_actualizado_en: new Date().toISOString() })
+      .eq('id', productoId);
+  }
+
+  await db.from('venta_item_lotes').delete().in('venta_id', ids);
+  return { devueltos: lista.length, productos: new Set(porProducto.keys()) };
+}
+
 /* Ajusta el stock del catálogo a partir de los ítems de una venta.
    signo = -1 descuenta (venta), signo = +1 repone (anulación).
    El producto se busca por id, luego por SKU y finalmente por código de
    barras, de modo que también funcione con ventas importadas. Los ítems
    marcados como stock_ilimitado (servicios) se omiten por completo. */
-async function ajustarStock(items, signo = -1) {
+async function ajustarStock(items, signo = -1, omitirProductoIds = null) {
   const ajustados = [];
+  const omitir = omitirProductoIds instanceof Set ? omitirProductoIds : new Set();
 
   for (const item of (items || [])) {
     let producto = null;
+
+    /* Los ítems costeados por lotes ya movieron su stock:
+       · al vender, lo hizo aplicarCostosFifo()  → marca item._fifo
+       · al anular, lo hizo devolverConsumoLotes() → llega en omitir
+       Volver a tocarlos acá duplicaría el movimiento. */
+    if (item._fifo) continue;
+    if (item.producto_id && omitir.has(item.producto_id)) continue;
 
     if (item.producto_id) {
       const { data } = await db.from('productos').select('id, stock, stock_ilimitado').eq('id', item.producto_id).maybeSingle();
@@ -442,9 +824,14 @@ async function revertirEfectosDeVentas(ventaIds) {
   const { data: items } = await db.from('venta_items').select('*').in('venta_id', ids);
   const lista = items || [];
 
+  /* Primero se devuelven las unidades a sus capas de costo (PEPS). Devuelve
+     los producto_id que ya quedaron repuestos para que ajustarStock no los
+     sume una segunda vez. */
+  const lotes = await devolverConsumoLotes(ids);
+
   // Todo lo vendido en caja devuelve su stock. Los repuestos de una OT no
   // pasan por el carrito, así que aquí no hay nada especial que reabrir.
-  const repuestos = await ajustarStock(lista, +1);
+  const repuestos = await ajustarStock(lista, +1, lotes.productos);
 
   // Se borran los ítems ANTES que la venta. Con el script 07 la relación ya
   // tiene ON DELETE CASCADE, pero si esa migración todavía no se ejecutó,
@@ -493,11 +880,21 @@ app.get('/api/ventas/:id', auth(), async (req, res) => {
 app.post('/api/ventas', auth(), async (req, res) => {
   try {
     const items = await normalizarItems(req.body?.items, req.usuario.rol);
+
+    /* PEPS: consume las capas y corrige el costo de cada línea ANTES de
+       totalizar, para que la utilidad guardada sea la real. Los productos
+       sin lotes pasan de largo sin cambios. */
+    const { consumos } = await aplicarCostosFifo(items);
+
     const totales = totalizar(items);
 
     // "Por Pagar" deja la venta PENDIENTE: no suma a totales hasta que se cobre.
     const metodoPago = req.body?.metodo_pago || 'Efectivo';
     const esPendiente = metodoPago === 'Por Pagar';
+
+    /* Comisión del POS Tuu. Una venta PENDIENTE todavía no pasó por la
+       máquina, así que nace en 0: se calcula cuando se registre el pago. */
+    const comisionPos = esPendiente ? 0 : calcularComisionPos(metodoPago, totales.total);
 
     const fecha = req.body?.fecha || new Date().toISOString().slice(0, 10);
     const hora = horaValida(req.body?.hora) || horaChileActual();
@@ -517,20 +914,29 @@ app.post('/api/ventas', auth(), async (req, res) => {
       ot_id: req.body?.ot_id || null,
       numero_ot: (req.body?.numero_ot || '').trim() || null,
       ...totales,
+      comision_pos: comisionPos,
       impreso: false
     };
 
     const { data: venta, error } = await db.from('ventas').insert([cabecera]).select().single();
     if (error) throw new Error(error.message);
 
-    const { error: errItems } = await db.from('venta_items')
-      .insert(items.map(i => ({ ...i, venta_id: venta.id })));
+    /* _fifo es una marca interna de este proceso: no existe como columna,
+       así que se quita antes de insertar o Postgres rechaza la fila. */
+    const itemsParaGuardar = items.map(({ _fifo, ...i }) => ({ ...i, venta_id: venta.id }));
+
+    const { data: itemsGuardados, error: errItems } = await db.from('venta_items')
+      .insert(itemsParaGuardar)
+      .select();
 
     if (errItems) {
       // Evita dejar una venta huérfana si falla el detalle
       await db.from('ventas').delete().eq('id', venta.id);
       throw new Error(errItems.message);
     }
+
+    // Libro de consumo PEPS (qué capa pagó cada unidad de esta venta)
+    if (consumos.length) await registrarConsumoLotes(venta.id, itemsGuardados || [], consumos);
 
     // El stock de lo vendido en caja se descuenta aquí. Los repuestos de una
     // OT NO viajan en el carrito (solo el servicio cobrado): su stock se
@@ -605,6 +1011,16 @@ app.post('/api/ventas/importar', auth(true), async (req, res) => {
         impreso: true
       };
 
+      /* Comisión del POS: se respeta la del archivo si viene (un respaldo
+         JSON de este mismo sistema la trae), y si no, se recalcula con el
+         método de pago final. Así una reimportación no altera cifras
+         históricas. */
+      cabecera.comision_pos = origen.comision_pos !== undefined
+        ? num(origen.comision_pos)
+        : (estado === 'PAGADA'
+            ? calcularComisionPos(cabecera.metodo_pago_final, cabecera.total)
+            : 0);
+
       // Correlativo original: si ese número ya existe, se deja que la base asigne uno nuevo
       if (origen.numero_orden) {
         const { data: existente } = await db.from('ventas')
@@ -670,6 +1086,24 @@ app.put('/api/ventas/:id', auth(true), async (req, res) => {
       const { error: errIns } = await db.from('venta_items')
         .insert(items.map(i => ({ ...i, venta_id: Number(id) })));
       if (errIns) throw new Error(errIns.message);
+    }
+
+    /* La comisión depende del método y del total: si el administrador
+       cambia cualquiera de los dos, hay que recalcularla o el informe de
+       utilidad neta quedaría mintiendo. Se parte de la venta actual y se
+       le aplican los cambios de esta edición. */
+    if (cambios.metodo_pago !== undefined || cambios.total !== undefined) {
+      const { data: actual } = await db.from('ventas')
+        .select('total, metodo_pago, metodo_pago_final, estado').eq('id', id).maybeSingle();
+
+      const totalFinal = cambios.total !== undefined ? cambios.total : num(actual?.total);
+      const metodoFinal = cambios.metodo_pago !== undefined
+        ? cambios.metodo_pago
+        : (actual?.metodo_pago_final || actual?.metodo_pago);
+
+      // Una venta que sigue PENDIENTE no ha pasado por la máquina todavía
+      const sigueePendiente = (actual?.estado === 'PENDIENTE') && cambios.metodo_pago === undefined;
+      cambios.comision_pos = sigueePendiente ? 0 : calcularComisionPos(metodoFinal, totalFinal);
     }
 
     const { data, error } = await db.from('ventas').update(cambios).eq('id', id).select().single();
@@ -747,11 +1181,15 @@ app.post('/api/ventas/:id/pago', auth(), async (req, res) => {
   if (errVenta) return enviarError(res, 404, 'Venta no encontrada');
   if (venta.estado === 'PAGADA') return enviarError(res, 400, 'Esta venta ya está pagada');
 
+  /* Recién ahora se sabe cómo se cobró de verdad: si terminó pagándose con
+     tarjeta, la venta pasa a tener comisión del POS. Si fue en efectivo o
+     transferencia, queda en 0. */
   const { data, error } = await db.from('ventas')
     .update({
       estado: 'PAGADA',
       metodo_pago_final: metodo,
-      fecha_pago: new Date().toISOString()
+      fecha_pago: new Date().toISOString(),
+      comision_pos: calcularComisionPos(metodo, venta.total)
     })
     .eq('id', req.params.id)
     .select()

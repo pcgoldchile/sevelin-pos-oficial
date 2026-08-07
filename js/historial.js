@@ -58,6 +58,11 @@ const elKpiRangoTexto = document.getElementById('kpiRangoTexto');
 const elKpiPorPagar = document.getElementById('kpiPorPagar');
 const elKpiPorPagarDetalle = document.getElementById('kpiPorPagarDetalle');
 const elKpiPorPagarCard = document.getElementById('kpiPorPagarCard');
+// Comisión del POS Tuu y utilidad neta (solo admin)
+const elKpiComisionTuu = document.getElementById('kpiComisionTuu');
+const elKpiComisionDetalle = document.getElementById('kpiComisionDetalle');
+const elKpiUtilidadNeta = document.getElementById('kpiUtilidadNeta');
+const elKpiMargenNeto = document.getElementById('kpiMargenNeto');
 const elHistFiltroEstadoLabel = document.getElementById('histFiltroEstadoLabel');
 const elBtnQuitarFiltroPendientes = document.getElementById('btnQuitarFiltroPendientes');
 const elCheckTodasVentas = document.getElementById('checkTodasVentas');
@@ -466,6 +471,19 @@ function calcularResumen(ventas) {
 
   const totalPendiente = pendientes.reduce((a, v) => a + (Number(v.total) || 0), 0);
 
+  /* ---------- Comisión del POS Tuu y utilidad neta ----------
+     · Utilidad Bruta   = Total Ventas − Costo Total   (la de siempre)
+     · Comisión Tuu     = suma de las comisiones de las ventas con tarjeta
+     · Utilidad Neta POS = Utilidad Bruta − Comisión Tuu
+
+     Solo las ventas cobradas aportan comisión: una venta PENDIENTE todavía
+     no pasó por la máquina. comisionDeVenta() (js/config.js) prioriza el
+     valor guardado por el servidor y recalcula las ventas antiguas. */
+  const comision = cobradas.reduce((a, v) => a + comisionDeVenta(v), 0);
+  const ventasConComision = cobradas.filter(v => comisionDeVenta(v) > 0);
+  const montoConComision = ventasConComision.reduce((a, v) => a + (Number(v.total) || 0), 0);
+  const utilidadNeta = utilidad - comision;
+
   const mapa = {};
   cobradas.forEach(v => {
     const metodo = metodoDeVenta(v);
@@ -490,7 +508,15 @@ function calcularResumen(ventas) {
     ticketPromedio: cobradas.length ? total / cobradas.length : 0,
     totalPendiente,
     cantidadPendiente: pendientes.length,
-    metodos
+    metodos,
+
+    // Desglose de comisión del POS Tuu
+    utilidadBruta: utilidad,                 // alias explícito para los informes
+    comision,
+    utilidadNeta,
+    margenNeto: total > 0 ? (utilidadNeta / total) * 100 : 0,
+    ventasConComision: ventasConComision.length,
+    montoConComision
   };
 }
 
@@ -525,6 +551,21 @@ function renderResumenHistorial(ventas) {
 
   if (elKpiCantidad) elKpiCantidad.textContent = `${r.cantidad} ${r.cantidad === 1 ? 'venta cobrada' : 'ventas cobradas'}`;
   if (elKpiMargen) elKpiMargen.textContent = `Margen ${r.margen.toFixed(1)}%`;
+
+  /* ---------- Comisión del POS Tuu ----------
+     Se muestran los tres números por separado para que quede claro cuánto
+     se está yendo en comisiones: Bruta → Comisión → Neta. */
+  animarValor(elKpiComisionTuu, r.comision);
+  animarValor(elKpiUtilidadNeta, r.utilidadNeta);
+
+  if (elKpiComisionDetalle) {
+    elKpiComisionDetalle.textContent = r.ventasConComision === 0
+      ? 'Sin ventas con tarjeta en el período'
+      : `${r.ventasConComision} ${r.ventasConComision === 1 ? 'venta' : 'ventas'} con tarjeta · ${fmtCLP(r.montoConComision)}`;
+  }
+  if (elKpiMargenNeto) {
+    elKpiMargenNeto.textContent = `Bruta − comisión · Margen ${r.margenNeto.toFixed(1)}%`;
+  }
 
   // Pendientes de pago (no suman a los totales de arriba)
   animarValor(elKpiPorPagar, r.totalPendiente);
@@ -571,7 +612,10 @@ function obtenerFilasHistorialParaExportar(ventas) {
     'IVA (19%)': Math.round(ivaDeMonto(v.total)),
     Total: Number(v.total) || 0,
     'Costo Total': Number(v.costo_total) || 0,
-    Utilidad: Number(v.utilidad) || 0
+    // Utilidad Bruta = Total - Costo. La comisión Tuu se resta aparte.
+    'Utilidad Bruta': Number(v.utilidad) || 0,
+    'Comisión Tuu': comisionDeVenta(v),
+    'Utilidad Neta POS': (Number(v.utilidad) || 0) - comisionDeVenta(v)
   }));
 }
 
@@ -589,8 +633,16 @@ function exportarHistorial(formato, ventas, desde, hasta) {
     { Concepto: 'Cantidad de ventas', Valor: r.cantidad },
     { Concepto: 'Total de Ventas', Valor: r.total },
     { Concepto: 'Costo Total', Valor: r.costo },
-    { Concepto: 'Utilidad Total', Valor: r.utilidad },
-    { Concepto: 'Margen (%)', Valor: Number(r.margen.toFixed(1)) },
+    { Concepto: '', Valor: '' },
+    { Concepto: 'RENTABILIDAD (comisión POS Tuu)', Valor: 'monto x 0,0079 + 65 en tarjetas' },
+    { Concepto: 'Utilidad Bruta (Ventas - Costo)', Valor: Math.round(r.utilidadBruta) },
+    { Concepto: 'Comisión Tuu', Valor: Math.round(r.comision) },
+    { Concepto: 'Utilidad Neta POS (Bruta - Comisión)', Valor: Math.round(r.utilidadNeta) },
+    { Concepto: 'Ventas con tarjeta (afectas)', Valor: r.ventasConComision },
+    { Concepto: 'Monto cobrado con tarjeta', Valor: Math.round(r.montoConComision) },
+    { Concepto: 'Margen Bruto (%)', Valor: Number(r.margen.toFixed(1)) },
+    { Concepto: 'Margen Neto (%)', Valor: Number(r.margenNeto.toFixed(1)) },
+    { Concepto: '', Valor: '' },
     { Concepto: 'Pendientes por cobrar', Valor: r.totalPendiente },
     { Concepto: 'Cantidad pendientes', Valor: r.cantidadPendiente },
     { Concepto: '', Valor: '' },
@@ -636,14 +688,14 @@ function exportarHistorialPDF(ventas, desde, hasta) {
   const anchoUtil = doc.internal.pageSize.getWidth() - 28;
   doc.setDrawColor(203, 213, 225);
   doc.setFillColor(241, 245, 249);
-  doc.roundedRect(14, 25, anchoUtil, 22, 2, 2, 'FD');
+  doc.roundedRect(14, 25, anchoUtil, 20, 2, 2, 'FD');
 
   doc.setFontSize(10);
   doc.setTextColor(15, 23, 42);
   doc.setFont(undefined, 'bold');
   doc.text(`Total de Ventas: ${fmtCLP(r.total)}`, 19, 32);
   doc.text(`Costo Total: ${fmtCLP(r.costo)}`, 105, 32);
-  doc.text(`Utilidad Total: ${fmtCLP(r.utilidad)}  (margen ${r.margen.toFixed(1)}%)`, 180, 32);
+  doc.text(`Ticket Promedio: ${fmtCLP(r.ticketPromedio)}`, 180, 32);
 
   doc.setFont(undefined, 'normal');
   doc.setFontSize(9);
@@ -651,19 +703,51 @@ function exportarHistorialPDF(ventas, desde, hasta) {
   const desglose = r.metodos.length
     ? r.metodos.map(m => `${m.pct.toFixed(0)}% ${m.nombre} (${fmtCLP(m.monto)})`).join('   ·   ')
     : 'Sin registros';
-  doc.text(`Medios de pago:  ${desglose}`, 19, 41, { maxWidth: anchoUtil - 10 });
+  doc.text(`Medios de pago:  ${desglose}`, 19, 39, { maxWidth: anchoUtil - 10 });
+
+  /* ---------- RENTABILIDAD: los tres números por separado ----------
+     Recuadro propio para que la comisión del POS Tuu no quede escondida
+     dentro de la utilidad. Es el desglose que pide el informe:
+       Utilidad Bruta  →  Comisión Tuu  →  Utilidad Neta POS          */
+  let cursorY = 47;
+  doc.setDrawColor(191, 219, 254);
+  doc.setFillColor(239, 246, 255);
+  doc.roundedRect(14, cursorY, anchoUtil, 19, 2, 2, 'FD');
+
+  doc.setFontSize(10);
+  doc.setFont(undefined, 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text(`Utilidad Bruta: ${fmtCLP(r.utilidadBruta)}`, 19, cursorY + 7);
+
+  doc.setTextColor(185, 28, 28);
+  doc.text(`(-) Comisión Tuu: ${fmtCLP(r.comision)}`, 105, cursorY + 7);
+
+  doc.setTextColor(21, 128, 61);
+  doc.text(`= Utilidad Neta POS: ${fmtCLP(r.utilidadNeta)}`, 180, cursorY + 7);
+
+  doc.setFont(undefined, 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(51, 65, 85);
+  doc.text(
+    `Comisión POS Tuu Haulmer Pro 2 = monto x 0,0079 + $65 por transacción con tarjeta (débito o crédito). ` +
+    `Afecta a ${r.ventasConComision} venta(s) por ${fmtCLP(r.montoConComision)}. ` +
+    `Efectivo y transferencia no pagan comisión.   |   Margen bruto ${r.margen.toFixed(1)}%  ·  Margen neto ${r.margenNeto.toFixed(1)}%`,
+    19, cursorY + 14, { maxWidth: anchoUtil - 10 }
+  );
+  cursorY += 23;
 
   if (r.cantidadPendiente > 0) {
+    doc.setFontSize(9);
     doc.setTextColor(185, 28, 28);
-    doc.text(`Pendientes por cobrar: ${fmtCLP(r.totalPendiente)} en ${r.cantidadPendiente} venta(s) — no incluidas en los totales.`, 19, 46);
+    doc.text(`Pendientes por cobrar: ${fmtCLP(r.totalPendiente)} en ${r.cantidadPendiente} venta(s) — no incluidas en los totales.`, 19, cursorY);
     doc.setTextColor(51, 65, 85);
+    cursorY += 6;
   }
 
   /* Recuadro tributario. Su contenido cambia según el filtro elegido:
      - Solo Sin DTE  → destaca el IVA PENDIENTE de documentar.
      - Todas         → Total General + IVA emitido + IVA pendiente.
      - Boleta/Factura/Emitidos → neto e IVA del documento emitido. */
-  let cursorY = 52;
   const soloSinDte = filtroDteExport === 'SIN DTE';
   const esTodas = filtroDteExport === 'TODAS';
 
@@ -707,19 +791,30 @@ function exportarHistorialPDF(ventas, desde, hasta) {
 
   doc.autoTable({
     startY: cursorY + 4,
-    head: [['N° Orden', 'Fecha y Hora', 'Cliente', 'Método de Pago', 'DTE', 'Neto', 'IVA', 'Total', 'Utilidad']],
+    /* Tres columnas de rentabilidad al final: bruta, comisión y neta.
+       La fuente baja a 7,5 pt porque son 11 columnas en horizontal. */
+    head: [['N° Orden', 'Fecha y Hora', 'Cliente', 'Método de Pago', 'DTE', 'Neto', 'IVA', 'Total', 'Util. Bruta', 'Com. Tuu', 'Util. Neta']],
     body: filas.map(f => [
       String(f['N° Orden']).padStart(5, '0'),
       `${f.Fecha}${f.Hora ? ' ' + f.Hora : ''}`,
       f.Cliente, f['Método de Pago'], f.DTE,
       fmtCLP(f['Neto (sin IVA)']), fmtCLP(f['IVA (19%)']),
-      fmtCLP(f.Total), fmtCLP(f.Utilidad)
+      fmtCLP(f.Total),
+      fmtCLP(f['Utilidad Bruta']),
+      f['Comisión Tuu'] > 0 ? '-' + fmtCLP(f['Comisión Tuu']) : '—',
+      fmtCLP(f['Utilidad Neta POS'])
     ]),
-    styles: { fontSize: 8, cellPadding: 2.5 },
+    styles: { fontSize: 7.5, cellPadding: 2 },
     headStyles: { fillColor: [30, 41, 59], textColor: [248, 250, 252] },
     alternateRowStyles: { fillColor: [248, 250, 252] },
-    columnStyles: { 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' }, 8: { halign: 'right' } },
-    foot: [['', '', '', '', 'TOTALES', fmtCLP(t.neto), fmtCLP(t.ivaTotal), fmtCLP(t.totalGeneral), fmtCLP(r.utilidad)]],
+    columnStyles: {
+      5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' },
+      8: { halign: 'right' },
+      9: { halign: 'right', textColor: [185, 28, 28] },
+      10: { halign: 'right', fontStyle: 'bold' }
+    },
+    foot: [['', '', '', '', 'TOTALES', fmtCLP(t.neto), fmtCLP(t.ivaTotal), fmtCLP(t.totalGeneral),
+            fmtCLP(r.utilidadBruta), '-' + fmtCLP(r.comision), fmtCLP(r.utilidadNeta)]],
     footStyles: { fillColor: [15, 23, 42], textColor: [251, 191, 36], fontStyle: 'bold', halign: 'right' }
   });
 

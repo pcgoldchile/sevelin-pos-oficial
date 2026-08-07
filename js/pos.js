@@ -303,6 +303,103 @@ function agregarItemAlCarrito() {
   enfocarBuscador();   // listo para el siguiente escaneo
 }
 
+// ============================================================
+// ESCÁNER DE CÁMARA — alta directa al carrito
+// ------------------------------------------------------------
+// Al escanear en el buscador del POS no basta con rellenar el campo: el
+// producto se agrega solo. Se consulta al backend, que busca el código
+// indistintamente por código de barras, SKU y número de serie.
+//
+// Si el producto exige S/N, NO se agrega a ciegas: se deja cargado en el
+// formulario con el cursor en el campo de serie, porque esa venta necesita
+// la serie de la unidad concreta que sale de la tienda.
+// ============================================================
+let buscandoPorCodigo = false;
+
+document.addEventListener('escaner:codigo', (e) => {
+  const detalle = e.detail || {};
+  // Solo reacciona el buscador del POS; el resto de los módulos siguen
+  // usando el escáner como un simple rellenador de campos.
+  if (detalle.inputId !== 'posBuscarProducto') return;
+  agregarPorCodigoEscaneado(detalle.codigo);
+});
+
+/* Una pistola láser USB se comporta como un teclado: escribe muy rápido y
+   termina con Enter. Ese Enter también dispara el alta directa. */
+document.addEventListener('DOMContentLoaded', () => {
+  if (!elBuscarProducto) return;
+  elBuscarProducto.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const codigo = (elBuscarProducto.value || '').trim();
+    if (codigo) agregarPorCodigoEscaneado(codigo);
+  });
+});
+
+async function agregarPorCodigoEscaneado(codigo) {
+  const limpio = String(codigo || '').trim();
+  if (!limpio || buscandoPorCodigo) return;
+
+  buscandoPorCodigo = true;
+  try {
+    /* Primero se prueba en memoria: productsList ya está cargado y una
+       coincidencia exacta evita una ida al servidor en el caso normal. */
+    let producto = null;
+    if (Array.isArray(productsList)) {
+      producto = productsList.find(p =>
+        (p.codigo_barras || '').trim() === limpio ||
+        (p.sku || '').trim() === limpio
+      ) || null;
+    }
+
+    // Si no está en memoria, el backend además busca por número de serie
+    if (!producto) {
+      try {
+        producto = await API.productos.buscarPorCodigo(limpio);
+      } catch (_) {
+        producto = null;   // 404: no existe ningún producto con ese código
+      }
+    }
+
+    if (!producto) {
+      showToast(`Sin coincidencias para "${limpio}"`, 'err');
+      if (elSugerencias) elSugerencias.classList.remove('show');
+      return;
+    }
+
+    seleccionarProductoCatalogo(producto);
+    if (elBuscarProducto) elBuscarProducto.value = '';
+    if (elSugerencias) elSugerencias.classList.remove('show');
+
+    // Producto con S/N: se pide la serie antes de agregarlo
+    if (producto.requiere_sn) {
+      if (elItemSN) { elItemSN.style.display = 'block'; elItemSN.value = ''; setTimeout(() => elItemSN.focus(), 60); }
+      showToast(`${producto.nombre}: ingresa el S/N para agregarlo`, '');
+      return;
+    }
+
+    /* Si el mismo producto ya está en el carrito, se le suma 1 en vez de
+       repetir la línea: escanear tres veces el mismo artículo debe dar
+       "x3", no tres filas iguales. */
+    const yaEnCarrito = cart.find(i =>
+      i.producto_id && producto.id && i.producto_id === producto.id && !i.serial_number
+    );
+
+    if (yaEnCarrito) {
+      yaEnCarrito.cantidad += 1;
+      yaEnCarrito.subtotal = yaEnCarrito.precio_unitario * yaEnCarrito.cantidad;
+      renderCart();
+      limpiarFormularioItem();
+      showToast(`${producto.nombre} x${yaEnCarrito.cantidad}`, 'ok');
+    } else {
+      agregarItemAlCarrito();
+    }
+  } finally {
+    buscandoPorCodigo = false;
+    enfocarBuscador();
+  }
+}
+
 /* Deja el cursor en el buscador y selecciona su contenido, de modo que el
    siguiente disparo de la pistola reemplace lo que haya escrito. */
 function enfocarBuscador() {

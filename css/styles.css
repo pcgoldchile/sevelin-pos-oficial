@@ -1112,3 +1112,58 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
     body.print-ticket #ticketContainer .t-qr { text-align: center; margin-top: 3mm; }
     body.print-ticket #ticketContainer .t-qr svg { width: 26mm; height: 26mm; display: block; margin: 1.5mm auto; }
 }
+
+/* ============================================================
+   LOTES DE COSTO (PEPS / FIFO)  ·  agregado en la migración 09
+   ============================================================ */
+
+/* Costo unitario atenuado cuando el producto usa lotes: sigue visible
+   (es el respaldo si se vende más de lo cargado) pero deja claro que ya
+   no es el que manda en las ventas. */
+.campo-atenuado {
+  opacity: .55;
+  background: rgba(148, 163, 184, .12);
+}
+
+.lotes-lista { margin-top: 14px; }
+
+.tabla-lotes { font-size: .82rem; }
+.tabla-lotes th, .tabla-lotes td { padding: 6px 8px; }
+.tabla-lotes tfoot td {
+  border-top: 2px solid var(--border, #cbd5e1);
+  background: rgba(148, 163, 184, .10);
+}
+
+/* La capa más antigua es la próxima en consumirse: se destaca */
+.tabla-lotes tr.lote-siguiente { background: rgba(34, 197, 94, .10); }
+
+.celda-lotes { display: flex; flex-direction: column; gap: 2px; font-size: .78rem; line-height: 1.35; }
+.celda-lotes small { color: var(--text-muted, #64748b); font-size: .72rem; }
+
+.capa-lote { white-space: nowrap; }
+.capa-lote.capa-actual { font-weight: 600; color: var(--green, #16a34a); }
+.capa-mas { color: var(--text-muted, #64748b); font-style: italic; }
+.lotes-off { color: var(--text-muted, #94a3b8); }
+
+/* ============================================================
+   MODALES DE EXPORTACIÓN INDIVIDUAL E IMPORTACIÓN MASIVA
+   ============================================================ */
+.modal-box.modal-sm { max-width: 460px; }
+
+/* Botones de modo de importación: alto fijo y texto a la izquierda para
+   que las dos opciones se lean como tarjetas comparables. */
+.modo-import-btn {
+  height: auto;
+  min-height: 76px;
+  padding: 12px 14px;
+  text-align: left;
+  line-height: 1.4;
+  white-space: normal;
+}
+.modo-import-btn small {
+  display: block;
+  margin-top: 4px;
+  font-weight: 400;
+  opacity: .75;
+  font-size: .78rem;
+}

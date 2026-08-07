@@ -217,7 +217,7 @@
             <div class="kpi-foot" id="kpiCantidadVentas">0 ventas cobradas</div>
           </div>
           <div class="kpi-card kpi-green admin-only">
-            <div class="kpi-label">📈 Utilidad Total</div>
+            <div class="kpi-label">📈 Utilidad Bruta</div>
             <div class="kpi-value" id="kpiUtilidadTotal">$0</div>
             <div class="kpi-foot" id="kpiMargen">Margen 0%</div>
           </div>
@@ -225,6 +225,18 @@
             <div class="kpi-label">📦 Costo Total</div>
             <div class="kpi-value" id="kpiCostoTotal">$0</div>
             <div class="kpi-foot">Costo de lo vendido</div>
+          </div>
+
+          <!-- Comisión del POS Tuu: monto * 0,0079 + 65 en pagos con tarjeta -->
+          <div class="kpi-card kpi-red admin-only">
+            <div class="kpi-label">💳 Comisión Tuu</div>
+            <div class="kpi-value" id="kpiComisionTuu">$0</div>
+            <div class="kpi-foot" id="kpiComisionDetalle">0 ventas con tarjeta</div>
+          </div>
+          <div class="kpi-card kpi-green admin-only">
+            <div class="kpi-label">✅ Utilidad Neta POS</div>
+            <div class="kpi-value" id="kpiUtilidadNeta">$0</div>
+            <div class="kpi-foot" id="kpiMargenNeto">Bruta − comisión · Margen 0%</div>
           </div>
           <!-- Tarjeta clicable: filtra la tabla por ventas pendientes -->
           <div class="kpi-card kpi-red kpi-clickable" id="kpiPorPagarCard" role="button" tabindex="0"
@@ -560,6 +572,7 @@
                 <th class="admin-only">Costo</th>
                 <th>Precio</th>
                 <th>Stock</th>
+                <th class="admin-only">Capas de costo (PEPS)</th>
                 <th>Últ. act. stock</th>
                 <th>Medidas (Al×An×Pr / Peso)</th>
                 <th>Requiere S/N</th>
@@ -567,7 +580,7 @@
               </tr>
             </thead>
             <tbody id="productosTableBody">
-              <tr class="empty-row"><td colspan="11">Cargando productos...</td></tr>
+              <tr class="empty-row"><td colspan="12">Cargando productos...</td></tr>
             </tbody>
           </table>
         </div>
@@ -925,6 +938,48 @@
       </div>
       <p class="modal-hint" id="prodStockActualizado">Última actualización de stock: —</p>
 
+      <!-- ============================================================
+           COSTOS POR LOTE (PEPS / FIFO)
+           Apagado por defecto. Solo el administrador lo enciende a mano,
+           producto por producto: ningún producto nuevo ni existente lo
+           activa solo.
+           ============================================================ -->
+      <span class="section-label" style="margin-top:18px;">Costos por lote (PEPS / FIFO)</span>
+      <label class="check-item" id="itemProdUsaLotes" style="margin-bottom:10px;">
+        <input type="checkbox" id="prodUsaLotes">
+        <span>📚 ¿Habilitar múltiples costos por lote? (el costo de cada venta sale de la capa más antigua)</span>
+      </label>
+
+      <div id="bloqueProdLotes" style="display:none;">
+        <p class="modal-hint" id="prodLotesAviso">
+          Con esta opción activa, el costo unitario de arriba deja de usarse en las ventas:
+          cada venta consume primero las unidades más antiguas y toma su costo real.
+        </p>
+
+        <div class="grid grid-4" style="margin-top:10px;">
+          <div class="field">
+            <label>Cantidad del lote</label>
+            <input type="number" id="prodLoteCantidad" min="1" step="1" placeholder="10">
+          </div>
+          <div class="field">
+            <label>Costo unitario</label>
+            <input type="number" id="prodLoteCosto" min="0" step="1" placeholder="2200">
+          </div>
+          <div class="field">
+            <label>Referencia (opcional)</label>
+            <input type="text" id="prodLoteReferencia" placeholder="N° factura / proveedor">
+          </div>
+          <div class="field">
+            <label class="field-ghost-label">&nbsp;</label>
+            <button class="btn btn-outline" id="btnAgregarLote" type="button">➕ Cargar lote</button>
+          </div>
+        </div>
+
+        <div id="prodLotesLista" class="lotes-lista">
+          <p class="modal-hint">Guarda el producto para poder cargarle lotes.</p>
+        </div>
+      </div>
+
       <span class="section-label" style="margin-top:18px;">Medidas y envío (Tiendanube)</span>
       <div class="grid grid-4">
         <div class="field">
@@ -960,8 +1015,68 @@
       </div>
 
       <div class="modal-foot">
+        <!-- Exporta SOLO este producto. Se oculta al crear uno nuevo:
+             no hay nada que exportar hasta que exista. -->
+        <button class="btn btn-outline" id="btnExportarProducto" style="margin-right:auto;">📤 Exportar Producto</button>
         <button class="btn btn-ghost" id="btnCancelarProducto">Cancelar</button>
         <button class="btn btn-primary" id="btnGuardarProducto">Guardar Producto</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       MODAL: FORMATO DE EXPORTACIÓN INDIVIDUAL
+       Pop-up chico que pregunta JSON o CSV para UN producto.
+       ============================================================ -->
+  <div id="modalFormatoExport" class="modal-overlay">
+    <div class="modal-box modal-sm">
+      <h2>Exportar producto</h2>
+      <p class="modal-hint" id="formatoExportNombre">—</p>
+      <p class="modal-hint">
+        <strong>JSON</strong> conserva todos los campos tal cual (ideal para respaldo o para reimportar).
+        <strong>CSV</strong> se abre en Excel y usa los mismos encabezados de Tiendanube.
+      </p>
+      <div class="grid grid-2" style="margin-top:16px;">
+        <button class="btn btn-outline" id="btnExportProdJSON" type="button">🧾 Descargar JSON</button>
+        <button class="btn btn-outline" id="btnExportProdCSV" type="button">📊 Descargar CSV</button>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarFormatoExport">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       MODAL: MODO DE IMPORTACIÓN MASIVA
+       Se muestra DESPUÉS de validar el PIN y ANTES de procesar el archivo.
+       ============================================================ -->
+  <div id="modalModoImportacion" class="modal-overlay">
+    <div class="modal-box">
+      <h2>¿Qué hacer con los productos que ya existen?</h2>
+      <p class="modal-hint" id="modoImportacionResumen">—</p>
+      <p class="modal-hint">
+        La coincidencia se busca por <strong>SKU</strong> y, si no hay, por <strong>Código de Barras</strong>.
+        Las filas que no coincidan con nada se crean como productos nuevos en ambos casos.
+      </p>
+
+      <div class="grid grid-2" style="margin-top:16px;">
+        <button class="btn btn-outline modo-import-btn" id="btnImportOmitir" type="button">
+          🛡️ Omitir productos existentes<br>
+          <small>No toca sus datos ni su stock. Solo agrega los nuevos.</small>
+        </button>
+        <button class="btn btn-outline modo-import-btn" id="btnImportActualizar" type="button">
+          🔄 Actualizar productos existentes<br>
+          <small>Sobrescribe datos y stock con lo que trae el archivo.</small>
+        </button>
+      </div>
+
+      <p class="modal-hint" style="margin-top:14px; color:var(--red);">
+        ⚠️ "Actualizar" reemplaza el stock actual por el del archivo. Si tu planilla trae la columna
+        Stock desactualizada, perderás las existencias reales.
+      </p>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarModoImportacion">Cancelar</button>
       </div>
     </div>
   </div>
@@ -1789,6 +1904,7 @@
   <script src="js/config.js"></script>
   <script src="js/auth.js"></script>
   <script src="js/pago.js"></script>
+  <script src="js/lotes.js"></script>
   <script src="js/productos.js"></script>
   <script src="js/historial.js"></script>
   <script src="js/escaner.js"></script>

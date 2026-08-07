@@ -43,6 +43,17 @@ const elProdDescripcion = document.getElementById('prodDescripcion');
 const elBtnNuevoProducto = document.getElementById('btnNuevoProducto');
 const elBtnCancelarProducto = document.getElementById('btnCancelarProducto');
 const elBtnGuardarProducto = document.getElementById('btnGuardarProducto');
+const elBtnExportarProducto = document.getElementById('btnExportarProducto');
+const elModalFormatoExport = document.getElementById('modalFormatoExport');
+const elFormatoExportNombre = document.getElementById('formatoExportNombre');
+const elBtnExportProdJSON = document.getElementById('btnExportProdJSON');
+const elBtnExportProdCSV = document.getElementById('btnExportProdCSV');
+const elBtnCancelarFormatoExport = document.getElementById('btnCancelarFormatoExport');
+const elModalModoImportacion = document.getElementById('modalModoImportacion');
+const elModoImportacionResumen = document.getElementById('modoImportacionResumen');
+const elBtnImportOmitir = document.getElementById('btnImportOmitir');
+const elBtnImportActualizar = document.getElementById('btnImportActualizar');
+const elBtnCancelarModoImportacion = document.getElementById('btnCancelarModoImportacion');
 const elBtnEliminarTodosProductos = document.getElementById('btnEliminarTodosProductos');
 const elOrdenProductos = document.getElementById('ordenProductos');
 const elInputImportarProductos = document.getElementById('inputImportarProductos');
@@ -71,6 +82,20 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function setupProductosEventListeners() {
+  // Exportación individual desde el modal de producto
+  if (elBtnExportarProducto) elBtnExportarProducto.addEventListener('click', abrirModalFormatoExport);
+  if (elBtnCancelarFormatoExport) elBtnCancelarFormatoExport.addEventListener('click', cerrarModalFormatoExport);
+  if (elBtnExportProdJSON) elBtnExportProdJSON.addEventListener('click', () => exportarProductoIndividual('json'));
+  if (elBtnExportProdCSV) elBtnExportProdCSV.addEventListener('click', () => exportarProductoIndividual('csv'));
+  if (elModalFormatoExport) elModalFormatoExport.addEventListener('click', (e) => {
+    if (e.target === elModalFormatoExport) cerrarModalFormatoExport();
+  });
+
+  // Selector de modo de importación masiva
+  if (elBtnCancelarModoImportacion) elBtnCancelarModoImportacion.addEventListener('click', cancelarModoImportacion);
+  if (elBtnImportOmitir) elBtnImportOmitir.addEventListener('click', () => procesarImportacion('omitir'));
+  if (elBtnImportActualizar) elBtnImportActualizar.addEventListener('click', () => procesarImportacion('actualizar'));
+
   if (elBuscarProductoTabla) elBuscarProductoTabla.addEventListener('input', handleBuscarProductoTabla);
   if (elBtnNuevoProducto) elBtnNuevoProducto.addEventListener('click', () => abrirModalProducto());
   if (elBtnCancelarProducto) elBtnCancelarProducto.addEventListener('click', cerrarModalProducto);
@@ -112,6 +137,13 @@ async function cargarProductos() {
     // Se descartan las selecciones de productos que ya no están en pantalla
     const idsVisibles = new Set(productsList.map(p => String(p.id)));
     productosSeleccionados.forEach(id => { if (!idsVisibles.has(id)) productosSeleccionados.delete(id); });
+
+    /* Capas de costo de los productos que tienen los lotes activos. Se
+       piden antes de pintar para que la columna PEPS salga completa en el
+       primer render y no parpadee. */
+    if (typeof precargarLotesVisibles === 'function') {
+      await precargarLotesVisibles(productsList);
+    }
 
     handleBuscarProductoTabla();
     renderPanelBajoStock();
@@ -311,7 +343,7 @@ function renderProductosTabla(items) {
   productosVisibles = items || [];
 
   if (!items || items.length === 0) {
-    elProductosTableBody.innerHTML = '<tr class="empty-row"><td colspan="11">No hay productos en el inventario. Crea uno o importa tu CSV de Tiendanube.</td></tr>';
+    elProductosTableBody.innerHTML = '<tr class="empty-row"><td colspan="12">No hay productos en el inventario. Crea uno o importa tu CSV de Tiendanube.</td></tr>';
     actualizarBarraProductos();
     return;
   }
@@ -330,6 +362,7 @@ function renderProductosTabla(items) {
       <td class="admin-only">${fmtCLP(p.costo_unitario)}</td>
       <td>${fmtCLP(p.precio_unitario)}</td>
       <td>${badgeStock(p)}</td>
+      <td class="admin-only">${typeof celdaLotes === 'function' ? celdaLotes(p) : '—'}</td>
       <td class="stock-fecha">${p.stock_actualizado_en ? tsAChile(p.stock_actualizado_en) : '—'}</td>
       <td>${resumenMedidas(p)}</td>
       <td>${p.requiere_sn ? '✅ Sí' : '—'}${p.es_repuesto ? '<br><span class="badge badge-gold">Repuesto</span>' : ''}</td>
@@ -448,6 +481,7 @@ function abrirModalProducto(producto = null) {
     if (elProdStockMinimo) elProdStockMinimo.value = producto.stock_minimo ?? STOCK_MINIMO_POR_DEFECTO;
     if (elProdSinAlertaStock) elProdSinAlertaStock.checked = producto.alerta_stock === false;
     if (elProdStockIlimitado) elProdStockIlimitado.checked = !!producto.stock_ilimitado;
+    if (elProdUsaLotes) elProdUsaLotes.checked = !!producto.usa_lotes;
     if (elProdStockActualizado) {
       elProdStockActualizado.textContent = producto.stock_actualizado_en
         ? `Última actualización de stock: ${tsAChile(producto.stock_actualizado_en)}`
@@ -469,11 +503,17 @@ function abrirModalProducto(producto = null) {
     if (elProdEsRepuesto) elProdEsRepuesto.checked = false;
     if (elProdStockMinimo) elProdStockMinimo.value = STOCK_MINIMO_POR_DEFECTO;
     if (elProdSinAlertaStock) elProdSinAlertaStock.checked = false;
+    // Un producto NUEVO siempre nace sin lotes: solo se activan a mano
+    if (elProdUsaLotes) elProdUsaLotes.checked = false;
     if (elProdStockIlimitado) elProdStockIlimitado.checked = false;
     if (elProdStockActualizado) elProdStockActualizado.textContent = 'Última actualización de stock: se registrará al guardar.';
   }
 
   aplicarStockIlimitadoProductoUI();
+  if (typeof alternarLotesUI === 'function') alternarLotesUI();
+
+  // Solo se exporta lo que ya existe en la base
+  if (elBtnExportarProducto) elBtnExportarProducto.style.display = producto ? '' : 'none';
 
   elModalProducto.classList.add('show');
   setTimeout(() => elProdNombre?.focus(), 80);
@@ -501,6 +541,8 @@ async function guardarProducto() {
     stock_minimo: Number(elProdStockMinimo?.value) || 0,
     alerta_stock: !(elProdSinAlertaStock && elProdSinAlertaStock.checked),
     stock_ilimitado: !!(elProdStockIlimitado && elProdStockIlimitado.checked),
+    // Interruptor de costos por lote (PEPS). Apagado salvo que el admin lo marque.
+    usa_lotes: !!(elProdUsaLotes && elProdUsaLotes.checked),
     peso_kg: Number(elProdPeso?.value) || 0,
     alto_cm: Number(elProdAlto?.value) || 0,
     ancho_cm: Number(elProdAncho?.value) || 0,
@@ -635,6 +677,17 @@ function mapearFilaImportada(fila) {
   };
 }
 
+/* ------------------------------------------------------------
+   IMPORTACIÓN MASIVA — flujo en tres pasos
+     1. Se lee y valida el archivo (sin tocar la base todavía).
+     2. Se pide el PIN de administrador con la misma lógica que usan las
+        operaciones destructivas (pedirPinAdmin → el servidor lo verifica).
+     3. Se elige el modo: omitir o actualizar los que ya existen.
+   Recién ahí se envía. Así el usuario ve cuántas filas trae el archivo
+   ANTES de autorizar nada.
+   ------------------------------------------------------------ */
+let importacionPendiente = null;   // { productos, pin, nombreArchivo }
+
 async function handleImportarProductos(e) {
   const file = e.target.files[0];
   if (!file) return;
@@ -650,31 +703,175 @@ async function handleImportarProductos(e) {
 
     if (productosNuevos.length === 0) {
       showToast('El archivo no tiene filas válidas (falta la columna Nombre)', 'err');
-      e.target.value = '';
       return;
     }
 
+    // PASO 2: autorización. El PIN viaja al backend, que lo vuelve a validar.
     const conMedidas = productosNuevos.filter(p => p.peso_kg || p.alto_cm || p.ancho_cm || p.profundidad_cm).length;
-    if (!confirm(`Se importarán ${productosNuevos.length} producto(s) al catálogo (${conMedidas} con medidas). ¿Continuar?`)) {
-      e.target.value = '';
-      return;
+    const pin = await pedirPinAdmin({
+      titulo: 'Importar catálogo',
+      mensaje: `El archivo "${file.name}" trae ${productosNuevos.length} producto(s) válido(s).`,
+      resumen: `${conMedidas} con medidas de envío. En el siguiente paso eliges qué hacer con los que ya existen.`,
+      textoBoton: '🔓 Autorizar importación'
+    });
+    if (!pin) return;   // el usuario canceló
+
+    // PASO 3: modo de importación
+    importacionPendiente = { productos: productosNuevos, pin, nombreArchivo: file.name };
+    abrirModalModoImportacion(productosNuevos.length, conMedidas);
+  } catch (err) {
+    console.error('Error al leer el archivo:', err.message || err);
+    showToast('Error al importar: ' + (err.message || 'formato no reconocido'), 'err');
+  } finally {
+    // Se libera el input siempre, para poder reintentar con el mismo archivo
+    e.target.value = '';
+  }
+}
+
+function abrirModalModoImportacion(total, conMedidas) {
+  if (!elModalModoImportacion) {
+    // Sin el modal en el DOM se cae al modo seguro por defecto
+    procesarImportacion('omitir');
+    return;
+  }
+  if (elModoImportacionResumen) {
+    elModoImportacionResumen.textContent =
+      `${total} producto(s) listos para importar desde "${importacionPendiente?.nombreArchivo || 'el archivo'}" · ${conMedidas} con medidas.`;
+  }
+  elModalModoImportacion.classList.add('show');
+}
+
+function cancelarModoImportacion() {
+  importacionPendiente = null;
+  if (elModalModoImportacion) elModalModoImportacion.classList.remove('show');
+  showToast('Importación cancelada', '');
+}
+
+async function procesarImportacion(modo) {
+  if (!importacionPendiente) return;
+
+  const { productos, pin } = importacionPendiente;
+  if (elModalModoImportacion) elModalModoImportacion.classList.remove('show');
+
+  [elBtnImportOmitir, elBtnImportActualizar].forEach(b => { if (b) b.disabled = true; });
+
+  const acumulado = { creados: 0, actualizados: 0, omitidos: 0, errores: [] };
+
+  try {
+    /* Se envía en bloques de 200: el backend acepta hasta 6 MB por petición
+       y un catálogo grande de Tiendanube supera ese límite de una sola vez. */
+    for (let i = 0; i < productos.length; i += 200) {
+      const bloque = productos.slice(i, i + 200);
+      const r = await API.productos.importar(bloque, modo, pin);
+
+      acumulado.creados += r?.creados || 0;
+      acumulado.actualizados += r?.actualizados || 0;
+      acumulado.omitidos += r?.omitidos || 0;
+      if (Array.isArray(r?.errores)) acumulado.errores.push(...r.errores);
     }
 
-    // Se envían por lotes para no exceder el límite del backend
-    let importados = 0;
-    for (let i = 0; i < productosNuevos.length; i += 200) {
-      const lote = productosNuevos.slice(i, i + 200);
-      const r = await API.productos.importar(lote);
-      importados += r?.importados || lote.length;
+    const partes = [];
+    if (acumulado.creados) partes.push(`${acumulado.creados} creado(s)`);
+    if (acumulado.actualizados) partes.push(`${acumulado.actualizados} actualizado(s)`);
+    if (acumulado.omitidos) partes.push(`${acumulado.omitidos} omitido(s) por ya existir`);
+
+    showToast(partes.length ? `Importación lista: ${partes.join(' · ')}` : 'No hubo cambios', 'ok');
+
+    if (acumulado.errores.length) {
+      console.warn('Filas con problemas durante la importación:', acumulado.errores);
+      showToast(`${acumulado.errores.length} fila(s) con error — revisa la consola`, 'err');
     }
 
-    showToast(`${importados} producto(s) importado(s) con éxito`, 'ok');
     cargarProductos();
   } catch (err) {
     console.error('Error al importar productos:', err.message || err);
-    showToast('Error al importar: ' + (err.message || 'formato no reconocido'), 'err');
+    showToast('Error al importar: ' + (err.message || 'fallo del servidor'), 'err');
   } finally {
-    e.target.value = '';
+    importacionPendiente = null;
+    [elBtnImportOmitir, elBtnImportActualizar].forEach(b => { if (b) b.disabled = false; });
+  }
+}
+
+// ============================================================
+// EXPORTACIÓN INDIVIDUAL (un producto, desde su propio modal)
+// ============================================================
+function abrirModalFormatoExport() {
+  if (!editingProductId) { showToast('Guarda el producto antes de exportarlo', 'err'); return; }
+
+  const producto = productsList.find(p => String(p.id) === String(editingProductId));
+  if (elFormatoExportNombre) {
+    elFormatoExportNombre.textContent = producto
+      ? `${producto.nombre}${producto.sku ? ' · SKU ' + producto.sku : ''}`
+      : 'Producto';
+  }
+  if (elModalFormatoExport) elModalFormatoExport.classList.add('show');
+}
+
+function cerrarModalFormatoExport() {
+  if (elModalFormatoExport) elModalFormatoExport.classList.remove('show');
+}
+
+/* Nombre de archivo seguro: sin tildes, espacios ni caracteres que a
+   Windows le molesten al guardar. */
+function nombreArchivoSeguro(texto) {
+  return String(texto || 'producto')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase()
+    .slice(0, 50) || 'producto';
+}
+
+function descargarArchivo(contenido, nombre, tipoMime) {
+  const blob = new Blob([contenido], { type: tipoMime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nombre;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  // Se libera con retardo: si se revoca al instante, Safari cancela la descarga
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+async function exportarProductoIndividual(formato) {
+  const producto = productsList.find(p => String(p.id) === String(editingProductId));
+  if (!producto) { showToast('No se encontró el producto', 'err'); return; }
+
+  const base = nombreArchivoSeguro(producto.sku || producto.nombre);
+
+  try {
+    if (formato === 'json') {
+      /* JSON: se exporta el producto completo tal cual, más sus capas de
+         costo si tiene los lotes activos. Sirve de respaldo fiel y se puede
+         volver a cargar sin perder nada. */
+      const salida = { ...producto, exportado_en: new Date().toISOString() };
+
+      if (producto.usa_lotes) {
+        try {
+          salida.lotes = await API.productos.listarLotes(producto.id);
+        } catch (_) {
+          salida.lotes = [];   // sin capas legibles, se exporta igual el producto
+        }
+      }
+
+      descargarArchivo(JSON.stringify(salida, null, 2), `${base}.json`, 'application/json;charset=utf-8;');
+    } else {
+      /* CSV: una sola fila con los mismos encabezados de la exportación
+         masiva, para que se pueda reimportar sin tocar nada. */
+      const hoja = XLSX.utils.json_to_sheet([filaProductoParaExportar(producto)]);
+      const csv = XLSX.utils.sheet_to_csv(hoja, { FS: ';' });
+
+      // BOM al inicio: sin esto Excel en Windows rompe las tildes
+      descargarArchivo('\uFEFF' + csv, `${base}.csv`, 'text/csv;charset=utf-8;');
+    }
+
+    showToast(`Producto exportado en ${formato.toUpperCase()}`, 'ok');
+    cerrarModalFormatoExport();
+  } catch (err) {
+    console.error('Error al exportar el producto:', err.message || err);
+    showToast(err.message || 'No se pudo exportar el producto', 'err');
   }
 }
 
