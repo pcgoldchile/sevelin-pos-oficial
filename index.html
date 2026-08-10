@@ -7,29 +7,30 @@
   <link rel="stylesheet" href="css/styles.css">
 
   <!-- ============================================================
-       TAILWIND CSS (CDN)
+       TAILWIND CSS — COMPILADO
        ------------------------------------------------------------
-       darkMode: 'class' busca .dark en un ancestro. El sistema ya tenía
-       su propio interruptor (body.theme-light), así que js/config.js
-       sincroniza .dark en <html>: un solo botón sigue mandando sobre
-       los dos temas.
+       Antes se usaba https://cdn.tailwindcss.com, que descargaba el
+       compilador completo (~400 KB) y generaba el CSS EN EL NAVEGADOR
+       en cada carga: eso provocaba el parpadeo sin estilos al abrir.
 
-       ⚠️ El CDN compila Tailwind EN EL NAVEGADOR en cada carga. Sirve
-       para probar, pero para producción conviene compilar el CSS. Ver
-       la nota del LEEME.
+       Ahora el CSS viene precompilado y solo trae las clases que el
+       proyecto realmente usa (~14 KB). Se sirve como archivo estático,
+       así que aplica antes del primer pintado.
+
+       ⚠️ IMPORTANTE: si agregas clases nuevas de Tailwind al HTML o al
+       JS, hay que recompilar:   npm run css
+       Si no, esas clases NO existirán en el archivo y no se verán.
        ============================================================ -->
+
   <!-- Plus Jakarta Sans: geométrica y redondeada, muy legible en cifras -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: { extend: { fontFamily: { sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'] } } }
-    };
-  </script>
+  <!-- Va DESPUÉS de styles.css, igual que el CDN inyectaba su <style>
+       al final. Mantener este orden es lo que hace que el resultado se
+       vea idéntico a como se veía con el CDN. -->
+  <link rel="stylesheet" href="css/tailwind.css">
 </head>
 <body>
 
