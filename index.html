@@ -5,6 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sistema POS - Sevelin</title>
   <link rel="stylesheet" href="css/styles.css">
+
+  <!-- ============================================================
+       TAILWIND CSS (CDN)
+       ------------------------------------------------------------
+       darkMode: 'class' busca .dark en un ancestro. El sistema ya tenía
+       su propio interruptor (body.theme-light), así que js/config.js
+       sincroniza .dark en <html>: un solo botón sigue mandando sobre
+       los dos temas.
+
+       ⚠️ El CDN compila Tailwind EN EL NAVEGADOR en cada carga. Sirve
+       para probar, pero para producción conviene compilar el CSS. Ver
+       la nota del LEEME.
+       ============================================================ -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: { extend: { fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] } } }
+    };
+  </script>
 </head>
 <body>
 
@@ -17,12 +37,37 @@
       </div>
 
       <form id="formLogin" autocomplete="off">
-        <div class="field">
-          <label for="pinInput">PIN de acceso</label>
-          <input type="password" id="pinInput" class="pin-input" inputmode="numeric" maxlength="6"
-                 placeholder="••••" autocomplete="off" required>
+        <!-- El input real sigue existiendo con su id: auth.js lee de aquí.
+             El teclado de abajo solo escribe en él, así la lógica de
+             sesión no cambia en absoluto. -->
+        <input type="password" id="pinInput" class="sr-only" inputmode="numeric"
+               maxlength="6" autocomplete="off" required tabindex="-1" aria-hidden="true">
+
+        <!-- Puntos que muestran cuántos dígitos van -->
+        <div id="pinPuntos" class="flex items-center justify-center gap-3 my-6"></div>
+
+        <!-- Teclado numérico: pensado para tocar con el dedo en pantalla -->
+        <div id="pinPad" class="grid grid-cols-3 gap-2.5 max-w-[280px] mx-auto">
+          <button type="button" data-pin="1" class="pin-tecla">1</button>
+          <button type="button" data-pin="2" class="pin-tecla">2</button>
+          <button type="button" data-pin="3" class="pin-tecla">3</button>
+          <button type="button" data-pin="4" class="pin-tecla">4</button>
+          <button type="button" data-pin="5" class="pin-tecla">5</button>
+          <button type="button" data-pin="6" class="pin-tecla">6</button>
+          <button type="button" data-pin="7" class="pin-tecla">7</button>
+          <button type="button" data-pin="8" class="pin-tecla">8</button>
+          <button type="button" data-pin="9" class="pin-tecla">9</button>
+          <button type="button" data-pin-accion="limpiar" class="pin-tecla pin-tecla-sec">C</button>
+          <button type="button" data-pin="0" class="pin-tecla">0</button>
+          <button type="button" data-pin-accion="borrar" class="pin-tecla pin-tecla-sec">⌫</button>
         </div>
-        <button type="submit" class="btn btn-primary btn-block btn-lg" id="btnIngresar">Ingresar</button>
+
+        <button type="submit" id="btnIngresar"
+                class="mt-6 w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800
+                       text-white text-base font-semibold transition-colors
+                       disabled:opacity-40 disabled:cursor-not-allowed">
+          Ingresar
+        </button>
       </form>
 
       <div id="loginError" class="error-msg hidden">PIN incorrecto. Reintenta.</div>
@@ -59,126 +104,203 @@
          VISTA 1: POS / VENTAS
          ============================================================ -->
     <section id="view-pos" class="view-section active">
-      <div class="pos-stack">
+      <!-- ============================================================
+           MÓDULO POS — maquetado con Tailwind
+           ------------------------------------------------------------
+           Se conservan TODOS los id, los data-* y las clases de las que
+           depende el JavaScript:
+             · admin-only      → auth.js oculta esto al rol trabajador
+             · suggestions-box → pos.js y atajos.js
+             · data-scan       → escaner.js
+           Solo cambian las clases de presentación.
 
-        <div class="card pos-entry-card">
-          <div class="card-head">
-            <h2>Ingresar Producto</h2>
-            <button class="btn btn-outline btn-sm" id="btnVerAtajos" title="Ver los atajos de teclado (F1)">
-              ⌨️ Atajos <kbd class="kbd-inline">F1</kbd>
-            </button>
-          </div>
+           Dos columnas: a la izquierda se ingresa, a la derecha se cobra.
+           En pantallas chicas se apilan.
+           ============================================================ -->
+      <div class="max-w-7xl mx-auto px-4 lg:px-6 py-4 lg:py-6">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6 items-start">
 
-          <div class="field" style="position:relative; margin-top:14px;">
-            <label>Buscar Producto (Nombre / SKU / Barcode)</label>
-            <div class="input-scan">
-              <input type="text" id="posBuscarProducto" placeholder="Escriba o escanee para buscar en catálogo..." autocomplete="off">
-              <button class="btn btn-outline btn-scan" data-scan="posBuscarProducto" title="Escanear con la cámara">📷</button>
-            </div>
-            <div id="posSugerencias" class="suggestions-box"></div>
-          </div>
+          <!-- ========== IZQUIERDA: buscar e ingresar ========== -->
+          <div class="lg:col-span-7 xl:col-span-8 space-y-5">
 
-          <div class="pos-entry-row">
-            <div class="field pos-entry-nombre">
-              <label>Producto *</label>
-              <input type="text" id="itemNombre" placeholder="Nombre del producto">
-            </div>
-            <div class="field pos-entry-sm">
-              <label>Cantidad *</label>
-              <input type="number" id="itemCantidad" min="1" value="1">
-            </div>
-            <div class="field pos-entry-sm admin-only">
-              <label>Costo Unit. ($)</label>
-              <input type="number" id="itemCosto" min="0" step="1" placeholder="0">
-            </div>
-            <div class="field pos-entry-sm">
-              <label>Precio Unit. ($) *</label>
-              <input type="number" id="itemPrecio" min="0" step="1" placeholder="0">
-            </div>
-            <div class="field pos-entry-sn">
-              <label class="field-ghost-label">S/N</label>
-              <label class="sn-toggle">
-                <input type="checkbox" id="checkTieneSN"> Tiene S/N
-              </label>
-            </div>
-            <div class="pos-entry-btn">
-              <label class="field-ghost-label">&nbsp;</label>
-              <div class="toolbar-group">
-                <button class="btn btn-primary" id="btnAgregarItem">➕ Agregar</button>
-                <button class="btn btn-outline" id="btnLimpiarSeleccion" title="Vacía solo los campos de arriba; el carrito no se toca">🧹 Limpiar Selección</button>
+            <div class="bg-white dark:bg-slate-800/70 rounded-2xl shadow-sm border border-slate-200/80 dark:border-slate-700 overflow-hidden">
+              <div class="h-1 bg-gradient-to-r from-blue-500 to-violet-500"></div>
+
+              <div class="p-5 lg:p-6">
+                <div class="flex items-center justify-between gap-3 flex-wrap mb-5">
+                  <div>
+                    <h2 class="text-lg font-bold text-slate-800 dark:text-slate-100">Ingresar producto</h2>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Busca en el catálogo o escribe uno manual</p>
+                  </div>
+                  <button id="btnVerAtajos" type="button"
+                          class="inline-flex items-center gap-2 h-9 px-3 rounded-lg text-xs font-semibold
+                                 text-slate-600 dark:text-slate-300 bg-slate-100 hover:bg-slate-200
+                                 dark:bg-slate-700/60 dark:hover:bg-slate-700 transition-colors">
+                    ⌨️ Atajos
+                    <span class="px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-600 text-[10px]">F1</span>
+                  </button>
+                </div>
+
+                <!-- Buscador: ancho acotado y cámara DENTRO del campo -->
+                <div class="relative max-w-xl">
+                  <label for="posBuscarProducto" class="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5">
+                    Buscar producto <span class="font-normal">(nombre / SKU / código de barras)</span>
+                  </label>
+                  <div class="relative">
+                    <input type="text" id="posBuscarProducto" autocomplete="off"
+                           placeholder="Escribe o escanea…"
+                           class="w-full h-12 pl-11 pr-12 rounded-xl text-[15px]
+                                  bg-slate-50 dark:bg-slate-900/60
+                                  border border-slate-300 dark:border-slate-600
+                                  text-slate-800 dark:text-slate-100
+                                  placeholder:text-slate-400 dark:placeholder:text-slate-500
+                                  focus:outline-none focus:ring-4 focus:ring-blue-500/25 focus:border-blue-500 transition">
+                    <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none select-none">🔍</span>
+                    <button type="button" data-scan="posBuscarProducto" title="Escanear con la cámara"
+                            class="absolute right-2 top-1/2 -translate-y-1/2 h-9 w-9 rounded-lg
+                                   bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600
+                                   text-slate-600 dark:text-slate-200 transition-colors">📷</button>
+                  </div>
+                  <div id="posSugerencias" class="suggestions-box"></div>
+                </div>
+
+                <!-- Datos del ítem -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-6">
+                  <div class="col-span-2">
+                    <label for="itemNombre" class="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5">Producto *</label>
+                    <input type="text" id="itemNombre" placeholder="Nombre del producto" class="campo-pos">
+                  </div>
+                  <div>
+                    <label for="itemCantidad" class="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5">Cantidad *</label>
+                    <input type="number" id="itemCantidad" min="1" value="1" class="campo-pos text-right">
+                  </div>
+                  <div class="admin-only">
+                    <label for="itemCosto" class="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5">Costo unit.</label>
+                    <input type="number" id="itemCosto" min="0" step="1" placeholder="0" class="campo-pos text-right">
+                  </div>
+                  <div>
+                    <label for="itemPrecio" class="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5">Precio unit. *</label>
+                    <input type="number" id="itemPrecio" min="0" step="1" placeholder="0" class="campo-pos text-right">
+                  </div>
+                  <div class="flex items-end">
+                    <label for="checkTieneSN"
+                           class="flex items-center gap-2 h-11 w-full px-3 rounded-xl cursor-pointer
+                                  bg-slate-50 dark:bg-slate-900/60 border border-slate-300 dark:border-slate-600
+                                  text-sm text-slate-700 dark:text-slate-200 hover:border-blue-500 transition-colors">
+                      <input type="checkbox" id="checkTieneSN" class="w-4 h-4 accent-blue-600">
+                      Tiene S/N
+                    </label>
+                  </div>
+                </div>
+
+                <input type="text" id="itemSN" placeholder="Ingresa el S/N o código de serie"
+                       class="campo-pos mt-3" style="display:none;">
+
+                <div class="flex items-center justify-between gap-3 flex-wrap mt-5 pt-5 border-t border-slate-200 dark:border-slate-700">
+                  <span id="utilidadPreview" class="admin-only text-sm font-semibold text-emerald-600 dark:text-emerald-400"></span>
+                  <div class="flex gap-2.5 ml-auto">
+                    <button id="btnLimpiarSeleccion" type="button" title="Vacía solo los campos de arriba; el carrito no se toca"
+                            class="h-11 px-4 rounded-xl text-sm font-semibold transition-colors
+                                   bg-slate-100 hover:bg-slate-200 text-slate-700
+                                   dark:bg-slate-700/60 dark:hover:bg-slate-700 dark:text-slate-200">🧹 Limpiar</button>
+                    <button id="btnAgregarItem" type="button"
+                            class="h-11 px-6 rounded-xl text-sm font-semibold text-white transition-colors
+                                   bg-blue-600 hover:bg-blue-700 active:bg-blue-800 shadow-sm">➕ Agregar</button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          <div class="pos-entry-foot">
-            <input type="text" id="itemSN" placeholder="Ingrese S/N o Código de Serie" style="display:none;">
-            <span id="utilidadPreview" class="admin-only"></span>
+          <!-- ========== DERECHA: carrito y cobro ========== -->
+          <div class="lg:col-span-5 xl:col-span-4">
+            <div class="bg-white dark:bg-slate-800/70 rounded-2xl shadow-sm border border-slate-200/80 dark:border-slate-700 overflow-hidden lg:sticky lg:top-4">
+              <div class="h-1 bg-gradient-to-r from-emerald-500 to-blue-500"></div>
+
+              <div class="p-5 lg:p-6">
+                <h2 class="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4">Carrito de venta</h2>
+
+                <!-- Datos de la venta. Las cuatro etiquetas miden lo mismo,
+                     así los campos quedan alineados aunque dos sean checkbox. -->
+                <div class="grid grid-cols-2 gap-3 mb-4">
+                  <div>
+                    <label for="posFecha" class="etiqueta-pos">Fecha</label>
+                    <input type="date" id="posFecha" class="campo-pos">
+                  </div>
+                  <div>
+                    <label for="posEditarHora" class="etiqueta-pos etiqueta-check">
+                      <input type="checkbox" id="posEditarHora" class="w-3.5 h-3.5 accent-blue-600"> Editar hora
+                    </label>
+                    <input type="time" id="posHora" disabled class="campo-pos"
+                           title="Marca “Editar hora” para fijar una hora distinta a la actual">
+                  </div>
+                  <div class="col-span-2">
+                    <label for="posCliente" class="etiqueta-pos">Cliente</label>
+                    <input type="text" id="posCliente" placeholder="Cliente opcional / Particular" class="campo-pos">
+                  </div>
+                  <div class="col-span-2 relative">
+                    <label for="posSincronizarOT" class="etiqueta-pos etiqueta-check">
+                      <input type="checkbox" id="posSincronizarOT" class="w-3.5 h-3.5 accent-blue-600"> Sincronizar OT a esta venta
+                    </label>
+                    <input type="text" id="posBuscarOT" placeholder="OT-000012, cliente o equipo…"
+                           autocomplete="off" disabled class="campo-pos">
+                    <div id="posSugerenciasOT" class="suggestions-box"></div>
+                  </div>
+                </div>
+
+                <p id="posOTVinculada" class="text-xs text-slate-500 dark:text-slate-400 mb-3" style="display:none;"></p>
+
+                <!-- Detalle del carrito -->
+                <div class="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                  <div class="max-h-[340px] overflow-y-auto">
+                    <table class="data-table w-full text-sm">
+                      <thead>
+                        <tr class="bg-slate-50 dark:bg-slate-900/60">
+                          <th class="cabecera-pos text-left">Cant</th>
+                          <th class="cabecera-pos text-left">Producto / S/N</th>
+                          <th class="cabecera-pos text-right">P. Unit</th>
+                          <th class="cabecera-pos text-right">Subtotal</th>
+                          <th class="cabecera-pos text-right">Acción</th>
+                        </tr>
+                      </thead>
+                      <tbody id="cartTableBody">
+                        <tr class="empty-row">
+                          <td colspan="5" class="px-4 py-8 text-center text-sm text-slate-400 dark:text-slate-500">
+                            El carrito está vacío
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <!-- Total y cobro -->
+                <div class="mt-5 pt-5 border-t border-slate-200 dark:border-slate-700">
+                  <div class="flex items-baseline justify-between mb-4">
+                    <span class="text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Total</span>
+                    <strong id="cartTotalText"
+                            class="text-4xl font-extrabold tracking-tight tabular-nums text-emerald-600 dark:text-emerald-400">$0</strong>
+                  </div>
+
+                  <button id="btnFinalizarVenta" type="button"
+                          class="w-full h-14 rounded-2xl text-base font-bold text-white transition-all
+                                 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800
+                                 shadow-lg shadow-emerald-600/25 hover:-translate-y-0.5">
+                    💳 Finalizar venta
+                  </button>
+
+                  <button id="btnMermaPOS" type="button" title="Dar de baja stock dañado, robado o vencido"
+                          class="admin-only w-full h-11 mt-2.5 rounded-xl text-sm font-semibold transition-colors
+                                 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200
+                                 dark:bg-amber-500/10 dark:hover:bg-amber-500/20 dark:text-amber-400 dark:border-amber-500/30">
+                    📉 Registrar merma
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
+
         </div>
-
-        <div class="card pos-cart-card">
-          <div class="pos-cart-head">
-            <h2>Carrito de Venta</h2>
-            <!-- Todos los campos usan la MISMA estructura label + control.
-                 Antes "Editar hora" metía un .sn-toggle con altura propia
-                 dentro del hueco de la etiqueta, y su input quedaba unos
-                 píxeles más abajo que los demás. -->
-            <div class="pos-cart-meta">
-              <div class="field">
-                <label for="posFecha">Fecha</label>
-                <input type="date" id="posFecha">
-              </div>
-              <div class="field">
-                <label class="label-check" for="posEditarHora">
-                  <input type="checkbox" id="posEditarHora"> Editar hora
-                </label>
-                <input type="time" id="posHora" disabled title="Marca “Editar hora” para fijar una hora distinta a la actual">
-              </div>
-              <div class="field pos-meta-cliente">
-                <label for="posCliente">Cliente</label>
-                <input type="text" id="posCliente" placeholder="Cliente Opcional / Particular">
-              </div>
-              <div class="field pos-meta-ot">
-                <label class="label-check" for="posSincronizarOT">
-                  <input type="checkbox" id="posSincronizarOT"> Sincronizar OT
-                </label>
-                <input type="text" id="posBuscarOT" placeholder="OT-000012, cliente o equipo..." autocomplete="off" disabled>
-                <div id="posSugerenciasOT" class="suggestions-box"></div>
-              </div>
-            </div>
-          </div>
-
-          <p class="modal-hint" id="posOTVinculada" style="display:none;"></p>
-
-          <div class="table-wrapper">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Cant</th>
-                  <th>Producto / S/N</th>
-                  <th>P. Unit</th>
-                  <th>Subtotal</th>
-                  <th style="text-align:right;">Acción</th>
-                </tr>
-              </thead>
-              <tbody id="cartTableBody">
-                <tr class="empty-row"><td colspan="5">El carrito está vacío</td></tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div class="pos-cart-foot">
-            <div class="pos-cart-total">
-              <span>Total</span>
-              <strong id="cartTotalText">$0</strong>
-            </div>
-            <div class="toolbar-group">
-              <button class="btn btn-outline admin-only" id="btnMermaPOS" title="Dar de baja stock dañado, robado o vencido">📉 Registrar Merma</button>
-              <button class="btn btn-green btn-lg" id="btnFinalizarVenta">💳 Finalizar Venta</button>
-            </div>
-          </div>
-        </div>
-
       </div>
     </section>
 
@@ -2124,6 +2246,7 @@
   <script src="js/api.js"></script>
   <script src="js/config.js"></script>
   <script src="js/auth.js"></script>
+  <script src="js/pinpad.js"></script>
   <script src="js/pago.js"></script>
   <script src="js/tiendanube.js"></script>
   <script src="js/lotes.js"></script>

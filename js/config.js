@@ -224,6 +224,12 @@ function tsAChile(valor, conHora = true) {
 function aplicarTema(tema) {
   const esClaro = tema === 'light';
   document.body.classList.toggle('theme-light', esClaro);
+
+  /* Tailwind activa sus variantes dark: buscando .dark en un ancestro.
+     El sistema ya tenía su propio interruptor (body.theme-light), así
+     que se sincronizan los dos: un solo botón sigue mandando sobre todo
+     y no quedan dos temas peleando. */
+  document.documentElement.classList.toggle('dark', !esClaro);
   const btn = document.getElementById('btnTema');
   if (btn) {
     btn.textContent = esClaro ? '☀️' : '🌙';
