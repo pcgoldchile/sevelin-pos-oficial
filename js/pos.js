@@ -146,11 +146,14 @@ function handleBuscarProducto() {
     return;
   }
 
-  const encontrados = productsList.filter(p =>
-    (p.nombre || '').toLowerCase().includes(q) ||
-    (p.sku || '').toLowerCase().includes(q) ||
-    (p.codigo_barras || '').toLowerCase().includes(q)
-  ).slice(0, 8);
+  /* Búsqueda por palabras sueltas: "cable vga" encuentra "Cable HDMI a
+     VGA" aunque la frase no aparezca literal ni en ese orden. Los
+     resultados vienen ordenados por parecido (ver config.js). */
+  const encontrados = filtrarPorBusqueda(
+    productsList, q,
+    p => [p.nombre, p.sku, p.codigo_barras, p.descripcion],
+    8
+  );
 
   if (encontrados.length === 0) {
     elSugerencias.classList.remove('show');
@@ -158,13 +161,16 @@ function handleBuscarProducto() {
     return;
   }
 
-  elSugerencias.innerHTML = encontrados.map(p => `
-    <div class="suggestion-item" data-id="${p.id}">
+  elSugerencias.innerHTML = encontrados.map((p, i) => `
+    <div class="suggestion-item" data-id="${p.id}" data-atajo="Alt+${i + 1}">
       <span>${p.nombre}</span>
       <span>${fmtCLP(p.precio_unitario)} · Stock: ${p.stock ?? 0}</span>
     </div>
   `).join('');
   elSugerencias.classList.add('show');
+
+  // Reinicia la marca de navegación con ↑ / ↓ (js/atajos.js)
+  if (typeof sugerenciaActiva !== 'undefined') sugerenciaActiva = -1;
 
   elSugerencias.querySelectorAll('.suggestion-item').forEach(item => {
     item.addEventListener('click', () => {
@@ -217,11 +223,12 @@ async function buscarOTParaVenta() {
     try { ordenes = await API.ot.listar(); } catch (_) { ordenes = []; }
   }
 
-  const encontradas = ordenes.filter(o =>
-    (o.numero_ot || '').toLowerCase().includes(q) ||
-    (o.cliente_nombre || '').toLowerCase().includes(q) ||
-    (o.dispositivo_modelo || '').toLowerCase().includes(q)
-  ).slice(0, 8);
+  // Mismo criterio de palabras sueltas que el buscador de productos
+  const encontradas = filtrarPorBusqueda(
+    ordenes, q,
+    o => [o.numero_ot, o.cliente_nombre, o.dispositivo_modelo, o.dispositivo_categoria],
+    8
+  );
 
   if (encontradas.length === 0) { elPosSugerenciasOT.classList.remove('show'); return; }
 
@@ -468,7 +475,7 @@ function abrirModalPago() {
 
   abrirSelectorPago({
     titulo: 'Confirmar Pago',
-    subtitulo: 'Elige el medio de pago. Con efectivo se calcula el vuelto.',
+    subtitulo: 'Elige el medio de pago. Con efectivo se calcula el vuelto; con Mixto puedes repartir el total entre varios medios.',
     total,
     textoConfirmar: 'Confirmar Venta',
     onConfirmar: (metodo, datos) => confirmarVenta(metodo, datos)
@@ -489,6 +496,10 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
     tipo_dte: datosPago.tipoDte || 'SIN DTE',
     cliente: elPosCliente?.value.trim() || null,
     metodo_pago: metodoPago,
+    /* Desglose del pago mixto. Va solo si el usuario eligió "Mixto"; el
+       backend lo revalida contra el total y calcula la comisión sobre
+       cada parte con tarjeta por separado. */
+    pagos: datosPago.pagos || null,
     // El backend descuenta el stock (comercial e interno) recién aquí
     ot_id: otVinculadaVenta?.id || null,
     numero_ot: otVinculadaVenta?.numero_ot || null,

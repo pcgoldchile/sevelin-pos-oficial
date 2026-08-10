@@ -99,7 +99,10 @@ const API = {
       const cadena = q.toString();
       return apiRequest('/ventas' + (cadena ? `?${cadena}` : ''));
     },
-    registrarPago: (id, metodo) => apiRequest(`/ventas/${id}/pago`, { method: 'POST', body: { metodo_pago_final: metodo } }),
+    // `pagos` solo se manda en cobros mixtos; el backend lo revalida
+    registrarPago: (id, metodo, pagos) => apiRequest(`/ventas/${id}/pago`, {
+      method: 'POST', body: { metodo_pago_final: metodo, pagos: pagos || null }
+    }),
     // Cambia solo el tipo de DTE (edición rápida desde el Historial)
     cambiarDTE: (id, tipo) => apiRequest(`/ventas/${id}/dte`, { method: 'POST', body: { tipo_dte: tipo } }),
     importar: (ventas) => apiRequest('/ventas/importar', { method: 'POST', body: { ventas } }),

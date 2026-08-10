@@ -66,9 +66,80 @@ function showToast(msg, type = '') {
   window._toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
 }
 
+/* Separador de miles hecho a mano, a propósito.
+   toLocaleString('es-CL') NO sirve: el ICU recortado de Android aplica la
+   regla CLDR minimumGroupingDigits=2 del español, según la cual los
+   números de 4 dígitos van SIN separador. En un teléfono salía "$1000" y
+   "$7000" pero "$20.000" correcto. En Chile se escribe $1.000 siempre. */
 function fmtCLP(v) {
-  v = Number(v) || 0;
-  return '$' + v.toLocaleString('es-CL', { maximumFractionDigits: 0 });
+  const n = Math.round(Number(v) || 0);
+  const negativo = n < 0;
+  const s = String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return (negativo ? '-$' : '$') + s;
+}
+
+/* ------------------------------------------------------------
+   BÚSQUEDA POR PALABRAS SUELTAS
+   ------------------------------------------------------------
+   Antes se hacía `nombre.includes(consulta)`, así que escribir
+   "cable vga" no encontraba "Cable HDMI a VGA": la frase completa no
+   aparecía literal en ese orden. Ahora la consulta se parte en palabras
+   y TODAS deben aparecer en algún lado, sin importar el orden ni las
+   tildes. "vga cable" también funciona.
+   ------------------------------------------------------------ */
+
+function normalizarBusqueda(t) {
+  return String(t == null ? '' : t)
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');   // quita tildes
+}
+
+function tokensBusqueda(consulta) {
+  return normalizarBusqueda(consulta).split(/\s+/).filter(Boolean);
+}
+
+/* ¿Los campos de este registro contienen TODAS las palabras buscadas? */
+function coincideBusqueda(campos, tokens) {
+  if (!tokens.length) return true;
+  const heno = normalizarBusqueda((campos || []).filter(Boolean).join(' '));
+  return tokens.every(t => heno.indexOf(t) !== -1);
+}
+
+/* Puntaje para ordenar los resultados: lo más parecido, primero.
+   Sin esto, buscar "cable" pondría antes un "Adaptador con cable" que el
+   propio "Cable VGA". */
+function puntajeBusqueda(campos, tokens, consultaCruda) {
+  const heno = normalizarBusqueda((campos || []).filter(Boolean).join(' '));
+  const principal = normalizarBusqueda((campos || [])[0] || '');
+  const frase = normalizarBusqueda(consultaCruda);
+  let p = 0;
+
+  if (principal === frase) p += 1000;                    // coincidencia exacta
+  if (principal.indexOf(frase) === 0) p += 500;          // empieza con lo buscado
+  if (heno.indexOf(frase) !== -1) p += 200;              // la frase completa aparece
+
+  tokens.forEach(t => {
+    if (new RegExp('\\b' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(principal)) p += 40;
+    else if (principal.indexOf(t) !== -1) p += 20;
+    else if (heno.indexOf(t) !== -1) p += 5;
+  });
+
+  return p;
+}
+
+/* Filtra y ordena en un paso. `campos` es una función que recibe el
+   registro y devuelve el arreglo de textos donde buscar. */
+function filtrarPorBusqueda(lista, consulta, campos, limite) {
+  const tokens = tokensBusqueda(consulta);
+  if (!tokens.length) return [];
+
+  return (lista || [])
+    .map(item => ({ item, campos: campos(item) }))
+    .filter(o => coincideBusqueda(o.campos, tokens))
+    .map(o => ({ item: o.item, p: puntajeBusqueda(o.campos, tokens, consulta) }))
+    .sort((a, b) => b.p - a.p)
+    .slice(0, limite || 20)
+    .map(o => o.item);
 }
 
 /* ------------------------------------------------------------

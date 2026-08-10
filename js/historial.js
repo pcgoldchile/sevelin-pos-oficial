@@ -1012,10 +1012,10 @@ function pagarVentaPendiente(id) {
     subtitulo: `Cliente: ${venta.cliente || 'Consumidor Final'} · registrada el ${venta.fecha}`,
     total: Number(venta.total) || 0,
     // Aquí ya no tiene sentido "Por Pagar"
-    metodos: ['Efectivo', 'Tarjeta Débito', 'Tarjeta Crédito', 'Transferencia'],
+    metodos: ['Efectivo', 'Tarjeta Débito', 'Tarjeta Crédito', 'Transferencia', 'Mixto'],
     textoConfirmar: '✅ Registrar Pago',
     onConfirmar: async (metodo, datos) => {
-      await API.ventas.registrarPago(venta.id, metodo);
+      await API.ventas.registrarPago(venta.id, metodo, datos?.pagos || null);
 
       // El documento tributario se emite al cobrar, así que se guarda aquí
       const dte = datos?.tipoDte || 'SIN DTE';
@@ -1023,7 +1023,7 @@ function pagarVentaPendiente(id) {
         await API.ventas.cambiarDTE(venta.id, dte);
       }
 
-      showToast(`Venta cobrada con ${metodo}`, 'ok');
+      showToast(metodo === 'Mixto' ? 'Venta cobrada con pago mixto' : `Venta cobrada con ${metodo}`, 'ok');
       await cargarHistorial();
     }
   });

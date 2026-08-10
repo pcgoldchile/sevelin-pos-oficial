@@ -1219,3 +1219,367 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
   background: rgba(245, 158, 11, .12);
   border: 1px solid rgba(245, 158, 11, .35);
 }
+
+/* ============================================================
+   11. REFINAMIENTO VISUAL — POS, atajos y pago mixto
+   ------------------------------------------------------------
+   Se agrega al final para que sobrescriba lo anterior sin tener que
+   reescribir la hoja. Objetivos:
+     · Jerarquía real: que el ojo encuentre primero el buscador, el
+       total y el botón de cerrar la venta.
+     · Alinear la barra de fecha/hora/cliente/OT, que estaba despareja.
+     · Dar profundidad con sombras y bordes suaves en vez de cajas planas.
+   ============================================================ */
+
+:root {
+    --sombra-card: 0 1px 2px rgba(0,0,0,.20), 0 8px 24px -12px rgba(0,0,0,.55);
+    --sombra-elev: 0 2px 4px rgba(0,0,0,.22), 0 18px 44px -18px rgba(0,0,0,.70);
+    --anillo-foco: 0 0 0 3px rgba(59,130,246,.30);
+    --radio: 14px;
+}
+
+/* ---------- Tarjetas con más aire y profundidad ---------- */
+.card {
+    border-radius: var(--radio);
+    box-shadow: var(--sombra-card);
+    border: 1px solid var(--border);
+}
+
+/* Cabecera de tarjeta: título a la izquierda, acción a la derecha */
+.card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+}
+.card-head h2 { margin: 0; }
+
+/* Filo superior de color: separa visualmente las dos tarjetas del POS
+   sin necesidad de más texto ni bordes gruesos. */
+.pos-entry-card, .pos-cart-card { position: relative; overflow: hidden; }
+.pos-entry-card::before, .pos-cart-card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 3px;
+}
+.pos-entry-card::before { background: linear-gradient(90deg, var(--blue), var(--violet)); }
+.pos-cart-card::before  { background: linear-gradient(90deg, var(--green), var(--blue)); }
+
+/* ---------- Campos: foco visible ---------- */
+.field input, .field select, .field textarea {
+    border-radius: 10px;
+    transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+}
+.field input:focus, .field select:focus, .field textarea:focus {
+    border-color: var(--blue);
+    box-shadow: var(--anillo-foco);
+    outline: none;
+}
+.field input:disabled, .field select:disabled {
+    opacity: .5;
+    cursor: not-allowed;
+}
+.field label {
+    font-weight: 600;
+    letter-spacing: .01em;
+}
+
+/* ---------- Buscador principal: es la puerta de entrada al POS ---------- */
+.pos-entry-card .input-scan input {
+    font-size: 1.05rem;
+    padding-top: 14px;
+    padding-bottom: 14px;
+}
+.pos-entry-card .input-scan input::placeholder { opacity: .55; }
+
+/* ---------- Barra fecha / hora / cliente / OT ----------
+   El desalineamiento venía de que "Editar hora" y "Sincronizar OT"
+   metían un .sn-toggle con altura propia donde los demás campos tienen
+   una <label> simple. Ahora todos usan .label-check, con la MISMA altura
+   de línea y el mismo margen inferior, y la grilla alinea por la base. */
+.pos-cart-meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 12px 16px;
+    align-items: end;
+}
+.pos-cart-meta .field { margin: 0; min-width: 0; }
+
+.pos-cart-meta .field > label,
+.pos-cart-meta .field > .label-check {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    height: 20px;              /* misma altura para etiqueta y checkbox */
+    margin: 0 0 6px;
+    padding: 0;
+    background: none;
+    border: none;
+    font-size: .78rem;
+    line-height: 20px;
+    color: var(--text-muted);
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: default;
+}
+.label-check { cursor: pointer !important; }
+.label-check input[type="checkbox"] {
+    width: 15px; height: 15px;
+    margin: 0;
+    accent-color: var(--blue);
+    flex-shrink: 0;
+    cursor: pointer;
+}
+.label-check:hover { color: var(--text-300); }
+
+.pos-cart-meta .field input { width: 100%; height: 42px; }
+.pos-meta-cliente { grid-column: span 1; }
+.pos-meta-ot { position: relative; grid-column: span 2; }
+@media (max-width: 720px) {
+    .pos-meta-ot { grid-column: span 1; }
+}
+
+/* ---------- Fila de ingreso de producto ---------- */
+.pos-entry-row { align-items: end; }
+.pos-entry-row .field { margin: 0; }
+.pos-entry-row .field > label { height: 20px; line-height: 20px; margin-bottom: 6px; }
+
+/* ---------- Sugerencias: navegables con el teclado ---------- */
+.suggestions-box {
+    border-radius: 12px;
+    box-shadow: var(--sombra-elev);
+    overflow: hidden;
+}
+.suggestion-item {
+    transition: background .12s ease, padding-left .12s ease;
+    border-left: 3px solid transparent;
+}
+.suggestion-item:hover { background: rgba(59,130,246,.14); }
+
+/* Marca de la sugerencia elegida con ↑ / ↓ */
+.suggestion-item.activa {
+    background: rgba(59,130,246,.24);
+    border-left-color: var(--blue);
+    padding-left: 14px;
+}
+
+/* Numerito para el atajo Alt+N */
+.suggestion-item::after {
+    content: attr(data-atajo);
+    float: right;
+    font-size: .66rem;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 1px 6px;
+    margin-left: 8px;
+    opacity: .7;
+}
+
+/* ---------- Carrito ---------- */
+.pos-cart-card .data-table thead th {
+    position: sticky; top: 0; z-index: 2;
+    background: var(--bg-800);
+    text-transform: uppercase;
+    font-size: .7rem;
+    letter-spacing: .06em;
+}
+.pos-cart-card .data-table tbody tr { transition: background .12s ease; }
+.pos-cart-card .data-table tbody tr:hover { background: rgba(148,163,184,.07); }
+
+/* Total: es el número que más se mira en toda la pantalla */
+.pos-cart-foot {
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
+    margin-top: 4px;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+.pos-cart-total {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+}
+.pos-cart-total span {
+    text-transform: uppercase;
+    font-size: .72rem;
+    letter-spacing: .1em;
+    color: var(--text-muted);
+    font-weight: 700;
+}
+.pos-cart-total strong {
+    font-size: 2.4rem;
+    line-height: 1;
+    font-weight: 800;
+    letter-spacing: -.02em;
+    color: var(--green);
+    font-variant-numeric: tabular-nums;
+}
+
+/* El botón que cierra la venta debe destacar sobre los demás */
+#btnFinalizarVenta {
+    box-shadow: 0 6px 18px -6px rgba(34,197,94,.65);
+    font-weight: 700;
+    padding-left: 26px;
+    padding-right: 26px;
+}
+#btnFinalizarVenta:hover { transform: translateY(-1px); }
+#btnFinalizarVenta:active { transform: translateY(0); }
+
+/* ---------- Teclas ---------- */
+kbd {
+    display: inline-block;
+    min-width: 24px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: var(--bg-900);
+    border: 1px solid var(--border-strong);
+    border-bottom-width: 2px;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: .74rem;
+    line-height: 1.35;
+    color: var(--text-100);
+    text-align: center;
+    white-space: nowrap;
+}
+.kbd-inline {
+    margin-left: 6px;
+    font-size: .65rem;
+    padding: 1px 5px;
+    min-width: 0;
+    opacity: .8;
+}
+
+/* ---------- Ventana de atajos ---------- */
+.atajos-lista {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+    gap: 18px;
+    margin-top: 16px;
+}
+.atajos-grupo {
+    background: var(--bg-900);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+}
+.atajos-grupo h4 {
+    margin: 0 0 10px;
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--gold);
+}
+.atajo-fila {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(148,163,184,.10);
+}
+.atajo-fila:last-child { border-bottom: none; }
+.atajo-teclas {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    flex-shrink: 0;
+    min-width: 108px;
+}
+.atajo-teclas i { font-style: normal; color: var(--text-muted); font-size: .7rem; }
+.atajo-desc { font-size: .82rem; color: var(--text-300); line-height: 1.4; }
+
+.badge-soft {
+    font-size: .68rem;
+    padding: 4px 10px;
+    border-radius: 20px;
+    background: var(--surface-soft);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+/* ---------- Pago mixto ---------- */
+.pago-mixto { margin-top: 16px; }
+.pago-mixto-filas { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+
+.pago-mixto-fila {
+    display: grid;
+    grid-template-columns: 1fr 130px auto auto;
+    gap: 8px;
+    align-items: center;
+}
+@media (max-width: 560px) {
+    .pago-mixto-fila { grid-template-columns: 1fr 1fr; }
+}
+
+.pago-mixto-fila select,
+.pago-mixto-fila input {
+    height: 42px;
+    background: var(--bg-900);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text-100);
+    padding: 0 12px;
+    font-size: .9rem;
+    width: 100%;
+}
+.pago-mixto-fila input { text-align: right; font-variant-numeric: tabular-nums; }
+.pago-mixto-fila select:focus,
+.pago-mixto-fila input:focus { border-color: var(--blue); box-shadow: var(--anillo-foco); outline: none; }
+.pago-mixto-fila .btn-sm { height: 42px; white-space: nowrap; }
+
+.pago-mixto-acciones { margin-top: 10px; }
+
+/* El resumen es la señal de que se puede confirmar o no */
+.pago-mixto-resumen {
+    margin-top: 12px;
+    padding: 11px 14px;
+    border-radius: 10px;
+    font-size: .88rem;
+    border: 1px solid var(--border);
+    font-variant-numeric: tabular-nums;
+}
+.pago-mixto-resumen.ok {
+    background: rgba(34,197,94,.12);
+    border-color: rgba(34,197,94,.40);
+    color: var(--green);
+}
+.pago-mixto-resumen.mal {
+    background: rgba(245,158,11,.12);
+    border-color: rgba(245,158,11,.40);
+    color: var(--gold);
+}
+
+.metodo-mixto { border-style: dashed; }
+
+/* ---------- Métodos de pago ---------- */
+.metodo-pago {
+    border-radius: 12px;
+    transition: transform .12s ease, border-color .12s ease, background .12s ease;
+}
+.metodo-pago:hover { transform: translateY(-2px); }
+.metodo-pago.active {
+    border-color: var(--blue);
+    background: rgba(59,130,246,.16);
+    box-shadow: var(--anillo-foco);
+}
+
+/* ---------- Modales con más presencia ---------- */
+.modal-box {
+    border-radius: 16px;
+    box-shadow: var(--sombra-elev);
+}
+.modal-lg { max-width: 780px; }
+
+/* ---------- Botones: respuesta al pulsar ---------- */
+.btn { transition: transform .12s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease; }
+.btn:active { transform: translateY(1px); }
+.btn:focus-visible { outline: none; box-shadow: var(--anillo-foco); }
+
+/* ---------- Números tabulares en todas las tablas ----------
+   Sin esto, las columnas de precios "bailan" entre filas porque los
+   dígitos no tienen el mismo ancho. */
+.data-table td, .data-table th { font-variant-numeric: tabular-nums; }

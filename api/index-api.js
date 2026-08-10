@@ -105,6 +105,41 @@ function calcularComisionPos(metodo, total) {
   return Math.round(monto * COMISION_POS_TASA + COMISION_POS_FIJO);
 }
 
+/* Comisión de una venta pagada con VARIOS medios.
+   ------------------------------------------------------------
+   La comisión se cobra por transacción que pasa por la máquina, así que
+   cada parte con tarjeta paga su propio cargo fijo de $65 más el 0,79%
+   de SU monto. Si el cliente paga $12.000 en efectivo y $8.000 con
+   débito, la comisión es solo sobre los $8.000.
+
+   Cobrarla sobre el total de la venta sería inflar el gasto; ignorarla
+   sería perderla. Por eso el desglose se guarda en venta_pagos. */
+function comisionDePagos(pagos) {
+  return (pagos || []).reduce((a, p) => a + calcularComisionPos(p.metodo, p.monto), 0);
+}
+
+/* Valida y normaliza el desglose que manda el POS. Devuelve null si no
+   es un pago mixto legítimo, para caer al flujo de un solo medio. */
+function normalizarPagos(lista, totalVenta) {
+  if (!Array.isArray(lista) || lista.length < 2) return null;
+
+  const pagos = lista
+    .map(p => ({ metodo: String(p.metodo || '').trim(), monto: num(p.monto) }))
+    .filter(p => p.metodo && p.monto > 0);
+
+  if (pagos.length < 2) return null;
+
+  /* La suma tiene que cuadrar con el total. Se tolera $1 de diferencia
+     por redondeo al repartir montos; más que eso es un error de captura
+     y la venta se rechaza en vez de guardar una caja descuadrada. */
+  const suma = pagos.reduce((a, p) => a + p.monto, 0);
+  if (Math.abs(suma - num(totalVenta)) > 1) {
+    throw new Error(`El desglose de pagos suma ${suma} y la venta es ${totalVenta}`);
+  }
+
+  return pagos.map(p => ({ ...p, comision: calcularComisionPos(p.metodo, p.monto) }));
+}
+
 /* La comisión se cobra según cómo se pagó DE VERDAD: una venta que quedó
    "Por Pagar" y después se cobró con tarjeta sí paga comisión, y el método
    final es el que manda. */
@@ -892,9 +927,17 @@ app.post('/api/ventas', auth(), async (req, res) => {
     const metodoPago = req.body?.metodo_pago || 'Efectivo';
     const esPendiente = metodoPago === 'Por Pagar';
 
+    /* Pago mixto: el cliente cubrió la venta con más de un medio.
+       Se valida contra el total ANTES de escribir nada. */
+    const pagosMixtos = esPendiente ? null : normalizarPagos(req.body?.pagos, totales.total);
+
     /* Comisión del POS Tuu. Una venta PENDIENTE todavía no pasó por la
-       máquina, así que nace en 0: se calcula cuando se registre el pago. */
-    const comisionPos = esPendiente ? 0 : calcularComisionPos(metodoPago, totales.total);
+       máquina, así que nace en 0: se calcula cuando se registre el pago.
+       Si hay desglose, la comisión sale de sumar la de cada parte con
+       tarjeta, no del total de la venta. */
+    const comisionPos = esPendiente
+      ? 0
+      : (pagosMixtos ? comisionDePagos(pagosMixtos) : calcularComisionPos(metodoPago, totales.total));
 
     const fecha = req.body?.fecha || new Date().toISOString().slice(0, 10);
     const hora = horaValida(req.body?.hora) || horaChileActual();
@@ -915,8 +958,12 @@ app.post('/api/ventas', auth(), async (req, res) => {
       numero_ot: (req.body?.numero_ot || '').trim() || null,
       ...totales,
       comision_pos: comisionPos,
+      pago_mixto: !!pagosMixtos,
       impreso: false
     };
+
+    // En una venta mixta el método de cabecera queda como "Mixto"
+    if (pagosMixtos) cabecera.metodo_pago = 'Mixto';
 
     const { data: venta, error } = await db.from('ventas').insert([cabecera]).select().single();
     if (error) throw new Error(error.message);
@@ -937,6 +984,15 @@ app.post('/api/ventas', auth(), async (req, res) => {
 
     // Libro de consumo PEPS (qué capa pagó cada unidad de esta venta)
     if (consumos.length) await registrarConsumoLotes(venta.id, itemsGuardados || [], consumos);
+
+    // Desglose del pago mixto
+    if (pagosMixtos) {
+      const { error: errPagos } = await db.from('venta_pagos')
+        .insert(pagosMixtos.map(p => ({ ...p, venta_id: venta.id })));
+      // Un fallo acá no anula la venta: el total y la comisión ya están
+      // bien en la cabecera. Solo se pierde el detalle para la cuadratura.
+      if (errPagos) console.error('[PAGO MIXTO] no se pudo guardar el desglose:', errPagos.message);
+    }
 
     // El stock de lo vendido en caja se descuenta aquí. Los repuestos de una
     // OT NO viajan en el carrito (solo el servicio cobrado): su stock se
@@ -1183,13 +1239,28 @@ app.post('/api/ventas/:id/pago', auth(), async (req, res) => {
 
   /* Recién ahora se sabe cómo se cobró de verdad: si terminó pagándose con
      tarjeta, la venta pasa a tener comisión del POS. Si fue en efectivo o
-     transferencia, queda en 0. */
+     transferencia, queda en 0.
+
+     También acepta pago mixto al cobrar: un cliente puede llegar a pagar
+     una venta pendiente con efectivo más tarjeta. */
+  let pagosMixtos = null;
+  try { pagosMixtos = normalizarPagos(req.body?.pagos, venta.total); }
+  catch (e) { return enviarError(res, 400, e.message); }
+
+  if (pagosMixtos) {
+    await db.from('venta_pagos').delete().eq('venta_id', req.params.id);   // por si se recobra
+    const { error: errPagos } = await db.from('venta_pagos')
+      .insert(pagosMixtos.map(p => ({ ...p, venta_id: Number(req.params.id) })));
+    if (errPagos) console.error('[PAGO MIXTO] desglose no guardado:', errPagos.message);
+  }
+
   const { data, error } = await db.from('ventas')
     .update({
       estado: 'PAGADA',
-      metodo_pago_final: metodo,
+      metodo_pago_final: pagosMixtos ? 'Mixto' : metodo,
+      pago_mixto: !!pagosMixtos,
       fecha_pago: new Date().toISOString(),
-      comision_pos: calcularComisionPos(metodo, venta.total)
+      comision_pos: pagosMixtos ? comisionDePagos(pagosMixtos) : calcularComisionPos(metodo, venta.total)
     })
     .eq('id', req.params.id)
     .select()
