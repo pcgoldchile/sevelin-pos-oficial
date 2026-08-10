@@ -9,7 +9,6 @@
 let cart = [];
 let productoSeleccionado = null;
 let ultimaVentaRegistrada = null;
-let otVinculadaVenta = null;   // OT que se está cobrando en esta venta
 
 const elBuscarProducto = document.getElementById('posBuscarProducto');
 const elSugerencias = document.getElementById('posSugerencias');
@@ -23,16 +22,17 @@ const elUtilidadPreview = document.getElementById('utilidadPreview');
 const elBtnAgregarItem = document.getElementById('btnAgregarItem');
 const elPosFecha = document.getElementById('posFecha');
 const elPosEditarHora = document.getElementById('posEditarHora');
+/* Contenedores de los campos que solo aparecen al marcar su casilla.
+   Se ocultan por defecto para no gastar espacio en algo que casi nunca
+   se usa: la hora manual es la excepción, no la regla. */
+const elGrupoPosHora = document.getElementById('grupoPosHora');
+const elGrupoItemSN = document.getElementById('grupoItemSN');
 const elPosHora = document.getElementById('posHora');
 const elPosCliente = document.getElementById('posCliente');
 const elCartTableBody = document.getElementById('cartTableBody');
 const elCartTotalText = document.getElementById('cartTotalText');
 const elBtnFinalizarVenta = document.getElementById('btnFinalizarVenta');
 const elBtnLimpiarSeleccion = document.getElementById('btnLimpiarSeleccion');
-const elPosSincronizarOT = document.getElementById('posSincronizarOT');
-const elPosBuscarOT = document.getElementById('posBuscarOT');
-const elPosSugerenciasOT = document.getElementById('posSugerenciasOT');
-const elPosOTVinculada = document.getElementById('posOTVinculada');
 
 const elModalVentaExitosa = document.getElementById('modalVentaExitosa');
 const elVentaExitosaDetalle = document.getElementById('ventaExitosaDetalle');
@@ -73,10 +73,9 @@ function setupPosEventListeners() {
 
   if (elCheckSN) {
     elCheckSN.addEventListener('change', () => {
-      if (elItemSN) {
-        elItemSN.style.display = elCheckSN.checked ? 'block' : 'none';
-        if (!elCheckSN.checked) elItemSN.value = '';
-      }
+      alternarCampoSN(elCheckSN.checked);
+      if (elCheckSN.checked) setTimeout(() => elItemSN?.focus(), 50);
+      else if (elItemSN) elItemSN.value = '';
     });
   }
 
@@ -99,33 +98,19 @@ function setupPosEventListeners() {
   });
   if (elBtnCloseVentaExitosa) elBtnCloseVentaExitosa.addEventListener('click', cerrarModalVentaExitosa);
 
-  // Hora personalizada: por defecto se usa la hora actual del sistema
+  /* Hora personalizada: por defecto se usa la hora actual del sistema, y
+     el campo ni siquiera se muestra. Aparece al marcar la casilla. */
   if (elPosEditarHora) elPosEditarHora.addEventListener('change', () => {
+    const activo = elPosEditarHora.checked;
+    if (elGrupoPosHora) elGrupoPosHora.style.display = activo ? 'block' : 'none';
     if (!elPosHora) return;
-    elPosHora.disabled = !elPosEditarHora.checked;
-    if (elPosEditarHora.checked) {
+    if (activo) {
       if (!elPosHora.value) elPosHora.value = horaActualCorta();
-      elPosHora.focus();
+      setTimeout(() => elPosHora.focus(), 50);
     }
   });
 
-  // Vinculación manual de una OT a la venta en curso
-  if (elPosSincronizarOT) elPosSincronizarOT.addEventListener('change', () => {
-    if (elPosBuscarOT) {
-      elPosBuscarOT.disabled = !elPosSincronizarOT.checked;
-      if (elPosSincronizarOT.checked) elPosBuscarOT.focus();
-    }
-    if (!elPosSincronizarOT.checked) desvincularOT();
-  });
 
-  if (elPosBuscarOT) {
-    elPosBuscarOT.addEventListener('input', buscarOTParaVenta);
-    document.addEventListener('click', (e) => {
-      if (elPosSugerenciasOT && e.target !== elPosBuscarOT && !elPosSugerenciasOT.contains(e.target)) {
-        elPosSugerenciasOT.classList.remove('show');
-      }
-    });
-  }
 
   // Enter en el precio agrega el ítem directamente
   if (elItemPrecio) elItemPrecio.addEventListener('keydown', (e) => {
@@ -192,10 +177,18 @@ function seleccionarProductoCatalogo(producto) {
 
   if (elCheckSN) {
     elCheckSN.checked = !!producto.requiere_sn;
-    if (elItemSN) elItemSN.style.display = elCheckSN.checked ? 'block' : 'none';
+    alternarCampoSN(elCheckSN.checked);
   }
 
   actualizarUtilidadPreview();
+}
+
+/* Muestra u oculta el campo de número de serie. Se centraliza aquí
+   porque lo tocan tres sitios distintos (casilla, selección de producto
+   del catálogo y limpieza del formulario). */
+function alternarCampoSN(mostrar) {
+  if (elGrupoItemSN) elGrupoItemSN.style.display = mostrar ? 'block' : 'none';
+  if (elItemSN) elItemSN.style.display = '';   // lo controla el contenedor
 }
 
 function actualizarUtilidadPreview() {
@@ -207,75 +200,6 @@ function actualizarUtilidadPreview() {
   const precio = Number(elItemPrecio?.value) || 0;
   const utilidad = (precio - costo) * cant;
   elUtilidadPreview.textContent = cant > 0 ? `Utilidad estimada: ${fmtCLP(utilidad)}` : '';
-}
-
-// ============================================================
-// Vínculo con una Orden de Trabajo
-// ============================================================
-async function buscarOTParaVenta() {
-  if (!elPosSugerenciasOT) return;
-  const q = (elPosBuscarOT.value || '').trim().toLowerCase();
-
-  if (q.length < 2) { elPosSugerenciasOT.classList.remove('show'); return; }
-
-  let ordenes = (typeof ordenesList !== 'undefined' && Array.isArray(ordenesList)) ? ordenesList : [];
-  if (ordenes.length === 0) {
-    try { ordenes = await API.ot.listar(); } catch (_) { ordenes = []; }
-  }
-
-  // Mismo criterio de palabras sueltas que el buscador de productos
-  const encontradas = filtrarPorBusqueda(
-    ordenes, q,
-    o => [o.numero_ot, o.cliente_nombre, o.dispositivo_modelo, o.dispositivo_categoria],
-    8
-  );
-
-  if (encontradas.length === 0) { elPosSugerenciasOT.classList.remove('show'); return; }
-
-  elPosSugerenciasOT.innerHTML = encontradas.map(o => `
-    <div class="suggestion-item" data-ot="${o.id}">
-      <span>${o.numero_ot} · ${o.cliente_nombre || 'Sin cliente'}</span>
-      <span>${o.dispositivo_modelo || ''}</span>
-    </div>
-  `).join('');
-  elPosSugerenciasOT.classList.add('show');
-
-  elPosSugerenciasOT.querySelectorAll('.suggestion-item').forEach(item => {
-    item.addEventListener('click', async () => {
-      const orden = encontradas.find(o => String(o.id) === item.dataset.ot);
-      elPosSugerenciasOT.classList.remove('show');
-      if (!orden) return;
-
-      let pendientes = [];
-      try {
-        const asignados = await API.ot.listarRepuestos(orden.id);
-        pendientes = (asignados || []).filter(r => !r.cobrado);
-      } catch (_) { pendientes = []; }
-
-      precargarVentaDesdeOT(orden, pendientes);
-    });
-  });
-}
-
-function mostrarOTVinculadaPOS() {
-  if (!elPosOTVinculada) return;
-
-  if (!otVinculadaVenta) { elPosOTVinculada.style.display = 'none'; return; }
-
-  elPosOTVinculada.style.display = 'block';
-  elPosOTVinculada.innerHTML =
-    `Venta vinculada a <b>${otVinculadaVenta.numero_ot}</b> · ${otVinculadaVenta.cliente_nombre || ''} — ` +
-    `<a href="#" id="quitarOTVenta">quitar vínculo</a>`;
-
-  const quitar = document.getElementById('quitarOTVenta');
-  if (quitar) quitar.addEventListener('click', (e) => { e.preventDefault(); desvincularOT(); });
-}
-
-function desvincularOT() {
-  otVinculadaVenta = null;
-  if (elPosSincronizarOT) elPosSincronizarOT.checked = false;
-  if (elPosBuscarOT) { elPosBuscarOT.value = ''; elPosBuscarOT.disabled = true; }
-  mostrarOTVinculadaPOS();
 }
 
 // ============================================================
@@ -380,7 +304,8 @@ async function agregarPorCodigoEscaneado(codigo) {
 
     // Producto con S/N: se pide la serie antes de agregarlo
     if (producto.requiere_sn) {
-      if (elItemSN) { elItemSN.style.display = 'block'; elItemSN.value = ''; setTimeout(() => elItemSN.focus(), 60); }
+      alternarCampoSN(true);
+      if (elItemSN) { elItemSN.value = ''; setTimeout(() => elItemSN.focus(), 60); }
       showToast(`${producto.nombre}: ingresa el S/N para agregarlo`, '');
       return;
     }
@@ -426,7 +351,8 @@ function limpiarFormularioItem() {
   if (elItemCosto) elItemCosto.value = '';
   if (elItemPrecio) elItemPrecio.value = '';
   if (elCheckSN) elCheckSN.checked = false;
-  if (elItemSN) { elItemSN.value = ''; elItemSN.style.display = 'none'; }
+  if (elItemSN) elItemSN.value = '';
+  alternarCampoSN(false);
   if (elBuscarProducto) elBuscarProducto.value = '';
   productoSeleccionado = null;
   actualizarUtilidadPreview();
@@ -501,8 +427,9 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
        cada parte con tarjeta por separado. */
     pagos: datosPago.pagos || null,
     // El backend descuenta el stock (comercial e interno) recién aquí
-    ot_id: otVinculadaVenta?.id || null,
-    numero_ot: otVinculadaVenta?.numero_ot || null,
+    /* Las ventas ya NO se vinculan a una Orden de Trabajo. Las OT viven
+       en su propio módulo; mezclarlas con la venta obligaba a mantener
+       dos fuentes de verdad del mismo cobro. */
     items: cart
   });
 
@@ -512,7 +439,10 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
   cart = [];
   renderCart();
   limpiarFormularioItem();
-  desvincularOT();
+  /* Ya no se llama desvincularOT(): esa función desapareció junto con el
+     vínculo OT↔venta. Dejarla invocada lanzaba un ReferenceError JUSTO
+     después de registrar la venta, así que la venta se guardaba pero el
+     carrito no se limpiaba y el modal de éxito nunca aparecía. */
   if (elPosCliente) elPosCliente.value = '';
   if (elPosEditarHora) elPosEditarHora.checked = false;
   if (elPosHora) { elPosHora.value = ''; elPosHora.disabled = true; }
@@ -549,30 +479,6 @@ function mostrarModalVentaExitosa(venta, datosPago = {}) {
 
   if (elModalVentaExitosa) elModalVentaExitosa.classList.add('show');
 }
-
-/* Precarga el POS con el cobro de una orden de trabajo.
-   Vincula la OT a la venta y baja al carrito los repuestos y la mano de
-   obra que le fueron asignados y aún no se han cobrado. */
-function precargarVentaDesdeOT(ot, itemsAsignados = []) {
-  otVinculadaVenta = ot;
-
-  if (elPosSincronizarOT) elPosSincronizarOT.checked = true;
-  if (elPosBuscarOT) { elPosBuscarOT.disabled = false; elPosBuscarOT.value = ''; }
-  if (elPosCliente) elPosCliente.value = ot.cliente_nombre || '';
-  mostrarOTVinculadaPOS();
-
-  /* Los repuestos de la OT NO entran al carrito: el cliente paga el
-     servicio, no un desglose de piezas. Su stock se descuenta aparte,
-     cuando la orden pasa a ENTREGADO. Aquí solo se deja el campo listo
-     para que se escriba el servicio o se busque en el catálogo. */
-  limpiarFormularioItem();
-  setTimeout(() => elItemNombre?.focus(), 60);
-
-  productoSeleccionado = null;
-  renderCart();
-  actualizarUtilidadPreview();
-}
-
 
 function cerrarModalVentaExitosa() {
   if (elModalVentaExitosa) elModalVentaExitosa.classList.remove('show');

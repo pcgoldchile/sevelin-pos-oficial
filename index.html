@@ -18,11 +18,16 @@
        para probar, pero para producción conviene compilar el CSS. Ver
        la nota del LEEME.
        ============================================================ -->
+  <!-- Plus Jakarta Sans: geométrica y redondeada, muy legible en cifras -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
       darkMode: 'class',
-      theme: { extend: { fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] } } }
+      theme: { extend: { fontFamily: { sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'] } } }
     };
   </script>
 </head>
@@ -105,167 +110,155 @@
          ============================================================ -->
     <section id="view-pos" class="view-section active">
       <!-- ============================================================
-           MÓDULO POS — maquetado con Tailwind
+           MÓDULO POS
            ------------------------------------------------------------
-           Se conservan TODOS los id, los data-* y las clases de las que
-           depende el JavaScript:
-             · admin-only      → auth.js oculta esto al rol trabajador
-             · suggestions-box → pos.js y atajos.js
-             · data-scan       → escaner.js
-           Solo cambian las clases de presentación.
-
-           Dos columnas: a la izquierda se ingresa, a la derecha se cobra.
-           En pantallas chicas se apilan.
+           · pos-escala baja el tamaño base a 14px: al 100% de zoom la
+             pantalla ya no se ve gigante y cabe entera sin achicar el
+             navegador.
+           · items-stretch + h-full: las dos tarjetas arrancan y terminan
+             a la misma altura, como se pidió.
+           · Los campos de "Editar hora" y "Tiene S/N" nacen ocultos y
+             aparecen al marcar su casilla.
            ============================================================ -->
-      <div class="max-w-7xl mx-auto px-4 lg:px-6 py-4 lg:py-6">
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6 items-start">
+      <div class="pos-escala max-w-6xl mx-auto px-4 lg:px-5 py-4">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
 
-          <!-- ========== IZQUIERDA: buscar e ingresar ========== -->
-          <div class="lg:col-span-7 xl:col-span-8 space-y-5">
+          <!-- ========== IZQUIERDA: ingresar ========== -->
+          <div class="lg:col-span-7 flex">
+            <div class="tarjeta-pos flex flex-col w-full">
+              <div class="h-1 bg-gradient-to-r from-blue-500 to-violet-500 rounded-t-2xl"></div>
 
-            <div class="bg-white dark:bg-slate-800/70 rounded-2xl shadow-sm border border-slate-200/80 dark:border-slate-700 overflow-hidden">
-              <div class="h-1 bg-gradient-to-r from-blue-500 to-violet-500"></div>
-
-              <div class="p-5 lg:p-6">
-                <div class="flex items-center justify-between gap-3 flex-wrap mb-5">
-                  <div>
-                    <h2 class="text-lg font-bold text-slate-800 dark:text-slate-100">Ingresar producto</h2>
-                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Busca en el catálogo o escribe uno manual</p>
-                  </div>
+              <div class="p-4 lg:p-5 flex flex-col flex-1">
+                <div class="flex items-center justify-between gap-3 flex-wrap mb-4">
+                  <h2 class="text-base font-bold text-slate-800 dark:text-slate-100">Ingresar producto</h2>
                   <button id="btnVerAtajos" type="button"
-                          class="inline-flex items-center gap-2 h-9 px-3 rounded-lg text-xs font-semibold
+                          class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[11px] font-semibold
                                  text-slate-600 dark:text-slate-300 bg-slate-100 hover:bg-slate-200
                                  dark:bg-slate-700/60 dark:hover:bg-slate-700 transition-colors">
                     ⌨️ Atajos
-                    <span class="px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-600 text-[10px]">F1</span>
+                    <span class="px-1 py-px rounded border border-slate-300 dark:border-slate-600 text-[9px]">F1</span>
                   </button>
                 </div>
 
-                <!-- Buscador: ancho acotado y cámara DENTRO del campo -->
-                <div class="relative max-w-xl">
-                  <label for="posBuscarProducto" class="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5">
-                    Buscar producto <span class="font-normal">(nombre / SKU / código de barras)</span>
-                  </label>
+                <!-- Buscador con la cámara dentro del campo -->
+                <div class="relative max-w-lg">
+                  <label for="posBuscarProducto" class="etiqueta-pos">Buscar producto <span class="font-normal">(nombre / SKU / código)</span></label>
                   <div class="relative">
-                    <input type="text" id="posBuscarProducto" autocomplete="off"
-                           placeholder="Escribe o escanea…"
-                           class="w-full h-12 pl-11 pr-12 rounded-xl text-[15px]
-                                  bg-slate-50 dark:bg-slate-900/60
-                                  border border-slate-300 dark:border-slate-600
-                                  text-slate-800 dark:text-slate-100
-                                  placeholder:text-slate-400 dark:placeholder:text-slate-500
-                                  focus:outline-none focus:ring-4 focus:ring-blue-500/25 focus:border-blue-500 transition">
-                    <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none select-none">🔍</span>
+                    <input type="text" id="posBuscarProducto" autocomplete="off" placeholder="Escribe o escanea…"
+                           class="campo-pos h-11 pl-9 pr-11 text-[15px]">
+                    <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none select-none text-sm">🔍</span>
                     <button type="button" data-scan="posBuscarProducto" title="Escanear con la cámara"
-                            class="absolute right-2 top-1/2 -translate-y-1/2 h-9 w-9 rounded-lg
+                            class="absolute right-1.5 top-1/2 -translate-y-1/2 h-8 w-8 rounded-lg
                                    bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600
-                                   text-slate-600 dark:text-slate-200 transition-colors">📷</button>
+                                   text-slate-600 dark:text-slate-200 transition-colors text-sm">📷</button>
                   </div>
                   <div id="posSugerencias" class="suggestions-box"></div>
                 </div>
 
-                <!-- Datos del ítem -->
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-6">
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-2.5 mt-4">
                   <div class="col-span-2">
-                    <label for="itemNombre" class="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5">Producto *</label>
+                    <label for="itemNombre" class="etiqueta-pos">Producto *</label>
                     <input type="text" id="itemNombre" placeholder="Nombre del producto" class="campo-pos">
                   </div>
                   <div>
-                    <label for="itemCantidad" class="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5">Cantidad *</label>
+                    <label for="itemCantidad" class="etiqueta-pos">Cantidad *</label>
                     <input type="number" id="itemCantidad" min="1" value="1" class="campo-pos text-right">
                   </div>
                   <div class="admin-only">
-                    <label for="itemCosto" class="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5">Costo unit.</label>
+                    <label for="itemCosto" class="etiqueta-pos">Costo unit.</label>
                     <input type="number" id="itemCosto" min="0" step="1" placeholder="0" class="campo-pos text-right">
                   </div>
                   <div>
-                    <label for="itemPrecio" class="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5">Precio unit. *</label>
+                    <label for="itemPrecio" class="etiqueta-pos">Precio unit. *</label>
                     <input type="number" id="itemPrecio" min="0" step="1" placeholder="0" class="campo-pos text-right">
                   </div>
                   <div class="flex items-end">
-                    <label for="checkTieneSN"
-                           class="flex items-center gap-2 h-11 w-full px-3 rounded-xl cursor-pointer
-                                  bg-slate-50 dark:bg-slate-900/60 border border-slate-300 dark:border-slate-600
-                                  text-sm text-slate-700 dark:text-slate-200 hover:border-blue-500 transition-colors">
-                      <input type="checkbox" id="checkTieneSN" class="w-4 h-4 accent-blue-600">
-                      Tiene S/N
+                    <label for="checkTieneSN" class="caja-check">
+                      <input type="checkbox" id="checkTieneSN" class="w-4 h-4 accent-blue-600"> Tiene S/N
                     </label>
                   </div>
                 </div>
 
-                <input type="text" id="itemSN" placeholder="Ingresa el S/N o código de serie"
-                       class="campo-pos mt-3" style="display:none;">
+                <!-- Aparece solo al marcar "Tiene S/N" (lo maneja pos.js) -->
+                <div id="grupoItemSN" class="mt-2.5" style="display:none;">
+                  <label for="itemSN" class="etiqueta-pos">Número de serie</label>
+                  <input type="text" id="itemSN" placeholder="Ingresa el S/N o código de serie" class="campo-pos">
+                </div>
 
-                <div class="flex items-center justify-between gap-3 flex-wrap mt-5 pt-5 border-t border-slate-200 dark:border-slate-700">
-                  <span id="utilidadPreview" class="admin-only text-sm font-semibold text-emerald-600 dark:text-emerald-400"></span>
-                  <div class="flex gap-2.5 ml-auto">
+                <div class="flex items-center justify-between gap-3 flex-wrap mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+                  <span id="utilidadPreview" class="admin-only text-[13px] font-semibold text-emerald-600 dark:text-emerald-400"></span>
+                  <div class="flex gap-2 ml-auto">
                     <button id="btnLimpiarSeleccion" type="button" title="Vacía solo los campos de arriba; el carrito no se toca"
-                            class="h-11 px-4 rounded-xl text-sm font-semibold transition-colors
+                            class="h-10 px-3.5 rounded-xl text-[13px] font-semibold transition-colors
                                    bg-slate-100 hover:bg-slate-200 text-slate-700
                                    dark:bg-slate-700/60 dark:hover:bg-slate-700 dark:text-slate-200">🧹 Limpiar</button>
                     <button id="btnAgregarItem" type="button"
-                            class="h-11 px-6 rounded-xl text-sm font-semibold text-white transition-colors
+                            class="h-10 px-5 rounded-xl text-[13px] font-semibold text-white transition-colors
                                    bg-blue-600 hover:bg-blue-700 active:bg-blue-800 shadow-sm">➕ Agregar</button>
+                  </div>
+                </div>
+
+                <!-- Ocupa el espacio sobrante para igualar la altura con el
+                     carrito, y de paso enseña los atajos más usados. -->
+                <div class="mt-auto pt-4">
+                  <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+                    <span><kbd class="kbd-mini">F2</kbd> buscar</span>
+                    <span><kbd class="kbd-mini">↑</kbd><kbd class="kbd-mini">↓</kbd> elegir</span>
+                    <span><kbd class="kbd-mini">Alt</kbd>+<kbd class="kbd-mini">A</kbd> agregar</span>
+                    <span><kbd class="kbd-mini">F9</kbd> cobrar</span>
+                    <span><kbd class="kbd-mini">F1</kbd> ver todos</span>
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- ========== DERECHA: carrito y cobro ========== -->
-          <div class="lg:col-span-5 xl:col-span-4">
-            <div class="bg-white dark:bg-slate-800/70 rounded-2xl shadow-sm border border-slate-200/80 dark:border-slate-700 overflow-hidden lg:sticky lg:top-4">
-              <div class="h-1 bg-gradient-to-r from-emerald-500 to-blue-500"></div>
+          <!-- ========== DERECHA: cobrar ========== -->
+          <div class="lg:col-span-5 flex">
+            <div class="tarjeta-pos flex flex-col w-full">
+              <div class="h-1 bg-gradient-to-r from-emerald-500 to-blue-500 rounded-t-2xl"></div>
 
-              <div class="p-5 lg:p-6">
-                <h2 class="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4">Carrito de venta</h2>
+              <div class="p-4 lg:p-5 flex flex-col flex-1">
+                <h2 class="text-base font-bold text-slate-800 dark:text-slate-100 mb-3">Carrito de venta</h2>
 
-                <!-- Datos de la venta. Las cuatro etiquetas miden lo mismo,
-                     así los campos quedan alineados aunque dos sean checkbox. -->
-                <div class="grid grid-cols-2 gap-3 mb-4">
+                <div class="grid grid-cols-2 gap-2.5 mb-3">
                   <div>
                     <label for="posFecha" class="etiqueta-pos">Fecha</label>
                     <input type="date" id="posFecha" class="campo-pos">
                   </div>
                   <div>
-                    <label for="posEditarHora" class="etiqueta-pos etiqueta-check">
-                      <input type="checkbox" id="posEditarHora" class="w-3.5 h-3.5 accent-blue-600"> Editar hora
-                    </label>
-                    <input type="time" id="posHora" disabled class="campo-pos"
-                           title="Marca “Editar hora” para fijar una hora distinta a la actual">
+                    <label for="posCliente" class="etiqueta-pos">Cliente</label>
+                    <input type="text" id="posCliente" placeholder="Opcional / Particular" class="campo-pos">
                   </div>
                   <div class="col-span-2">
-                    <label for="posCliente" class="etiqueta-pos">Cliente</label>
-                    <input type="text" id="posCliente" placeholder="Cliente opcional / Particular" class="campo-pos">
-                  </div>
-                  <div class="col-span-2 relative">
-                    <label for="posSincronizarOT" class="etiqueta-pos etiqueta-check">
-                      <input type="checkbox" id="posSincronizarOT" class="w-3.5 h-3.5 accent-blue-600"> Sincronizar OT a esta venta
+                    <label for="posEditarHora" class="caja-check h-9 text-[13px]">
+                      <input type="checkbox" id="posEditarHora" class="w-4 h-4 accent-blue-600"> Editar hora de la venta
                     </label>
-                    <input type="text" id="posBuscarOT" placeholder="OT-000012, cliente o equipo…"
-                           autocomplete="off" disabled class="campo-pos">
-                    <div id="posSugerenciasOT" class="suggestions-box"></div>
+                  </div>
+                  <!-- Solo aparece si se marca la casilla de arriba -->
+                  <div id="grupoPosHora" class="col-span-2" style="display:none;">
+                    <label for="posHora" class="etiqueta-pos">Hora</label>
+                    <input type="time" id="posHora" class="campo-pos">
                   </div>
                 </div>
 
-                <p id="posOTVinculada" class="text-xs text-slate-500 dark:text-slate-400 mb-3" style="display:none;"></p>
-
-                <!-- Detalle del carrito -->
-                <div class="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-                  <div class="max-h-[340px] overflow-y-auto">
-                    <table class="data-table w-full text-sm">
+                <!-- Detalle. flex-1 hace que crezca y las dos tarjetas
+                     terminen a la misma altura. -->
+                <div class="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden flex-1 flex flex-col min-h-[180px]">
+                  <div class="overflow-y-auto flex-1">
+                    <table class="data-table w-full text-[13px]">
                       <thead>
                         <tr class="bg-slate-50 dark:bg-slate-900/60">
                           <th class="cabecera-pos text-left">Cant</th>
                           <th class="cabecera-pos text-left">Producto / S/N</th>
                           <th class="cabecera-pos text-right">P. Unit</th>
                           <th class="cabecera-pos text-right">Subtotal</th>
-                          <th class="cabecera-pos text-right">Acción</th>
+                          <th class="cabecera-pos text-right"></th>
                         </tr>
                       </thead>
                       <tbody id="cartTableBody">
                         <tr class="empty-row">
-                          <td colspan="5" class="px-4 py-8 text-center text-sm text-slate-400 dark:text-slate-500">
+                          <td colspan="5" class="px-4 py-10 text-center text-[13px] text-slate-400 dark:text-slate-500">
                             El carrito está vacío
                           </td>
                         </tr>
@@ -274,26 +267,17 @@
                   </div>
                 </div>
 
-                <!-- Total y cobro -->
-                <div class="mt-5 pt-5 border-t border-slate-200 dark:border-slate-700">
-                  <div class="flex items-baseline justify-between mb-4">
-                    <span class="text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Total</span>
+                <div class="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+                  <div class="flex items-baseline justify-between mb-3">
+                    <span class="text-[11px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Total</span>
                     <strong id="cartTotalText"
-                            class="text-4xl font-extrabold tracking-tight tabular-nums text-emerald-600 dark:text-emerald-400">$0</strong>
+                            class="text-3xl font-extrabold tracking-tight tabular-nums text-emerald-600 dark:text-emerald-400">$0</strong>
                   </div>
-
                   <button id="btnFinalizarVenta" type="button"
-                          class="w-full h-14 rounded-2xl text-base font-bold text-white transition-all
+                          class="w-full h-12 rounded-xl text-[15px] font-bold text-white transition-all
                                  bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800
                                  shadow-lg shadow-emerald-600/25 hover:-translate-y-0.5">
                     💳 Finalizar venta
-                  </button>
-
-                  <button id="btnMermaPOS" type="button" title="Dar de baja stock dañado, robado o vencido"
-                          class="admin-only w-full h-11 mt-2.5 rounded-xl text-sm font-semibold transition-colors
-                                 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200
-                                 dark:bg-amber-500/10 dark:hover:bg-amber-500/20 dark:text-amber-400 dark:border-amber-500/30">
-                    📉 Registrar merma
                   </button>
                 </div>
               </div>
@@ -730,6 +714,11 @@
             <button class="btn btn-outline" id="btnAdminClasificaciones">🗂️ Clasificaciones</button>
             <button class="btn btn-outline" id="btnExportarCompras">📤 Exportar</button>
             <button class="btn btn-primary" id="btnNuevaCompra">➕ Registrar Gasto</button>
+            <!-- Movido desde el POS: una merma es un gasto, no una venta.
+                 Conserva el id btnMermaPOS para que mermas.js siga
+                 funcionando sin cambios. -->
+            <button class="btn btn-outline" id="btnMermaPOS"
+                    title="Dar de baja stock dañado, robado o vencido">📉 Registrar Merma</button>
           </div>
         </div>
 

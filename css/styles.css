@@ -1451,3 +1451,112 @@ kbd {
 .pago-mixto-resumen.ok { background: rgba(34,197,94,.12); border-color: rgba(34,197,94,.4); color: var(--green); }
 .pago-mixto-resumen.mal { background: rgba(245,158,11,.12); border-color: rgba(245,158,11,.4); color: var(--gold); }
 .metodo-mixto { border-style: dashed; }
+
+/* ============================================================
+   12. TIPOGRAFÍA Y ESCALA DEL POS
+   ============================================================ */
+
+/* Plus Jakarta Sans: geométrica y de formas redondeadas, con cifras muy
+   legibles —que en un POS se miran todo el día— y buen soporte de
+   tildes y ñ. Se aplica a todo el sistema para que no queden dos
+   tipografías conviviendo. */
+body, .modal-box, .btn, input, select, textarea, button, table {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+body { letter-spacing: -0.005em; }
+h1, h2, h3, h4 { letter-spacing: -0.02em; }
+
+/* Las cifras con ancho fijo evitan que los precios "bailen" al cambiar */
+.tabular-nums, .data-table td, .kpi-value { font-variant-numeric: tabular-nums; }
+
+/* ------------------------------------------------------------
+   ESCALA DEL POS
+   El módulo se veía enorme al 100% de zoom y obligaba a alejar el
+   navegador. Bajar el tamaño base a 14px reduce de una sola vez todo lo
+   que está en rem o en unidades de Tailwind, sin tener que retocar cada
+   clase. En pantallas grandes sube a 15px para que no quede diminuto.
+   ------------------------------------------------------------ */
+.pos-escala {
+    font-size: 14px;
+    line-height: 1.45;
+}
+@media (min-width: 1536px) {
+    .pos-escala { font-size: 15px; }
+}
+
+/* Tarjetas del POS */
+.tarjeta-pos {
+    background: #fff;
+    border: 1px solid rgba(226, 232, 240, .9);
+    border-radius: 1rem;
+    box-shadow: 0 1px 2px rgba(15,23,42,.04), 0 8px 24px -16px rgba(15,23,42,.25);
+    overflow: hidden;
+}
+.dark .tarjeta-pos {
+    background: rgba(30, 41, 59, .72);
+    border-color: #334155;
+    box-shadow: 0 1px 2px rgba(0,0,0,.2), 0 10px 30px -18px rgba(0,0,0,.7);
+}
+
+/* Campos más bajos que antes: 2.5rem en vez de 2.75rem */
+.campo-pos { height: 2.5rem; font-size: 0.875rem; }
+
+.etiqueta-pos {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    height: 1.1rem;
+    margin-bottom: 0.3rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    line-height: 1.1rem;
+    color: #64748b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.dark .etiqueta-pos { color: #94a3b8; }
+
+/* Casilla con marco: se toca fácil y alinea con los campos vecinos */
+.caja-check {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    height: 2.5rem;
+    padding: 0 0.7rem;
+    border-radius: 0.75rem;
+    cursor: pointer;
+    font-size: 0.82rem;
+    color: #334155;
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    transition: border-color .15s ease, background .15s ease;
+    user-select: none;
+}
+.caja-check:hover { border-color: #3b82f6; }
+.dark .caja-check { background: rgba(15,23,42,.6); border-color: #475569; color: #e2e8f0; }
+
+.cabecera-pos { padding: 0.5rem 0.65rem; font-size: 0.62rem; }
+#cartTableBody td { padding: 0.5rem 0.65rem; font-size: 0.8rem; }
+
+/* Teclas del pie de ayuda */
+.kbd-mini {
+    display: inline-block;
+    min-width: 16px;
+    padding: 1px 4px;
+    margin: 0 1px;
+    border-radius: 4px;
+    font-size: 9px;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    color: #64748b;
+}
+.dark .kbd-mini { background: rgba(51,65,85,.6); border-color: #475569; color: #94a3b8; }
+
+/* La cabecera general también se compacta, para que la barra de módulos
+   no se coma la altura útil de la pantalla. */
+.app-header { padding-top: 12px; padding-bottom: 12px; }
+.app-header .logo h1 { font-size: 1.15rem; }
+.nav-btn { padding-top: 8px; padding-bottom: 8px; font-size: .82rem; }
