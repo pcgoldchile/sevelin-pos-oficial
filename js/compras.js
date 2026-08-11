@@ -44,6 +44,7 @@ const elCompraProveedor = document.getElementById('compraProveedor');
 const elCompraClasificacion = document.getElementById('compraClasificacion');
 const elCompraCosto = document.getElementById('compraCosto');
 const elCompraDescripcion = document.getElementById('compraDescripcion');
+const elCompraMetodoPago = document.getElementById('compraMetodoPago');
 const elCompraUrlDocumento = document.getElementById('compraUrlDocumento');
 const elCompraUrlComprobante = document.getElementById('compraUrlComprobante');
 const elCompraArchivoDocumento = document.getElementById('compraArchivoDocumento');
@@ -393,6 +394,9 @@ function abrirModalCompra(compra = null, campoFoco = null) {
     if (elCompraClasificacion) elCompraClasificacion.value = compra.clasificacion || '';
     if (elCompraCosto) elCompraCosto.value = compra.costo_total || 0;
     if (elCompraDescripcion) elCompraDescripcion.value = compra.descripcion || '';
+    /* Los gastos anteriores a la migración 12 no traen medio de pago:
+       se asume Efectivo, que es como los contaba el balance hasta ahora. */
+    if (elCompraMetodoPago) elCompraMetodoPago.value = compra.metodo_pago || 'Efectivo';
     if (elCompraUrlDocumento) elCompraUrlDocumento.value = compra.url_documento || '';
     if (elCompraUrlComprobante) elCompraUrlComprobante.value = compra.url_comprobante || '';
   } else {
@@ -489,6 +493,8 @@ async function guardarCompra() {
     clasificacion: elCompraClasificacion?.value,
     costo_total: costo,
     descripcion: elCompraDescripcion?.value.trim() || null,
+    // Define si el gasto sale de la caja física
+    metodo_pago: elCompraMetodoPago?.value || 'Efectivo',
     url_documento: elCompraUrlDocumento?.value.trim() || null,
     url_comprobante: elCompraUrlComprobante?.value.trim() || null
   };

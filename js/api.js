@@ -216,6 +216,13 @@ const API = {
     listarInyecciones: (desde, hasta) =>
       apiRequest(`/inyecciones?desde=${encodeURIComponent(desde || '')}&hasta=${encodeURIComponent(hasta || '')}`),
     crearInyeccion: (datos) => apiRequest('/inyecciones', { method: 'POST', body: datos }),
+
+    // Arqueo de caja
+    arqueoDeHoy: () => apiRequest('/arqueos/hoy'),
+    listarArqueos: (desde, hasta) =>
+      apiRequest(`/arqueos?desde=${encodeURIComponent(desde || '')}&hasta=${encodeURIComponent(hasta || '')}`),
+    abrirCaja: (datos) => apiRequest('/arqueos/abrir', { method: 'POST', body: datos }),
+    cerrarCaja: (datos) => apiRequest('/arqueos/cerrar', { method: 'POST', body: datos }),
     eliminarInyeccion: (id, pin) => apiRequest(`/inyecciones/${id}`, { method: 'DELETE', body: { pin } })
   }
 };

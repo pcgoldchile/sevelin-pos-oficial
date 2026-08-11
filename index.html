@@ -755,6 +755,21 @@
             <div id="bloqueEquilibrio"></div>
           </div>
 
+          <!-- Arqueo de caja -->
+          <div class="card" id="tarjetaArqueo">
+            <div class="card-head">
+              <div>
+                <h2 class="card-title" style="margin:0;">🧮 Arqueo de caja</h2>
+                <p class="subtitle" id="arqueoEstado">—</p>
+              </div>
+              <div class="toolbar-group">
+                <button class="btn btn-outline" id="btnAbrirCaja">🔓 Abrir caja</button>
+                <button class="btn btn-primary" id="btnCerrarCaja">🔒 Cerrar y contar</button>
+              </div>
+            </div>
+            <div id="arqueoDetalle"></div>
+          </div>
+
           <!-- Caja física vs flujo total -->
           <div class="grid grid-2">
             <div class="card card-caja">
@@ -1170,6 +1185,77 @@
        Dinero propio que entra a la caja. Va aparte de las ventas para
        no inflar los ingresos ni la utilidad del período.
        ============================================================ -->
+  <!-- ============================================================
+       ABRIR CAJA
+       El fondo inicial es la base de la caja física del día.
+       ============================================================ -->
+  <div id="modalAbrirCaja" class="modal-overlay">
+    <div class="modal-box modal-sm">
+      <h2>🔓 Abrir caja</h2>
+      <p class="modal-hint">
+        Cuenta el dinero con que parte el cajón. Esa cifra es la base sobre la
+        que se suman las ventas en efectivo del día.
+      </p>
+
+      <div class="grid grid-2" style="margin-top:14px;">
+        <div class="field">
+          <label for="arqueoFechaApertura">Fecha</label>
+          <input type="date" id="arqueoFechaApertura">
+        </div>
+        <div class="field">
+          <label for="arqueoFondoInicial">Fondo inicial</label>
+          <input type="number" id="arqueoFondoInicial" min="0" step="1" placeholder="0">
+        </div>
+      </div>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarAbrirCaja">Cancelar</button>
+        <button class="btn btn-primary" id="btnConfirmarAbrirCaja">Abrir caja</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       CERRAR CAJA
+       Compara lo contado contra lo esperado y guarda la diferencia.
+       ============================================================ -->
+  <div id="modalCerrarCaja" class="modal-overlay">
+    <div class="modal-box modal-sm">
+      <h2>🔒 Cerrar caja</h2>
+      <p class="modal-hint">
+        Cuenta los billetes y monedas del cajón y escribe el total.
+        El sistema compara con lo que debería haber.
+      </p>
+
+      <div class="arqueo-esperado">
+        <span>Debería haber</span>
+        <strong id="arqueoEsperado">$0</strong>
+      </div>
+
+      <div class="field" style="margin-top:14px;">
+        <label for="arqueoContado">Total contado *</label>
+        <input type="number" id="arqueoContado" min="0" step="1" placeholder="0">
+      </div>
+
+      <div id="arqueoDiferencia" class="arqueo-diferencia" style="display:none;"></div>
+
+      <div class="field">
+        <label for="arqueoObservaciones">Observaciones (opcional)</label>
+        <input type="text" id="arqueoObservaciones" placeholder="Ej: faltó vuelto de una venta, propina">
+      </div>
+
+      <p class="modal-hint">
+        Al cerrar, la cifra esperada queda <strong>congelada</strong>: si mañana se
+        corrige una venta antigua, este arqueo seguirá mostrando lo que se vio hoy.
+      </p>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarCerrarCaja">Cancelar</button>
+        <button class="btn btn-primary" id="btnConfirmarCerrarCaja">Cerrar caja</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modalInyeccion" class="modal-overlay">
     <div class="modal-box modal-sm">
       <h2>💵 Inyectar capital</h2>
@@ -1991,9 +2077,23 @@
         </div>
       </div>
 
-      <div class="field" style="margin-top:12px;">
-        <label>Clasificación *</label>
-        <select id="compraClasificacion"></select>
+      <div class="grid grid-2" style="margin-top:12px;">
+        <div class="field">
+          <label>Clasificación *</label>
+          <select id="compraClasificacion"></select>
+        </div>
+        <div class="field">
+          <!-- Define si este gasto sale del cajón. Solo el efectivo
+               descuenta de la caja física del balance. -->
+          <label>¿Con qué se pagó? *</label>
+          <select id="compraMetodoPago">
+            <option value="Efectivo">Efectivo · sale del cajón</option>
+            <option value="Transferencia">Transferencia</option>
+            <option value="Tarjeta Débito">Tarjeta Débito</option>
+            <option value="Tarjeta Crédito">Tarjeta Crédito</option>
+            <option value="No aplica (merma)">No aplica · merma o ajuste</option>
+          </select>
+        </div>
       </div>
 
       <div class="grid grid-2" style="margin-top:12px;">

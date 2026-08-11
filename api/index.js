@@ -317,7 +317,7 @@ app.get('/api/health', (_req, res) => res.json({
   ok: true,
   servicio: 'sevelin-pos-api',
   version: '2026-08-04',
-  modulos: ['productos', 'ventas', 'gastos', 'ot', 'repuestos', 'encargos', 'mermas', 'clasificaciones', 'balance', 'gastos-fijos', 'inyecciones']
+  modulos: ['productos', 'ventas', 'gastos', 'ot', 'repuestos', 'encargos', 'mermas', 'clasificaciones', 'balance', 'gastos-fijos', 'inyecciones', 'arqueos']
 }));
 
 /* ============================================================
@@ -1349,6 +1349,8 @@ async function sanearCompra(body = {}) {
       fecha: fechaHoraDeGasto(body.fecha, body.hora),
       proveedor: (body.proveedor || '').trim() || null,
       clasificacion,
+      // Solo los gastos en efectivo descuentan de la caja física
+      metodo_pago: (body.metodo_pago || 'Efectivo').trim(),
       costo_total: costo,
       descripcion: (body.descripcion || '').trim() || null,
       url_documento: (body.url_documento || '').trim() || null,
@@ -1505,6 +1507,85 @@ app.delete('/api/inyecciones/:id', auth(true), exigirPinAdmin, async (req, res) 
   res.json({ ok: true });
 });
 
+/* ---------- Arqueo de caja ----------
+   Abrir la caja fija el fondo inicial del día; cerrarla guarda el conteo
+   real y la diferencia contra lo esperado. */
+
+app.get('/api/arqueos', auth(true), async (req, res) => {
+  const { desde, hasta, fecha } = req.query;
+
+  let q = db.from('arqueos').select('*').order('fecha', { ascending: false });
+  if (fecha) q = q.eq('fecha', fecha);
+  if (desde) q = q.gte('fecha', desde);
+  if (hasta) q = q.lte('fecha', hasta);
+
+  const { data, error } = await q.limit(60);
+  if (error) return enviarError(res, 500, error.message);
+  res.json(data || []);
+});
+
+/* Arqueo de hoy, si existe. Lo usa la interfaz para saber si la caja
+   está abierta o todavía no se abrió. */
+app.get('/api/arqueos/hoy', auth(true), async (req, res) => {
+  const hoy = fechaHoyChile();
+  const { data, error } = await db.from('arqueos').select('*').eq('fecha', hoy).maybeSingle();
+  if (error) return enviarError(res, 500, error.message);
+  res.json(data || null);
+});
+
+app.post('/api/arqueos/abrir', auth(true), async (req, res) => {
+  const fecha = (req.body?.fecha || '').trim() || fechaHoyChile();
+  const fondo = num(req.body?.fondo_inicial);
+
+  const { data: existente } = await db.from('arqueos').select('*').eq('fecha', fecha).maybeSingle();
+
+  /* Reabrir un día cerrado borraría la diferencia ya registrada, que es
+     justamente el dato que hay que conservar. */
+  if (existente?.cerrado) {
+    return enviarError(res, 400, `La caja del ${fecha} ya fue cerrada. No se puede reabrir.`);
+  }
+
+  // Si ya estaba abierta, se corrige el fondo en vez de duplicar la fila
+  if (existente) {
+    const { data, error } = await db.from('arqueos')
+      .update({ fondo_inicial: fondo }).eq('id', existente.id).select().single();
+    if (error) return enviarError(res, 500, error.message);
+    return res.json(data);
+  }
+
+  const { data, error } = await db.from('arqueos')
+    .insert([{ fecha, fondo_inicial: fondo }]).select().single();
+  if (error) return enviarError(res, 500, error.message);
+  res.status(201).json(data);
+});
+
+app.post('/api/arqueos/cerrar', auth(true), async (req, res) => {
+  const fecha = (req.body?.fecha || '').trim() || fechaHoyChile();
+  const contado = num(req.body?.contado);
+  const esperado = num(req.body?.esperado);
+
+  const { data: arqueo } = await db.from('arqueos').select('*').eq('fecha', fecha).maybeSingle();
+  if (!arqueo) return enviarError(res, 404, 'No hay una caja abierta para esa fecha');
+  if (arqueo.cerrado) return enviarError(res, 400, 'Esa caja ya está cerrada');
+
+  /* `esperado` se congela con el valor del momento del cierre. Si mañana
+     se corrige una venta antigua, este arqueo debe seguir mostrando lo
+     que se vio hoy: es una foto, no un cálculo vivo. */
+  const { data, error } = await db.from('arqueos')
+    .update({
+      contado,
+      esperado,
+      diferencia: contado - esperado,
+      observaciones: (req.body?.observaciones || '').trim() || null,
+      cerrado: true,
+      cerrado_en: new Date().toISOString()
+    })
+    .eq('id', arqueo.id).select().single();
+
+  if (error) return enviarError(res, 500, error.message);
+  res.json(data);
+});
+
 /* ---------- Balance consolidado ----------
    Un solo endpoint que devuelve todo el panel ya calculado. Se hace en
    el servidor y no en el navegador por dos razones: los costos y
@@ -1559,11 +1640,19 @@ app.get('/api/balance', auth(true), async (req, res) => {
 
     // --- Gastos del período ---
     const { data: gastosRaw } = await db.from('compras')
-      .select('id, fecha, clasificacion, costo_total, origen')
+      .select('id, fecha, clasificacion, costo_total, origen, metodo_pago')
       .gte('fecha', desde).lte('fecha', hasta + 'T23:59:59');
 
     const gastos = gastosRaw || [];
     const totalGastos = gastos.reduce((a, g) => a + num(g.costo_total), 0);
+
+    /* Solo lo pagado en efectivo sale del cajón. Antes se asumía que
+       TODOS los gastos eran en efectivo y la caja física quedaba baja
+       cuando el arriendo se pagaba por transferencia.
+       Las mermas no salen del cajón: son stock perdido, no dinero. */
+    const gastosEfectivo = gastos
+      .filter(g => esEfectivo(g.metodo_pago) && g.origen !== 'MERMA')
+      .reduce((a, g) => a + num(g.costo_total), 0);
 
     // Agrupación por familia contable
     const { data: clasifRaw } = await db.from('compra_clasificaciones').select('nombre, grupo');
@@ -1603,7 +1692,17 @@ app.get('/api/balance', auth(true), async (req, res) => {
        Los gastos se asumen pagados en efectivo porque `compras` no
        registra el medio de pago. Es una aproximación conservadora y
        queda advertida en la interfaz. */
-    const cajaFisica = ventasEfectivo + inyeccionesEfectivo - totalGastos;
+    /* Arqueo abierto del último día del período: su fondo inicial es la
+       base con que arrancó el cajón. Sin esto la caja física partía de 0
+       y nunca cuadraba con el conteo real. */
+    const { data: arqueoRaw } = await db.from('arqueos')
+      .select('*').gte('fecha', desde).lte('fecha', hasta)
+      .order('fecha', { ascending: false }).limit(1);
+
+    const arqueo = (arqueoRaw || [])[0] || null;
+    const fondoInicial = num(arqueo?.fondo_inicial);
+
+    const cajaFisica = fondoInicial + ventasEfectivo + inyeccionesEfectivo - gastosEfectivo;
 
     // Flujo líquido: todo el dinero disponible, en cualquier forma
     const flujoLiquido = ingresos + totalInyecciones - totalGastos - comisiones;
@@ -1624,6 +1723,9 @@ app.get('/api/balance', auth(true), async (req, res) => {
       porGrupo,
       porClasificacion,
       ventasEfectivo,
+      gastosEfectivo,
+      fondoInicial,
+      arqueo,
       totalInyecciones,
       inyeccionesEfectivo,
       cajaFisica,

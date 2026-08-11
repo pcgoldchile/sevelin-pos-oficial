@@ -47,6 +47,17 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('btnRangoPersonalizado')?.addEventListener('click', aplicarRangoPersonalizado);
 
+  // Arqueo de caja
+  document.getElementById('btnAbrirCaja')?.addEventListener('click', abrirModalAbrirCaja);
+  document.getElementById('btnConfirmarAbrirCaja')?.addEventListener('click', confirmarAbrirCaja);
+  document.getElementById('btnCancelarAbrirCaja')?.addEventListener('click', () => cerrarModal('modalAbrirCaja'));
+  document.getElementById('btnCerrarCaja')?.addEventListener('click', abrirModalCerrarCaja);
+  document.getElementById('btnConfirmarCerrarCaja')?.addEventListener('click', confirmarCerrarCaja);
+  document.getElementById('btnCancelarCerrarCaja')?.addEventListener('click', () => cerrarModal('modalCerrarCaja'));
+  ['modalAbrirCaja', 'modalCerrarCaja'].forEach(id => {
+    document.getElementById(id)?.addEventListener('click', (e) => { if (e.target.id === id) cerrarModal(id); });
+  });
+
   // Inyecciones de capital
   document.getElementById('btnNuevaInyeccion')?.addEventListener('click', abrirModalInyeccion);
   document.getElementById('btnGuardarInyeccion')?.addEventListener('click', guardarInyeccion);
@@ -197,12 +208,14 @@ function pintarBalance(b) {
   // --- Caja ---
   set('cajaFisica', fmtCLP(b.cajaFisica));
   set('cajaFisicaDetalle',
-    `Ventas en efectivo ${fmtCLP(b.ventasEfectivo)} + aportes ${fmtCLP(b.inyeccionesEfectivo)} − gastos ${fmtCLP(b.totalGastos)}`);
+    `Fondo ${fmtCLP(b.fondoInicial || 0)} + ventas en efectivo ${fmtCLP(b.ventasEfectivo)} ` +
+    `+ aportes ${fmtCLP(b.inyeccionesEfectivo)} − gastos en efectivo ${fmtCLP(b.gastosEfectivo || 0)}`);
 
   set('flujoLiquido', fmtCLP(b.flujoLiquido));
   set('flujoLiquidoDetalle',
     `Todas las ventas ${fmtCLP(b.ingresos)} + aportes ${fmtCLP(b.totalInyecciones)} − gastos y comisiones`);
 
+  pintarArqueo(b);
   pintarMedios(b.porMedio);
   pintarGrupos(b.porGrupo, b.porClasificacion, b.totalGastos);
   pintarEquilibrio(b);
@@ -305,6 +318,175 @@ function pintarEquilibrio(b) {
         ? `✅ Punto de equilibrio cubierto · lo que sigue es ganancia`
         : `Llevas <strong>${avance.toFixed(0)}%</strong> · faltan <strong>${fmtCLP(falta)}</strong> de margen para cubrir el mes`}
     </p>`;
+}
+
+/* ============================================================
+   ARQUEO DE CAJA
+   ------------------------------------------------------------
+   Abrir fija el fondo del cajón; cerrar guarda el conteo real y la
+   diferencia. Sin el fondo inicial la caja física partía de 0 y nunca
+   podía cuadrar con lo que hay de verdad en el cajón.
+   ============================================================ */
+function pintarArqueo(b) {
+  const estado = document.getElementById('arqueoEstado');
+  const detalle = document.getElementById('arqueoDetalle');
+  const btnAbrir = document.getElementById('btnAbrirCaja');
+  const btnCerrar = document.getElementById('btnCerrarCaja');
+  if (!detalle) return;
+
+  const a = b.arqueo;
+
+  if (!a) {
+    if (estado) estado.textContent = 'La caja no se ha abierto en este período';
+    detalle.innerHTML = `
+      <p class="vacio-nota">
+        Abre la caja indicando con cuánto dinero parte el cajón. Sin ese fondo, la
+        caja física arranca en $0 y no puede cuadrar con el conteo real.
+      </p>`;
+    if (btnAbrir) btnAbrir.style.display = '';
+    if (btnCerrar) btnCerrar.style.display = 'none';
+    return;
+  }
+
+  if (a.cerrado) {
+    const dif = Number(a.diferencia) || 0;
+    const estadoDif = dif === 0 ? 'cuadra' : (dif > 0 ? 'sobra' : 'falta');
+    const clase = dif === 0 ? 'ok' : (Math.abs(dif) > 2000 ? 'mal' : 'aviso');
+
+    if (estado) estado.textContent = `Caja del ${a.fecha} cerrada`;
+    detalle.innerHTML = `
+      <div class="arqueo-cifras">
+        <div><span>Fondo inicial</span><strong>${fmtCLP(a.fondo_inicial)}</strong></div>
+        <div><span>Esperado</span><strong>${fmtCLP(a.esperado)}</strong></div>
+        <div><span>Contado</span><strong>${fmtCLP(a.contado)}</strong></div>
+      </div>
+      <div class="arqueo-resultado ${clase}">
+        ${dif === 0
+          ? '✅ La caja cuadró exacta'
+          : `${dif > 0 ? '🔵' : '⚠️'} ${estadoDif} ${fmtCLP(Math.abs(dif))} respecto de lo esperado`}
+      </div>
+      ${a.observaciones ? `<p class="modal-hint">📝 ${escaparTexto(a.observaciones)}</p>` : ''}`;
+
+    if (btnAbrir) btnAbrir.style.display = 'none';
+    if (btnCerrar) btnCerrar.style.display = 'none';
+    return;
+  }
+
+  // Caja abierta: se puede cerrar
+  if (estado) estado.textContent = `Caja abierta desde el ${a.fecha}`;
+  detalle.innerHTML = `
+    <div class="arqueo-cifras">
+      <div><span>Fondo inicial</span><strong>${fmtCLP(a.fondo_inicial)}</strong></div>
+      <div><span>Debería haber ahora</span><strong>${fmtCLP(b.cajaFisica)}</strong></div>
+    </div>
+    <p class="modal-hint">
+      Al cerrar, cuenta los billetes y compara. Cualquier diferencia queda
+      registrada con su observación.
+    </p>`;
+
+  if (btnAbrir) btnAbrir.style.display = 'none';
+  if (btnCerrar) btnCerrar.style.display = '';
+}
+
+function abrirModalAbrirCaja() {
+  const f = document.getElementById('arqueoFechaApertura');
+  const monto = document.getElementById('arqueoFondoInicial');
+  if (f) f.value = todayISO();
+  if (monto) monto.value = '';
+  document.getElementById('modalAbrirCaja')?.classList.add('show');
+  setTimeout(() => monto?.focus(), 80);
+}
+
+async function confirmarAbrirCaja() {
+  const fondo = Number(document.getElementById('arqueoFondoInicial')?.value) || 0;
+  const fecha = document.getElementById('arqueoFechaApertura')?.value || todayISO();
+
+  const btn = document.getElementById('btnConfirmarAbrirCaja');
+  if (btn) btn.disabled = true;
+
+  try {
+    await API.balance.abrirCaja({ fecha, fondo_inicial: fondo });
+    showToast(`Caja abierta con ${fmtCLP(fondo)}`, 'ok');
+    cerrarModal('modalAbrirCaja');
+    cargarBalance();
+  } catch (err) {
+    showToast(err.message || 'No se pudo abrir la caja', 'err');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function abrirModalCerrarCaja() {
+  if (!balanceActual) return;
+
+  const esperado = Number(balanceActual.cajaFisica) || 0;
+  const el = document.getElementById('arqueoEsperado');
+  if (el) el.textContent = fmtCLP(esperado);
+
+  const contado = document.getElementById('arqueoContado');
+  if (contado) {
+    contado.value = '';
+    contado.oninput = () => mostrarDiferenciaArqueo(esperado);
+  }
+  const obs = document.getElementById('arqueoObservaciones');
+  if (obs) obs.value = '';
+  const dif = document.getElementById('arqueoDiferencia');
+  if (dif) dif.style.display = 'none';
+
+  document.getElementById('modalCerrarCaja')?.classList.add('show');
+  setTimeout(() => contado?.focus(), 80);
+}
+
+/* La diferencia se muestra en vivo mientras se escribe: así se detecta
+   un error de tecleo antes de cerrar, que es cuando todavía se puede
+   volver a contar. */
+function mostrarDiferenciaArqueo(esperado) {
+  const caja = document.getElementById('arqueoDiferencia');
+  const contado = Number(document.getElementById('arqueoContado')?.value);
+  if (!caja) return;
+
+  if (!contado && contado !== 0) { caja.style.display = 'none'; return; }
+
+  const dif = contado - esperado;
+  caja.style.display = '';
+  caja.className = 'arqueo-diferencia ' + (dif === 0 ? 'ok' : (Math.abs(dif) > 2000 ? 'mal' : 'aviso'));
+  caja.textContent = dif === 0
+    ? '✅ Cuadra exacto'
+    : (dif > 0 ? `🔵 Sobran ${fmtCLP(dif)}` : `⚠️ Faltan ${fmtCLP(-dif)}`);
+}
+
+async function confirmarCerrarCaja() {
+  const contado = Number(document.getElementById('arqueoContado')?.value);
+  if (!contado && contado !== 0) { showToast('Escribe el total contado', 'err'); return; }
+
+  const esperado = Number(balanceActual?.cajaFisica) || 0;
+  const dif = contado - esperado;
+
+  /* Una diferencia grande casi siempre es un error de conteo o de
+     tecleo, no un descuadre real. Se pide confirmar antes de dejarla
+     grabada, porque el cierre no se puede deshacer. */
+  if (Math.abs(dif) > 5000 &&
+      !confirm(`La diferencia es de ${fmtCLP(Math.abs(dif))}.\n\n¿Seguro que el conteo es correcto? El cierre no se puede deshacer.`)) {
+    return;
+  }
+
+  const btn = document.getElementById('btnConfirmarCerrarCaja');
+  if (btn) btn.disabled = true;
+
+  try {
+    await API.balance.cerrarCaja({
+      fecha: balanceActual?.arqueo?.fecha || todayISO(),
+      contado, esperado,
+      observaciones: document.getElementById('arqueoObservaciones')?.value || ''
+    });
+    showToast(dif === 0 ? 'Caja cerrada: cuadró exacto' : `Caja cerrada con ${fmtCLP(Math.abs(dif))} de diferencia`, 'ok');
+    cerrarModal('modalCerrarCaja');
+    cargarBalance();
+  } catch (err) {
+    showToast(err.message || 'No se pudo cerrar la caja', 'err');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 /* ============================================================

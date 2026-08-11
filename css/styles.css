@@ -2008,3 +2008,243 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
    están en el catálogo. */
 .detalle-atenuado { opacity: .62; transition: opacity .18s ease; }
 .detalle-atenuado:focus-within { opacity: 1; }
+
+/* ============================================================
+   17. ARQUEO DE CAJA
+   ============================================================ */
+.arqueo-cifras {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+}
+.arqueo-cifras div {
+    padding: 11px 14px;
+    border-radius: 10px;
+    background: var(--bg-900);
+    border: 1px solid var(--border);
+}
+.arqueo-cifras span { display: block; font-size: .7rem; color: var(--text-muted); margin-bottom: 3px; }
+.arqueo-cifras strong { font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+
+.arqueo-esperado {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 13px 16px;
+    border-radius: 11px;
+    background: rgba(59,130,246,.10);
+    border: 1px solid rgba(59,130,246,.32);
+    margin-top: 14px;
+}
+.arqueo-esperado span { font-size: .8rem; color: var(--text-muted); }
+.arqueo-esperado strong { font-size: 1.3rem; font-variant-numeric: tabular-nums; }
+
+/* El resultado del arqueo se lee por color antes que por texto */
+.arqueo-resultado, .arqueo-diferencia {
+    margin-top: 12px;
+    padding: 11px 14px;
+    border-radius: 10px;
+    font-size: .88rem;
+    font-weight: 600;
+    border: 1px solid var(--border);
+}
+.arqueo-resultado.ok, .arqueo-diferencia.ok {
+    background: rgba(34,197,94,.12); border-color: rgba(34,197,94,.4); color: var(--green);
+}
+.arqueo-resultado.aviso, .arqueo-diferencia.aviso {
+    background: rgba(245,158,11,.12); border-color: rgba(245,158,11,.4); color: var(--gold);
+}
+.arqueo-resultado.mal, .arqueo-diferencia.mal {
+    background: rgba(239,68,68,.12); border-color: rgba(239,68,68,.4); color: var(--red);
+}
+
+/* ============================================================
+   18. MEJORA VISUAL DE HISTORIAL, PRODUCTOS Y GASTOS
+   ------------------------------------------------------------
+   Se hace por CSS y no reescribiendo el HTML de los tres módulos: son
+   miles de líneas de marcado con IDs de los que dependen tres archivos
+   JS, y refactorizarlos de una vez es la forma más rápida de romper
+   algo sin darse cuenta. Estas reglas les dan el mismo acabado del POS
+   sin tocar una sola línea de su estructura.
+   ============================================================ */
+
+/* ---------- Tablas ---------- */
+.data-table {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100%;
+}
+.data-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--bg-800);
+    font-size: .68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--text-muted);
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+}
+.data-table tbody td {
+    padding: 11px 14px;
+    border-bottom: 1px solid rgba(148,163,184,.10);
+    font-size: .86rem;
+    vertical-align: middle;
+}
+.data-table tbody tr { transition: background .12s ease; }
+.data-table tbody tr:hover { background: rgba(59,130,246,.06); }
+.data-table tbody tr:last-child td { border-bottom: none; }
+
+/* Los montos alineados por el punto decimal: sin esto las columnas de
+   precios "bailan" de una fila a otra. */
+.data-table td, .data-table th { font-variant-numeric: tabular-nums; }
+
+/* El contenedor de la tabla con esquinas y scroll propio */
+.table-wrap, .tabla-scroll {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: auto;
+    background: var(--bg-850, var(--bg-900));
+}
+
+/* ---------- Tarjetas y encabezados ---------- */
+.card {
+    border-radius: 14px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.18), 0 8px 24px -14px rgba(0,0,0,.5);
+}
+.card > h2, .card .card-title {
+    letter-spacing: -.01em;
+}
+.card .subtitle {
+    font-size: .78rem;
+    color: var(--text-muted);
+    margin: 3px 0 0;
+    line-height: 1.5;
+}
+
+/* ---------- KPI ---------- */
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+}
+.kpi-card {
+    border-radius: 13px;
+    padding: 16px 18px;
+    transition: transform .15s ease, border-color .15s ease;
+}
+.kpi-card:hover { transform: translateY(-2px); }
+.kpi-label {
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--text-muted);
+    font-weight: 700;
+}
+.kpi-value {
+    font-size: 1.75rem;
+    font-weight: 800;
+    letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums;
+    margin: 5px 0 3px;
+    line-height: 1.1;
+}
+.kpi-foot { font-size: .73rem; color: var(--text-muted); line-height: 1.45; }
+
+/* ---------- Barras de herramientas y filtros ---------- */
+.toolbar, .toolbar-group { gap: 8px; flex-wrap: wrap; }
+.chip-group { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+    padding: 6px 13px;
+    border-radius: 20px;
+    font-size: .78rem;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    background: var(--bg-900);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all .12s ease;
+}
+.chip:hover { border-color: var(--blue); color: var(--text-100); }
+.chip.active, .chip.activo {
+    background: var(--blue);
+    border-color: var(--blue);
+    color: #fff;
+}
+
+/* ---------- Botones de icono en las filas ---------- */
+.btn-icon {
+    width: 32px; height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    padding: 0;
+    transition: transform .12s ease, background .12s ease;
+}
+.btn-icon:hover { transform: translateY(-1px); }
+
+/* ---------- Filas vacías ---------- */
+.empty-row td {
+    padding: 34px 16px !important;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: .86rem;
+    font-style: italic;
+}
+
+/* ---------- Badges de estado ---------- */
+.badge, .tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 9px;
+    border-radius: 20px;
+    font-size: .7rem;
+    font-weight: 700;
+    letter-spacing: .01em;
+    white-space: nowrap;
+}
+
+/* ---------- Modales ---------- */
+.modal-box {
+    border-radius: 16px;
+    box-shadow: 0 4px 8px rgba(0,0,0,.25), 0 24px 60px -20px rgba(0,0,0,.7);
+}
+.modal-box h2 { letter-spacing: -.01em; }
+.modal-foot { gap: 10px; padding-top: 18px; }
+
+/* ---------- Campos de formulario ---------- */
+.field label {
+    font-size: .74rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: .01em;
+}
+.field input, .field select, .field textarea {
+    border-radius: 10px;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+.field input:focus, .field select:focus, .field textarea:focus {
+    border-color: var(--blue);
+    box-shadow: 0 0 0 3px rgba(59,130,246,.25);
+    outline: none;
+}
+
+/* ---------- Scrollbars discretas ---------- */
+.lista::-webkit-scrollbar,
+.table-wrap::-webkit-scrollbar,
+.tabla-scroll::-webkit-scrollbar { width: 9px; height: 9px; }
+.lista::-webkit-scrollbar-thumb,
+.table-wrap::-webkit-scrollbar-thumb,
+.tabla-scroll::-webkit-scrollbar-thumb {
+    background: rgba(148,163,184,.28);
+    border-radius: 20px;
+}
+.lista::-webkit-scrollbar-thumb:hover,
+.table-wrap::-webkit-scrollbar-thumb:hover,
+.tabla-scroll::-webkit-scrollbar-thumb:hover { background: rgba(148,163,184,.45); }
