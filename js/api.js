@@ -200,5 +200,22 @@ const API = {
     agregarRepuesto: (id, item) => apiRequest(`/ot/${id}/repuestos`, { method: 'POST', body: item }),
     quitarRepuesto: (otId, id) => apiRequest(`/ot/${otId}/repuestos/${id}`, { method: 'DELETE' }),
     eliminar: (id) => apiRequest(`/ot/${id}`, { method: 'DELETE' })
+  },
+
+  /* ---------- Finanzas y balance ---------- */
+  balance: {
+    // Todo el panel llega calculado del servidor en una sola llamada
+    obtener: (desde, hasta) =>
+      apiRequest(`/balance?desde=${encodeURIComponent(desde)}&hasta=${encodeURIComponent(hasta)}`),
+
+    listarGastosFijos: () => apiRequest('/gastos-fijos'),
+    crearGastoFijo: (datos) => apiRequest('/gastos-fijos', { method: 'POST', body: datos }),
+    actualizarGastoFijo: (id, datos) => apiRequest(`/gastos-fijos/${id}`, { method: 'PUT', body: datos }),
+    eliminarGastoFijo: (id) => apiRequest(`/gastos-fijos/${id}`, { method: 'DELETE' }),
+
+    listarInyecciones: (desde, hasta) =>
+      apiRequest(`/inyecciones?desde=${encodeURIComponent(desde || '')}&hasta=${encodeURIComponent(hasta || '')}`),
+    crearInyeccion: (datos) => apiRequest('/inyecciones', { method: 'POST', body: datos }),
+    eliminarInyeccion: (id, pin) => apiRequest(`/inyecciones/${id}`, { method: 'DELETE', body: { pin } })
   }
 };

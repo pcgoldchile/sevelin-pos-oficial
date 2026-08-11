@@ -84,9 +84,12 @@ function abrirSelectorPago(opciones) {
   if (elPagoMontoRecibido) elPagoMontoRecibido.value = '';
   if (elPagoEfectivoBox) elPagoEfectivoBox.style.display = 'none';
 
-  // El DTE solo aplica al cobrar una venta, no al registrar un abono
-  const pideDte = configPago.pedirDte !== false;
-  if (elPagoDteBox) elPagoDteBox.style.display = pideDte ? '' : 'none';
+  /* El DTE pasó a un modal propio, posterior al medio de pago. Motivo:
+     así se elige con ↑ ↓ y Enter sin competir con las flechas que
+     recorren los medios de pago dentro de este mismo modal.
+     El recuadro viejo queda oculto; se conserva en el HTML para no
+     romper `elegirTipoDte()`, que sigue sincronizando ambos. */
+  if (elPagoDteBox) elPagoDteBox.style.display = 'none';
   elegirTipoDte('SIN DTE');
 
   renderMetodosPago();
@@ -316,6 +319,14 @@ async function confirmarSelectorPago() {
   if (!metodoPagoElegido) { showToast('Selecciona un medio de pago', 'err'); return; }
   if (!configPago?.onConfirmar) { cerrarSelectorPago(); return; }
 
+  /* Paso intermedio: elegir el documento tributario.
+     Solo al cobrar una venta; un abono de encargo no emite DTE. */
+  if (configPago.pedirDte !== false) {
+    const dte = await pedirTipoDte();
+    if (dte === null) return;          // canceló: se vuelve al medio de pago
+    elegirTipoDte(dte);
+  }
+
   const datos = datosPagoActuales();
   if (elBtnConfirmarPago) elBtnConfirmarPago.disabled = true;
 
@@ -330,7 +341,114 @@ async function confirmarSelectorPago() {
   }
 }
 
+/* ============================================================
+   PASO DE DOCUMENTO TRIBUTARIO
+   ------------------------------------------------------------
+   Modal propio, navegable con ↑ ↓ y confirmable con Enter. Devuelve una
+   promesa con el tipo elegido, o null si se cancela.
+
+   Va DESPUÉS del medio de pago y no antes, porque el documento es lo
+   último que se decide en el mostrador: primero se acuerda cómo paga el
+   cliente y recién ahí si pide boleta o factura.
+   ============================================================ */
+const OPCIONES_DTE = [
+  { valor: 'SIN DTE', icono: '📄', desc: 'Comprobante interno, sin documento tributario' },
+  { valor: 'BOLETA',  icono: '🧾', desc: 'Boleta electrónica al consumidor final' },
+  { valor: 'FACTURA', icono: '📑', desc: 'Factura electrónica con datos de la empresa' }
+];
+
+let dteResolver = null;
+let dteIndice = 0;
+
+function pedirTipoDte() {
+  const modal = document.getElementById('modalDte');
+  const lista = document.getElementById('dteOpciones');
+
+  // Sin el modal en el HTML se cae al valor por defecto, sin bloquear la venta
+  if (!modal || !lista) return Promise.resolve(tipoDteElegido || 'SIN DTE');
+
+  dteIndice = Math.max(0, OPCIONES_DTE.findIndex(o => o.valor === (tipoDteElegido || 'SIN DTE')));
+
+  const totalEl = document.getElementById('dteTotal');
+  if (totalEl) totalEl.textContent = fmtCLP(configPago?.total || 0);
+
+  renderOpcionesDte();
+  modal.classList.add('show');
+  setTimeout(() => document.getElementById('btnConfirmarDte')?.focus(), 60);
+
+  return new Promise(resolve => { dteResolver = resolve; });
+}
+
+function renderOpcionesDte() {
+  const lista = document.getElementById('dteOpciones');
+  if (!lista) return;
+
+  lista.innerHTML = OPCIONES_DTE.map((o, i) => `
+    <button type="button" class="dte-opcion${i === dteIndice ? ' activa' : ''}" data-i="${i}">
+      <span class="dte-opcion-icono">${o.icono}</span>
+      <span class="dte-opcion-texto">
+        <strong>${o.valor}</strong>
+        <small>${o.desc}</small>
+      </span>
+      <span class="dte-opcion-marca">${i === dteIndice ? '●' : ''}</span>
+    </button>`).join('');
+
+  lista.querySelectorAll('.dte-opcion').forEach(b => {
+    b.addEventListener('click', () => {
+      dteIndice = Number(b.dataset.i);
+      renderOpcionesDte();
+      resolverDte();                  // un clic elige y confirma de una vez
+    });
+  });
+}
+
+function moverDte(delta) {
+  dteIndice = (dteIndice + delta + OPCIONES_DTE.length) % OPCIONES_DTE.length;
+  renderOpcionesDte();
+}
+
+function resolverDte() {
+  const modal = document.getElementById('modalDte');
+  if (modal) modal.classList.remove('show');
+  const r = dteResolver; dteResolver = null;
+  if (r) r(OPCIONES_DTE[dteIndice].valor);
+}
+
+function cancelarDte() {
+  const modal = document.getElementById('modalDte');
+  if (modal) modal.classList.remove('show');
+  const r = dteResolver; dteResolver = null;
+  if (r) r(null);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btnConfirmarDte')?.addEventListener('click', resolverDte);
+  document.getElementById('btnCancelarDte')?.addEventListener('click', cancelarDte);
+  document.getElementById('modalDte')?.addEventListener('click', (e) => {
+    if (e.target.id === 'modalDte') cancelarDte();
+  });
+
+  /* Teclado del paso de DTE. Se captura antes que los atajos generales
+     para que las flechas no se vayan al modal de pago que está detrás. */
+  document.addEventListener('keydown', (e) => {
+    const modal = document.getElementById('modalDte');
+    if (!modal || !modal.classList.contains('show')) return;
+
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); moverDte(+1); }
+    else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') { e.preventDefault(); e.stopPropagation(); moverDte(-1); }
+    else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); resolverDte(); }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancelarDte(); }
+    else if (/^[1-9]$/.test(e.key) && OPCIONES_DTE[Number(e.key) - 1]) {
+      e.preventDefault(); e.stopPropagation();
+      dteIndice = Number(e.key) - 1;
+      renderOpcionesDte();
+      resolverDte();
+    }
+  }, true);
+});
+
 function cerrarSelectorPago() {
+  if (dteResolver) cancelarDte();
   if (elModalPago) elModalPago.classList.remove('show');
   configPago = null;
   metodoPagoElegido = null;

@@ -332,6 +332,175 @@ async function agregarPorCodigoEscaneado(codigo) {
   }
 }
 
+/* ============================================================
+   DIVIDIR VENTA
+   ------------------------------------------------------------
+   Para cuando una parte de la mercadería necesita boleta y la otra no.
+
+   POR QUÉ ASÍ Y NO "UN DTE POR MEDIO DE PAGO":
+   una boleta documenta el TOTAL de la operación, no una fracción. Emitir
+   boleta solo por lo pagado con tarjeta dejaría el resto como venta sin
+   documentar. La forma correcta es que sean dos ventas distintas, cada
+   una con su documento y su medio de pago.
+
+   El flujo evita duplicar código: se cobra la parte 1 con el circuito de
+   siempre y, al terminar, el resto vuelve al carrito para cobrarse como
+   una segunda venta normal.
+   ============================================================ */
+let restoDivision = null;      // ítems que quedan pendientes de la parte 2
+let seleccionDivision = new Set();
+
+function abrirDividirVenta() {
+  if (!cart.length) { showToast('El carrito está vacío', 'err'); return; }
+  if (cart.length < 2) { showToast('Se necesitan al menos 2 productos para dividir', 'err'); return; }
+  if (restoDivision) { showToast('Primero termina de cobrar la parte pendiente', 'err'); return; }
+
+  // Por defecto, el primer producto va en la parte 1
+  seleccionDivision = new Set(['0']);
+  renderDividirVenta();
+  document.getElementById('modalDividir')?.classList.add('show');
+}
+
+function renderDividirVenta() {
+  const lista = document.getElementById('dividirLista');
+  if (!lista) return;
+
+  lista.innerHTML = cart.map((item, i) => {
+    const marcado = seleccionDivision.has(String(i));
+    return `
+      <label class="dividir-item${marcado ? ' marcado' : ''}">
+        <input type="checkbox" data-div="${i}" ${marcado ? 'checked' : ''}>
+        <span class="dividir-nombre">
+          ${item.cantidad} × ${item.nombre}
+          ${item.serial_number ? `<small>S/N: ${item.serial_number}</small>` : ''}
+        </span>
+        <b>${fmtCLP(item.subtotal)}</b>
+      </label>`;
+  }).join('');
+
+  lista.querySelectorAll('input[data-div]').forEach(chk => {
+    chk.addEventListener('change', () => {
+      const k = chk.dataset.div;
+      if (chk.checked) seleccionDivision.add(k); else seleccionDivision.delete(k);
+      renderDividirVenta();
+    });
+  });
+
+  actualizarResumenDivision();
+}
+
+function actualizarResumenDivision() {
+  const parte1 = cart.filter((_, i) => seleccionDivision.has(String(i)));
+  const parte2 = cart.filter((_, i) => !seleccionDivision.has(String(i)));
+
+  const t1 = parte1.reduce((a, x) => a + Number(x.subtotal || 0), 0);
+  const t2 = parte2.reduce((a, x) => a + Number(x.subtotal || 0), 0);
+
+  const el1 = document.getElementById('dividirTotal1');
+  const el2 = document.getElementById('dividirTotal2');
+  if (el1) el1.textContent = `${parte1.length} ítem(s) · ${fmtCLP(t1)}`;
+  if (el2) el2.textContent = `${parte2.length} ítem(s) · ${fmtCLP(t2)}`;
+
+  /* Las dos partes deben tener algo: si una queda vacía no hay división,
+     es la venta completa de siempre. */
+  const btn = document.getElementById('btnConfirmarDividir');
+  if (btn) btn.disabled = parte1.length === 0 || parte2.length === 0;
+}
+
+function confirmarDividirVenta() {
+  const parte1 = cart.filter((_, i) => seleccionDivision.has(String(i)));
+  const parte2 = cart.filter((_, i) => !seleccionDivision.has(String(i)));
+  if (!parte1.length || !parte2.length) return;
+
+  restoDivision = parte2;
+  cart = parte1;
+  renderCart();
+
+  document.getElementById('modalDividir')?.classList.remove('show');
+  mostrarAvisoDivision();
+  showToast(`Cobrando la parte 1 de 2 · ${parte2.length} ítem(s) quedan pendientes`, 'ok');
+
+  // Se abre el cobro de la parte 1 con el circuito normal
+  setTimeout(() => document.getElementById('btnFinalizarVenta')?.click(), 250);
+}
+
+function mostrarAvisoDivision() {
+  const aviso = document.getElementById('avisoDivision');
+  if (!aviso) return;
+
+  if (!restoDivision) { aviso.style.display = 'none'; return; }
+
+  const total = restoDivision.reduce((a, x) => a + Number(x.subtotal || 0), 0);
+  aviso.style.display = '';
+  aviso.textContent = `✂️ Venta dividida · quedan ${restoDivision.length} ítem(s) por ${fmtCLP(total)} para la parte 2`;
+}
+
+/* Se llama después de registrar una venta: si había división pendiente,
+   el resto vuelve al carrito para cobrarse como segunda venta. */
+function continuarDivisionSiCorresponde() {
+  if (!restoDivision) return false;
+
+  cart = restoDivision;
+  restoDivision = null;
+  renderCart();
+  mostrarAvisoDivision();
+
+  showToast('Parte 1 cobrada. Ahora cobra la parte 2 con su propio documento.', 'ok');
+  return true;
+}
+
+function cancelarDivision() {
+  document.getElementById('modalDividir')?.classList.remove('show');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btnDividirVenta')?.addEventListener('click', abrirDividirVenta);
+  document.getElementById('btnConfirmarDividir')?.addEventListener('click', confirmarDividirVenta);
+  document.getElementById('btnCancelarDividir')?.addEventListener('click', cancelarDivision);
+  document.getElementById('modalDividir')?.addEventListener('click', (e) => {
+    if (e.target.id === 'modalDividir') cancelarDivision();
+  });
+});
+
+/* ------------------------------------------------------------
+   S/N: escanear el número de serie agrega el producto solo
+   ------------------------------------------------------------
+   En productos con "Requiere S/N" el flujo era: elegir producto →
+   marcar la casilla → escanear la serie → APRETAR Agregar. Ese último
+   clic sobraba: escanear la serie ya es la confirmación de que ese
+   equipo concreto sale de la tienda.
+
+   Se dispara con Enter (las pistolas lo mandan al final) y también con
+   el escáner de cámara, que emite escaner:codigo. Solo actúa si hay un
+   producto cargado y la serie tiene contenido. */
+document.addEventListener('DOMContentLoaded', () => {
+  if (!elItemSN) return;
+
+  elItemSN.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    agregarPorSerieEscaneada();
+  });
+});
+
+document.addEventListener('escaner:codigo', (e) => {
+  if (e.detail?.inputId !== 'itemSN') return;
+  agregarPorSerieEscaneada();
+});
+
+function agregarPorSerieEscaneada() {
+  const serie = (elItemSN?.value || '').trim();
+  if (!serie) return;
+
+  // Sin producto cargado la serie no tiene a qué pertenecer
+  if (!(elItemNombre?.value || '').trim()) {
+    showToast('Elige primero el producto y después escanea el S/N', 'err');
+    return;
+  }
+
+  agregarItemAlCarrito();
+}
+
 /* Deja el cursor en el buscador y selecciona su contenido, de modo que el
    siguiente disparo de la pistola reemplace lo que haya escrito. */
 function enfocarBuscador() {
@@ -439,6 +608,11 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
   cart = [];
   renderCart();
   limpiarFormularioItem();
+
+  /* Si la venta venía de una división, el resto vuelve al carrito en vez
+     de quedar vacío: la parte 2 se cobra como una venta aparte, con su
+     propio documento tributario. */
+  const hayParte2 = continuarDivisionSiCorresponde();
   /* Ya no se llama desvincularOT(): esa función desapareció junto con el
      vínculo OT↔venta. Dejarla invocada lanzaba un ReferenceError JUSTO
      después de registrar la venta, así que la venta se guardaba pero el
@@ -447,7 +621,7 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
   if (elPosEditarHora) elPosEditarHora.checked = false;
   if (elPosHora) { elPosHora.value = ''; elPosHora.disabled = true; }
 
-  mostrarModalVentaExitosa(venta, datosPago);
+  mostrarModalVentaExitosa(venta, datosPago, hayParte2);
 
   // La impresión ya NO es automática: el modal ofrece "Cerrar" o
   // "Imprimir Ticket". El vuelto solo se muestra en pantalla.
@@ -456,7 +630,12 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
   if (typeof cargarProductos === 'function') cargarProductos();
 }
 
-function mostrarModalVentaExitosa(venta, datosPago = {}) {
+function mostrarModalVentaExitosa(venta, datosPago = {}, hayParte2 = false) {
+  /* Con una venta dividida, el modal avisa que falta cobrar la parte 2:
+     sin eso es fácil imprimir el ticket, cerrar y olvidarse. */
+  const avisoParte2 = document.getElementById('ventaExitosaParte2');
+  if (avisoParte2) avisoParte2.style.display = hayParte2 ? '' : 'none';
+
   const pendiente = venta.estado === 'PENDIENTE';
 
   if (elVentaExitosaDetalle) {

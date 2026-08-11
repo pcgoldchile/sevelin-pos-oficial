@@ -188,6 +188,15 @@ function marcaDeTiempoChile(fecha, hora) {
   return new Date(tentativa.getTime() + desfase).toISOString();
 }
 
+/* Fecha de hoy en Chile, en formato YYYY-MM-DD.
+   No sirve `new Date().toISOString()`: después de las 20:00 de Chile ya
+   es el día siguiente en UTC y el aporte quedaría con fecha equivocada. */
+function fechaHoyChile() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Santiago', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).format(new Date());
+}
+
 function firmarToken(rol) {
   return jwt.sign({ rol }, JWT_SECRET || 'dev-secret-cambiar', { expiresIn: TOKEN_TTL });
 }
@@ -308,7 +317,7 @@ app.get('/api/health', (_req, res) => res.json({
   ok: true,
   servicio: 'sevelin-pos-api',
   version: '2026-08-04',
-  modulos: ['productos', 'ventas', 'gastos', 'ot', 'repuestos', 'encargos', 'mermas', 'clasificaciones']
+  modulos: ['productos', 'ventas', 'gastos', 'ot', 'repuestos', 'encargos', 'mermas', 'clasificaciones', 'balance', 'gastos-fijos', 'inyecciones']
 }));
 
 /* ============================================================
@@ -1403,6 +1412,233 @@ app.delete('/api/compras/:id', auth(true), async (req, res) => {
    No colisionan con "/api/compras/:id" porque tienen un segmento más
    ("/compras/clasificaciones/5" vs "/compras/5"), así que Express las
    distingue sin importar el orden de registro. */
+/* ============================================================
+   FINANZAS Y BALANCE
+   ============================================================ */
+
+const GRUPOS_GASTO = ['OPERATIVO', 'INVENTARIO', 'INVERSION'];
+
+/* Medios que entran físicamente al cajón. Se usa para separar la caja
+   física del flujo total: el débito y la transferencia son dinero real,
+   pero no billetes que se puedan contar al cerrar. */
+const MEDIOS_EFECTIVO = ['Efectivo'];
+
+function esEfectivo(metodo) {
+  return MEDIOS_EFECTIVO.includes(String(metodo || '').trim());
+}
+
+/* ---------- Gastos fijos ---------- */
+
+app.get('/api/gastos-fijos', auth(true), async (req, res) => {
+  const { data, error } = await db.from('gastos_fijos').select('*').order('dia_mes').order('nombre');
+  if (error) return enviarError(res, 500, error.message);
+  res.json(data || []);
+});
+
+function sanearGastoFijo(body) {
+  const g = {};
+  if (body.nombre !== undefined) g.nombre = String(body.nombre).trim();
+  if (body.monto !== undefined) g.monto = num(body.monto);
+  if (body.dia_mes !== undefined) g.dia_mes = Math.min(31, Math.max(1, parseInt(body.dia_mes, 10) || 1));
+  if (body.clasificacion !== undefined) g.clasificacion = (body.clasificacion || '').trim() || null;
+  if (body.grupo !== undefined) g.grupo = GRUPOS_GASTO.includes(body.grupo) ? body.grupo : 'OPERATIVO';
+  if (body.activo !== undefined) g.activo = !!body.activo;
+  if (body.notas !== undefined) g.notas = (body.notas || '').trim() || null;
+  return g;
+}
+
+app.post('/api/gastos-fijos', auth(true), async (req, res) => {
+  const g = sanearGastoFijo(req.body || {});
+  if (!g.nombre) return enviarError(res, 400, 'El nombre del gasto fijo es obligatorio');
+  if (!(g.monto > 0)) return enviarError(res, 400, 'El monto debe ser mayor a 0');
+
+  const { data, error } = await db.from('gastos_fijos').insert([g]).select().single();
+  if (error) return enviarError(res, 500, error.message);
+  res.status(201).json(data);
+});
+
+app.put('/api/gastos-fijos/:id', auth(true), async (req, res) => {
+  const g = sanearGastoFijo(req.body || {});
+  g.actualizado_en = new Date().toISOString();
+
+  const { data, error } = await db.from('gastos_fijos').update(g).eq('id', req.params.id).select().single();
+  if (error) return enviarError(res, 500, error.message);
+  res.json(data);
+});
+
+app.delete('/api/gastos-fijos/:id', auth(true), async (req, res) => {
+  const { error } = await db.from('gastos_fijos').delete().eq('id', req.params.id);
+  if (error) return enviarError(res, 500, error.message);
+  res.json({ ok: true });
+});
+
+/* ---------- Inyecciones de capital ---------- */
+
+app.get('/api/inyecciones', auth(true), async (req, res) => {
+  const { desde, hasta } = req.query;
+  let q = db.from('inyecciones_capital').select('*').order('fecha', { ascending: false });
+  if (desde) q = q.gte('fecha', desde);
+  if (hasta) q = q.lte('fecha', hasta);
+
+  const { data, error } = await q;
+  if (error) return enviarError(res, 500, error.message);
+  res.json(data || []);
+});
+
+app.post('/api/inyecciones', auth(true), async (req, res) => {
+  const inyeccion = {
+    fecha: (req.body?.fecha || '').trim() || fechaHoyChile(),
+    monto: num(req.body?.monto),
+    metodo: (req.body?.metodo || 'Efectivo').trim(),
+    descripcion: (req.body?.descripcion || '').trim() || null
+  };
+  if (!(inyeccion.monto > 0)) return enviarError(res, 400, 'El monto del aporte debe ser mayor a 0');
+
+  const { data, error } = await db.from('inyecciones_capital').insert([inyeccion]).select().single();
+  if (error) return enviarError(res, 500, error.message);
+  res.status(201).json(data);
+});
+
+app.delete('/api/inyecciones/:id', auth(true), exigirPinAdmin, async (req, res) => {
+  const { error } = await db.from('inyecciones_capital').delete().eq('id', req.params.id);
+  if (error) return enviarError(res, 500, error.message);
+  res.json({ ok: true });
+});
+
+/* ---------- Balance consolidado ----------
+   Un solo endpoint que devuelve todo el panel ya calculado. Se hace en
+   el servidor y no en el navegador por dos razones: los costos y
+   utilidades no se envían al rol trabajador, y bajar todas las ventas
+   del mes solo para sumarlas sería lento con datos móviles. */
+app.get('/api/balance', auth(true), async (req, res) => {
+  const desde = (req.query?.desde || '').trim();
+  const hasta = (req.query?.hasta || '').trim();
+  if (!desde || !hasta) return enviarError(res, 400, 'Faltan las fechas del período (desde / hasta)');
+
+  try {
+    // --- Ventas cobradas del período ---
+    const { data: ventasRaw } = await db.from('ventas')
+      .select('id, fecha, total, costo_total, utilidad, comision_pos, metodo_pago, metodo_pago_final, pago_mixto, estado')
+      .gte('fecha', desde).lte('fecha', hasta).eq('estado', 'PAGADA');
+
+    const ventas = ventasRaw || [];
+    const ids = ventas.map(v => v.id);
+
+    // Desglose de las mixtas, para repartir por medio de pago
+    let pagos = [];
+    if (ids.length) {
+      const { data } = await db.from('venta_pagos').select('*').in('venta_id', ids);
+      pagos = data || [];
+    }
+
+    const ingresos = ventas.reduce((a, v) => a + num(v.total), 0);
+    const costoVendido = ventas.reduce((a, v) => a + num(v.costo_total), 0);
+    const comisiones = ventas.reduce((a, v) => a + num(v.comision_pos), 0);
+    const utilidadBruta = ingresos - costoVendido;
+
+    /* Reparto por medio de pago. Una venta mixta aporta a varios medios
+       según su desglose; una simple, todo a su método. */
+    const porMedio = {};
+    const sumar = (metodo, monto) => {
+      const k = String(metodo || 'Sin especificar').trim();
+      porMedio[k] = (porMedio[k] || 0) + num(monto);
+    };
+
+    const pagosPorVenta = {};
+    pagos.forEach(p => { (pagosPorVenta[p.venta_id] = pagosPorVenta[p.venta_id] || []).push(p); });
+
+    ventas.forEach(v => {
+      const desglose = pagosPorVenta[v.id];
+      if (v.pago_mixto && desglose?.length) desglose.forEach(p => sumar(p.metodo, p.monto));
+      else sumar(v.metodo_pago_final || v.metodo_pago, v.total);
+    });
+
+    const ventasEfectivo = Object.entries(porMedio)
+      .filter(([m]) => esEfectivo(m))
+      .reduce((a, [, monto]) => a + monto, 0);
+
+    // --- Gastos del período ---
+    const { data: gastosRaw } = await db.from('compras')
+      .select('id, fecha, clasificacion, costo_total, origen')
+      .gte('fecha', desde).lte('fecha', hasta + 'T23:59:59');
+
+    const gastos = gastosRaw || [];
+    const totalGastos = gastos.reduce((a, g) => a + num(g.costo_total), 0);
+
+    // Agrupación por familia contable
+    const { data: clasifRaw } = await db.from('compra_clasificaciones').select('nombre, grupo');
+    const grupoDe = {};
+    (clasifRaw || []).forEach(c => { grupoDe[c.nombre] = c.grupo || 'OPERATIVO'; });
+
+    const porGrupo = { OPERATIVO: 0, INVENTARIO: 0, INVERSION: 0 };
+    const porClasificacion = {};
+    gastos.forEach(g => {
+      const grupo = grupoDe[g.clasificacion] || 'OPERATIVO';
+      porGrupo[grupo] = (porGrupo[grupo] || 0) + num(g.costo_total);
+      const k = g.clasificacion || 'Sin clasificar';
+      porClasificacion[k] = (porClasificacion[k] || 0) + num(g.costo_total);
+    });
+
+    // --- Aportes de capital ---
+    const { data: inyRaw } = await db.from('inyecciones_capital')
+      .select('*').gte('fecha', desde).lte('fecha', hasta);
+
+    const inyecciones = inyRaw || [];
+    const totalInyecciones = inyecciones.reduce((a, i) => a + num(i.monto), 0);
+    const inyeccionesEfectivo = inyecciones.filter(i => esEfectivo(i.metodo))
+      .reduce((a, i) => a + num(i.monto), 0);
+
+    // --- Gastos fijos (para el punto de equilibrio) ---
+    const { data: fijosRaw } = await db.from('gastos_fijos').select('*').eq('activo', true);
+    const fijos = fijosRaw || [];
+    const metaGastosFijos = fijos.reduce((a, f) => a + num(f.monto), 0);
+
+    /* Utilidad neta = margen bruto menos TODO lo que se gastó.
+       La comisión del POS ya está descontada dentro de utilidad_bruta?
+       No: utilidad_bruta es ingresos - costo. La comisión es un gasto
+       aparte, así que se resta acá para no perderla. */
+    const utilidadNeta = utilidadBruta - totalGastos - comisiones;
+
+    /* Caja física: solo lo que se puede contar en billetes.
+       Los gastos se asumen pagados en efectivo porque `compras` no
+       registra el medio de pago. Es una aproximación conservadora y
+       queda advertida en la interfaz. */
+    const cajaFisica = ventasEfectivo + inyeccionesEfectivo - totalGastos;
+
+    // Flujo líquido: todo el dinero disponible, en cualquier forma
+    const flujoLiquido = ingresos + totalInyecciones - totalGastos - comisiones;
+
+    res.json({
+      periodo: { desde, hasta },
+      ingresos,
+      costoVendido,
+      utilidadBruta,
+      comisiones,
+      totalGastos,
+      utilidadNeta,
+      margenBruto: ingresos > 0 ? (utilidadBruta / ingresos) * 100 : 0,
+      margenNeto: ingresos > 0 ? (utilidadNeta / ingresos) * 100 : 0,
+      cantidadVentas: ventas.length,
+      ticketPromedio: ventas.length ? ingresos / ventas.length : 0,
+      porMedio,
+      porGrupo,
+      porClasificacion,
+      ventasEfectivo,
+      totalInyecciones,
+      inyeccionesEfectivo,
+      cajaFisica,
+      flujoLiquido,
+      metaGastosFijos,
+      gastosFijos: fijos,
+      inyecciones,
+      // % del margen bruto que ya cubre los gastos fijos del mes
+      avanceEquilibrio: metaGastosFijos > 0 ? Math.min(100, (utilidadBruta / metaGastosFijos) * 100) : null
+    });
+  } catch (e) {
+    enviarError(res, 500, e.message || 'No se pudo calcular el balance');
+  }
+});
+
 app.get('/api/compras/clasificaciones', auth(), async (req, res) => {
   const { incluir_inactivas } = req.query;
 

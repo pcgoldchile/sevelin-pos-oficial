@@ -1476,11 +1476,22 @@ h1, h2, h3, h4 { letter-spacing: -0.02em; }
    que está en rem o en unidades de Tailwind, sin tener que retocar cada
    clase. En pantallas grandes sube a 15px para que no quede diminuto.
    ------------------------------------------------------------ */
+/* Escala del POS.
+   Estaba en 14px y quedaba apretado: se pidió más aire. Ahora sube a
+   16px en pantallas normales y a 17px en monitores grandes, que es
+   donde antes sobraba margen sin aprovechar. */
 .pos-escala {
-    font-size: 14px;
-    line-height: 1.45;
+    font-size: 16px;
+    line-height: 1.5;
+}
+@media (min-width: 1280px) {
+    .pos-escala { font-size: 16.5px; }
 }
 @media (min-width: 1536px) {
+    .pos-escala { font-size: 17px; }
+}
+/* Bajo 1024px las columnas se apilan y conviene volver a compactar */
+@media (max-width: 1023px) {
     .pos-escala { font-size: 15px; }
 }
 
@@ -1560,3 +1571,361 @@ h1, h2, h3, h4 { letter-spacing: -0.02em; }
 .app-header { padding-top: 12px; padding-bottom: 12px; }
 .app-header .logo h1 { font-size: 1.15rem; }
 .nav-btn { padding-top: 8px; padding-bottom: 8px; font-size: .82rem; }
+
+/* ============================================================
+   12. SUB-PESTAÑAS, BAJO STOCK Y AJUSTES DE ESCALA
+   ============================================================ */
+
+/* ---------- Sub-pestañas de Servicio Técnico ---------- */
+.subtabs {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    margin-bottom: 18px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+}
+.subtabs::-webkit-scrollbar { display: none; }
+.subtab {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-muted);
+    padding: 10px 16px;
+    font-size: .86rem;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    flex: 0 0 auto;
+    transition: color .15s ease, border-color .15s ease;
+}
+.subtab:hover { color: var(--text-100); }
+.subtab.activo { color: var(--blue); border-bottom-color: var(--blue); }
+
+.panel-taller { display: none; }
+.panel-taller.activo { display: block; }
+
+/* ---------- Nombre de producto clicable ---------- */
+.nombre-editable {
+    color: inherit;
+    text-decoration: none;
+    border-bottom: 1px dashed transparent;
+    cursor: pointer;
+    transition: color .12s ease, border-color .12s ease;
+}
+.nombre-editable:hover {
+    color: var(--blue);
+    border-bottom-color: var(--blue);
+}
+
+/* ---------- Alerta de bajo stock ---------- */
+.alerta-stock-mas {
+    cursor: pointer;
+    color: var(--gold);
+    font-weight: 600;
+}
+.alerta-stock-mas:hover { background: rgba(245,179,1,.12); }
+.alerta-stock-mas b { text-decoration: underline; }
+
+.lista-bajo-stock {
+    max-height: 380px;
+    overflow-y: auto;
+    margin-top: 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+.stock-agotado { color: var(--red); }
+
+/* ---------- Medio de pago resaltado con las flechas ---------- */
+.metodo-pago.resaltado {
+    outline: 2px solid var(--blue);
+    outline-offset: 2px;
+}
+
+/* ---------- Campos: contenido centrado verticalmente ----------
+   Los <input> con altura fija dejaban el texto pegado arriba en algunos
+   navegadores porque el line-height no acompañaba a la altura. */
+.field input, .field select, .campo-pos, .pago-mixto-fila input, .pago-mixto-fila select {
+    line-height: normal;
+    display: flex;
+    align-items: center;
+}
+input[type="number"], input[type="time"], input[type="date"] { text-align: left; }
+.campo-pos.text-right, input.text-right { text-align: right; }
+
+/* El PIN y los montos se leen mejor centrados */
+#pinInput, .pin-input { text-align: center; letter-spacing: .3em; }
+
+/* ============================================================
+   13. PASO DE DTE Y DIVISIÓN DE VENTA
+   ============================================================ */
+
+/* ---------- Opciones de documento tributario ---------- */
+.dte-opciones { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+
+.dte-opcion {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 13px 15px;
+    border-radius: 12px;
+    background: var(--bg-900);
+    border: 1px solid var(--border);
+    color: var(--text-100);
+    cursor: pointer;
+    text-align: left;
+    transition: border-color .12s ease, background .12s ease;
+}
+.dte-opcion:hover { border-color: var(--blue); }
+
+/* La opción marcada con las flechas: tiene que verse de un vistazo,
+   porque se navega sin mirar el mouse. */
+.dte-opcion.activa {
+    border-color: var(--blue);
+    background: rgba(59,130,246,.14);
+    box-shadow: 0 0 0 3px rgba(59,130,246,.20);
+}
+.dte-opcion-icono { font-size: 1.4rem; flex-shrink: 0; }
+.dte-opcion-texto { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.dte-opcion-texto strong { font-size: .95rem; }
+.dte-opcion-texto small { font-size: .74rem; color: var(--text-muted); line-height: 1.35; }
+.dte-opcion-marca { color: var(--blue); font-size: 1.1rem; flex-shrink: 0; }
+
+/* ---------- Dividir venta ---------- */
+.dividir-lista {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 14px;
+    max-height: 320px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.dividir-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 13px;
+    border-radius: 10px;
+    background: var(--bg-900);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    font-size: .88rem;
+    transition: border-color .12s ease, background .12s ease;
+}
+.dividir-item:hover { border-color: var(--blue); }
+
+/* Marcado = va en la parte 1, la que se cobra ahora */
+.dividir-item.marcado {
+    border-color: var(--green);
+    background: rgba(34,197,94,.10);
+}
+.dividir-item input { width: 18px; height: 18px; accent-color: var(--green); flex-shrink: 0; }
+.dividir-nombre { flex: 1; min-width: 0; line-height: 1.4; }
+.dividir-nombre small { display: block; color: var(--text-muted); font-size: .72rem; }
+.dividir-item b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.dividir-resumen {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 14px;
+}
+@media (max-width: 520px) { .dividir-resumen { grid-template-columns: 1fr; } }
+
+.dividir-parte {
+    padding: 11px 14px;
+    border-radius: 10px;
+    background: var(--bg-900);
+    border: 1px solid var(--border);
+}
+.dividir-parte span { display: block; font-size: .72rem; color: var(--text-muted); margin-bottom: 3px; }
+.dividir-parte strong { font-size: .95rem; font-variant-numeric: tabular-nums; }
+.dividir-parte:first-child { border-color: rgba(34,197,94,.4); }
+
+/* Aviso persistente mientras queda una parte por cobrar */
+.aviso-division {
+    margin: 10px 0 0;
+    padding: 10px 13px;
+    border-radius: 10px;
+    background: rgba(245,158,11,.12);
+    border: 1px solid rgba(245,158,11,.38);
+    color: var(--gold);
+    font-size: .8rem;
+    line-height: 1.45;
+}
+
+/* ============================================================
+   14. FINANZAS Y BALANCE
+   ============================================================ */
+
+.panel-finanzas { display: none; }
+.panel-finanzas.activo { display: block; }
+
+/* ---------- Filtros de período ---------- */
+.filtros-rango {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+}
+.filtros-rango .btn.activo {
+    background: var(--blue);
+    border-color: var(--blue);
+    color: #fff;
+}
+.filtro-sep { width: 1px; height: 26px; background: var(--border); margin: 0 4px; }
+.filtro-fecha {
+    height: 34px;
+    padding: 0 10px;
+    border-radius: 8px;
+    background: var(--bg-900);
+    border: 1px solid var(--border);
+    color: var(--text-100);
+    font-size: .82rem;
+}
+
+/* ---------- Indicador de salud ----------
+   La utilidad neta es la cifra que decide si el negocio va bien. Cambia
+   de color según el signo para leerse sin interpretar el número. */
+.kpi-card.kpi-salud { border-width: 2px; transition: border-color .2s ease, background .2s ease; }
+.kpi-salud.salud-ok {
+    border-color: var(--green);
+    background: rgba(34,197,94,.10);
+}
+.kpi-salud.salud-ok .kpi-value { color: var(--green); }
+.kpi-salud.salud-mal {
+    border-color: var(--red);
+    background: rgba(239,68,68,.10);
+}
+.kpi-salud.salud-mal .kpi-value { color: var(--red); }
+
+/* ---------- Caja física vs flujo ---------- */
+.card-caja .caja-valor {
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums;
+    margin: 6px 0 4px;
+}
+.card-caja .caja-detalle {
+    font-size: .75rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+    margin: 0 0 8px;
+}
+
+/* ---------- Barras de desglose ---------- */
+.barras { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+.barra-fila { display: flex; flex-direction: column; gap: 5px; }
+.barra-cabecera {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+    font-size: .84rem;
+}
+.barra-cabecera small { color: var(--text-muted); font-size: .72rem; font-weight: 400; }
+.barra-cabecera b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.barra-pista {
+    height: 8px;
+    border-radius: 20px;
+    background: rgba(148,163,184,.18);
+    overflow: hidden;
+}
+.barra-alta { height: 16px; margin: 14px 0 10px; }
+.barra-relleno {
+    height: 100%;
+    border-radius: 20px;
+    background: var(--blue);
+    transition: width .45s cubic-bezier(.22,.61,.36,1);
+}
+.barra-gold { background: var(--gold); }
+.barra-green { background: var(--green); }
+.barra-violet { background: var(--violet, #8b5cf6); }
+.barra-blue { background: var(--blue); }
+
+/* ---------- Listas de detalle ---------- */
+.detalle-lista { margin-top: 12px; display: flex; flex-direction: column; }
+.detalle-fila {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+    font-size: .84rem;
+    border-bottom: 1px solid rgba(148,163,184,.12);
+}
+.detalle-fila:last-child { border-bottom: none; }
+.detalle-fila b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.vacio-nota {
+    padding: 16px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: .84rem;
+    line-height: 1.5;
+}
+
+/* ---------- Punto de equilibrio ---------- */
+.equilibrio-cifras {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 12px;
+}
+@media (max-width: 520px) { .equilibrio-cifras { grid-template-columns: 1fr; } }
+.equilibrio-cifras div {
+    padding: 11px 14px;
+    border-radius: 10px;
+    background: var(--bg-900);
+    border: 1px solid var(--border);
+}
+.equilibrio-cifras span { display: block; font-size: .72rem; color: var(--text-muted); margin-bottom: 3px; }
+.equilibrio-cifras strong { font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+
+.equilibrio-nota { font-size: .85rem; color: var(--gold); line-height: 1.5; margin: 0; }
+.equilibrio-nota.ok { color: var(--green); }
+
+/* ---------- Gastos fijos ---------- */
+.lista-fijos { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+
+.fijo-item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 15px;
+    border-radius: 11px;
+    background: var(--bg-900);
+    border: 1px solid var(--border);
+    transition: border-color .12s ease, opacity .12s ease;
+}
+.fijo-item:hover { border-color: var(--blue); }
+
+/* Pausado: sigue visible pero se nota que no cuenta */
+.fijo-item.pausado { opacity: .55; }
+.fijo-item.pausado .fijo-monto { text-decoration: line-through; }
+
+.fijo-info { flex: 1; min-width: 0; }
+.fijo-info strong { display: block; font-size: .92rem; }
+.fijo-info small { display: block; font-size: .74rem; color: var(--text-muted); margin-top: 2px; line-height: 1.45; }
+.fijo-notas { font-style: italic; }
+.fijo-monto { font-size: 1.02rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fijo-acciones { display: flex; gap: 5px; flex-shrink: 0; }
+
+.tag-pausado {
+    background: rgba(245,158,11,.2);
+    color: var(--gold);
+    padding: 1px 7px;
+    border-radius: 10px;
+    font-size: .68rem;
+    font-weight: 600;
+}
+
+/* Estado de carga del panel */
+#balanceContenido.cargando { opacity: .5; pointer-events: none; transition: opacity .15s ease; }

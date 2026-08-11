@@ -23,6 +23,7 @@
 const ATAJOS = [
   { grupo: 'Buscar y agregar', items: [
     { teclas: ['F2'],            desc: 'Ir al buscador de productos',            accion: () => enfocar('posBuscarProducto', true) },
+    { teclas: ['Shift'],         desc: 'Ir al buscador (atajo rápido)',          soloAyuda: true },
     { teclas: ['↑', '↓'],        desc: 'Recorrer las sugerencias',               soloAyuda: true },
     { teclas: ['Enter'],         desc: 'Elegir la sugerencia marcada',           soloAyuda: true },
     { teclas: ['Alt', '1..8'],   desc: 'Elegir directamente la sugerencia N',    soloAyuda: true },
@@ -38,13 +39,13 @@ const ATAJOS = [
     { teclas: ['Alt', '-'],      desc: 'Restar 1 al último producto',            accion: () => ajustarUltimo(-1) },
     { teclas: ['Alt', 'Supr'],   desc: 'Quitar el último producto',              accion: () => quitarUltimo() },
     { teclas: ['Alt', 'C'],      desc: 'Ir al campo Cliente',                    accion: () => enfocar('posCliente', true) },
-    { teclas: ['Alt', 'H'],      desc: 'Activar / desactivar Editar hora',       accion: () => alternar('posEditarHora') },
-    { teclas: ['Alt', 'O'],      desc: 'Activar / desactivar Sincronizar OT',    accion: () => alternar('posSincronizarOT') }
+    { teclas: ['Alt', 'H'],      desc: 'Mostrar / ocultar el campo de hora',     accion: () => alternar('posEditarHora') }
   ]},
 
   { grupo: 'Cerrar la venta', items: [
     { teclas: ['F9'],            desc: 'Finalizar venta (abre el pago)',         accion: () => clic('btnFinalizarVenta') },
-    { teclas: ['Alt', 'M'],      desc: 'Registrar merma',                        accion: () => clic('btnMermaPOS') },
+    { teclas: ['Enter', 'Enter'],desc: 'Doble Enter: cobrar la venta',           soloAyuda: true },
+    { teclas: ['←', '→', '↑', '↓'], desc: 'En el pago: moverse entre medios',    soloAyuda: true },
     { teclas: ['Alt', '1..5'],   desc: 'En el pago: elegir medio de pago',       soloAyuda: true },
     { teclas: ['Enter'],         desc: 'En el pago: confirmar',                  soloAyuda: true },
     { teclas: ['Esc'],           desc: 'Cerrar la ventana abierta',              soloAyuda: true }
@@ -86,11 +87,37 @@ function hayModalAbierto() {
   return !!document.querySelector('.modal-overlay.show');
 }
 
+/* Marca de tiempo del último Enter, para detectar el doble Enter. */
+let ultimoEnter = 0;
+const MS_DOBLE_ENTER = 500;
+
 function manejarAtajo(e) {
   // F1 y la ayuda funcionan en cualquier parte
   if (e.key === 'F1') { e.preventDefault(); alternarAyudaAtajos(); return; }
 
   if (e.key === 'Escape') { manejarEscape(); return; }
+
+  /* Shift solo (sin combinar con otra tecla) manda el foco al buscador.
+     Se comprueba en keyup: en keydown no se sabe todavía si el usuario
+     está armando un Shift+algo, y robarle el foco a media combinación
+     sería insoportable. Ver manejarShift(). */
+
+  // Flechas y Enter dentro del modal de pago
+  if (navegarModalPago(e)) return;
+
+  /* Doble Enter = cobrar. Se exige que el foco NO esté en un campo de
+     texto: dentro del buscador, Enter elige la sugerencia, y dentro de
+     un formulario lo envía. */
+  if (e.key === 'Enter' && enPOS() && !hayModalAbierto() && !enCampoDeTexto()) {
+    const ahora = Date.now();
+    if (ahora - ultimoEnter < MS_DOBLE_ENTER) {
+      ultimoEnter = 0;
+      e.preventDefault();
+      clic('btnFinalizarVenta');
+      return;
+    }
+    ultimoEnter = ahora;
+  }
 
   // Navegación de sugerencias: solo con el buscador enfocado
   if (['ArrowDown', 'ArrowUp', 'Enter'].includes(e.key) && document.activeElement?.id === 'posBuscarProducto') {
@@ -119,7 +146,7 @@ function manejarAlt(e) {
   }
 
   const mapa = {
-    'A': 'btnAgregarItem', 'L': 'btnLimpiarSeleccion', 'M': 'btnMermaPOS'
+    'A': 'btnAgregarItem', 'L': 'btnLimpiarSeleccion'
   };
 
   if (!enPOS() && tecla !== 'P') return false;
@@ -131,7 +158,6 @@ function manejarAlt(e) {
     case 'C': if (hayModalAbierto()) return false; e.preventDefault(); enfocar('posCliente', true); return true;
     case 'S': if (hayModalAbierto()) return false; e.preventDefault(); alternar('checkTieneSN'); return true;
     case 'H': if (hayModalAbierto()) return false; e.preventDefault(); alternar('posEditarHora'); return true;
-    case 'O': if (hayModalAbierto()) return false; e.preventDefault(); alternar('posSincronizarOT'); return true;
   }
 
   if (hayModalAbierto()) return false;
@@ -141,6 +167,99 @@ function manejarAlt(e) {
   if (e.key === 'Delete') { e.preventDefault(); quitarUltimo(); return true; }
 
   return false;
+}
+
+/* ¿El foco está en un campo donde el usuario escribe? */
+function enCampoDeTexto() {
+  const a = document.activeElement;
+  if (!a) return false;
+  const tag = a.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || a.isContentEditable;
+}
+
+/* ---------- Shift = ir al buscador ----------
+   Se resuelve en keyup y solo si NINGUNA otra tecla se pulsó mientras
+   Shift estaba abajo. Así Shift+letra (mayúsculas) o Shift+Tab siguen
+   funcionando con normalidad. */
+let shiftLimpio = false;
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Shift') { shiftLimpio = true; return; }
+  shiftLimpio = false;                       // se combinó con otra tecla
+}, true);
+
+document.addEventListener('keyup', (e) => {
+  if (e.key !== 'Shift' || !shiftLimpio) return;
+  shiftLimpio = false;
+
+  if (!enPOS() || hayModalAbierto()) return;
+
+  const buscador = document.getElementById('posBuscarProducto');
+  if (!buscador) return;
+  // Si ya está en el buscador, Shift no molesta: solo selecciona el texto
+  buscador.focus();
+  buscador.select();
+}, true);
+
+/* ---------- Flechas dentro del modal de pago ----------
+   Los medios de pago son una grilla, así que ← → se mueven de a uno y
+   ↑ ↓ saltan una fila completa. Enter confirma: si aún no hay medio
+   marcado, marca el que está resaltado; si ya hay uno, confirma el pago. */
+let medioResaltado = -1;
+
+function navegarModalPago(e) {
+  const modal = document.getElementById('modalPago');
+  if (!modal || !modal.classList.contains('show')) { medioResaltado = -1; return false; }
+
+  const botones = Array.from(modal.querySelectorAll('.pago-metodo-btn'));
+  if (!botones.length) return false;
+
+  // Dentro de un campo (monto recibido, montos del mixto) las flechas son del campo
+  if (enCampoDeTexto() && ['ArrowUp', 'ArrowDown'].includes(e.key)) return false;
+
+  const porFila = calcularColumnas(botones);
+
+  if (['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+    e.preventDefault();
+    if (medioResaltado < 0) medioResaltado = Math.max(0, botones.findIndex(b => b.classList.contains('active')));
+
+    if (e.key === 'ArrowRight') medioResaltado = Math.min(botones.length - 1, medioResaltado + 1);
+    if (e.key === 'ArrowLeft')  medioResaltado = Math.max(0, medioResaltado - 1);
+    if (e.key === 'ArrowDown')  medioResaltado = Math.min(botones.length - 1, medioResaltado + porFila);
+    if (e.key === 'ArrowUp')    medioResaltado = Math.max(0, medioResaltado - porFila);
+
+    botones.forEach((b, i) => b.classList.toggle('resaltado', i === medioResaltado));
+    botones[medioResaltado].scrollIntoView({ block: 'nearest' });
+    return true;
+  }
+
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const marcado = botones.some(b => b.classList.contains('active'));
+
+    // Primer Enter: elegir el medio resaltado
+    if (medioResaltado >= 0 && !marcado) {
+      botones[medioResaltado].click();
+      return true;
+    }
+
+    // Con medio ya elegido: confirmar, si el botón lo permite
+    const confirmar = document.getElementById('btnConfirmarPago');
+    if (confirmar && !confirmar.disabled) confirmar.click();
+    return true;
+  }
+
+  return false;
+}
+
+/* Cuántos botones entran por fila, mirando su posición real en pantalla.
+   Se calcula en vez de fijarlo, porque la grilla cambia con el ancho. */
+function calcularColumnas(botones) {
+  if (botones.length < 2) return 1;
+  const arriba = botones[0].offsetTop;
+  let n = 0;
+  for (const b of botones) { if (b.offsetTop === arriba) n++; else break; }
+  return Math.max(1, n);
 }
 
 function buscarAtajo(coincide) {
@@ -210,22 +329,41 @@ function elegirPorNumero(n) {
   return false;
 }
 
+/* ESC cierra lo que esté abierto, en orden de "lo más encima primero".
+   ------------------------------------------------------------
+   Antes cada modal decidía por su cuenta si respondía a Escape, así que
+   la mayoría simplemente no lo hacía y había que buscar el botón
+   Cancelar con el mouse. Ahora hay un único manejador para todo el
+   sistema. */
 function manejarEscape() {
-  // 1) Si hay ayuda de atajos abierta, se cierra primero
-  const ayuda = document.getElementById('modalAtajos');
-  if (ayuda && ayuda.classList.contains('show')) { cerrarAyudaAtajos(); return; }
-
-  // 2) Si hay sugerencias desplegadas, se cierran sin tocar el resto
-  const caja = document.getElementById('posSugerencias');
-  if (caja && caja.classList.contains('show')) {
+  // 1) Sugerencias desplegadas: se cierran sin tocar el modal de atrás
+  const caja = document.querySelector('.suggestions-box.show');
+  if (caja) {
     caja.classList.remove('show');
     sugerenciaActiva = -1;
     return;
   }
 
-  /* Los demás modales tienen su propio manejo de Escape (o su botón de
-     cancelar); no se cierran desde acá para no interferir con
-     confirmaciones a medio llenar. */
+  // 2) El modal visible que esté más arriba en el DOM apilado
+  const abiertos = Array.from(document.querySelectorAll('.modal-overlay.show'));
+  if (!abiertos.length) return;
+
+  const modal = abiertos[abiertos.length - 1];
+
+  /* El login no se cierra con ESC: dejaría la app inutilizable sin
+     forma de volver a entrar. Ahí ESC solo limpia el PIN escrito. */
+  if (modal.id === 'modalLogin') return;
+
+  /* Se prefiere pulsar el botón de cancelar del propio modal, porque
+     muchos limpian estado además de ocultarse (formularios a medio
+     llenar, selección de productos, etc.). Solo si no hay botón se
+     oculta el modal a mano. */
+  const cancelar = modal.querySelector(
+    '[data-cerrar-modal], .btn-cerrar-modal, .modal-foot .btn-ghost, .modal-actions .btn-ghost'
+  );
+
+  if (cancelar && cancelar.offsetParent !== null) cancelar.click();
+  else modal.classList.remove('show');
 }
 
 /* ------------------------------------------------------------
@@ -307,4 +445,35 @@ function alternarAyudaAtajos() {
 function cerrarAyudaAtajos() {
   const modal = document.getElementById('modalAtajos');
   if (modal) modal.classList.remove('show');
+}
+
+/* ============================================================
+   SUB-PESTAÑAS DEL SERVICIO TÉCNICO
+   ------------------------------------------------------------
+   Abonos y Repuestos dejaron de ser vistas del menú principal y pasaron
+   a ser paneles dentro de Servicio Técnico. Sus id internos no
+   cambiaron, así que encargos.js y repuestos.js siguen igual.
+
+   Se emite `pos:subtab-taller` por si algún módulo necesita recargar
+   datos al mostrarse.
+   ============================================================ */
+document.addEventListener('DOMContentLoaded', () => {
+  const barra = document.getElementById('subtabsTaller');
+  if (!barra) return;
+
+  barra.addEventListener('click', (e) => {
+    const boton = e.target.closest('.subtab');
+    if (!boton) return;
+    mostrarPanelTaller(boton.dataset.subtab);
+  });
+});
+
+function mostrarPanelTaller(nombre) {
+  document.querySelectorAll('#subtabsTaller .subtab').forEach(b => {
+    b.classList.toggle('activo', b.dataset.subtab === nombre);
+  });
+  document.querySelectorAll('[data-panel-taller]').forEach(p => {
+    p.classList.toggle('activo', p.dataset.panelTaller === nombre);
+  });
+  document.dispatchEvent(new CustomEvent('pos:subtab-taller', { detail: { panel: nombre } }));
 }

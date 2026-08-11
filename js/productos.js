@@ -201,23 +201,87 @@ function renderPanelBajoStock() {
   elPanelBajoStock.style.display = 'block';
   if (elBadgeBajoStockTotal) elBadgeBajoStockTotal.textContent = String(enAlerta.length);
   if (elListaBajoStock) {
-    elListaBajoStock.innerHTML = enAlerta.slice(0, 12).map(p => `
-      <div class="alerta-stock-item" data-abrir="${p.id}" title="Abrir ${p.nombre}">
-        <span>${p.nombre}</span>
-        <b>${Number(p.stock) || 0}</b>
-        <span style="color:var(--text-muted);">/ mín. ${limiteStock(p)}</span>
-      </div>
-    `).join('') + (enAlerta.length > 12
-      ? `<div class="alerta-stock-item" style="cursor:default;">y ${enAlerta.length - 12} más…</div>` : '');
+    elListaBajoStock.innerHTML = enAlerta.slice(0, 12).map(p => filaBajoStock(p)).join('') +
+      (enAlerta.length > 12
+        ? `<div class="alerta-stock-item alerta-stock-mas" id="btnVerTodoBajoStock"
+                title="Ver los ${enAlerta.length} productos en alerta">y ${enAlerta.length - 12} más… <b>Ver todos</b></div>`
+        : '');
 
-    elListaBajoStock.querySelectorAll('[data-abrir]').forEach(item => {
-      item.addEventListener('click', () => {
-        const producto = productsList.find(p => String(p.id) === item.dataset.abrir);
-        if (producto) abrirModalProducto(producto);
-      });
-    });
+    engancharBajoStock(elListaBajoStock);
+
+    // "y N más…" ahora abre el listado completo en un modal
+    const btnTodos = document.getElementById('btnVerTodoBajoStock');
+    if (btnTodos) btnTodos.addEventListener('click', () => abrirModalBajoStock(enAlerta));
   }
 }
+
+function filaBajoStock(p) {
+  const agotado = (Number(p.stock) || 0) <= 0;
+  return `
+    <div class="alerta-stock-item" data-abrir="${p.id}" title="Editar ${String(p.nombre).replace(/"/g, '&quot;')}">
+      <span>${p.nombre}${p.sku ? ` <small style="color:var(--text-muted);">· ${p.sku}</small>` : ''}</span>
+      <b class="${agotado ? 'stock-agotado' : ''}">${Number(p.stock) || 0}</b>
+      <span style="color:var(--text-muted);">/ mín. ${limiteStock(p)}</span>
+    </div>`;
+}
+
+/* Un solo enganche para las dos listas (el panel y el modal): al tocar
+   un ítem se abre el editor de ese producto. */
+function engancharBajoStock(contenedor) {
+  if (!contenedor) return;
+  contenedor.querySelectorAll('[data-abrir]').forEach(item => {
+    item.addEventListener('click', () => {
+      const producto = productsList.find(p => String(p.id) === item.dataset.abrir);
+      if (!producto) return;
+      const modal = document.getElementById('modalBajoStock');
+      if (modal) modal.classList.remove('show');   // no dejar dos modales encima
+      abrirModalProducto(producto);
+    });
+  });
+}
+
+/* Listado completo de productos en alerta, con buscador propio: con 60
+   ítems, encontrar uno concreto en una lista plana es incómodo. */
+function abrirModalBajoStock(enAlerta) {
+  const modal = document.getElementById('modalBajoStock');
+  const lista = document.getElementById('listaBajoStockTodos');
+  const buscador = document.getElementById('buscarBajoStock');
+  const resumen = document.getElementById('resumenBajoStock');
+  if (!modal || !lista) return;
+
+  const pintar = (filtro) => {
+    const items = filtro
+      ? filtrarPorBusqueda(enAlerta, filtro, p => [p.nombre, p.sku, p.codigo_barras], 200)
+      : enAlerta;
+
+    lista.innerHTML = items.length
+      ? items.map(p => filaBajoStock(p)).join('')
+      : '<div class="alerta-stock-item" style="cursor:default;">Sin coincidencias</div>';
+
+    engancharBajoStock(lista);
+    if (resumen) {
+      const agotados = enAlerta.filter(p => (Number(p.stock) || 0) <= 0).length;
+      resumen.textContent = `${enAlerta.length} producto(s) en alerta · ${agotados} sin stock` +
+        (filtro ? ` · mostrando ${items.length}` : '');
+    }
+  };
+
+  pintar('');
+  if (buscador) {
+    buscador.value = '';
+    buscador.oninput = () => pintar(buscador.value);
+    setTimeout(() => buscador.focus(), 80);
+  }
+  modal.classList.add('show');
+}
+
+// Cierre del modal de bajo stock
+document.addEventListener('DOMContentLoaded', () => {
+  const cerrar = document.getElementById('btnCerrarBajoStock');
+  const modal = document.getElementById('modalBajoStock');
+  if (cerrar && modal) cerrar.addEventListener('click', () => modal.classList.remove('show'));
+  if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('show'); });
+});
 
 function calcularValorizacion() {
   // Los productos de stock ilimitado (servicios) no aportan a la
@@ -362,7 +426,9 @@ function renderProductosTabla(items) {
       <td>${p.sku || '-'}</td>
       <td>${p.codigo_barras || '-'}</td>
       <td>
-        ${p.nombre}
+        <!-- El nombre abre el editor directo: es lo que uno intenta
+             tocar por instinto antes de buscar el lápiz de la derecha. -->
+        <a href="#" class="nombre-editable" data-editar="${p.id}" title="Editar ${String(p.nombre).replace(/"/g, '&quot;')}">${p.nombre}</a>
         ${p.descripcion ? `<br><small style="color:var(--text-muted);">${String(p.descripcion).slice(0, 60)}${String(p.descripcion).length > 60 ? '…' : ''}</small>` : ''}
       </td>
       <td class="admin-only">${fmtCLP(p.costo_unitario)}</td>
@@ -393,7 +459,10 @@ function renderProductosTabla(items) {
 
   actualizarBarraProductos();
 
-  elProductosTableBody.querySelectorAll('button[data-editar]').forEach(btn => {
+  /* Antes esto era `button[data-editar]`: el nombre del producto ahora
+     es un <a> con el mismo atributo, así que el selector se amplía a
+     cualquier elemento. Sin este cambio, tocar el nombre no haría nada. */
+  elProductosTableBody.querySelectorAll('[data-editar]').forEach(btn => {
     btn.addEventListener('click', () => {
       const producto = productsList.find(p => String(p.id) === btn.dataset.editar);
       if (producto) abrirModalProducto(producto);

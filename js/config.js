@@ -278,12 +278,25 @@ function initNavegacion() {
       btn.classList.add('active');
       targetView.classList.add('active');
 
-      if (viewId === 'view-historial' && typeof cargarHistorial === 'function') cargarHistorial();
       if (viewId === 'view-productos' && typeof cargarProductos === 'function') cargarProductos();
-      if (viewId === 'view-compras' && typeof cargarCompras === 'function') cargarCompras();
+
+      /* Historial y Gastos pasaron a ser sub-pestañas de Finanzas, así
+         que ya no llegan como vistas propias. Al entrar a Finanzas se
+         carga el balance; las otras pestañas cargan al abrirse
+         (js/balance.js → mostrarPanelFinanzas). */
+      if (viewId === 'view-finanzas') {
+        if (typeof cargarBalance === 'function') cargarBalance();
+        if (typeof cargarGastosFijos === 'function') cargarGastosFijos();
+      }
       if (viewId === 'view-taller' && typeof cargarOrdenes === 'function') cargarOrdenes();
-      if (viewId === 'view-encargos' && typeof cargarEncargos === 'function') cargarEncargos();
-      if (viewId === 'view-repuestos' && typeof cargarRepuestos === 'function') cargarRepuestos();
+      /* Abonos y Repuestos pasaron a ser sub-pestañas de Servicio
+         Técnico, así que ya no llegan por aquí como vistas propias. Al
+         entrar al taller se cargan los tres módulos: son listados
+         livianos y evita que una sub-pestaña se vea vacía al abrirla. */
+      if (viewId === 'view-taller') {
+        if (typeof cargarEncargos === 'function') cargarEncargos();
+        if (typeof cargarRepuestos === 'function') cargarRepuestos();
+      }
 
       // Aviso para los módulos que necesitan reaccionar (p. ej. foco del lector en POS)
       document.dispatchEvent(new CustomEvent('pos:vista-activa', { detail: { vista: viewId } }));

@@ -59,7 +59,10 @@ async function manejarLogin(e) {
     document.dispatchEvent(new CustomEvent('pos:sesion-iniciada', { detail: { rol: datos.rol } }));
   } catch (err) {
     mostrarErrorLogin(err.message || 'PIN incorrecto. Reintenta.');
-    if (elPinInput) { elPinInput.value = ''; elPinInput.focus(); }
+    if (elPinInput) elPinInput.value = '';
+    /* Corta el auto-envío pendiente: sin esto, limpiar el campo podía
+       encadenar reintentos y disparar el freno anti-fuerza bruta. */
+    document.dispatchEvent(new CustomEvent('pos:login-fallido'));
   } finally {
     if (elBtnIngresar) { elBtnIngresar.disabled = false; elBtnIngresar.textContent = 'Ingresar'; }
   }
