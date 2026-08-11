@@ -58,6 +58,27 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.addEventListener('click', () => elegirTipoDte(btn.dataset.dte));
     });
   }
+  /* Enter en "Paga con": no hace falta buscar el botón Confirmar con el
+     mouse. Se valida que el monto alcance antes de avanzar, porque si no
+     el vuelto saldría negativo y la venta quedaría mal cobrada. */
+  if (elPagoMontoRecibido) {
+    elPagoMontoRecibido.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+
+      const recibido = Number(elPagoMontoRecibido.value) || 0;
+      const total = Number(configPago?.total) || 0;
+
+      if (recibido > 0 && recibido < total) {
+        showToast(`Faltan ${fmtCLP(total - recibido)}`, 'err');
+        elPagoMontoRecibido.select();
+        return;
+      }
+      // Sin monto escrito se asume pago justo, que es lo habitual
+      confirmarSelectorPago();
+    });
+  }
+
   if (elBtnAgregarParte) elBtnAgregarParte.addEventListener('click', () => agregarPartePago());
   if (elModalPago) elModalPago.addEventListener('click', (e) => { if (e.target === elModalPago) cerrarSelectorPago(); });
 });
@@ -94,6 +115,16 @@ function abrirSelectorPago(opciones) {
 
   renderMetodosPago();
   if (elModalPago) elModalPago.classList.add('show');
+
+  /* Efectivo viene marcado de entrada: es el medio más usado en caja y
+     así el flujo típico queda en "escribir el monto → Enter → Enter".
+     Las flechas siguen permitiendo cambiarlo. Solo se preselecciona si
+     Efectivo está entre los medios permitidos (un cobro de encargo
+     puede restringirlos). */
+  const permitidos = configPago.metodos || METODOS_PAGO.map(m => m.valor);
+  if (permitidos.includes('Efectivo')) {
+    elegirMetodoPago('Efectivo');
+  }
 }
 
 function renderMetodosPago() {
@@ -374,6 +405,7 @@ function pedirTipoDte() {
 
   renderOpcionesDte();
   modal.classList.add('show');
+  document.getElementById('modalPago')?.classList.add('hay-encima');
   setTimeout(() => document.getElementById('btnConfirmarDte')?.focus(), 60);
 
   return new Promise(resolve => { dteResolver = resolve; });
@@ -410,6 +442,7 @@ function moverDte(delta) {
 function resolverDte() {
   const modal = document.getElementById('modalDte');
   if (modal) modal.classList.remove('show');
+  document.getElementById('modalPago')?.classList.remove('hay-encima');
   const r = dteResolver; dteResolver = null;
   if (r) r(OPCIONES_DTE[dteIndice].valor);
 }
@@ -417,6 +450,7 @@ function resolverDte() {
 function cancelarDte() {
   const modal = document.getElementById('modalDte');
   if (modal) modal.classList.remove('show');
+  document.getElementById('modalPago')?.classList.remove('hay-encima');
   const r = dteResolver; dteResolver = null;
   if (r) r(null);
 }

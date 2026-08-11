@@ -129,6 +129,16 @@
               <div class="p-4 lg:p-5 flex flex-col flex-1">
                 <div class="flex items-center justify-between gap-3 flex-wrap mb-4">
                   <h2 class="text-base font-bold text-slate-800 dark:text-slate-100">Ingresar producto</h2>
+                  <div class="acciones-ingresar">
+                    <!-- Modo edición: apagado = el producto entra directo al
+                         carrito; encendido = se ajusta antes de agregarlo. -->
+                    <label id="cajaModoEdicion" class="toggle-modo" for="toggleModoEdicion"
+                           title="Apagado: el producto entra directo al carrito. Encendido: puedes ajustarlo antes.">
+                      <input type="checkbox" id="toggleModoEdicion">
+                      <span class="toggle-pista"><span class="toggle-bolita"></span></span>
+                      <span id="textoModoEdicion">Modo rápido</span>
+                    </label>
+
                   <button id="btnVerAtajos" type="button"
                           class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[11px] font-semibold
                                  text-slate-600 dark:text-slate-300 bg-slate-100 hover:bg-slate-200
@@ -136,6 +146,7 @@
                     ⌨️ Atajos
                     <span class="px-1 py-px rounded border border-slate-300 dark:border-slate-600 text-[9px]">F1</span>
                   </button>
+                  </div>
                 </div>
 
                 <!-- Buscador con la cámara dentro del campo -->
@@ -153,6 +164,7 @@
                   <div id="posSugerencias" class="suggestions-box"></div>
                 </div>
 
+                <div id="detalleProducto" class="detalle-atenuado">
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-2.5 mt-4">
                   <div class="col-span-2">
                     <label for="itemNombre" class="etiqueta-pos">Producto *</label>
@@ -187,6 +199,8 @@
                                    bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600
                                    text-slate-600 dark:text-slate-200 transition-colors">📷</button>
                   </div>
+                </div>
+
                 </div>
 
                 <div class="flex items-center justify-between gap-3 flex-wrap mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">

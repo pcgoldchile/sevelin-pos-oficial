@@ -1929,3 +1929,82 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
 
 /* Estado de carga del panel */
 #balanceContenido.cargando { opacity: .5; pointer-events: none; transition: opacity .15s ease; }
+
+/* ============================================================
+   15. APILADO DE MODALES
+   ------------------------------------------------------------
+   BUG QUE ARREGLA ESTO: el modal de DTE está antes que el de pago en el
+   index.html y ambos tenían el mismo z-index. Con empate, el que va
+   DESPUÉS en el DOM pinta encima — así que el paso de documento se
+   abría de verdad, pero quedaba oculto detrás del modal de pago y
+   parecía que el botón Confirmar no hacía nada.
+
+   Los modales que se abren SOBRE otro modal necesitan su propia capa.
+   ============================================================ */
+#modalDte { z-index: 10020; }
+#modalDividir { z-index: 10010; }
+#modalAtajos { z-index: 10030; }
+
+/* Con dos modales encima, el de atrás se atenúa para que quede claro
+   cuál está activo. */
+#modalPago.hay-encima .modal-box { filter: brightness(.7); transform: scale(.98); }
+.modal-box { transition: transform .15s ease, filter .15s ease; }
+
+/* ============================================================
+   16. MODO EDICIÓN
+   ============================================================ */
+.acciones-ingresar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* Interruptor de modo edición */
+.toggle-modo {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 32px;
+    padding: 0 12px 0 8px;
+    border-radius: 20px;
+    background: var(--bg-900);
+    border: 1px solid var(--border);
+    font-size: .74rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+    transition: border-color .15s ease, color .15s ease, background .15s ease;
+}
+.toggle-modo:hover { border-color: var(--blue); }
+.toggle-modo input { position: absolute; opacity: 0; width: 0; height: 0; }
+
+.toggle-pista {
+    width: 34px;
+    height: 18px;
+    border-radius: 20px;
+    background: rgba(148,163,184,.35);
+    position: relative;
+    flex-shrink: 0;
+    transition: background .2s ease;
+}
+.toggle-bolita {
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform .2s cubic-bezier(.22,.61,.36,1);
+    box-shadow: 0 1px 3px rgba(0,0,0,.3);
+}
+
+/* Encendido: se nota de lejos que la caja cambió de comportamiento */
+.toggle-modo.activo {
+    border-color: var(--gold);
+    color: var(--gold);
+    background: rgba(245,179,1,.10);
+}
+.toggle-modo.activo .toggle-pista { background: var(--gold); }
+.toggle-modo.activo .toggle-bolita { transform: translateX(16px); }
+
+/* En modo rápido el formulario de detalle no hace falta: se atenúa sin
+   ocultarlo, porque sigue sirviendo para productos manuales que no
+   están en el catálogo. */
+.detalle-atenuado { opacity: .62; transition: opacity .18s ease; }
+.detalle-atenuado:focus-within { opacity: 1; }

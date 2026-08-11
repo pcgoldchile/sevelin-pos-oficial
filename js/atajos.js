@@ -211,6 +211,12 @@ function navegarModalPago(e) {
   const modal = document.getElementById('modalPago');
   if (!modal || !modal.classList.contains('show')) { medioResaltado = -1; return false; }
 
+  /* El paso de DTE se abre ENCIMA del modal de pago, que sigue visible.
+     Sin esta salida, Enter dentro del DTE volvía a pulsar "Confirmar
+     Venta" del modal de atrás y se encadenaban dos confirmaciones. */
+  const dte = document.getElementById('modalDte');
+  if (dte && dte.classList.contains('show')) return false;
+
   const botones = Array.from(modal.querySelectorAll('.pago-metodo-btn'));
   if (!botones.length) return false;
 

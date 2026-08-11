@@ -167,7 +167,56 @@ function handleBuscarProducto() {
   });
 }
 
-function seleccionarProductoCatalogo(producto) {
+/* ============================================================
+   MODO EDICIÓN
+   ------------------------------------------------------------
+   APAGADO (por defecto): elegir un producto del catálogo lo manda
+   directo al carrito. Es el flujo de caja rápida: buscar, Enter, listo.
+
+   ENCENDIDO: el producto se carga en el formulario y espera a que
+   ajustes cantidad, precio o S/N antes de agregarlo. Sirve para
+   descuentos puntuales o ventas con detalle.
+
+   Nace apagado en cada carga de la vista a propósito: es un modo de
+   excepción, y dejarlo encendido de un día para otro haría que la caja
+   se sintiera trabada sin motivo aparente.
+
+   Los productos que exigen S/N NUNCA entran solos, encendido o no: sin
+   la serie el ítem quedaría incompleto.
+   ============================================================ */
+let modoEdicion = false;
+
+document.addEventListener('DOMContentLoaded', () => {
+  const toggle = document.getElementById('toggleModoEdicion');
+  if (!toggle) return;
+
+  toggle.checked = false;
+  modoEdicion = false;
+  actualizarEtiquetaModoEdicion();
+
+  toggle.addEventListener('change', () => {
+    modoEdicion = toggle.checked;
+    actualizarEtiquetaModoEdicion();
+    showToast(modoEdicion
+      ? 'Modo edición activo: podrás ajustar cada producto antes de agregarlo'
+      : 'Modo rápido: los productos entran directo al carrito', '');
+  });
+});
+
+function actualizarEtiquetaModoEdicion() {
+  const cont = document.getElementById('cajaModoEdicion');
+  const txt = document.getElementById('textoModoEdicion');
+  if (cont) cont.classList.toggle('activo', modoEdicion);
+  if (txt) txt.textContent = modoEdicion ? 'Modo edición' : 'Modo rápido';
+
+  /* El formulario de detalle solo estorba en modo rápido: se atenúa para
+     dejar claro que no hay que tocarlo, sin ocultarlo (sigue sirviendo
+     para productos manuales que no están en el catálogo). */
+  const detalle = document.getElementById('detalleProducto');
+  if (detalle) detalle.classList.toggle('detalle-atenuado', !modoEdicion);
+}
+
+function seleccionarProductoCatalogo(producto, opciones = {}) {
   productoSeleccionado = producto;
   if (elItemNombre) elItemNombre.value = producto.nombre || '';
   // El trabajador no ve costos: el backend los completa desde el catálogo
@@ -181,6 +230,21 @@ function seleccionarProductoCatalogo(producto) {
   }
 
   actualizarUtilidadPreview();
+
+  /* Alta directa al carrito en modo rápido.
+     Excepciones que NO se agregan solas:
+       · productos con requiere_sn → falta la serie
+       · llamadas marcadas con `sinAutoAgregar` (el escáner ya maneja
+         su propio flujo y agregaría dos veces) */
+  if (!modoEdicion && !opciones.sinAutoAgregar && !producto.requiere_sn) {
+    agregarItemAlCarrito();
+    return;
+  }
+
+  // En modo edición el cursor va a Cantidad, que es lo que más se ajusta
+  if (modoEdicion && elItemCantidad) {
+    setTimeout(() => { elItemCantidad.focus(); elItemCantidad.select(); }, 60);
+  }
 }
 
 /* Muestra u oculta el campo de número de serie. Se centraliza aquí
@@ -298,7 +362,7 @@ async function agregarPorCodigoEscaneado(codigo) {
       return;
     }
 
-    seleccionarProductoCatalogo(producto);
+    seleccionarProductoCatalogo(producto, { sinAutoAgregar: true });
     if (elBuscarProducto) elBuscarProducto.value = '';
     if (elSugerencias) elSugerencias.classList.remove('show');
 
