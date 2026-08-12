@@ -67,7 +67,8 @@ app.use(cors({
 
 /* ---------- Utilidades ---------- */
 const num = v => Number(v) || 0;
-const enviarError = (res, code, msg) => res.status(code).json({ error: msg });
+const enviarError = (res, code, msg, extra) =>
+  res.status(code).json({ error: msg, ...(extra || {}) });
 
 const TIPOS_DTE = ['BOLETA', 'FACTURA', 'SIN DTE'];
 
@@ -317,7 +318,7 @@ app.get('/api/health', (_req, res) => res.json({
   ok: true,
   servicio: 'sevelin-pos-api',
   version: '2026-08-04',
-  modulos: ['productos', 'ventas', 'gastos', 'ot', 'repuestos', 'encargos', 'mermas', 'clasificaciones', 'balance', 'gastos-fijos', 'inyecciones', 'arqueos']
+  modulos: ['productos', 'ventas', 'gastos', 'ot', 'repuestos', 'encargos', 'mermas', 'clasificaciones', 'balance', 'gastos-fijos', 'inyecciones', 'arqueos', 'reportes']
 }));
 
 /* ============================================================
@@ -361,9 +362,76 @@ app.get('/api/productos', auth(), async (req, res) => {
   res.json(limpiarLista(data, req.usuario.rol));
 });
 
+/* ============================================================
+   VALIDACIÓN DE DUPLICADOS
+   ------------------------------------------------------------
+   Se hace en el SERVIDOR y no solo en la interfaz: el aviso del
+   navegador solo mira `productsList`, que puede estar desactualizado si
+   otra caja creó el producto hace un minuto. Acá se consulta la base.
+
+   La comparación de NOMBRE es case-insensitive y sin espacios de sobra:
+   "Cable HDMI " y "cable hdmi" son el mismo producto para cualquiera que
+   mire el catálogo, aunque para Postgres sean distintos.
+
+   SKU y código de barras se comparan exactos, porque distinguen
+   mayúsculas por diseño (un SKU "AB-1" y "ab-1" pueden ser dos cosas).
+
+   `idExcluir` permite editar un producto sin que choque consigo mismo.
+   ============================================================ */
+async function buscarDuplicado(datos, idExcluir = null) {
+  const sku = codigoUtil(datos.sku);
+  const barras = codigoUtil(datos.codigo_barras);
+  const nombre = String(datos.nombre || '').trim();
+
+  const distinto = (fila) => !idExcluir || String(fila.id) !== String(idExcluir);
+
+  if (sku) {
+    const { data } = await db.from('productos').select('id, nombre, sku').eq('sku', sku).limit(5);
+    const choque = (data || []).find(distinto);
+    if (choque) return { campo: 'SKU', valor: sku, existente: choque };
+  }
+
+  if (barras) {
+    const { data } = await db.from('productos').select('id, nombre, codigo_barras')
+      .eq('codigo_barras', barras).limit(5);
+    const choque = (data || []).find(distinto);
+    if (choque) return { campo: 'Código de barras', valor: barras, existente: choque };
+  }
+
+  if (nombre) {
+    // ilike sin comodines = igualdad sin distinguir mayúsculas
+    const { data } = await db.from('productos').select('id, nombre').ilike('nombre', nombre).limit(5);
+    const choque = (data || []).find(distinto);
+    if (choque) return { campo: 'Nombre', valor: nombre, existente: choque };
+  }
+
+  return null;
+}
+
+/* Descarta valores que no son códigos reales. La base tiene productos con
+   la CADENA "null" por una importación mal mapeada, y sin este filtro
+   todos ellos chocarían entre sí. */
+function codigoUtil(valor) {
+  if (valor === null || valor === undefined) return null;
+  const t = String(valor).trim();
+  if (!t) return null;
+  const bajo = t.toLowerCase();
+  if (['null', 'undefined', 'nan', '-'].includes(bajo)) return null;
+  return t;
+}
+
+function errorDuplicado(dup) {
+  return `Ya existe un producto con ese ${dup.campo}: "${dup.existente.nombre}". ` +
+         `El ${dup.campo} "${dup.valor}" no se puede repetir.`;
+}
+
 app.post('/api/productos', auth(true), async (req, res) => {
   const producto = sanearProducto(req.body);
   if (!producto) return enviarError(res, 400, 'El nombre del producto es obligatorio');
+
+  // Se cancela el guardado si choca con algo existente
+  const dup = await buscarDuplicado(producto);
+  if (dup) return enviarError(res, 409, errorDuplicado(dup), { duplicado: dup });
 
   const { data, error } = await db.from('productos').insert([producto]).select().single();
   if (error) return enviarError(res, 500, error.message);
@@ -421,12 +489,25 @@ app.post('/api/productos/bulk', auth(true), exigirPinAdmin, async (req, res) => 
     (p.codigo_barras && existentesPorBarra.get(String(p.codigo_barras).trim())) ||
     null;
 
+  /* El nombre también cuenta como duplicado en la importación: un CSV
+     puede traer el mismo producto con SKU nuevo, y sin este chequeo
+     entraría repetido al catálogo. */
+  const nombres = [...new Set(productos.map(p => (p.nombre || '').trim().toLowerCase()).filter(Boolean))];
+  const existentesPorNombre = new Map();
+  if (nombres.length) {
+    const { data } = await db.from('productos').select('id, nombre');
+    (data || []).forEach(p => {
+      const k = (p.nombre || '').trim().toLowerCase();
+      if (k) existentesPorNombre.set(k, p.id);
+    });
+  }
+
   const nuevos = [];
   const aActualizar = [];
   let omitidos = 0;
 
   for (const p of productos) {
-    const id = idExistente(p);
+    const id = idExistente(p) || existentesPorNombre.get((p.nombre || '').trim().toLowerCase());
     if (!id) { nuevos.push(p); continue; }
     if (modo === 'omitir') { omitidos++; continue; }
     aActualizar.push({ id, datos: p });
@@ -571,6 +652,10 @@ app.delete('/api/productos/:id/lotes/:loteId', auth(true), async (req, res) => {
 app.put('/api/productos/:id', auth(true), async (req, res) => {
   const producto = sanearProducto(req.body);
   if (!producto) return enviarError(res, 400, 'El nombre del producto es obligatorio');
+
+  // Al editar se excluye el propio registro: no puede chocar consigo mismo
+  const dup = await buscarDuplicado(producto, req.params.id);
+  if (dup) return enviarError(res, 409, errorDuplicado(dup), { duplicado: dup });
 
   const { data, error } = await db.from('productos').update(producto).eq('id', req.params.id).select().single();
   if (error) return enviarError(res, 500, error.message);
@@ -1507,6 +1592,258 @@ app.delete('/api/inyecciones/:id', auth(true), exigirPinAdmin, async (req, res) 
   res.json({ ok: true });
 });
 
+/* ============================================================
+   INTELIGENCIA DE NEGOCIO
+   ============================================================ */
+
+/* Top 10 y horas pico en una sola llamada: ambos recorren los mismos
+   venta_items, así que separarlos duplicaría el trabajo del servidor. */
+app.get('/api/reportes/dashboard', auth(true), async (req, res) => {
+  const desde = (req.query?.desde || '').trim();
+  const hasta = (req.query?.hasta || '').trim();
+  if (!desde || !hasta) return enviarError(res, 400, 'Faltan las fechas del período');
+
+  try {
+    const { data: ventasRaw } = await db.from('ventas')
+      .select('id, fecha, hora, created_at, vendida_en, total, estado')
+      .gte('fecha', desde).lte('fecha', hasta).eq('estado', 'PAGADA');
+
+    const ventas = ventasRaw || [];
+    const ids = ventas.map(v => v.id);
+
+    let items = [];
+    if (ids.length) {
+      const { data } = await db.from('venta_items')
+        .select('venta_id, producto_id, nombre, cantidad, costo_unitario, precio_unitario, subtotal')
+        .in('venta_id', ids);
+      items = data || [];
+    }
+
+    /* Agrupación por producto. Se agrupa por producto_id cuando existe y
+       por nombre cuando no (ítems manuales escritos a mano en el POS). */
+    const porProducto = {};
+    items.forEach(it => {
+      const clave = it.producto_id ? 'id:' + it.producto_id : 'nom:' + (it.nombre || '').trim().toLowerCase();
+      if (!porProducto[clave]) {
+        porProducto[clave] = { nombre: it.nombre || 'Sin nombre', unidades: 0, ingresos: 0, utilidad: 0 };
+      }
+      const p = porProducto[clave];
+      const cant = num(it.cantidad);
+      const sub = num(it.subtotal) || cant * num(it.precio_unitario);
+
+      p.unidades += cant;
+      p.ingresos += sub;
+      p.utilidad += sub - (cant * num(it.costo_unitario));
+    });
+
+    const lista = Object.values(porProducto);
+
+    /* Dos rankings distintos a propósito: el producto que más se vende no
+       suele ser el que más deja. Ver ambos es lo que permite decidir qué
+       conviene empujar. */
+    const topVolumen = [...lista].sort((a, b) => b.unidades - a.unidades).slice(0, 10);
+    const topMargen = [...lista].sort((a, b) => b.utilidad - a.utilidad).slice(0, 10);
+
+    /* Horas pico. La hora sale de `hora` (texto HH:MM que el POS guarda) y
+       si falta, de vendida_en/created_at convertido a hora de Chile: usar
+       la hora UTC correría todo 3 o 4 horas según la estación. */
+    const porHora = Array.from({ length: 24 }, () => ({ ventas: 0, monto: 0 }));
+    const porDia = Array.from({ length: 7 }, () => ({ ventas: 0, monto: 0 }));
+
+    ventas.forEach(v => {
+      let hora = null;
+      if (typeof v.hora === 'string' && /^\d{1,2}:/.test(v.hora)) {
+        hora = parseInt(v.hora.split(':')[0], 10);
+      } else if (v.vendida_en || v.created_at) {
+        const iso = v.vendida_en || v.created_at;
+        const enChile = new Date(iso).toLocaleString('en-US', { timeZone: 'America/Santiago' });
+        hora = new Date(enChile).getHours();
+      }
+      if (hora !== null && hora >= 0 && hora < 24) {
+        porHora[hora].ventas++;
+        porHora[hora].monto += num(v.total);
+      }
+
+      if (v.fecha) {
+        // El mediodía UTC evita que la fecha salte de día al convertir
+        const d = new Date(v.fecha + 'T12:00:00');
+        if (!isNaN(d.getTime())) {
+          const dia = d.getDay();
+          porDia[dia].ventas++;
+          porDia[dia].monto += num(v.total);
+        }
+      }
+    });
+
+    res.json({
+      periodo: { desde, hasta },
+      topVolumen, topMargen,
+      porHora, porDia,
+      totalVentas: ventas.length,
+      totalItems: items.length
+    });
+  } catch (e) {
+    enviarError(res, 500, e.message || 'No se pudo generar el reporte');
+  }
+});
+
+/* Lista de reposición: productos bajo su mínimo, con la cantidad
+   sugerida a pedir. Se calcula en el servidor porque necesita el costo,
+   que no se envía al rol trabajador. */
+app.get('/api/reportes/reposicion', auth(true), async (req, res) => {
+  const { data, error } = await db.from('productos')
+    .select('*').eq('alerta_stock', true).eq('stock_ilimitado', false);
+
+  if (error) return enviarError(res, 500, error.message);
+
+  const enAlerta = (data || [])
+    .filter(p => num(p.stock) <= num(p.stock_minimo))
+    .map(p => {
+      const minimo = num(p.stock_minimo);
+      const stock = num(p.stock);
+      /* Se sugiere reponer hasta el DOBLE del mínimo, no hasta el mínimo
+         exacto: llegar justo al umbral deja el producto en alerta otra
+         vez con la primera venta. */
+      const sugerido = Math.max(1, Math.ceil(minimo * 2 - stock));
+      return {
+        id: p.id, nombre: p.nombre, sku: p.sku, codigo_barras: p.codigo_barras,
+        stock, stock_minimo: minimo,
+        costo_unitario: num(p.costo_unitario),
+        sugerido,
+        costo_estimado: sugerido * num(p.costo_unitario),
+        agotado: stock <= 0
+      };
+    })
+    .sort((a, b) => a.stock - b.stock);   // lo más urgente primero
+
+  res.json({
+    productos: enAlerta,
+    total: enAlerta.length,
+    agotados: enAlerta.filter(p => p.agotado).length,
+    costoTotal: enAlerta.reduce((a, p) => a + p.costo_estimado, 0)
+  });
+});
+
+/* Resumen mensual consolidado para el contador. Devuelve los datos ya
+   agrupados; el Excel lo arma el navegador con SheetJS, que ya está
+   cargado para los otros informes. */
+app.get('/api/reportes/contador', auth(true), async (req, res) => {
+  const desde = (req.query?.desde || '').trim();
+  const hasta = (req.query?.hasta || '').trim();
+  if (!desde || !hasta) return enviarError(res, 400, 'Faltan las fechas del período');
+
+  try {
+    const { data: ventasRaw } = await db.from('ventas')
+      .select('*').gte('fecha', desde).lte('fecha', hasta).eq('estado', 'PAGADA')
+      .order('fecha');
+
+    const ventas = ventasRaw || [];
+
+    /* IVA contenido: los precios del sistema son BRUTOS (IVA incluido),
+       así que el neto es total / 1,19 y el IVA la diferencia. Calcularlo
+       como total × 0,19 daría de más. */
+    const IVA = 0.19;
+    const conIva = ventas.filter(v => v.tipo_dte === 'BOLETA' || v.tipo_dte === 'FACTURA');
+
+    const totalConDte = conIva.reduce((a, v) => a + num(v.total), 0);
+    const netoConDte = totalConDte / (1 + IVA);
+    const ivaDebito = totalConDte - netoConDte;
+
+    const { data: gastosRaw } = await db.from('compras')
+      .select('*').gte('fecha', desde).lte('fecha', hasta + 'T23:59:59').order('fecha');
+
+    const gastos = gastosRaw || [];
+    const totalGastos = gastos.reduce((a, g) => a + num(g.costo_total), 0);
+
+    const porClasificacion = {};
+    gastos.forEach(g => {
+      const k = g.clasificacion || 'Sin clasificar';
+      porClasificacion[k] = (porClasificacion[k] || 0) + num(g.costo_total);
+    });
+
+    const porDte = { BOLETA: 0, FACTURA: 0, 'SIN DTE': 0 };
+    ventas.forEach(v => {
+      const k = v.tipo_dte || 'SIN DTE';
+      porDte[k] = (porDte[k] || 0) + num(v.total);
+    });
+
+    res.json({
+      periodo: { desde, hasta },
+      ventas: ventas.map(v => ({
+        fecha: v.fecha, numero_orden: v.numero_orden, cliente: v.cliente,
+        tipo_dte: v.tipo_dte || 'SIN DTE',
+        metodo_pago: v.metodo_pago_final || v.metodo_pago,
+        total: num(v.total),
+        neto: num(v.total) / (1 + IVA),
+        iva: num(v.total) - num(v.total) / (1 + IVA),
+        comision_pos: num(v.comision_pos)
+      })),
+      gastos: gastos.map(g => ({
+        fecha: g.fecha, proveedor: g.proveedor, clasificacion: g.clasificacion,
+        descripcion: g.descripcion, metodo_pago: g.metodo_pago,
+        costo_total: num(g.costo_total)
+      })),
+      resumen: {
+        cantidadVentas: ventas.length,
+        totalVentas: ventas.reduce((a, v) => a + num(v.total), 0),
+        totalConDte, netoConDte, ivaDebito,
+        ventasSinDte: porDte['SIN DTE'] || 0,
+        porDte,
+        totalGastos, porClasificacion,
+        comisiones: ventas.reduce((a, v) => a + num(v.comision_pos), 0)
+      }
+    });
+  } catch (e) {
+    enviarError(res, 500, e.message || 'No se pudo generar el resumen');
+  }
+});
+
+/* Efectivo que debería haber en el cajón de una fecha.
+   Mismo criterio que el balance: solo entra y sale lo que es efectivo,
+   y las mermas no descuentan porque no es dinero que salió. */
+async function calcularEfectivoEsperado(fecha, fondoInicial) {
+  const { data: ventasRaw } = await db.from('ventas')
+    .select('id, total, metodo_pago, metodo_pago_final, pago_mixto')
+    .eq('fecha', fecha).eq('estado', 'PAGADA');
+
+  const ventas = ventasRaw || [];
+  const ids = ventas.map(v => v.id);
+
+  let pagos = [];
+  if (ids.length) {
+    const { data } = await db.from('venta_pagos').select('*').in('venta_id', ids);
+    pagos = data || [];
+  }
+  const pagosPorVenta = {};
+  pagos.forEach(p => { (pagosPorVenta[p.venta_id] = pagosPorVenta[p.venta_id] || []).push(p); });
+
+  let ventasEfectivo = 0;
+  ventas.forEach(v => {
+    const desglose = pagosPorVenta[v.id];
+    if (v.pago_mixto && desglose?.length) {
+      desglose.forEach(p => { if (esEfectivo(p.metodo)) ventasEfectivo += num(p.monto); });
+    } else if (esEfectivo(v.metodo_pago_final || v.metodo_pago)) {
+      ventasEfectivo += num(v.total);
+    }
+  });
+
+  const { data: gastosRaw } = await db.from('compras')
+    .select('costo_total, metodo_pago, origen')
+    .gte('fecha', fecha).lte('fecha', fecha + 'T23:59:59');
+
+  const gastosEfectivo = (gastosRaw || [])
+    .filter(g => esEfectivo(g.metodo_pago) && g.origen !== 'MERMA')
+    .reduce((a, g) => a + num(g.costo_total), 0);
+
+  const { data: inyRaw } = await db.from('inyecciones_capital')
+    .select('monto, metodo').eq('fecha', fecha);
+
+  const inyEfectivo = (inyRaw || [])
+    .filter(i => esEfectivo(i.metodo)).reduce((a, i) => a + num(i.monto), 0);
+
+  return num(fondoInicial) + ventasEfectivo + inyEfectivo - gastosEfectivo;
+}
+
 /* ---------- Arqueo de caja ----------
    Abrir la caja fija el fondo inicial del día; cerrarla guarda el conteo
    real y la diferencia contra lo esperado. */
@@ -1562,11 +1899,17 @@ app.post('/api/arqueos/abrir', auth(true), async (req, res) => {
 app.post('/api/arqueos/cerrar', auth(true), async (req, res) => {
   const fecha = (req.body?.fecha || '').trim() || fechaHoyChile();
   const contado = num(req.body?.contado);
-  const esperado = num(req.body?.esperado);
 
   const { data: arqueo } = await db.from('arqueos').select('*').eq('fecha', fecha).maybeSingle();
   if (!arqueo) return enviarError(res, 404, 'No hay una caja abierta para esa fecha');
   if (arqueo.cerrado) return enviarError(res, 400, 'Esa caja ya está cerrada');
+
+  /* ARQUEO CIEGO: el esperado lo calcula el SERVIDOR al cerrar, no llega
+     del cliente. Si lo mandara el navegador, el cajero podría leerlo en
+     las herramientas del desarrollador antes de contar, y el arqueo
+     dejaría de detectar diferencias: es justamente lo que se quiere
+     medir. El cliente solo envía el conteo físico. */
+  const esperado = await calcularEfectivoEsperado(fecha, num(arqueo.fondo_inicial));
 
   /* `esperado` se congela con el valor del momento del cierre. Si mañana
      se corrige una venta antigua, este arqueo debe seguir mostrando lo

@@ -2248,3 +2248,116 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
 .lista::-webkit-scrollbar-thumb:hover,
 .table-wrap::-webkit-scrollbar-thumb:hover,
 .tabla-scroll::-webkit-scrollbar-thumb:hover { background: rgba(148,163,184,.45); }
+
+/* ============================================================
+   19. REPORTES, ARQUEO CIEGO Y VALIDACIÓN DE DUPLICADOS
+   ============================================================ */
+
+/* ---------- Campo que chocó al guardar ---------- */
+.campo-duplicado {
+    border-color: var(--red) !important;
+    box-shadow: 0 0 0 3px rgba(239,68,68,.25) !important;
+    animation: sacudir .35s ease;
+}
+@keyframes sacudir {
+    0%,100% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    75% { transform: translateX(5px); }
+}
+
+/* ---------- Rankings Top 10 ---------- */
+.ranking { display: flex; flex-direction: column; gap: 11px; margin-top: 12px; }
+.rank-fila { display: flex; gap: 11px; align-items: flex-start; }
+.rank-pos {
+    width: 24px; height: 24px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 7px;
+    background: var(--bg-900);
+    border: 1px solid var(--border);
+    font-size: .72rem; font-weight: 700;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+/* Los tres primeros destacan: es donde se mira primero */
+.rank-fila:nth-child(1) .rank-pos { background: rgba(245,179,1,.22); color: var(--gold); border-color: var(--gold); }
+.rank-fila:nth-child(2) .rank-pos { background: rgba(148,163,184,.22); color: var(--text-100); }
+.rank-fila:nth-child(3) .rank-pos { background: rgba(180,120,60,.22); color: #d4915d; }
+
+.rank-cuerpo { flex: 1; min-width: 0; }
+.rank-cabecera {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 10px; margin-bottom: 4px;
+}
+.rank-nombre {
+    font-size: .84rem;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rank-cabecera b { font-size: .84rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rank-negativo { color: var(--red); }
+.rank-cuerpo small { display: block; margin-top: 4px; font-size: .72rem; color: var(--text-muted); }
+.barra-red { background: var(--red); }
+
+/* ---------- Gráfico de horas ---------- */
+.grafico-horas {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    height: 150px;
+    margin-top: 14px;
+    padding-bottom: 4px;
+}
+.hora-col { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; min-width: 0; }
+.hora-barra-pista { flex: 1; width: 100%; display: flex; align-items: flex-end; }
+.hora-barra {
+    width: 100%;
+    background: var(--blue);
+    border-radius: 4px 4px 0 0;
+    transition: height .45s cubic-bezier(.22,.61,.36,1), background .15s ease;
+    cursor: default;
+}
+.hora-barra:hover { background: var(--violet, #8b5cf6); }
+/* La hora punta se distingue sin tener que leer la nota de abajo */
+.hora-barra.pico { background: var(--gold); }
+.hora-etiqueta { font-size: .62rem; color: var(--text-muted); margin-top: 5px; }
+
+/* ---------- Desglose de billetes del arqueo ---------- */
+.denominaciones {
+    display: flex; flex-direction: column; gap: 5px;
+    margin-top: 10px; max-height: 230px; overflow-y: auto;
+    padding-right: 4px;
+}
+.denom-fila {
+    display: grid;
+    grid-template-columns: 72px 14px 1fr 92px;
+    gap: 8px; align-items: center;
+}
+.denom-valor { font-size: .8rem; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+.denom-x { color: var(--text-muted); text-align: center; font-size: .75rem; }
+.denom-cant {
+    height: 34px; padding: 0 10px; border-radius: 8px;
+    background: var(--bg-900); border: 1px solid var(--border);
+    color: var(--text-100); text-align: right; font-size: .85rem; width: 100%;
+}
+.denom-cant:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(59,130,246,.25); outline: none; }
+.denom-sub { font-size: .8rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+
+/* ---------- Reposición ---------- */
+.fila-agotada { background: rgba(239,68,68,.07); }
+
+/* ---------- Impresión del arqueo ----------
+   Al imprimir solo debe salir el reporte, no la app entera detrás. */
+@media print {
+    body > *:not(#modalResultadoArqueo) { display: none !important; }
+    #modalResultadoArqueo {
+        position: static !important;
+        background: #fff !important;
+        display: block !important;
+    }
+    #modalResultadoArqueo .modal-box {
+        box-shadow: none !important;
+        max-width: 100% !important;
+        color: #000 !important;
+        background: #fff !important;
+    }
+    #btnImprimirArqueo, #btnCerrarResultadoArqueo { display: none !important; }
+}

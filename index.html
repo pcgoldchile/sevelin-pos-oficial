@@ -805,6 +805,38 @@
             </div>
           </div>
 
+          <!-- Inteligencia de negocio -->
+          <div class="grid grid-2">
+            <div class="card">
+              <div class="card-title">🏆 Top 10 más vendidos <small>por volumen</small></div>
+              <div id="topVolumen" class="ranking"></div>
+            </div>
+            <div class="card">
+              <div class="card-title">💎 Top 10 que más dejan <small>por utilidad</small></div>
+              <div id="topMargen" class="ranking"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">🕐 Horas de mayor venta</div>
+            <div id="graficoHoras"></div>
+            <div class="card-title" style="margin-top:18px;">📅 Días de la semana</div>
+            <div id="graficoDias" class="barras"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h2 class="card-title" style="margin:0;">📦 Reposición de inventario</h2>
+                <p class="subtitle">Productos bajo su mínimo, listos para pedir al proveedor.</p>
+              </div>
+              <div class="toolbar-group">
+                <button class="btn btn-outline" id="btnGenerarReposicion">📋 Generar lista de compras</button>
+                <button class="btn btn-primary" id="btnExportarContador">📊 Exportar para el contador</button>
+              </div>
+            </div>
+          </div>
+
           <div class="card">
             <div class="card-title">💵 Aportes de capital del período</div>
             <p class="modal-hint">
@@ -1227,17 +1259,21 @@
         El sistema compara con lo que debería haber.
       </p>
 
-      <div class="arqueo-esperado">
-        <span>Debería haber</span>
-        <strong id="arqueoEsperado">$0</strong>
-      </div>
+      <!-- ARQUEO CIEGO: no se muestra lo esperado. Si el cajero lo ve,
+           el conteo tiende a ajustarse solo a esa cifra y las
+           diferencias reales nunca aparecen. -->
+      <p class="modal-hint" style="border-left:3px solid var(--gold); padding-left:10px;">
+        🙈 <strong>Conteo a ciegas.</strong> Cuenta el efectivo sin ver el total del
+        sistema. La comparación se muestra al confirmar.
+      </p>
+
+      <span class="section-label" style="margin-top:14px;">Desglose por denominación (opcional)</span>
+      <div id="arqueoDenominaciones" class="denominaciones"></div>
 
       <div class="field" style="margin-top:14px;">
         <label for="arqueoContado">Total contado *</label>
         <input type="number" id="arqueoContado" min="0" step="1" placeholder="0">
       </div>
-
-      <div id="arqueoDiferencia" class="arqueo-diferencia" style="display:none;"></div>
 
       <div class="field">
         <label for="arqueoObservaciones">Observaciones (opcional)</label>
@@ -1350,6 +1386,64 @@
       <div class="modal-foot">
         <button class="btn btn-ghost" id="btnCancelarGastoFijo">Cancelar</button>
         <button class="btn btn-primary" id="btnGuardarGastoFijo">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       PASO DE EFECTIVO: monto recibido y vuelto
+       Sub-modal dedicado. Al confirmar encadena con el paso de DTE.
+       ============================================================ -->
+  <div id="modalEfectivo" class="modal-overlay">
+    <div class="modal-box modal-sm">
+      <h2>💵 Pago en efectivo</h2>
+      <div class="arqueo-esperado">
+        <span>Total a cobrar</span>
+        <strong id="efectivoTotal">$0</strong>
+      </div>
+      <!-- Los controles de monto y vuelto se mueven aquí desde el modal
+           de pago, para no duplicar la lógica del cálculo. -->
+      <div id="efectivoCuerpo" style="margin-top:14px;"></div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnVolverEfectivo">← Cambiar medio</button>
+        <button class="btn btn-primary" id="btnConfirmarEfectivo">Continuar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       RESULTADO DEL ARQUEO
+       Se muestra DESPUÉS de contar: aquí sí se revela lo esperado.
+       ============================================================ -->
+  <div id="modalResultadoArqueo" class="modal-overlay">
+    <div class="modal-box modal-sm" id="reporteArqueo">
+      <h2>🧮 Resultado del arqueo</h2>
+      <div id="resultadoArqueoCuerpo"></div>
+      <div class="modal-foot">
+        <button class="btn btn-outline" id="btnImprimirArqueo">🖨️ Imprimir</button>
+        <button class="btn btn-primary" id="btnCerrarResultadoArqueo">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       LISTA DE REPOSICIÓN / PEDIDO A PROVEEDOR
+       ============================================================ -->
+  <div id="modalReposicion" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <div class="card-head">
+        <h2>📦 Lista de reposición</h2>
+        <span class="badge-soft" id="resumenReposicion">—</span>
+      </div>
+      <p class="modal-hint">
+        Productos bajo su stock mínimo. La cantidad sugerida repone hasta el
+        <strong>doble del mínimo</strong>: llegar justo al umbral deja el producto
+        en alerta otra vez con la primera venta.
+      </p>
+      <div id="listaReposicion" class="tabla-scroll" style="max-height:400px; margin-top:14px;"></div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCerrarReposicion">Cerrar</button>
+        <button class="btn btn-primary" id="btnExportarReposicion">📊 Descargar pedido en Excel</button>
       </div>
     </div>
   </div>
@@ -2761,6 +2855,7 @@
   <script src="js/pos.js"></script>
   <script src="js/atajos.js"></script>
   <script src="js/balance.js"></script>
+  <script src="js/reportes.js"></script>
   <script src="js/print.js"></script>
 
 </body>

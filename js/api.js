@@ -52,7 +52,15 @@ async function apiRequest(path, { method = 'GET', body, silencioso = false } = {
   let datos = null;
   try { datos = await res.json(); } catch (_) { datos = null; }
 
-  if (!res.ok) throw new Error((datos && datos.error) || 'Error del servidor');
+  if (!res.ok) {
+    /* Se adjuntan al Error los datos extra que mande el servidor (por
+       ejemplo `duplicado`, que dice QUÉ campo chocó). Sin esto solo
+       llegaría el mensaje y la interfaz no podría marcar el campo. */
+    const error = new Error((datos && datos.error) || 'Error del servidor');
+    error.status = res.status;
+    if (datos && typeof datos === 'object') Object.assign(error, datos);
+    throw error;
+  }
   return datos;
 }
 
@@ -222,7 +230,16 @@ const API = {
     listarArqueos: (desde, hasta) =>
       apiRequest(`/arqueos?desde=${encodeURIComponent(desde || '')}&hasta=${encodeURIComponent(hasta || '')}`),
     abrirCaja: (datos) => apiRequest('/arqueos/abrir', { method: 'POST', body: datos }),
+    /* No se manda `esperado`: el servidor lo calcula al cerrar para que
+       el cajero no pueda verlo antes de contar (arqueo ciego). */
     cerrarCaja: (datos) => apiRequest('/arqueos/cerrar', { method: 'POST', body: datos }),
+
+    // Inteligencia de negocio
+    dashboard: (desde, hasta) =>
+      apiRequest(`/reportes/dashboard?desde=${encodeURIComponent(desde)}&hasta=${encodeURIComponent(hasta)}`),
+    reposicion: () => apiRequest('/reportes/reposicion'),
+    contador: (desde, hasta) =>
+      apiRequest(`/reportes/contador?desde=${encodeURIComponent(desde)}&hasta=${encodeURIComponent(hasta)}`),
     eliminarInyeccion: (id, pin) => apiRequest(`/inyecciones/${id}`, { method: 'DELETE', body: { pin } })
   }
 };

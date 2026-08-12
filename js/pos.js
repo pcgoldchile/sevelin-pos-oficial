@@ -721,6 +721,14 @@ function mostrarModalVentaExitosa(venta, datosPago = {}, hayParte2 = false) {
   }
 
   if (elModalVentaExitosa) elModalVentaExitosa.classList.add('show');
+
+  /* Foco en "Cerrar" al abrir: la venta ya está registrada, así que lo
+     único que queda es cerrar. Con el foco puesto, Enter o Espacio lo
+     hacen sin mover la mano al mouse — importante con cola en caja. */
+  setTimeout(() => {
+    const cerrar = document.getElementById('btnCloseVentaExitosa');
+    if (cerrar) cerrar.focus();
+  }, 120);
 }
 
 function cerrarModalVentaExitosa() {

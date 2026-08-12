@@ -636,6 +636,21 @@ async function guardarProducto() {
     cargarProductos();
   } catch (err) {
     console.error('Error al guardar el producto:', err.message || err);
+
+    /* El servidor devuelve 409 con el campo exacto que chocó. Se marca
+       ese campo en rojo y se le da el foco: sin eso el usuario tiene que
+       adivinar cuál de los tres repite. */
+    const campo = err?.duplicado?.campo;
+    if (campo) {
+      const mapa = { 'SKU': 'prodSku', 'Código de barras': 'prodBarcode', 'Nombre': 'prodNombre' };
+      const el = document.getElementById(mapa[campo]);
+      if (el) {
+        el.classList.add('campo-duplicado');
+        el.focus(); el.select?.();
+        el.addEventListener('input', () => el.classList.remove('campo-duplicado'), { once: true });
+      }
+    }
+
     showToast(err.message || 'Error al guardar el producto', 'err');
   } finally {
     if (elBtnGuardarProducto) elBtnGuardarProducto.disabled = false;

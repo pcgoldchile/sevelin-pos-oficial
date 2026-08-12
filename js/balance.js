@@ -54,6 +54,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnCerrarCaja')?.addEventListener('click', abrirModalCerrarCaja);
   document.getElementById('btnConfirmarCerrarCaja')?.addEventListener('click', confirmarCerrarCaja);
   document.getElementById('btnCancelarCerrarCaja')?.addEventListener('click', () => cerrarModal('modalCerrarCaja'));
+  document.getElementById('btnCerrarResultadoArqueo')?.addEventListener('click', () => cerrarModal('modalResultadoArqueo'));
+  document.getElementById('btnImprimirArqueo')?.addEventListener('click', () => window.print());
   ['modalAbrirCaja', 'modalCerrarCaja'].forEach(id => {
     document.getElementById(id)?.addEventListener('click', (e) => { if (e.target.id === id) cerrarModal(id); });
   });
@@ -167,6 +169,11 @@ async function cargarBalance() {
   try {
     balanceActual = await API.balance.obtener(rangoBalance.desde, rangoBalance.hasta);
     pintarBalance(balanceActual);
+
+    // Top 10 y horas pico usan el mismo período
+    if (typeof cargarDashboardReportes === 'function') {
+      cargarDashboardReportes(rangoBalance.desde, rangoBalance.hasta);
+    }
   } catch (err) {
     console.error('Error al cargar el balance:', err.message || err);
     showToast(err.message || 'No se pudo cargar el balance', 'err');
@@ -416,77 +423,117 @@ async function confirmarAbrirCaja() {
   }
 }
 
-function abrirModalCerrarCaja() {
-  if (!balanceActual) return;
+/* ============================================================
+   ARQUEO CIEGO
+   ------------------------------------------------------------
+   El cajero cuenta SIN VER lo esperado. Es la única forma de que el
+   arqueo sirva para algo: si el total aparece en pantalla, el conteo
+   tiende a "ajustarse" a esa cifra sin querer, y las diferencias reales
+   nunca salen a la luz.
 
-  const esperado = Number(balanceActual.cajaFisica) || 0;
-  const el = document.getElementById('arqueoEsperado');
-  if (el) el.textContent = fmtCLP(esperado);
+   Por eso el esperado tampoco se envía desde el navegador: lo calcula el
+   servidor al cerrar. Mandarlo desde acá permitiría leerlo en las
+   herramientas del desarrollador antes de contar.
+
+   El desglose de billetes es opcional pero ayuda: contar por
+   denominación es más fiable que estimar un total de memoria.
+   ============================================================ */
+const DENOMINACIONES = [20000, 10000, 5000, 2000, 1000, 500, 100, 50, 10];
+
+function abrirModalCerrarCaja() {
+  const cont = document.getElementById('arqueoDenominaciones');
+  if (cont) {
+    cont.innerHTML = DENOMINACIONES.map(d => `
+      <div class="denom-fila">
+        <span class="denom-valor">${fmtCLP(d)}</span>
+        <span class="denom-x">×</span>
+        <input type="number" class="denom-cant" data-denom="${d}" min="0" step="1" placeholder="0">
+        <b class="denom-sub" data-sub="${d}">$0</b>
+      </div>`).join('');
+
+    cont.querySelectorAll('.denom-cant').forEach(inp => {
+      inp.addEventListener('input', recalcularConteo);
+    });
+  }
 
   const contado = document.getElementById('arqueoContado');
-  if (contado) {
-    contado.value = '';
-    contado.oninput = () => mostrarDiferenciaArqueo(esperado);
-  }
+  if (contado) { contado.value = ''; contado.oninput = null; }
+
   const obs = document.getElementById('arqueoObservaciones');
   if (obs) obs.value = '';
-  const dif = document.getElementById('arqueoDiferencia');
-  if (dif) dif.style.display = 'none';
 
   document.getElementById('modalCerrarCaja')?.classList.add('show');
-  setTimeout(() => contado?.focus(), 80);
+  setTimeout(() => cont?.querySelector('.denom-cant')?.focus(), 80);
 }
 
-/* La diferencia se muestra en vivo mientras se escribe: así se detecta
-   un error de tecleo antes de cerrar, que es cuando todavía se puede
-   volver a contar. */
-function mostrarDiferenciaArqueo(esperado) {
-  const caja = document.getElementById('arqueoDiferencia');
-  const contado = Number(document.getElementById('arqueoContado')?.value);
-  if (!caja) return;
+/* Suma el desglose y lo vuelca al total. El campo de total sigue
+   editable por si se prefiere escribirlo directo. */
+function recalcularConteo() {
+  let total = 0;
+  document.querySelectorAll('.denom-cant').forEach(inp => {
+    const d = Number(inp.dataset.denom) || 0;
+    const cant = Number(inp.value) || 0;
+    const sub = d * cant;
+    total += sub;
+    const el = document.querySelector(`[data-sub="${d}"]`);
+    if (el) el.textContent = fmtCLP(sub);
+  });
 
-  if (!contado && contado !== 0) { caja.style.display = 'none'; return; }
-
-  const dif = contado - esperado;
-  caja.style.display = '';
-  caja.className = 'arqueo-diferencia ' + (dif === 0 ? 'ok' : (Math.abs(dif) > 2000 ? 'mal' : 'aviso'));
-  caja.textContent = dif === 0
-    ? '✅ Cuadra exacto'
-    : (dif > 0 ? `🔵 Sobran ${fmtCLP(dif)}` : `⚠️ Faltan ${fmtCLP(-dif)}`);
+  const contado = document.getElementById('arqueoContado');
+  if (contado) contado.value = total || '';
 }
 
 async function confirmarCerrarCaja() {
   const contado = Number(document.getElementById('arqueoContado')?.value);
-  if (!contado && contado !== 0) { showToast('Escribe el total contado', 'err'); return; }
+  if (!contado && contado !== 0) { showToast('Cuenta el efectivo antes de cerrar', 'err'); return; }
 
-  const esperado = Number(balanceActual?.cajaFisica) || 0;
-  const dif = contado - esperado;
-
-  /* Una diferencia grande casi siempre es un error de conteo o de
-     tecleo, no un descuadre real. Se pide confirmar antes de dejarla
-     grabada, porque el cierre no se puede deshacer. */
-  if (Math.abs(dif) > 5000 &&
-      !confirm(`La diferencia es de ${fmtCLP(Math.abs(dif))}.\n\n¿Seguro que el conteo es correcto? El cierre no se puede deshacer.`)) {
-    return;
-  }
+  /* No se puede advertir de una diferencia grande antes de cerrar: sería
+     revelar lo esperado, que es justo lo que el arqueo ciego evita. Se
+     confirma el conteo y el resultado se muestra DESPUÉS. */
+  if (!confirm(`Vas a cerrar la caja con ${fmtCLP(contado)} contados.\n\nEl cierre no se puede deshacer. ¿Confirmas el conteo?`)) return;
 
   const btn = document.getElementById('btnConfirmarCerrarCaja');
   if (btn) btn.disabled = true;
 
   try {
-    await API.balance.cerrarCaja({
+    const arqueo = await API.balance.cerrarCaja({
       fecha: balanceActual?.arqueo?.fecha || todayISO(),
-      contado, esperado,
+      contado,
       observaciones: document.getElementById('arqueoObservaciones')?.value || ''
     });
-    showToast(dif === 0 ? 'Caja cerrada: cuadró exacto' : `Caja cerrada con ${fmtCLP(Math.abs(dif))} de diferencia`, 'ok');
+
     cerrarModal('modalCerrarCaja');
+    mostrarResultadoArqueo(arqueo);
     cargarBalance();
   } catch (err) {
     showToast(err.message || 'No se pudo cerrar la caja', 'err');
   } finally {
     if (btn) btn.disabled = false;
   }
+}
+
+/* Resultado del arqueo, ya con el esperado revelado. Imprimible. */
+function mostrarResultadoArqueo(a) {
+  const dif = Number(a?.diferencia) || 0;
+  const caja = document.getElementById('resultadoArqueoCuerpo');
+  if (!caja) { showToast('Caja cerrada', 'ok'); return; }
+
+  const clase = dif === 0 ? 'ok' : (Math.abs(dif) > 2000 ? 'mal' : 'aviso');
+  caja.innerHTML = `
+    <div class="arqueo-cifras">
+      <div><span>Fondo inicial</span><strong>${fmtCLP(a.fondo_inicial)}</strong></div>
+      <div><span>Esperado por el sistema</span><strong>${fmtCLP(a.esperado)}</strong></div>
+      <div><span>Contado físicamente</span><strong>${fmtCLP(a.contado)}</strong></div>
+    </div>
+    <div class="arqueo-resultado ${clase}">
+      ${dif === 0
+        ? '✅ La caja cuadró exacta'
+        : (dif > 0 ? `🔵 Sobran ${fmtCLP(dif)}` : `⚠️ Faltan ${fmtCLP(-dif)}`)}
+    </div>
+    ${a.observaciones ? `<p class="modal-hint">📝 ${escaparTexto(a.observaciones)}</p>` : ''}
+    <p class="modal-hint">Cerrado el ${a.fecha} · ${new Date(a.cerrado_en || Date.now()).toLocaleString('es-CL')}</p>`;
+
+  document.getElementById('modalResultadoArqueo')?.classList.add('show');
 }
 
 /* ============================================================

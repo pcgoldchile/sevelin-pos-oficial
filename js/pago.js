@@ -158,9 +158,13 @@ function elegirMetodoPago(valor) {
   if (elPagoMixtoBox) elPagoMixtoBox.style.display = esMixto ? 'block' : 'none';
 
   if (esEfectivo) {
+    /* El cálculo del vuelto vive en su propio paso, no incrustado en el
+       selector de medios: con la calculadora de vuelto a la vista, el
+       resto de los botones distrae justo cuando hay que teclear rápido
+       y con el cliente esperando. */
     renderSugerenciasEfectivo();
     actualizarVuelto();
-    setTimeout(() => elPagoMontoRecibido?.focus(), 60);
+    abrirSubmodalEfectivo();
     return;
   }
 
@@ -371,6 +375,71 @@ async function confirmarSelectorPago() {
     if (elBtnConfirmarPago) elBtnConfirmarPago.disabled = false;
   }
 }
+
+/* ============================================================
+   SUB-MODAL DE EFECTIVO
+   ------------------------------------------------------------
+   Paso dedicado a "monto recibido → vuelto". Al confirmar, encadena con
+   el paso de documento tributario.
+   ============================================================ */
+function abrirSubmodalEfectivo() {
+  const modal = document.getElementById('modalEfectivo');
+  if (!modal) return;   // sin el modal en el HTML se sigue con el flujo antiguo
+
+  const total = document.getElementById('efectivoTotal');
+  if (total) total.textContent = fmtCLP(configPago?.total || 0);
+
+  // Se mueven los controles existentes al sub-modal para no duplicar lógica
+  const destino = document.getElementById('efectivoCuerpo');
+  const origen = document.getElementById('pagoEfectivoBox');
+  if (destino && origen && origen.parentElement !== destino) {
+    destino.appendChild(origen);
+    origen.style.display = 'block';
+  }
+
+  modal.classList.add('show');
+  document.getElementById('modalPago')?.classList.add('hay-encima');
+  setTimeout(() => { elPagoMontoRecibido?.focus(); elPagoMontoRecibido?.select(); }, 80);
+}
+
+function cerrarSubmodalEfectivo() {
+  document.getElementById('modalEfectivo')?.classList.remove('show');
+  document.getElementById('modalPago')?.classList.remove('hay-encima');
+}
+
+/* Confirma el vuelto y encadena con el documento tributario. */
+function confirmarEfectivo() {
+  const recibido = Number(elPagoMontoRecibido?.value) || 0;
+  const total = Number(configPago?.total) || 0;
+
+  if (recibido > 0 && recibido < total) {
+    showToast(`Faltan ${fmtCLP(total - recibido)}`, 'err');
+    elPagoMontoRecibido?.select();
+    return;
+  }
+
+  cerrarSubmodalEfectivo();
+  confirmarSelectorPago();       // sigue con el paso de DTE
+}
+
+function volverDesdeEfectivo() {
+  cerrarSubmodalEfectivo();
+  /* Se desmarca el medio para que volver a tocar "Efectivo" reabra el
+     sub-modal; si quedara marcado, el botón no reaccionaría. */
+  metodoPagoElegido = null;
+  elPagoMetodos?.querySelectorAll('.metodo-pago').forEach(b => b.classList.remove('active'));
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btnConfirmarEfectivo')?.addEventListener('click', confirmarEfectivo);
+  document.getElementById('btnVolverEfectivo')?.addEventListener('click', volverDesdeEfectivo);
+
+  // Enter dentro del sub-modal confirma
+  document.getElementById('modalEfectivo')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); confirmarEfectivo(); }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); volverDesdeEfectivo(); }
+  }, true);
+});
 
 /* ============================================================
    PASO DE DOCUMENTO TRIBUTARIO
