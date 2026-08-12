@@ -1526,6 +1526,33 @@
     </div>
   </div>
 
+  <!-- ============================================================
+       CAPTURA DE TECLA
+       Se abre desde el lápiz de cada atajo. Escucha la siguiente tecla
+       y la valida antes de asignarla.
+       ============================================================ -->
+  <div id="modalCapturaAtajo" class="modal-overlay">
+    <div class="modal-box modal-sm">
+      <h2>Asignar tecla</h2>
+      <p class="modal-hint">
+        Atajo: <strong id="capturaNombre">—</strong><br>
+        Tecla actual: <kbd id="capturaActual">—</kbd>
+      </p>
+
+      <div class="captura-caja">
+        <span class="captura-icono">⌨️</span>
+        <strong>Pulsa la tecla que quieras usar</strong>
+        <small>Esc para cancelar</small>
+      </div>
+
+      <div id="capturaAviso" class="captura-aviso"></div>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarCaptura">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modalAtajos" class="modal-overlay">
     <div class="modal-box modal-lg">
       <div class="card-head">
@@ -1539,12 +1566,29 @@
 
       <div id="atajosLista" class="atajos-lista"></div>
 
-      <p class="modal-hint">
-        <strong>F5</strong>, <strong>F11</strong> y <strong>F12</strong> quedaron libres
-        a propósito: son del navegador.
-      </p>
+      <div class="nota-teclas">
+        <strong>⚠️ Teclas que no se pueden usar</strong>
+        <p>
+          Son del navegador o del sistema: capturarlas no funciona, o te dejaría sin
+          una salida que necesitas.
+        </p>
+        <div class="teclas-prohibidas">
+          <span><kbd>F5</kbd> recargar</span>
+          <span><kbd>F6</kbd> barra de direcciones</span>
+          <span><kbd>F11</kbd> pantalla completa</span>
+          <span><kbd>F12</kbd> herramientas</span>
+          <span><kbd>Tab</kbd> navegación</span>
+          <span><kbd>Enter</kbd> confirmar</span>
+          <span><kbd>Esc</kbd> cerrar</span>
+          <span><kbd>← ↑ ↓ →</kbd> navegación</span>
+          <span><kbd>Espacio</kbd> escribir</span>
+          <span><kbd>Ctrl</kbd> <kbd>Alt</kbd> <kbd>⌘</kbd> combinaciones</span>
+        </div>
+        <p>Si eliges una de estas, el sistema te avisa y no la asigna.</p>
+      </div>
 
       <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnRestablecerAtajos">↺ Restablecer originales</button>
         <button class="btn btn-primary" id="btnCerrarAtajos">Entendido</button>
       </div>
     </div>
@@ -1656,7 +1700,7 @@
         <div class="field">
           <label>Código de Barras</label>
           <div class="input-scan">
-            <input type="text" id="prodBarcode" placeholder="EAN / Scanner">
+            <input type="text" id="prodBarcode" placeholder="Solo números (EAN / UPC)" inputmode="numeric" pattern="[0-9]*">
             <button class="btn btn-outline btn-scan" type="button" data-scan="prodBarcode" title="Escanear código de barras con la cámara">📷</button>
           </div>
         </div>
@@ -1870,7 +1914,7 @@
         <div class="field">
           <label>Código de Barras</label>
           <div class="input-scan">
-            <input type="text" id="revBarcode" placeholder="EAN / Scanner">
+            <input type="text" id="revBarcode" placeholder="Solo números (EAN / UPC)" inputmode="numeric" pattern="[0-9]*">
             <button class="btn btn-outline btn-scan" type="button" data-scan="revBarcode" title="Escanear código de barras con la cámara">📷</button>
           </div>
         </div>

@@ -1945,6 +1945,39 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
 #modalDividir { z-index: 10010; }
 #modalAtajos { z-index: 10030; }
 
+/* Mismo caso que el DTE: el sub-modal de efectivo está ANTES que el de
+   pago en el HTML, así que sin capa propia quedaba justo por debajo y
+   solo asomaba el borde. */
+#modalEfectivo { z-index: 10015; }
+#modalReposicion { z-index: 10025; }
+#modalResultadoArqueo { z-index: 10025; }
+
+/* ---------- Medios de pago en lista vertical ----------
+   Antes era una grilla de 3 columnas. En lista se leen de corrido, cada
+   uno con su descripción, y las flechas ↑ ↓ recorren en el mismo orden
+   en que se ven — que era lo confuso de la grilla. */
+.pago-metodos-lista {
+    display: flex !important;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 14px;
+}
+.pago-metodos-lista .metodo-pago {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 13px;
+    width: 100%;
+    padding: 13px 15px;
+    text-align: left;
+    height: auto;
+}
+.metodo-pago .metodo-icono { font-size: 1.4rem; flex-shrink: 0; }
+.metodo-texto { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.metodo-texto strong { font-size: .95rem; }
+.metodo-texto small { font-size: .74rem; color: var(--text-muted); line-height: 1.35; }
+.metodo-marca { color: var(--blue); font-size: 1.1rem; flex-shrink: 0; }
+
 /* Con dos modales encima, el de atrás se atenúa para que quede claro
    cuál está activo. */
 #modalPago.hay-encima .modal-box { filter: brightness(.7); transform: scale(.98); }
@@ -2361,3 +2394,78 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
     }
     #btnImprimirArqueo, #btnCerrarResultadoArqueo { display: none !important; }
 }
+
+/* ============================================================
+   20. ATAJOS CONFIGURABLES Y BAJO STOCK COMPACTO
+   ============================================================ */
+
+/* ---------- Editor de atajos ---------- */
+.btn-editar-atajo {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 2px 6px;
+    font-size: .78rem;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity .12s ease, border-color .12s ease;
+}
+/* Aparece al pasar por la fila: no compite con la lectura del atajo */
+.atajo-fila:hover .btn-editar-atajo { opacity: .8; }
+.btn-editar-atajo:hover { opacity: 1 !important; border-color: var(--blue); }
+
+.nota-teclas {
+    margin-top: 18px;
+    padding: 13px 15px;
+    border-radius: 11px;
+    background: rgba(245,158,11,.09);
+    border: 1px solid rgba(245,158,11,.32);
+}
+.nota-teclas strong { color: var(--gold); font-size: .82rem; display: block; margin-bottom: 6px; }
+.nota-teclas p { font-size: .76rem; color: var(--text-muted); line-height: 1.5; margin: 0 0 8px; }
+.nota-teclas p:last-child { margin-bottom: 0; }
+
+.teclas-prohibidas {
+    display: flex; flex-wrap: wrap; gap: 8px 14px;
+    margin-bottom: 8px;
+}
+.teclas-prohibidas span {
+    font-size: .72rem;
+    color: var(--text-muted);
+    display: inline-flex; align-items: center; gap: 5px;
+}
+
+/* ---------- Captura de tecla ---------- */
+.captura-caja {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    padding: 28px 16px;
+    margin-top: 16px;
+    border-radius: 12px;
+    background: var(--bg-900);
+    border: 2px dashed var(--blue);
+    text-align: center;
+}
+.captura-icono { font-size: 2.2rem; }
+.captura-caja strong { font-size: .92rem; }
+.captura-caja small { font-size: .74rem; color: var(--text-muted); }
+
+.captura-aviso {
+    margin-top: 12px; padding: 0;
+    font-size: .82rem; font-weight: 600; text-align: center;
+    min-height: 20px;
+}
+.captura-aviso.ok { color: var(--green); }
+.captura-aviso.mal { color: var(--red); }
+
+/* ---------- Aviso compacto de bajo stock ----------
+   Antes se listaban 12 productos en línea; con 73 en alerta ocupaba
+   media pantalla y empujaba la tabla fuera de la vista. */
+.alerta-compacta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+.alerta-texto { font-size: .86rem; line-height: 1.5; }
+.alerta-texto strong { font-size: 1rem; }

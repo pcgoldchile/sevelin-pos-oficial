@@ -58,6 +58,94 @@ const ATAJOS = [
   ]}
 ];
 
+/* ============================================================
+   ATAJOS CONFIGURABLES
+   ------------------------------------------------------------
+   Los atajos que se pueden reasignar viven acá con su valor por defecto.
+   Lo elegido se guarda en el equipo, así que cada caja puede tener los
+   suyos sin tocar el código.
+
+   TECLAS QUE NO SE PERMITEN Y POR QUÉ (ver TECLAS_PROHIBIDAS):
+   son del navegador o del sistema, y capturarlas o no funciona, o deja
+   al usuario sin una salida que espera tener.
+   ============================================================ */
+const ATAJOS_POR_DEFECTO = {
+  cobrar: ',',
+  buscar: 'F2',
+  cantidad: 'F3',
+  precio: 'F4',
+  agregar: 'a',        // con Alt
+  limpiar: 'l',        // con Alt
+  merma: 'm'           // con Alt
+};
+
+/* Teclas reservadas: el navegador o el sistema operativo las usan antes
+   de que la página pueda verlas, o son necesarias para navegar. */
+const TECLAS_PROHIBIDAS = {
+  'F5': 'Recarga la página',
+  'F6': 'Va a la barra de direcciones',
+  'F11': 'Pantalla completa',
+  'F12': 'Herramientas de desarrollo',
+  'Tab': 'Navegación entre campos',
+  'Enter': 'Confirmar (se usa en toda la app)',
+  'Escape': 'Cerrar ventanas',
+  'Backspace': 'Borrar texto',
+  'Delete': 'Borrar texto',
+  ' ': 'Espacio: se usa al escribir',
+  'ArrowUp': 'Navegación', 'ArrowDown': 'Navegación',
+  'ArrowLeft': 'Navegación', 'ArrowRight': 'Navegación',
+  'Shift': 'Ya asignada al buscador',
+  'Control': 'Combinaciones del navegador',
+  'Alt': 'Combinaciones del sistema',
+  'Meta': 'Tecla Windows / Command'
+};
+
+let atajosUsuario = {};
+
+function cargarAtajos() {
+  try {
+    atajosUsuario = JSON.parse(localStorage.getItem('sp_atajos') || '{}');
+  } catch (e) { atajosUsuario = {}; }
+}
+
+function atajoDe(clave) {
+  return atajosUsuario[clave] || ATAJOS_POR_DEFECTO[clave];
+}
+
+function guardarAtajo(clave, tecla) {
+  atajosUsuario[clave] = tecla;
+  try { localStorage.setItem('sp_atajos', JSON.stringify(atajosUsuario)); } catch (e) {}
+}
+
+function restablecerAtajos() {
+  atajosUsuario = {};
+  try { localStorage.removeItem('sp_atajos'); } catch (e) {}
+}
+
+/* Valida una tecla antes de aceptarla. Devuelve el motivo del rechazo o
+   null si se puede usar. */
+function motivoRechazo(tecla, claveActual) {
+  if (TECLAS_PROHIBIDAS[tecla]) return TECLAS_PROHIBIDAS[tecla];
+
+  const enUso = Object.keys(ATAJOS_POR_DEFECTO)
+    .find(k => k !== claveActual && atajoDe(k) === tecla);
+  if (enUso) return `Ya la usa "${ETIQUETAS_ATAJOS[enUso] || enUso}"`;
+
+  return null;
+}
+
+const ETIQUETAS_ATAJOS = {
+  cobrar: 'Cobrar la venta',
+  buscar: 'Ir al buscador',
+  cantidad: 'Ir a Cantidad',
+  precio: 'Ir a Precio',
+  agregar: 'Agregar al carrito (con Alt)',
+  limpiar: 'Limpiar selección (con Alt)',
+  merma: 'Registrar merma (con Alt)'
+};
+
+cargarAtajos();
+
 /* Índice de navegación por las sugerencias con ↑ / ↓. -1 = ninguna. */
 let sugerenciaActiva = -1;
 
@@ -87,9 +175,6 @@ function hayModalAbierto() {
   return !!document.querySelector('.modal-overlay.show');
 }
 
-/* Marca de tiempo del último Enter, para detectar el doble Enter. */
-let ultimoEnter = 0;
-const MS_DOBLE_ENTER = 500;
 
 function manejarAtajo(e) {
   // F1 y la ayuda funcionan en cualquier parte
@@ -105,18 +190,15 @@ function manejarAtajo(e) {
   // Flechas y Enter dentro del modal de pago
   if (navegarModalPago(e)) return;
 
-  /* Doble Enter = cobrar. Se exige que el foco NO esté en un campo de
-     texto: dentro del buscador, Enter elige la sugerencia, y dentro de
-     un formulario lo envía. */
-  if (e.key === 'Enter' && enPOS() && !hayModalAbierto() && !enCampoDeTexto()) {
-    const ahora = Date.now();
-    if (ahora - ultimoEnter < MS_DOBLE_ENTER) {
-      ultimoEnter = 0;
-      e.preventDefault();
-      clic('btnFinalizarVenta');
-      return;
-    }
-    ultimoEnter = ahora;
+  /* Atajo de cobro configurable (por defecto la coma).
+     Se descartó el doble Enter: Enter es la tecla de confirmar en toda
+     la app, y un segundo pulso accidental disparaba el cobro cuando el
+     usuario solo estaba encadenando confirmaciones. */
+  const teclaCobro = atajoDe('cobrar');
+  if (e.key === teclaCobro && enPOS() && !hayModalAbierto() && !enCampoDeTexto()) {
+    e.preventDefault();
+    clic('btnFinalizarVenta');
+    return;
   }
 
   // Navegación de sugerencias: solo con el buscador enfocado
@@ -482,4 +564,85 @@ function mostrarPanelTaller(nombre) {
     p.classList.toggle('activo', p.dataset.panelTaller === nombre);
   });
   document.dispatchEvent(new CustomEvent('pos:subtab-taller', { detail: { panel: nombre } }));
+}
+
+
+/* ============================================================
+   EDITOR DE ATAJOS
+   ------------------------------------------------------------
+   Se abre desde el lápiz de cada fila en la ventana de ayuda. Captura
+   la siguiente tecla que se pulse y la valida contra TECLAS_PROHIBIDAS
+   y contra los atajos ya asignados.
+   ============================================================ */
+let claveEnEdicion = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Delegación: las filas se regeneran cada vez que se abre la ayuda
+  document.getElementById('atajosLista')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.btn-editar-atajo');
+    if (btn) abrirCapturaAtajo(btn.dataset.atajo);
+  });
+
+  document.getElementById('btnRestablecerAtajos')?.addEventListener('click', () => {
+    if (!confirm('¿Volver a los atajos originales?')) return;
+    restablecerAtajos();
+    pintarAyudaAtajos();
+    showToast('Atajos restablecidos', 'ok');
+  });
+
+  document.getElementById('btnCancelarCaptura')?.addEventListener('click', cerrarCaptura);
+});
+
+function abrirCapturaAtajo(clave) {
+  claveEnEdicion = clave;
+  const modal = document.getElementById('modalCapturaAtajo');
+  if (!modal) return;
+
+  const nombre = document.getElementById('capturaNombre');
+  if (nombre) nombre.textContent = ETIQUETAS_ATAJOS[clave] || clave;
+
+  const actual = document.getElementById('capturaActual');
+  if (actual) actual.textContent = atajoDe(clave);
+
+  const aviso = document.getElementById('capturaAviso');
+  if (aviso) { aviso.textContent = ''; aviso.className = 'captura-aviso'; }
+
+  modal.classList.add('show');
+  document.addEventListener('keydown', capturarTecla, true);
+}
+
+function cerrarCaptura() {
+  document.getElementById('modalCapturaAtajo')?.classList.remove('show');
+  document.removeEventListener('keydown', capturarTecla, true);
+  claveEnEdicion = null;
+}
+
+function capturarTecla(e) {
+  if (!claveEnEdicion) return;
+
+  e.preventDefault();
+  e.stopPropagation();
+
+  // Escape sale sin cambiar nada
+  if (e.key === 'Escape') { cerrarCaptura(); return; }
+
+  const aviso = document.getElementById('capturaAviso');
+  const motivo = motivoRechazo(e.key, claveEnEdicion);
+
+  if (motivo) {
+    if (aviso) {
+      aviso.className = 'captura-aviso mal';
+      aviso.textContent = `No se puede usar "${e.key === ' ' ? 'Espacio' : e.key}": ${motivo}`;
+    }
+    return;
+  }
+
+  guardarAtajo(claveEnEdicion, e.key);
+  if (aviso) {
+    aviso.className = 'captura-aviso ok';
+    aviso.textContent = `✅ Asignada la tecla "${e.key}"`;
+  }
+
+  pintarAyudaAtajos();
+  setTimeout(cerrarCaptura, 700);
 }

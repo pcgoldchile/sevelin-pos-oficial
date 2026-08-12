@@ -8,12 +8,12 @@
 // ==========================================
 
 const METODOS_PAGO = [
-  { valor: 'Efectivo', icono: '💵' },
-  { valor: 'Tarjeta Débito', icono: '💳' },
-  { valor: 'Tarjeta Crédito', icono: '🏦' },
-  { valor: 'Transferencia', icono: '📲' },
-  { valor: 'Por Pagar', icono: '⏳' },
-  { valor: 'Mixto', icono: '🧩', mixto: true }
+  { valor: 'Efectivo', icono: '💵', desc: 'Se calcula el vuelto' },
+  { valor: 'Tarjeta Débito', icono: '💳', desc: 'Paga comisión del POS Tuu' },
+  { valor: 'Tarjeta Crédito', icono: '🏦', desc: 'Paga comisión del POS Tuu' },
+  { valor: 'Transferencia', icono: '📲', desc: 'Sin comisión' },
+  { valor: 'Por Pagar', icono: '⏳', desc: 'Queda pendiente de cobro' },
+  { valor: 'Mixto', icono: '🧩', desc: 'Repartir entre varios medios', mixto: true }
 ];
 
 /* Medios que se pueden combinar en un pago mixto. "Por Pagar" queda
@@ -136,10 +136,15 @@ function renderMetodosPago() {
     .map(m => `
       <button type="button" class="metodo-pago pago-metodo-btn${m.valor === 'Por Pagar' ? ' metodo-pendiente' : ''}${m.mixto ? ' metodo-mixto' : ''}" data-metodo="${m.valor}">
         <span class="metodo-icono">${m.icono}</span>
-        <span>${m.valor}</span>
+        <span class="metodo-texto">
+          <strong>${m.valor}</strong>
+          <small>${m.desc || ''}</small>
+        </span>
+        <span class="metodo-marca"></span>
       </button>
     `).join('');
 
+  elPagoMetodos.classList.add('pago-metodos-lista');
   elPagoMetodos.querySelectorAll('.metodo-pago').forEach(btn => {
     btn.addEventListener('click', () => elegirMetodoPago(btn.dataset.metodo));
   });
@@ -148,7 +153,10 @@ function renderMetodosPago() {
 function elegirMetodoPago(valor) {
   metodoPagoElegido = valor;
   elPagoMetodos.querySelectorAll('.metodo-pago').forEach(b => {
-    b.classList.toggle('active', b.dataset.metodo === valor);
+    const activo = b.dataset.metodo === valor;
+    b.classList.toggle('active', activo);
+    const marca = b.querySelector('.metodo-marca');
+    if (marca) marca.textContent = activo ? '●' : '';
   });
 
   const esEfectivo = valor === 'Efectivo';

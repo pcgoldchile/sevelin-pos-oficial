@@ -82,6 +82,19 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function setupProductosEventListeners() {
+  /* El código de barras solo acepta dígitos mientras se escribe. Se
+     filtra en el `input` y no solo al guardar, para que el usuario vea
+     de inmediato que ese campo es numérico. El escáner sigue
+     funcionando: los lectores mandan dígitos. */
+  ['prodBarcode', 'revBarcode'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', () => {
+      const limpio = el.value.replace(/\D/g, '');
+      if (limpio !== el.value) el.value = limpio;
+    });
+  });
+
   // Exportación individual desde el modal de producto
   if (elBtnExportarProducto) elBtnExportarProducto.addEventListener('click', abrirModalFormatoExport);
   if (elBtnCancelarFormatoExport) elBtnCancelarFormatoExport.addEventListener('click', cerrarModalFormatoExport);
@@ -201,15 +214,22 @@ function renderPanelBajoStock() {
   elPanelBajoStock.style.display = 'block';
   if (elBadgeBajoStockTotal) elBadgeBajoStockTotal.textContent = String(enAlerta.length);
   if (elListaBajoStock) {
-    elListaBajoStock.innerHTML = enAlerta.slice(0, 12).map(p => filaBajoStock(p)).join('') +
-      (enAlerta.length > 12
-        ? `<div class="alerta-stock-item alerta-stock-mas" id="btnVerTodoBajoStock"
-                title="Ver los ${enAlerta.length} productos en alerta">y ${enAlerta.length - 12} más… <b>Ver todos</b></div>`
-        : '');
+    /* Antes se listaban 12 productos en línea, que en un catálogo con 73
+       en alerta ocupaba media pantalla y empujaba la tabla fuera de la
+       vista. Ahora es un aviso de una línea con el botón al listado. */
+    const agotados = enAlerta.filter(p => (Number(p.stock) || 0) <= 0).length;
 
-    engancharBajoStock(elListaBajoStock);
+    elListaBajoStock.innerHTML = `
+      <div class="alerta-compacta">
+        <span class="alerta-texto">
+          <strong>${enAlerta.length}</strong> producto(s) bajo el stock mínimo
+          ${agotados ? ` · <span class="stock-agotado"><strong>${agotados}</strong> sin stock</span>` : ''}
+        </span>
+        <button class="btn btn-outline btn-sm" id="btnVerTodoBajoStock">
+          👁 Ver y editar
+        </button>
+      </div>`;
 
-    // "y N más…" ahora abre el listado completo en un modal
     const btnTodos = document.getElementById('btnVerTodoBajoStock');
     if (btnTodos) btnTodos.addEventListener('click', () => abrirModalBajoStock(enAlerta));
   }

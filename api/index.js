@@ -331,6 +331,28 @@ const CAMPOS_PRODUCTO = [
   'stock_minimo', 'alerta_stock', 'es_repuesto', 'stock_ilimitado', 'usa_lotes'
 ];
 
+/* Normaliza el código de barras: SOLO dígitos.
+   ------------------------------------------------------------
+   Un código de barras es numérico por definición (EAN, UPC, ITF). La
+   base tiene la cadena "null" y guiones sueltos por una importación mal
+   mapeada, y eso rompía el escáner y la impresión de etiquetas —se llegó
+   a imprimir un código que codificaba la palabra "null".
+
+   Todo lo que no sea dígito se descarta; si no queda nada, se guarda
+   NULL de verdad, no una cadena vacía. */
+function limpiarCodigoBarras(valor) {
+  if (valor === null || valor === undefined) return null;
+
+  const texto = String(valor).trim();
+  if (!texto) return null;
+
+  const bajo = texto.toLowerCase();
+  if (['null', 'undefined', 'nan', '-', 'n/a'].includes(bajo)) return null;
+
+  const soloDigitos = texto.replace(/\D/g, '');
+  return soloDigitos || null;
+}
+
 function sanearProducto(body = {}) {
   const p = {};
   CAMPOS_PRODUCTO.forEach(k => { if (body[k] !== undefined) p[k] = body[k]; });
@@ -350,11 +372,48 @@ function sanearProducto(body = {}) {
 
   // Cada vez que se toca el stock queda registrada la fecha del cambio
   if (p.stock !== undefined) p.stock_actualizado_en = new Date().toISOString();
-  ['sku', 'codigo_barras', 'descripcion'].forEach(k => {
-    if (p[k] !== undefined) p[k] = String(p[k]).trim() || null;
+  ['sku', 'descripcion'].forEach(k => {
+    if (p[k] !== undefined) {
+      const t = String(p[k]).trim();
+      // "null" como texto viene de importaciones mal mapeadas
+      p[k] = (!t || ['null', 'undefined'].includes(t.toLowerCase())) ? null : t;
+    }
   });
+
+  // El código de barras se normaliza aparte: solo dígitos
+  if (p.codigo_barras !== undefined) p.codigo_barras = limpiarCodigoBarras(p.codigo_barras);
+
   return p;
 }
+
+/* Limpieza masiva del catálogo. Arregla de una vez los productos que ya
+   tienen "null" o caracteres no numéricos en el código de barras, sin
+   tener que editarlos uno por uno. */
+app.post('/api/productos/limpiar-codigos', auth(true), exigirPinAdmin, async (req, res) => {
+  const { data, error } = await db.from('productos').select('id, sku, codigo_barras');
+  if (error) return enviarError(res, 500, error.message);
+
+  const cambios = [];
+  (data || []).forEach(p => {
+    const barrasLimpio = limpiarCodigoBarras(p.codigo_barras);
+    const skuActual = p.sku === null ? null : String(p.sku).trim();
+    const skuLimpio = (!skuActual || ['null', 'undefined'].includes(skuActual.toLowerCase()))
+      ? null : skuActual;
+
+    if (barrasLimpio !== p.codigo_barras || skuLimpio !== p.sku) {
+      cambios.push({ id: p.id, codigo_barras: barrasLimpio, sku: skuLimpio });
+    }
+  });
+
+  let corregidos = 0;
+  for (const c of cambios) {
+    const { error: e } = await db.from('productos')
+      .update({ codigo_barras: c.codigo_barras, sku: c.sku }).eq('id', c.id);
+    if (!e) corregidos++;
+  }
+
+  res.json({ revisados: (data || []).length, corregidos });
+});
 
 app.get('/api/productos', auth(), async (req, res) => {
   const { data, error } = await db.from('productos').select('*').order('nombre', { ascending: true });
