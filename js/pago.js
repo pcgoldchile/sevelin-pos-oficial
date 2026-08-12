@@ -116,15 +116,17 @@ function abrirSelectorPago(opciones) {
   renderMetodosPago();
   if (elModalPago) elModalPago.classList.add('show');
 
-  /* Efectivo viene marcado de entrada: es el medio más usado en caja y
-     así el flujo típico queda en "escribir el monto → Enter → Enter".
-     Las flechas siguen permitiendo cambiarlo. Solo se preselecciona si
-     Efectivo está entre los medios permitidos (un cobro de encargo
-     puede restringirlos). */
-  const permitidos = configPago.metodos || METODOS_PAGO.map(m => m.valor);
-  if (permitidos.includes('Efectivo')) {
-    elegirMetodoPago('Efectivo');
-  }
+  /* NINGÚN medio viene preseleccionado.
+     ------------------------------------------------------------
+     Antes se marcaba Efectivo de entrada, y como elegir Efectivo abre
+     su propio sub-modal, ese sub-modal se disparaba solo al abrir el
+     cobro —encima del modal de pago que recién aparecía— y quedaban dos
+     ventanas peleando.
+
+     Ahora se resalta la primera opción con el teclado, sin elegirla: se
+     puede recorrer con ↑ ↓ y confirmar con Enter, o tocar con el mouse.
+     Nada se abre hasta que el usuario decide. */
+  document.dispatchEvent(new CustomEvent('pos:pago-abierto'));
 }
 
 function renderMetodosPago() {

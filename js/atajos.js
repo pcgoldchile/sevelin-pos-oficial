@@ -22,16 +22,16 @@
 
 const ATAJOS = [
   { grupo: 'Buscar y agregar', items: [
-    { teclas: ['F2'],            desc: 'Ir al buscador de productos',            accion: () => enfocar('posBuscarProducto', true) },
+    { clave: 'buscar',   desc: 'Ir al buscador de productos',            accion: () => enfocar('posBuscarProducto', true) },
     { teclas: ['Shift'],         desc: 'Ir al buscador (atajo rápido)',          soloAyuda: true },
     { teclas: ['↑', '↓'],        desc: 'Recorrer las sugerencias',               soloAyuda: true },
     { teclas: ['Enter'],         desc: 'Elegir la sugerencia marcada',           soloAyuda: true },
     { teclas: ['Alt', '1..8'],   desc: 'Elegir directamente la sugerencia N',    soloAyuda: true },
-    { teclas: ['F3'],            desc: 'Ir a Cantidad',                          accion: () => enfocar('itemCantidad', true) },
-    { teclas: ['F4'],            desc: 'Ir a Precio Unitario',                   accion: () => enfocar('itemPrecio', true) },
-    { teclas: ['Alt', 'A'],      desc: 'Agregar el producto al carrito',         accion: () => clic('btnAgregarItem') },
+    { clave: 'cantidad', desc: 'Ir a Cantidad',                          accion: () => enfocar('itemCantidad', true) },
+    { clave: 'precio',   desc: 'Ir a Precio Unitario',                   accion: () => enfocar('itemPrecio', true) },
+    { clave: 'agregar',  desc: 'Agregar el producto al carrito',         accion: () => clic('btnAgregarItem') },
     { teclas: ['Alt', 'S'],      desc: 'Marcar / desmarcar "Tiene S/N"',         accion: () => alternar('checkTieneSN') },
-    { teclas: ['Alt', 'L'],      desc: 'Limpiar la selección (no el carrito)',   accion: () => clic('btnLimpiarSeleccion') }
+    { clave: 'limpiar',  desc: 'Limpiar la selección (no el carrito)',   accion: () => clic('btnLimpiarSeleccion') }
   ]},
 
   { grupo: 'Carrito', items: [
@@ -44,7 +44,7 @@ const ATAJOS = [
 
   { grupo: 'Cerrar la venta', items: [
     { teclas: ['F9'],            desc: 'Finalizar venta (abre el pago)',         accion: () => clic('btnFinalizarVenta') },
-    { teclas: ['Enter', 'Enter'],desc: 'Doble Enter: cobrar la venta',           soloAyuda: true },
+    { clave: 'cobrar',   desc: 'Cobrar la venta sin abrir el modal',     soloAyuda: true },
     { teclas: ['←', '→', '↑', '↓'], desc: 'En el pago: moverse entre medios',    soloAyuda: true },
     { teclas: ['Alt', '1..5'],   desc: 'En el pago: elegir medio de pago',       soloAyuda: true },
     { teclas: ['Enter'],         desc: 'En el pago: confirmar',                  soloAyuda: true },
@@ -54,6 +54,7 @@ const ATAJOS = [
   { grupo: 'General', items: [
     { teclas: ['F1'],            desc: 'Mostrar esta ayuda',                     accion: () => alternarAyudaAtajos(), global: true },
     { teclas: ['Alt', 'P'],      desc: 'Volver al módulo POS',                   accion: () => irAModulo('pos'), global: true },
+    { clave: 'merma',    desc: 'Registrar merma',                        accion: () => clic('btnMermaPOS') },
     { teclas: ['Esc'],           desc: 'Cerrar sugerencias o limpiar el foco',   soloAyuda: true }
   ]}
 ];
@@ -289,6 +290,18 @@ document.addEventListener('keyup', (e) => {
    marcado, marca el que está resaltado; si ya hay uno, confirma el pago. */
 let medioResaltado = -1;
 
+/* Al abrir el cobro se resalta la primera opción SIN elegirla, para que
+   las flechas tengan desde dónde partir. Resaltado ≠ elegido: solo Enter
+   o un clic confirman. */
+document.addEventListener('pos:pago-abierto', () => {
+  medioResaltado = 0;
+  setTimeout(() => {
+    const modal = document.getElementById('modalPago');
+    const botones = Array.from(modal?.querySelectorAll('.pago-metodo-btn') || []);
+    botones.forEach((b, i) => b.classList.toggle('resaltado', i === 0));
+  }, 60);
+});
+
 function navegarModalPago(e) {
   const modal = document.getElementById('modalPago');
   if (!modal || !modal.classList.contains('show')) { medioResaltado = -1; return false; }
@@ -317,7 +330,10 @@ function navegarModalPago(e) {
     if (e.key === 'ArrowUp')    medioResaltado = Math.max(0, medioResaltado - porFila);
 
     botones.forEach((b, i) => b.classList.toggle('resaltado', i === medioResaltado));
-    botones[medioResaltado].scrollIntoView({ block: 'nearest' });
+    // Algunos navegadores antiguos no traen scrollIntoView con opciones
+    if (botones[medioResaltado].scrollIntoView) {
+      botones[medioResaltado].scrollIntoView({ block: 'nearest' });
+    }
     return true;
   }
 
@@ -325,7 +341,8 @@ function navegarModalPago(e) {
     e.preventDefault();
     const marcado = botones.some(b => b.classList.contains('active'));
 
-    // Primer Enter: elegir el medio resaltado
+    /* Primer Enter: elegir el medio resaltado. Como ya no hay ninguno
+       preseleccionado, este es el paso normal al abrir el cobro. */
     if (medioResaltado >= 0 && !marcado) {
       botones[medioResaltado].click();
       return true;
@@ -344,17 +361,38 @@ function navegarModalPago(e) {
    Se calcula en vez de fijarlo, porque la grilla cambia con el ancho. */
 function calcularColumnas(botones) {
   if (botones.length < 2) return 1;
+
+  /* Los medios de pago ahora son una LISTA vertical: una columna, así
+     que ↓ avanza de a uno. Se comprueba la clase en vez de medir, porque
+     medir offsetTop devuelve 0 para todos si el modal aún no terminó de
+     pintarse, y ahí ↓ saltaba al último elemento. */
+  if (botones[0].closest('.pago-metodos-lista')) return 1;
+
   const arriba = botones[0].offsetTop;
   let n = 0;
   for (const b of botones) { if (b.offsetTop === arriba) n++; else break; }
   return Math.max(1, n);
 }
 
+/* Teclas que muestra la ayuda para un ítem: las fijas si las tiene, o
+   la configurada si es reasignable. */
+function teclasDe(item) {
+  if (item.teclas) return item.teclas;
+  if (item.clave) {
+    const t = atajoDe(item.clave) || '?';
+    // Los que se disparan con Alt se muestran como combinación
+    return ['agregar', 'limpiar', 'merma'].includes(item.clave)
+      ? ['Alt', String(t).toUpperCase()]
+      : [String(t)];
+  }
+  return ['—'];
+}
+
 function buscarAtajo(coincide) {
   for (const g of ATAJOS) {
     for (const it of g.items) {
       if (it.soloAyuda || !it.accion) continue;
-      if (coincide(it.teclas)) return it;
+      if (coincide(teclasDe(it))) return it;
     }
   }
   return null;
@@ -517,8 +555,11 @@ function pintarAyudaAtajos() {
       <h4>${g.grupo}</h4>
       ${g.items.map(it => `
         <div class="atajo-fila">
-          <span class="atajo-teclas">${it.teclas.map(t => `<kbd>${t}</kbd>`).join('<i>+</i>')}</span>
+          <span class="atajo-teclas">${teclasDe(it).map(t => `<kbd>${t}</kbd>`).join('<i>+</i>')}</span>
           <span class="atajo-desc">${it.desc}</span>
+          ${it.clave
+            ? `<button class="btn-editar-atajo" data-atajo="${it.clave}" title="Cambiar esta tecla">✏️</button>`
+            : ''}
         </div>`).join('')}
     </div>`).join('');
 }

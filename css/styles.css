@@ -748,7 +748,11 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
 }
 .stock-ok { background: var(--surface-soft); color: var(--text-300); }
 .stock-bajo { background: var(--tint-red); color: var(--red); border: 1px solid rgba(239, 68, 68, .45); }
-.stock-agotado { background: var(--red); color: #fff; }
+/* !important a propósito: este badge se pisó una vez por una regla
+   posterior con el mismo nombre de clase y quedó ilegible. */
+.stock-badge.stock-agotado { background: var(--red) !important; color: #fff !important; }
+.stock-badge.stock-bajo { color: #1a1200 !important; }
+.stock-badge.stock-ok { color: #fff !important; }
 .stock-fecha { font-size: 11.5px; color: var(--text-muted); white-space: nowrap; }
 
 .doc-check.doc-falta { cursor: pointer; transition: transform var(--speed), background-color var(--speed); }
@@ -1634,7 +1638,12 @@ h1, h2, h3, h4 { letter-spacing: -0.02em; }
     border: 1px solid var(--border);
     border-radius: 10px;
 }
-.stock-agotado { color: var(--red); }
+/* OJO: `.stock-agotado` ya existe arriba como BADGE (fondo rojo, texto
+   blanco) en la tabla de productos. Redefinirla aquí como color de texto
+   la pisaba y dejaba el badge con texto rojo sobre fondo rojo: invisible
+   hasta seleccionarlo con el mouse.
+   Se usa una clase propia para el listado del modal. */
+.stock-cero { color: var(--red); font-weight: 700; }
 
 /* ---------- Medio de pago resaltado con las flechas ---------- */
 .metodo-pago.resaltado {

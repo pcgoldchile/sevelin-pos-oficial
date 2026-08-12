@@ -223,7 +223,7 @@ function renderPanelBajoStock() {
       <div class="alerta-compacta">
         <span class="alerta-texto">
           <strong>${enAlerta.length}</strong> producto(s) bajo el stock mínimo
-          ${agotados ? ` · <span class="stock-agotado"><strong>${agotados}</strong> sin stock</span>` : ''}
+          ${agotados ? ` · <span class="stock-cero"><strong>${agotados}</strong> sin stock</span>` : ''}
         </span>
         <button class="btn btn-outline btn-sm" id="btnVerTodoBajoStock">
           👁 Ver y editar
@@ -240,7 +240,7 @@ function filaBajoStock(p) {
   return `
     <div class="alerta-stock-item" data-abrir="${p.id}" title="Editar ${String(p.nombre).replace(/"/g, '&quot;')}">
       <span>${p.nombre}${p.sku ? ` <small style="color:var(--text-muted);">· ${p.sku}</small>` : ''}</span>
-      <b class="${agotado ? 'stock-agotado' : ''}">${Number(p.stock) || 0}</b>
+      <b class="${agotado ? 'stock-cero' : ''}">${Number(p.stock) || 0}</b>
       <span style="color:var(--text-muted);">/ mín. ${limiteStock(p)}</span>
     </div>`;
 }
