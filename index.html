@@ -811,7 +811,7 @@
               <div class="card-title">🏆 Más vendidos <small>por volumen</small></div>
               <div id="topVolumen" class="ranking"></div>
               <div class="row-actions" style="margin-top:12px;">
-                <button class="btn btn-outline btn-sm" id="btnVerTodoVolumen">Ver ranking completo</button>
+                <button class="btn btn-outline btn-sm" id="btnPdfVolumen" title="Descarga el ranking completo en PDF">📄 PDF completo</button>
                 <button class="btn btn-outline btn-sm" id="btnVerMenosVendidos">Ver los que menos rotan</button>
               </div>
             </div>
@@ -819,7 +819,9 @@
               <div class="card-title">💎 Los que más dejan <small>por utilidad</small></div>
               <div id="topMargen" class="ranking"></div>
               <div class="row-actions" style="margin-top:12px;">
-                <button class="btn btn-outline btn-sm" id="btnVerTodoMargen">Ver ranking completo</button>
+                <button class="btn btn-outline btn-sm" id="btnPdfMargen" title="Descarga el ranking completo en PDF">📄 PDF completo</button>
+                <button class="btn btn-outline btn-sm" id="btnVerMenosMargen">Ver los que menos dejan</button>
+                <button class="btn btn-outline btn-sm" id="btnVerRankings">📊 Ver en pantalla</button>
               </div>
             </div>
           </div>
@@ -1181,6 +1183,9 @@
               <tr class="empty-row"><td colspan="7">Cargando productos...</td></tr>
             </tbody>
           </table>
+
+          <!-- Controles de página. Se ocultan si todo cabe en una. -->
+          <div id="paginacionProductos" class="paginacion"></div>
         </div>
       </div>
     </section>
@@ -1443,6 +1448,69 @@
        RANKING COMPLETO
        Los tres criterios en pestañas. Tocar un producto abre su editor.
        ============================================================ -->
+  <!-- ============================================================
+       CONTADOR · PASO 1: PERÍODO
+       ============================================================ -->
+  <div id="modalPeriodoContador" class="modal-overlay">
+    <div class="modal-box modal-sm">
+      <h2>📊 Resumen para el contador</h2>
+      <p class="modal-hint">¿De qué período necesitas el reporte?</p>
+
+      <div id="periodosContador" class="periodos-grid">
+        <button type="button" class="periodo-btn" data-periodo="hoy">Hoy</button>
+        <button type="button" class="periodo-btn" data-periodo="semana">Esta semana</button>
+        <button type="button" class="periodo-btn activo" data-periodo="mes">Este mes</button>
+        <button type="button" class="periodo-btn" data-periodo="anio">Este año</button>
+        <button type="button" class="periodo-btn periodo-ancho" data-periodo="personalizado">Personalizado</button>
+      </div>
+
+      <div id="contadorPersonalizado" style="display:none; margin-top:14px;">
+        <div class="grid grid-2">
+          <div class="field">
+            <label for="contadorDesde">Desde</label>
+            <input type="date" id="contadorDesde">
+          </div>
+          <div class="field">
+            <label for="contadorHasta">Hasta</label>
+            <input type="date" id="contadorHasta">
+          </div>
+        </div>
+      </div>
+
+      <p class="modal-hint" id="contadorResumen">—</p>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarPeriodoContador">Cancelar</button>
+        <button class="btn btn-primary" id="btnConfirmarPeriodoContador">Continuar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       CONTADOR · PASO 2: FORMATO
+       ============================================================ -->
+  <div id="modalFormatoContador" class="modal-overlay">
+    <div class="modal-box modal-sm">
+      <h2>¿En qué formato?</h2>
+      <p class="modal-hint" id="formatoResumen">—</p>
+
+      <div class="grid grid-2" style="margin-top:16px;">
+        <button class="btn btn-outline modo-alta-btn" id="btnContadorExcel" type="button">
+          📊 Excel<br>
+          <small>4 hojas: resumen, ventas, gastos y categorías. Editable.</small>
+        </button>
+        <button class="btn btn-outline modo-alta-btn" id="btnContadorPDF" type="button">
+          📄 PDF<br>
+          <small>Listo para imprimir o enviar por correo.</small>
+        </button>
+      </div>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarFormatoContador">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modalRanking" class="modal-overlay">
     <div class="modal-box modal-lg">
       <h2>📊 Ranking de productos</h2>
@@ -1451,6 +1519,7 @@
         <button class="subtab activo" data-criterio="volumen">🏆 Más vendidos</button>
         <button class="subtab" data-criterio="margen">💎 Más utilidad</button>
         <button class="subtab" data-criterio="menos">🐌 Menos rotan</button>
+        <button class="subtab" data-criterio="menosMargen">📉 Menos utilidad</button>
       </nav>
 
       <p class="modal-hint" id="rankingTitulo">—</p>
@@ -1459,6 +1528,7 @@
       <div id="rankingCompleto" class="ranking" style="max-height:430px; overflow-y:auto; margin-top:14px;"></div>
 
       <div class="modal-foot">
+        <button class="btn btn-outline" id="btnPdfRankingActual">📄 Descargar este ranking en PDF</button>
         <button class="btn btn-primary" id="btnCerrarRanking">Cerrar</button>
       </div>
     </div>

@@ -435,6 +435,24 @@ async function eliminarProductosSeleccionados() {
   }
 }
 
+/* ============================================================
+   PAGINACIÓN DE LA TABLA
+   ------------------------------------------------------------
+   POR QUÉ SE PAGINA EL RENDER Y NO LA CONSULTA:
+   siete módulos dependen de `productsList` como catálogo COMPLETO en
+   memoria —el buscador del POS, mermas, OT, lotes, tiendanube—. Traer
+   solo 50 productos del servidor dejaría al POS sin poder encontrar el
+   producto 51 al escribir o escanear.
+
+   El cuello de botella real no es traer las filas (una consulta), sino
+   PINTARLAS: 100 productos × 7 celdas son 700 nodos con sus handlers.
+   Paginando el render se elimina ese costo y la búsqueda instantánea del
+   POS sigue funcionando sobre el catálogo entero.
+   ============================================================ */
+const POR_PAGINA = 50;
+let paginaActual = 1;
+let itemsFiltrados = [];
+
 function renderProductosTabla(items) {
   if (!elProductosTableBody) return;
   productosVisibles = items || [];
@@ -445,7 +463,20 @@ function renderProductosTabla(items) {
     return;
   }
 
-  elProductosTableBody.innerHTML = items.map(p => {
+  /* La página se reinicia cuando cambia el conjunto filtrado: si estabas
+     en la página 3 y filtras a 10 resultados, quedarías en una página
+     vacía sin entender por qué. */
+  if (items !== itemsFiltrados) { itemsFiltrados = items; paginaActual = 1; }
+
+  const totalPaginas = Math.max(1, Math.ceil(items.length / POR_PAGINA));
+  if (paginaActual > totalPaginas) paginaActual = totalPaginas;
+
+  const desde = (paginaActual - 1) * POR_PAGINA;
+  const pagina = items.slice(desde, desde + POR_PAGINA);
+
+  renderPaginacion(items.length, totalPaginas, desde, pagina.length);
+
+  elProductosTableBody.innerHTML = pagina.map(p => {
     const marcada = productosSeleccionados.has(String(p.id));
     return `
     <tr class="row-in${marcada ? ' fila-marcada' : ''}">
@@ -554,6 +585,43 @@ function handleBuscarProductoTabla() {
   }
 
   renderProductosTabla(resultado);
+}
+
+/* Controles de página. Se ocultan solos si todo cabe en una. */
+function renderPaginacion(total, totalPaginas, desde, enPantalla) {
+  const caja = document.getElementById('paginacionProductos');
+  if (!caja) return;
+
+  if (total <= POR_PAGINA) { caja.innerHTML = ''; return; }
+
+  caja.innerHTML = `
+    <span class="paginacion-info">
+      Mostrando <strong>${desde + 1}–${desde + enPantalla}</strong> de <strong>${total}</strong> producto(s)
+    </span>
+    <div class="paginacion-botones">
+      <button class="btn btn-outline btn-sm" id="btnPagPrimera" ${paginaActual === 1 ? 'disabled' : ''}>« Primera</button>
+      <button class="btn btn-outline btn-sm" id="btnPagAnterior" ${paginaActual === 1 ? 'disabled' : ''}>‹ Anterior</button>
+      <span class="paginacion-actual">Página ${paginaActual} de ${totalPaginas}</span>
+      <button class="btn btn-outline btn-sm" id="btnPagSiguiente" ${paginaActual === totalPaginas ? 'disabled' : ''}>Siguiente ›</button>
+      <button class="btn btn-outline btn-sm" id="btnPagUltima" ${paginaActual === totalPaginas ? 'disabled' : ''}>Última »</button>
+    </div>`;
+
+  /* Se vuelve a llamar con LA MISMA lista, así que la comprobación
+     `items !== itemsFiltrados` del render no reinicia la página. */
+  const ir = (n) => {
+    paginaActual = Math.min(Math.max(1, n), totalPaginas);
+    renderProductosTabla(itemsFiltrados);
+    /* Volver al inicio de la tabla: cambiar de página con el scroll abajo
+       desorienta. Se comprueba el método porque los WebView antiguos no
+       lo traen. */
+    const tabla = document.querySelector('#view-productos .table-wrapper');
+    if (tabla && tabla.scrollIntoView) tabla.scrollIntoView({ block: 'nearest' });
+  };
+
+  document.getElementById('btnPagPrimera')?.addEventListener('click', () => ir(1));
+  document.getElementById('btnPagAnterior')?.addEventListener('click', () => ir(paginaActual - 1));
+  document.getElementById('btnPagSiguiente')?.addEventListener('click', () => ir(paginaActual + 1));
+  document.getElementById('btnPagUltima')?.addEventListener('click', () => ir(totalPaginas));
 }
 
 // ---------- Modal Crear / Editar ----------

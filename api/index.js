@@ -72,6 +72,22 @@ const enviarError = (res, code, msg, extra) =>
 
 const TIPOS_DTE = ['BOLETA', 'FACTURA', 'SIN DTE'];
 
+/* Tope de filas por consulta.
+   ------------------------------------------------------------
+   Sin límite, un año de gastos o mermas llegaba entero al navegador en
+   cada carga del módulo. 200 cubre de sobra un mes de trabajo y se puede
+   subir con ?limite= cuando de verdad hace falta (una exportación).
+   El tope duro de 2000 evita que un ?limite=999999 tumbe la respuesta. */
+const LIMITE_POR_DEFECTO = 200;
+const LIMITE_MAXIMO = 2000;
+
+function limiteDe(req) {
+  const pedido = parseInt(req.query?.limite, 10);
+  if (!Number.isFinite(pedido) || pedido <= 0) return LIMITE_POR_DEFECTO;
+  return Math.min(pedido, LIMITE_MAXIMO);
+}
+
+
 /* ============================================================
    COMISIÓN DEL POS TUU (HAULMER PRO 2)
    ------------------------------------------------------------
@@ -1086,7 +1102,7 @@ app.get('/api/ventas', auth(), async (req, res) => {
   if (hasta) q = q.lte('fecha', hasta);
   if (estado) q = q.eq('estado', estado);
 
-  const { data, error } = await q;
+  const { data, error } = await q.limit(limiteDe(req));
   if (error) return enviarError(res, 500, error.message);
   res.json(limpiarLista(data, req.usuario.rol));
 });
@@ -1553,7 +1569,7 @@ app.get('/api/compras', auth(true), async (req, res) => {
   if (sin_documento === 'true') q = q.is('url_documento', null);
   if (sin_comprobante === 'true') q = q.is('url_comprobante', null);
 
-  const { data, error } = await q;
+  const { data, error } = await q.limit(limiteDe(req));
   if (error) return enviarError(res, 500, error.message);
   res.json(data || []);
 });
@@ -1740,8 +1756,21 @@ app.get('/api/reportes/dashboard', auth(true), async (req, res) => {
     /* Dos rankings distintos a propósito: el producto que más se vende no
        suele ser el que más deja. Ver ambos es lo que permite decidir qué
        conviene empujar. */
-    const topVolumen = [...lista].sort((a, b) => b.unidades - a.unidades).slice(0, 10);
-    const topMargen = [...lista].sort((a, b) => b.utilidad - a.utilidad).slice(0, 10);
+    /* Se devuelven hasta 100 por ranking: suficiente para el PDF completo
+       sin mandar el catálogo entero. El panel muestra solo los 5
+       primeros; el resto se usa al exportar. */
+    const TOPE = 100;
+    const porUnidades = [...lista].sort((a, b) => b.unidades - a.unidades);
+    const porUtilidad = [...lista].sort((a, b) => b.utilidad - a.utilidad);
+
+    const topVolumen = porUnidades.slice(0, TOPE);
+    const topMargen = porUtilidad.slice(0, TOPE);
+
+    /* Los "menos" se calculan invirtiendo la lista COMPLETA, no la ya
+       recortada: si se recortara primero, "los que menos rotan" saldría
+       del top 100, que son justamente los que más rotan. */
+    const menosVolumen = [...porUnidades].reverse().slice(0, TOPE);
+    const menosMargen = [...porUtilidad].reverse().slice(0, TOPE);
 
     /* Horas pico. La hora sale de `hora` (texto HH:MM que el POS guarda) y
        si falta, de vendida_en/created_at convertido a hora de Chile: usar
@@ -1776,7 +1805,8 @@ app.get('/api/reportes/dashboard', auth(true), async (req, res) => {
 
     res.json({
       periodo: { desde, hasta },
-      topVolumen, topMargen,
+      topVolumen, topMargen, menosVolumen, menosMargen,
+      totalProductos: lista.length,
       porHora, porDia,
       totalVentas: ventas.length,
       totalItems: items.length
@@ -2696,7 +2726,7 @@ app.get('/api/mermas', auth(true), async (req, res) => {
   if (desde) q = q.gte('creado_en', desde);
   if (hasta) q = q.lte('creado_en', hasta + 'T23:59:59');
 
-  const { data, error } = await q;
+  const { data, error } = await q.limit(limiteDe(req));
   if (error) return enviarError(res, 500, error.message);
   res.json(data || []);
 });

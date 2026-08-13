@@ -2512,3 +2512,80 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
     line-height: 1.4;
 }
 .fila-meta b { color: var(--gold); }
+
+/* ============================================================
+   22. ESPACIADO DE TABLAS, PAGINACIÓN Y PERÍODOS
+   ============================================================ */
+
+/* ---------- Aire en las celdas ----------
+   Estaban en 11px horizontales y el texto quedaba pegado al borde de la
+   columna, sobre todo con nombres largos. */
+.data-table thead th { padding: 13px 18px; }
+.data-table tbody td { padding: 14px 18px; }
+.data-table thead th:first-child,
+.data-table tbody td:first-child { padding-left: 20px; }
+.data-table thead th:last-child,
+.data-table tbody td:last-child { padding-right: 20px; }
+
+/* La columna de selección no necesita el mismo ancho */
+.data-table .col-check { padding-left: 16px; padding-right: 8px; width: 40px; }
+
+/* Las celdas de acciones no deben partirse en dos líneas */
+.cell-actions { display: flex; gap: 7px; justify-content: flex-end; }
+
+/* Contenedores y modales: más margen interno */
+.card { padding: 20px 22px; }
+.modal-box { padding: 22px 24px; }
+.field input, .field select, .campo-pos { padding-left: 13px; padding-right: 13px; }
+
+/* ---------- Paginación ---------- */
+.paginacion {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+}
+.paginacion:empty { display: none; }
+.paginacion-info { font-size: .82rem; color: var(--text-muted); }
+.paginacion-botones { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.paginacion-actual {
+    font-size: .8rem;
+    color: var(--text-100);
+    padding: 0 10px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.paginacion button:disabled { opacity: .35; cursor: not-allowed; }
+
+/* ---------- Selector de período del contador ---------- */
+.periodos-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    margin-top: 14px;
+}
+.periodo-btn {
+    padding: 13px 14px;
+    border-radius: 11px;
+    background: var(--bg-900);
+    border: 1px solid var(--border);
+    color: var(--text-100);
+    font-size: .88rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .12s ease;
+}
+.periodo-btn:hover { border-color: var(--blue); }
+.periodo-btn.activo {
+    background: rgba(59,130,246,.16);
+    border-color: var(--blue);
+    box-shadow: 0 0 0 3px rgba(59,130,246,.18);
+}
+.periodo-ancho { grid-column: 1 / -1; }
+
+#modalPeriodoContador { z-index: 10026; }
+#modalFormatoContador { z-index: 10027; }
