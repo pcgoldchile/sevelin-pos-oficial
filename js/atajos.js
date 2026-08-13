@@ -558,8 +558,8 @@ function pintarAyudaAtajos() {
           <span class="atajo-teclas">${teclasDe(it).map(t => `<kbd>${t}</kbd>`).join('<i>+</i>')}</span>
           <span class="atajo-desc">${it.desc}</span>
           ${it.clave
-            ? `<button class="btn-editar-atajo" data-atajo="${it.clave}" title="Cambiar esta tecla">✏️</button>`
-            : ''}
+            ? `<button class="btn-editar-atajo" data-atajo="${it.clave}" title="Cambiar esta tecla">✏️ Cambiar</button>`
+            : `<span class="atajo-fijo" title="Este atajo no se puede cambiar: es parte de la navegación del sistema">🔒</span>`}
         </div>`).join('')}
     </div>`).join('');
 }
@@ -624,20 +624,27 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btn) abrirCapturaAtajo(btn.dataset.atajo);
   });
 
+  /* Sin confirm() del navegador: es una ventana del sistema que no se
+     puede cerrar con Esc ni estilizar, y restablecer atajos no es
+     destructivo —se reasignan en dos clics. */
   document.getElementById('btnRestablecerAtajos')?.addEventListener('click', () => {
-    if (!confirm('¿Volver a los atajos originales?')) return;
     restablecerAtajos();
     pintarAyudaAtajos();
-    showToast('Atajos restablecidos', 'ok');
+    showToast('Atajos restablecidos a los originales', 'ok');
   });
 
-  document.getElementById('btnCancelarCaptura')?.addEventListener('click', cerrarCaptura);
+  document.getElementById('btnCancelarCaptura')?.addEventListener('click', () => cerrarCaptura(true));
 });
 
 function abrirCapturaAtajo(clave) {
   claveEnEdicion = clave;
   const modal = document.getElementById('modalCapturaAtajo');
   if (!modal) return;
+
+  /* Se cierra la ayuda mientras se captura: con las dos ventanas
+     encima no se sabe cuál está activa, y la de atrás sigue viéndose
+     entera. Se reabre al terminar. */
+  cerrarAyudaAtajos();
 
   const nombre = document.getElementById('capturaNombre');
   if (nombre) nombre.textContent = ETIQUETAS_ATAJOS[clave] || clave;
@@ -652,10 +659,11 @@ function abrirCapturaAtajo(clave) {
   document.addEventListener('keydown', capturarTecla, true);
 }
 
-function cerrarCaptura() {
+function cerrarCaptura(volverAAyuda) {
   document.getElementById('modalCapturaAtajo')?.classList.remove('show');
   document.removeEventListener('keydown', capturarTecla, true);
   claveEnEdicion = null;
+  if (volverAAyuda === true) alternarAyudaAtajos();
 }
 
 function capturarTecla(e) {
@@ -665,7 +673,7 @@ function capturarTecla(e) {
   e.stopPropagation();
 
   // Escape sale sin cambiar nada
-  if (e.key === 'Escape') { cerrarCaptura(); return; }
+  if (e.key === 'Escape') { cerrarCaptura(true); return; }   // Esc vuelve a la lista
 
   const aviso = document.getElementById('capturaAviso');
   const motivo = motivoRechazo(e.key, claveEnEdicion);
@@ -685,5 +693,8 @@ function capturarTecla(e) {
   }
 
   pintarAyudaAtajos();
-  setTimeout(cerrarCaptura, 700);
+  setTimeout(() => {
+    cerrarCaptura();
+    alternarAyudaAtajos();      // vuelve a la lista, ya actualizada
+  }, 700);
 }

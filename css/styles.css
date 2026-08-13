@@ -2409,19 +2409,33 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
    ============================================================ */
 
 /* ---------- Editor de atajos ---------- */
+/* SIEMPRE visible.
+   Antes aparecía solo al pasar el mouse, así que había que adivinar
+   cuáles se podían editar pasando por encima uno por uno. */
 .btn-editar-atajo {
-    background: transparent;
-    border: 1px solid transparent;
+    background: var(--bg-800);
+    border: 1px solid var(--border);
     border-radius: 6px;
-    padding: 2px 6px;
-    font-size: .78rem;
+    padding: 3px 7px;
+    font-size: .72rem;
     cursor: pointer;
-    opacity: 0;
-    transition: opacity .12s ease, border-color .12s ease;
+    opacity: .75;
+    flex-shrink: 0;
+    transition: opacity .12s ease, border-color .12s ease, background .12s ease;
 }
-/* Aparece al pasar por la fila: no compite con la lectura del atajo */
-.atajo-fila:hover .btn-editar-atajo { opacity: .8; }
-.btn-editar-atajo:hover { opacity: 1 !important; border-color: var(--blue); }
+.btn-editar-atajo:hover { opacity: 1; border-color: var(--blue); background: rgba(59,130,246,.15); }
+
+/* Los atajos fijos llevan un candado, para que se vea de una que no son
+   editables sin tener que probarlos. */
+.atajo-fijo {
+    flex-shrink: 0;
+    font-size: .68rem;
+    opacity: .35;
+    padding: 3px 7px;
+    cursor: help;
+}
+.atajo-fila { justify-content: flex-start; }
+.atajo-desc { flex: 1; }
 
 .nota-teclas {
     margin-top: 18px;
@@ -2478,3 +2492,23 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
 }
 .alerta-texto { font-size: .86rem; line-height: 1.5; }
 .alerta-texto strong { font-size: 1rem; }
+
+/* ============================================================
+   21. RANKING CLICABLE Y TABLA COMPACTA
+   ============================================================ */
+#modalRanking { z-index: 10025; }
+
+.rank-clicable { cursor: pointer; border-radius: 8px; padding: 4px; margin: -4px; transition: background .12s ease; }
+.rank-clicable:hover { background: rgba(59,130,246,.10); }
+.rank-nombre { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Metadatos bajo el nombre en la tabla de productos: reemplazan a las
+   columnas de SKU y S/N que se quitaron. */
+.fila-meta {
+    display: block;
+    margin-top: 3px;
+    font-size: .7rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+.fila-meta b { color: var(--gold); }

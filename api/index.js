@@ -947,52 +947,92 @@ async function ajustarStock(items, signo = -1, omitirProductoIds = null) {
   const ajustados = [];
   const omitir = omitirProductoIds instanceof Set ? omitirProductoIds : new Set();
 
-  for (const item of (items || [])) {
-    let producto = null;
+  /* ------------------------------------------------------------
+     RENDIMIENTO: antes este bucle hacía 2 consultas por producto EN
+     SERIE (buscar + actualizar). Con 5 productos eran 10 viajes de ida
+     y vuelta a Supabase, uno esperando al anterior, y finalizar una
+     venta tardaba varios segundos.
 
+     Ahora se buscan TODOS los productos de la venta en 3 consultas
+     (por id, por sku, por código de barras) y los updates se lanzan en
+     paralelo. Una venta de 5 productos pasa de ~10 viajes secuenciales
+     a 3 + 1 tanda paralela.
+     ------------------------------------------------------------ */
+  const pendientes = (items || []).filter(item => {
     /* Los ítems costeados por lotes ya movieron su stock:
        · al vender, lo hizo aplicarCostosFifo()  → marca item._fifo
        · al anular, lo hizo devolverConsumoLotes() → llega en omitir
        Volver a tocarlos acá duplicaría el movimiento. */
-    if (item._fifo) continue;
-    if (item.producto_id && omitir.has(item.producto_id)) continue;
+    if (item._fifo) return false;
+    if (item.producto_id && omitir.has(item.producto_id)) return false;
+    return true;
+  });
 
-    if (item.producto_id) {
-      const { data } = await db.from('productos').select('id, stock, stock_ilimitado').eq('id', item.producto_id).maybeSingle();
-      producto = data || null;
-    }
-    if (!producto && item.sku) {
-      const { data } = await db.from('productos').select('id, stock, stock_ilimitado').eq('sku', String(item.sku).trim()).limit(1);
-      producto = (data && data[0]) || null;
-    }
-    if (!producto && item.codigo_barras) {
-      const { data } = await db.from('productos').select('id, stock, stock_ilimitado').eq('codigo_barras', String(item.codigo_barras).trim()).limit(1);
-      producto = (data && data[0]) || null;
-    }
+  if (!pendientes.length) return ajustados;
+
+  const ids = [...new Set(pendientes.map(i => i.producto_id).filter(Boolean))];
+  const skus = [...new Set(pendientes.map(i => i.sku && String(i.sku).trim()).filter(Boolean))];
+  const barras = [...new Set(pendientes.map(i => i.codigo_barras && String(i.codigo_barras).trim()).filter(Boolean))];
+  const repIds = [...new Set(pendientes.map(i => i.repuesto_id).filter(Boolean))];
+
+  const porId = new Map(), porSku = new Map(), porBarra = new Map(), porRep = new Map();
+
+  const consultas = [];
+  if (ids.length) consultas.push(db.from('productos').select('id, stock, stock_ilimitado').in('id', ids)
+    .then(({ data }) => (data || []).forEach(p => porId.set(p.id, p))));
+  if (skus.length) consultas.push(db.from('productos').select('id, stock, stock_ilimitado, sku').in('sku', skus)
+    .then(({ data }) => (data || []).forEach(p => { if (p.sku) porSku.set(String(p.sku).trim(), p); })));
+  if (barras.length) consultas.push(db.from('productos').select('id, stock, stock_ilimitado, codigo_barras').in('codigo_barras', barras)
+    .then(({ data }) => (data || []).forEach(p => { if (p.codigo_barras) porBarra.set(String(p.codigo_barras).trim(), p); })));
+  if (repIds.length) consultas.push(db.from('repuestos').select('id, stock, stock_ilimitado').in('id', repIds)
+    .then(({ data }) => (data || []).forEach(r => porRep.set(r.id, r))));
+
+  await Promise.all(consultas);
+
+  /* Los updates se acumulan y se lanzan juntos al final. Se agrupa por
+     id para que dos líneas del mismo producto no se pisen: sin esto, dos
+     updates simultáneos del mismo producto escribirían el mismo stock y
+     una de las dos ventas se perdería. */
+  const cambiosProducto = new Map();
+  const cambiosRepuesto = new Map();
+
+  for (const item of pendientes) {
+    let producto = null;
+
+    if (item.producto_id) producto = porId.get(item.producto_id) || null;
+    if (!producto && item.sku) producto = porSku.get(String(item.sku).trim()) || null;
+    if (!producto && item.codigo_barras) producto = porBarra.get(String(item.codigo_barras).trim()) || null;
 
     // Repuestos internos del taller: viven en su propia tabla
     if (!producto && item.repuesto_id) {
-      const { data } = await db.from('repuestos').select('id, stock, stock_ilimitado').eq('id', item.repuesto_id).maybeSingle();
-      if (data && !data.stock_ilimitado) {
-        const nuevo = num(data.stock) + signo * num(item.cantidad);
-        await db.from('repuestos')
-          .update({ stock: nuevo, stock_actualizado_en: new Date().toISOString() })
-          .eq('id', data.id);
-        ajustados.push({ repuesto_id: data.id, stock: nuevo });
+      const rep = porRep.get(item.repuesto_id);
+      if (rep && !rep.stock_ilimitado) {
+        const base = cambiosRepuesto.has(rep.id) ? cambiosRepuesto.get(rep.id) : num(rep.stock);
+        cambiosRepuesto.set(rep.id, base + signo * num(item.cantidad));
       }
       continue;
     }
 
     if (!producto || producto.stock_ilimitado) continue; // libre o sin control de stock
 
-    const nuevoStock = num(producto.stock) + signo * num(item.cantidad);
-    await db.from('productos')
-      .update({ stock: nuevoStock, stock_actualizado_en: new Date().toISOString() })
-      .eq('id', producto.id);
-
-    ajustados.push({ producto_id: producto.id, stock: nuevoStock });
+    // Se acumula sobre lo ya calculado: dos líneas del mismo producto suman
+    const base = cambiosProducto.has(producto.id) ? cambiosProducto.get(producto.id) : num(producto.stock);
+    cambiosProducto.set(producto.id, base + signo * num(item.cantidad));
   }
 
+  const marca = new Date().toISOString();
+  const updates = [];
+
+  cambiosProducto.forEach((stock, id) => {
+    updates.push(db.from('productos').update({ stock, stock_actualizado_en: marca }).eq('id', id));
+    ajustados.push({ producto_id: id, stock });
+  });
+  cambiosRepuesto.forEach((stock, id) => {
+    updates.push(db.from('repuestos').update({ stock, stock_actualizado_en: marca }).eq('id', id));
+    ajustados.push({ repuesto_id: id, stock });
+  });
+
+  await Promise.all(updates);
   return ajustados;
 }
 

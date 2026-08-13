@@ -808,12 +808,19 @@
           <!-- Inteligencia de negocio -->
           <div class="grid grid-2">
             <div class="card">
-              <div class="card-title">🏆 Top 10 más vendidos <small>por volumen</small></div>
+              <div class="card-title">🏆 Más vendidos <small>por volumen</small></div>
               <div id="topVolumen" class="ranking"></div>
+              <div class="row-actions" style="margin-top:12px;">
+                <button class="btn btn-outline btn-sm" id="btnVerTodoVolumen">Ver ranking completo</button>
+                <button class="btn btn-outline btn-sm" id="btnVerMenosVendidos">Ver los que menos rotan</button>
+              </div>
             </div>
             <div class="card">
-              <div class="card-title">💎 Top 10 que más dejan <small>por utilidad</small></div>
+              <div class="card-title">💎 Los que más dejan <small>por utilidad</small></div>
               <div id="topMargen" class="ranking"></div>
+              <div class="row-actions" style="margin-top:12px;">
+                <button class="btn btn-outline btn-sm" id="btnVerTodoMargen">Ver ranking completo</button>
+              </div>
             </div>
           </div>
 
@@ -828,7 +835,10 @@
             <div class="card-head">
               <div>
                 <h2 class="card-title" style="margin:0;">📦 Reposición de inventario</h2>
-                <p class="subtitle">Productos bajo su mínimo, listos para pedir al proveedor.</p>
+                <p class="subtitle">
+                  Productos bajo su mínimo, listos para pedir al proveedor.<br>
+                  <small>El resumen del contador usa el <strong>período elegido arriba</strong> (Hoy, Este mes, Mes anterior…).</small>
+                </p>
               </div>
               <div class="toolbar-group">
                 <button class="btn btn-outline" id="btnGenerarReposicion">📋 Generar lista de compras</button>
@@ -1136,6 +1146,8 @@
             <option value="sin_costo">Ver: Sin Costo</option>
             <option value="sin_medidas">Ver: Sin Medidas</option>
             <option value="bajo_stock">Ver: Bajo Stock</option>
+            <option value="con_sn">Ver: CON S/N</option>
+            <option value="sin_sn">Ver: SIN S/N</option>
           </select>
         </div>
 
@@ -1153,22 +1165,20 @@
           <table class="data-table">
             <thead>
               <tr>
+                <!-- Tabla reducida a lo que se mira a diario. SKU, código de
+                     barras, medidas y fecha de stock siguen existiendo en el
+                     producto: se ven y editan en su modal. -->
                 <th class="col-check"><input type="checkbox" id="checkTodosProductos" title="Seleccionar todo"></th>
-                <th>SKU</th>
-                <th>Código Barras</th>
-                <th>Nombre / Descripción</th>
+                <th>Nombre</th>
                 <th class="admin-only">Costo</th>
                 <th>Precio</th>
                 <th>Stock</th>
-                <th class="admin-only">Capas de costo (PEPS)</th>
-                <th>Últ. act. stock</th>
-                <th>Medidas (Al×An×Pr / Peso)</th>
-                <th>Requiere S/N</th>
+                <th class="admin-only">Capas (PEPS)</th>
                 <th style="text-align:right;">Acciones</th>
               </tr>
             </thead>
             <tbody id="productosTableBody">
-              <tr class="empty-row"><td colspan="12">Cargando productos...</td></tr>
+              <tr class="empty-row"><td colspan="7">Cargando productos...</td></tr>
             </tbody>
           </table>
         </div>
@@ -1429,6 +1439,31 @@
   <!-- ============================================================
        LISTA DE REPOSICIÓN / PEDIDO A PROVEEDOR
        ============================================================ -->
+  <!-- ============================================================
+       RANKING COMPLETO
+       Los tres criterios en pestañas. Tocar un producto abre su editor.
+       ============================================================ -->
+  <div id="modalRanking" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <h2>📊 Ranking de productos</h2>
+
+      <nav class="subtabs" id="rankingTabs">
+        <button class="subtab activo" data-criterio="volumen">🏆 Más vendidos</button>
+        <button class="subtab" data-criterio="margen">💎 Más utilidad</button>
+        <button class="subtab" data-criterio="menos">🐌 Menos rotan</button>
+      </nav>
+
+      <p class="modal-hint" id="rankingTitulo">—</p>
+      <p class="modal-hint">Toca cualquier producto para abrir su ficha.</p>
+
+      <div id="rankingCompleto" class="ranking" style="max-height:430px; overflow-y:auto; margin-top:14px;"></div>
+
+      <div class="modal-foot">
+        <button class="btn btn-primary" id="btnCerrarRanking">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modalReposicion" class="modal-overlay">
     <div class="modal-box modal-lg">
       <div class="card-head">

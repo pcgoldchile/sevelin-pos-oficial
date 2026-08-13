@@ -23,6 +23,20 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnCerrarReposicion')?.addEventListener('click', () => cerrarModalRep('modalReposicion'));
   document.getElementById('btnExportarContador')?.addEventListener('click', exportarParaContador);
 
+  document.getElementById('btnVerTodoVolumen')?.addEventListener('click', () => abrirRankingCompleto('volumen'));
+  document.getElementById('btnVerTodoMargen')?.addEventListener('click', () => abrirRankingCompleto('margen'));
+  document.getElementById('btnVerMenosVendidos')?.addEventListener('click', () => abrirRankingCompleto('menos'));
+  document.getElementById('btnCerrarRanking')?.addEventListener('click', () => cerrarModalRep('modalRanking'));
+  document.getElementById('rankingTabs')?.addEventListener('click', (e) => {
+    const b = e.target.closest('.subtab');
+    if (!b) return;
+    document.querySelectorAll('#rankingTabs .subtab').forEach(x => x.classList.toggle('activo', x === b));
+    pintarRankingCompleto(b.dataset.criterio);
+  });
+  document.getElementById('modalRanking')?.addEventListener('click', (e) => {
+    if (e.target.id === 'modalRanking') cerrarModalRep('modalRanking');
+  });
+
   document.getElementById('modalReposicion')?.addEventListener('click', (e) => {
     if (e.target.id === 'modalReposicion') cerrarModalRep('modalReposicion');
   });
@@ -46,12 +60,120 @@ async function cargarDashboardReportes(desde, hasta) {
   }
 }
 
+/* Se muestran 5 en el panel y el resto en un modal.
+   Diez filas por ranking ocupaban toda la pantalla y empujaban el resto
+   del balance fuera de la vista. */
+const TOP_VISIBLE = 5;
+
 function pintarTop10(d) {
-  pintarRanking('topVolumen', d.topVolumen, 'unidades',
+  pintarRanking('topVolumen', (d.topVolumen || []).slice(0, TOP_VISIBLE), 'unidades',
     p => `${p.unidades} un.`, p => fmtCLP(p.ingresos));
 
-  pintarRanking('topMargen', d.topMargen, 'utilidad',
+  pintarRanking('topMargen', (d.topMargen || []).slice(0, TOP_VISIBLE), 'utilidad',
     p => fmtCLP(p.utilidad), p => `${p.unidades} un. vendidas`);
+}
+
+/* Ranking completo en un modal, con los tres criterios en pestañas. */
+function abrirRankingCompleto(criterio) {
+  if (!datosDashboard) { showToast('Elige un período primero', 'err'); return; }
+
+  const modal = document.getElementById('modalRanking');
+  if (!modal) return;
+
+  document.querySelectorAll('#rankingTabs .subtab').forEach(b => {
+    b.classList.toggle('activo', b.dataset.criterio === criterio);
+  });
+
+  pintarRankingCompleto(criterio);
+  modal.classList.add('show');
+}
+
+function pintarRankingCompleto(criterio) {
+  const caja = document.getElementById('rankingCompleto');
+  const titulo = document.getElementById('rankingTitulo');
+  if (!caja || !datosDashboard) return;
+
+  /* topVolumen y topMargen vienen recortados a 10 desde el servidor.
+     Para "los menos vendidos" se usa topVolumen invertido: son los
+     mismos datos ordenados al revés. */
+  let lista, campo, principal, secundario, subtitulo;
+
+  if (criterio === 'menos') {
+    lista = [...(datosDashboard.topVolumen || [])].sort((a, b) => a.unidades - b.unidades);
+    campo = 'unidades';
+    principal = p => `${p.unidades} un.`;
+    secundario = p => fmtCLP(p.ingresos);
+    subtitulo = 'Los que menos rotan del período. Ojo con el capital detenido en ellos.';
+  } else if (criterio === 'margen') {
+    lista = datosDashboard.topMargen || [];
+    campo = 'utilidad';
+    principal = p => fmtCLP(p.utilidad);
+    secundario = p => `${p.unidades} un. vendidas`;
+    subtitulo = 'Los que más utilidad dejaron, sin importar cuántas unidades se vendieron.';
+  } else {
+    lista = datosDashboard.topVolumen || [];
+    campo = 'unidades';
+    principal = p => `${p.unidades} un.`;
+    secundario = p => fmtCLP(p.ingresos);
+    subtitulo = 'Los que más unidades salieron del inventario.';
+  }
+
+  if (titulo) titulo.textContent = subtitulo;
+
+  if (!lista.length) {
+    caja.innerHTML = '<p class="vacio-nota">Sin ventas en el período</p>';
+    return;
+  }
+
+  const max = Math.max(...lista.map(p => Math.abs(Number(p[campo]) || 0))) || 1;
+
+  caja.innerHTML = lista.map((p, i) => {
+    const valor = Number(p[campo]) || 0;
+    const pct = Math.max(2, (Math.abs(valor) / max) * 100);
+    const negativo = valor < 0;
+    return `
+      <div class="rank-fila rank-clicable" data-producto="${escaparRep(p.nombre)}"
+           title="Abrir ${escaparRep(p.nombre)}">
+        <span class="rank-pos">${i + 1}</span>
+        <div class="rank-cuerpo">
+          <div class="rank-cabecera">
+            <span class="rank-nombre">${escaparRep(acortarRep(p.nombre, 45))}</span>
+            <b class="${negativo ? 'rank-negativo' : ''}">${principal(p)}</b>
+          </div>
+          <div class="barra-pista">
+            <div class="barra-relleno ${negativo ? 'barra-red' : ''}" style="width:${pct}%"></div>
+          </div>
+          <small>${secundario(p)}</small>
+        </div>
+      </div>`;
+  }).join('');
+
+  // Tocar un producto abre su editor
+  caja.querySelectorAll('.rank-clicable').forEach(fila => {
+    fila.addEventListener('click', () => abrirProductoDesdeRanking(fila.dataset.producto));
+  });
+}
+
+/* Los rankings agrupan por nombre (los ítems manuales no tienen id), así
+   que se busca el producto por nombre en el catálogo. */
+function abrirProductoDesdeRanking(nombre) {
+  if (typeof productsList === 'undefined' || typeof abrirModalProducto !== 'function') return;
+
+  const buscado = String(nombre || '').trim().toLowerCase();
+  const producto = productsList.find(p => (p.nombre || '').trim().toLowerCase() === buscado);
+
+  if (!producto) {
+    showToast('Ese ítem no está en el catálogo (se vendió como producto manual)', 'err');
+    return;
+  }
+
+  document.getElementById('modalRanking')?.classList.remove('show');
+  abrirModalProducto(producto);
+}
+
+function acortarRep(texto, largo) {
+  const t = String(texto == null ? '' : texto);
+  return t.length > largo ? t.slice(0, largo).trimEnd() + '…' : t;
 }
 
 function pintarRanking(contenedorId, lista, campo, valorPrincipal, valorSecundario) {
@@ -74,11 +196,12 @@ function pintarRanking(contenedorId, lista, campo, valorPrincipal, valorSecundar
     const negativo = valor < 0;
 
     return `
-      <div class="rank-fila">
+      <div class="rank-fila rank-clicable" data-producto="${escaparRep(p.nombre)}"
+           title="Abrir ${escaparRep(p.nombre)}">
         <span class="rank-pos">${i + 1}</span>
         <div class="rank-cuerpo">
           <div class="rank-cabecera">
-            <span class="rank-nombre" title="${escaparRep(p.nombre)}">${escaparRep(p.nombre)}</span>
+            <span class="rank-nombre">${escaparRep(acortarRep(p.nombre, 40))}</span>
             <b class="${negativo ? 'rank-negativo' : ''}">${valorPrincipal(p)}</b>
           </div>
           <div class="barra-pista">
@@ -88,6 +211,10 @@ function pintarRanking(contenedorId, lista, campo, valorPrincipal, valorSecundar
         </div>
       </div>`;
   }).join('');
+
+  caja.querySelectorAll('.rank-clicable').forEach(fila => {
+    fila.addEventListener('click', () => abrirProductoDesdeRanking(fila.dataset.producto));
+  });
 }
 
 /* Horas pico: 24 barras verticales. La más alta define la escala. */
@@ -254,10 +381,23 @@ function exportarReposicion() {
    clasificación. Es lo que se entrega cada mes.
    ============================================================ */
 async function exportarParaContador() {
-  const desde = document.getElementById('balanceDesde')?.value;
-  const hasta = document.getElementById('balanceHasta')?.value;
+  /* Los campos de fecha solo se llenan al usar los botones de rango.
+     Si el usuario nunca los tocó, estaban vacíos y el botón fallaba con
+     "Elige el período primero" sin decir dónde elegirlo. Ahora se toma
+     el rango que ya está activo en el balance. */
+  let desde = document.getElementById('balanceDesde')?.value;
+  let hasta = document.getElementById('balanceHasta')?.value;
 
-  if (!desde || !hasta) { showToast('Elige el período primero', 'err'); return; }
+  if ((!desde || !hasta) && typeof rangoBalance === 'object') {
+    desde = rangoBalance.desde;
+    hasta = rangoBalance.hasta;
+  }
+
+  if (!desde || !hasta) {
+    showToast('Elige un período en los filtros de arriba (Hoy, Este mes…)', 'err');
+    document.getElementById('balanceDesde')?.focus();
+    return;
+  }
 
   const btn = document.getElementById('btnExportarContador');
   if (btn) btn.disabled = true;

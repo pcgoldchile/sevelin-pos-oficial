@@ -191,6 +191,13 @@ function tieneAlertaStock(p) {
   return Number(p.stock || 0) <= limiteStock(p);
 }
 
+/* Corta un texto largo y le pone puntos suspensivos. El nombre completo
+   queda en el `title`, así que pasar el mouse lo muestra entero. */
+function acortar(texto, largo) {
+  const t = String(texto == null ? '' : texto);
+  return t.length > largo ? t.slice(0, largo).trimEnd() + '…' : t;
+}
+
 function badgeStock(p) {
   if (p.stock_ilimitado) return `<span class="stock-badge stock-ok">♾️ Ilimitado</span>`;
   const stock = Number(p.stock) || 0;
@@ -443,21 +450,23 @@ function renderProductosTabla(items) {
     return `
     <tr class="row-in${marcada ? ' fila-marcada' : ''}">
       <td class="col-check"><input type="checkbox" data-sel="${p.id}" ${marcada ? 'checked' : ''}></td>
-      <td>${p.sku || '-'}</td>
-      <td>${p.codigo_barras || '-'}</td>
       <td>
         <!-- El nombre abre el editor directo: es lo que uno intenta
-             tocar por instinto antes de buscar el lápiz de la derecha. -->
-        <a href="#" class="nombre-editable" data-editar="${p.id}" title="Editar ${String(p.nombre).replace(/"/g, '&quot;')}">${p.nombre}</a>
-        ${p.descripcion ? `<br><small style="color:var(--text-muted);">${String(p.descripcion).slice(0, 60)}${String(p.descripcion).length > 60 ? '…' : ''}</small>` : ''}
+             tocar por instinto antes de buscar el lápiz de la derecha.
+             El title lleva el nombre completo, porque en la celda se
+             corta a 40 caracteres. -->
+        <a href="#" class="nombre-editable" data-editar="${p.id}"
+           title="${String(p.nombre).replace(/"/g, '&quot;')}">${acortar(p.nombre, 40)}</a>
+        <small class="fila-meta">
+          ${p.sku ? `SKU ${acortar(p.sku, 22)}` : ''}
+          ${p.requiere_sn ? ' · <b>S/N</b>' : ''}
+          ${p.es_repuesto ? ' · Repuesto' : ''}
+        </small>
       </td>
       <td class="admin-only">${fmtCLP(p.costo_unitario)}</td>
       <td>${fmtCLP(p.precio_unitario)}</td>
       <td>${badgeStock(p)}</td>
       <td class="admin-only">${typeof celdaLotes === 'function' ? celdaLotes(p) : '—'}</td>
-      <td class="stock-fecha">${p.stock_actualizado_en ? tsAChile(p.stock_actualizado_en) : '—'}</td>
-      <td>${resumenMedidas(p)}</td>
-      <td>${p.requiere_sn ? '✅ Sí' : '—'}${p.es_repuesto ? '<br><span class="badge badge-gold">Repuesto</span>' : ''}</td>
       <td>
         <div class="cell-actions">
           <button class="btn btn-icon btn-icon-view" data-etiqueta="${p.id}" title="Imprimir etiqueta de código de barras">${ICO_ETIQUETA_PROD}</button>
@@ -533,6 +542,12 @@ function handleBuscarProductoTabla() {
       break;
     case 'bajo_stock':
       resultado = resultado.filter(tieneAlertaStock).sort((a, b) => (Number(a.stock) || 0) - (Number(b.stock) || 0));
+      break;
+    case 'con_sn':
+      resultado = resultado.filter(p => !!p.requiere_sn);
+      break;
+    case 'sin_sn':
+      resultado = resultado.filter(p => !p.requiere_sn);
       break;
     default:
       resultado = resultado.slice().sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));

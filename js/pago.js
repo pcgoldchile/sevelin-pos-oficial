@@ -373,14 +373,29 @@ async function confirmarSelectorPago() {
   }
 
   const datos = datosPagoActuales();
-  if (elBtnConfirmarPago) elBtnConfirmarPago.disabled = true;
+  const metodo = metodoPagoElegido;
+  const alConfirmar = configPago.onConfirmar;
+
+  /* El modal se cierra ANTES de registrar la venta.
+     ------------------------------------------------------------
+     Antes se cerraba después del await: mientras el servidor procesaba
+     (que con varios productos podía tardar), el modal de pago seguía en
+     pantalla y parecía que no había pasado nada. Ahora desaparece al
+     instante y el trabajo sigue de fondo.
+
+     Si el registro falla, se vuelve a abrir con lo que había: no se
+     pierde lo que el usuario ya eligió. */
+  const respaldo = { ...configPago };
+  cerrarSelectorPago();
 
   try {
-    await configPago.onConfirmar(metodoPagoElegido, datos);
-    cerrarSelectorPago();
+    await alConfirmar(metodo, datos);
   } catch (err) {
     console.error('Error al confirmar el pago:', err.message || err);
     showToast(err.message || 'No se pudo confirmar el pago', 'err');
+
+    // Falló: se reabre el cobro para reintentar sin volver a empezar
+    abrirSelectorPago(respaldo);
   } finally {
     if (elBtnConfirmarPago) elBtnConfirmarPago.disabled = false;
   }
