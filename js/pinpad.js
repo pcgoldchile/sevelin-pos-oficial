@@ -1,39 +1,60 @@
 // ==========================================
-// PINPAD.JS - Teclado numérico de acceso
+// PINPAD.JS - Campo de acceso (PIN o contraseña)
 // ------------------------------------------
-// Escribe en el mismo #pinInput de siempre, así auth.js no cambia: sigue
-// leyendo el valor del input y enviándolo al backend igual que antes.
+// HISTORIA DE ESTE ARCHIVO (v6)
+// ------------------------------------------
+// Antes esto era un teclado numérico en pantalla (botones del 0 al 9) que
+// escribía en un #pinInput oculto, más una fila de puntos que mostraba el
+// avance. Se eliminó por completo y ahora hay UN campo de texto normal.
 //
-// Existe porque el POS se usa con pantalla táctil y en un mostrador: con
-// el teclado físico lejos, escribir el PIN era incómodo. El input real
-// queda oculto (sr-only) pero funcional, para que el teclado físico
-// también siga sirviendo.
+// Tres bugs murieron con ese cambio:
+//
+//   1. EL CÍRCULO FANTASMA. `refrescar()` pintaba `n + 1` puntos: los
+//      dígitos escritos MÁS uno vacío de guía. Al completar un PIN de 4
+//      aparecía un quinto círculo por unos instantes, justo antes de que
+//      el auto-envío entrara. No era un fallo de la validación: era la
+//      guía haciendo su trabajo en el peor momento posible.
+//
+//   2. LOS PUNTOS QUE SOBREVIVÍAN AL LOGOUT. `cerrarSesion()` borraba el
+//      token y volvía a mostrar el modal, pero nadie limpiaba #pinInput
+//      ni repintaba los puntos. Volvías a la pantalla de acceso con los
+//      4 círculos todavía llenos, como si el PIN anterior siguiera
+//      escrito. Ahora el campo se limpia en un solo lugar
+//      (`limpiarCampoPin`) al que llaman login, logout y expiración.
+//
+//   3. DÍGITOS DUPLICADOS. El input viejo estaba oculto con `sr-only`
+//      pero seguía siendo enfocable, así que al teclear un 9 el navegador
+//      lo escribía Y ADEMÁS el manejador lo agregaba a mano. Con un campo
+//      visible y normal el navegador es el único que escribe.
+//
+// Se conserva el auto-envío por pausa, que sí era útil: el sistema no
+// conoce el largo del PIN (vive en las variables de entorno del servidor
+// y difiere entre admin y trabajador), así que no puede enviar "al llegar
+// a N caracteres" sin adivinar. Espera a que dejes de teclear.
 // ==========================================
 
-const LARGO_PIN = 6;
+const LARGO_MAXIMO_PIN = 64;
 
 document.addEventListener('DOMContentLoaded', () => {
-  const pad = document.getElementById('pinPad');
   const input = document.getElementById('pinInput');
-  const puntos = document.getElementById('pinPuntos');
-  if (!pad || !input) return;
+  const btnOjo = document.getElementById('btnVerPin');
+  if (!input) return;
 
-  /* Auto-validación.
+  /* Auto-validación por pausa.
      ------------------------------------------------------------
-     El sistema NO conoce el largo del PIN: vive en las variables de
-     entorno del servidor y puede ser distinto para admin y trabajador.
-     Por eso no se puede enviar "al llegar a N dígitos" sin adivinar.
+     Con 4 caracteres o más y 600 ms sin teclear, el formulario se envía
+     solo. Al escribir de corrido, una clave de 8 nunca se manda al
+     llegar a 4 porque no hay pausa; al terminar, entra sin tocar nada.
 
-     La solución: esperar a que la persona deje de teclear. Con 4 dígitos
-     o más y 450 ms sin pulsar nada, se envía solo. Al escribir de
-     corrido, un PIN de 6 nunca se manda al llegar a 4, porque no hay
-     pausa; y al terminar, entra sin tocar el botón.
+     La pausa subió de 450 ms a 600 ms: ahora que se admiten letras, la
+     clave es más larga y se teclea con más pausas naturales entre
+     caracteres. Con 450 ms se disparaban intentos a medio escribir, y
+     el backend lleva un contador anti-fuerza bruta.
 
      El envío se cancela con cada tecla nueva, así que borrar y corregir
-     tampoco dispara un intento en falso —importante, porque el backend
-     lleva un contador anti-fuerza bruta. */
+     no dispara un intento en falso. */
   const MINIMO_AUTO = 4;
-  const PAUSA_AUTO_MS = 450;
+  const PAUSA_AUTO_MS = 600;
   let tempAuto = null;
 
   const cancelarAuto = () => { if (tempAuto) { clearTimeout(tempAuto); tempAuto = null; } };
@@ -46,93 +67,72 @@ document.addEventListener('DOMContentLoaded', () => {
       const btn = document.getElementById('btnIngresar');
       // No reenviar si ya hay una verificación en curso
       if (!form || (btn && btn.disabled)) return;
-      form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event('submit', { cancelable: true }));
+      form.requestSubmit
+        ? form.requestSubmit()
+        : form.dispatchEvent(new Event('submit', { cancelable: true }));
     }, PAUSA_AUTO_MS);
   };
 
   const refrescar = () => {
-    const n = (input.value || '').length;
-    if (puntos) {
-      /* Se muestran los dígitos ya escritos más uno vacío como guía,
-         sin revelar el PIN ni delatar su largo real. */
-      const visibles = Math.max(4, Math.min(LARGO_PIN, n + 1));
-      puntos.innerHTML = Array.from({ length: visibles }, (_, i) =>
-        `<span class="pin-punto${i < n ? ' lleno' : ''}"></span>`).join('');
-    }
     const btn = document.getElementById('btnIngresar');
-    if (btn) btn.disabled = n === 0;
-
+    if (btn) btn.disabled = (input.value || '').length === 0;
     programarAuto();
   };
 
-  pad.addEventListener('click', (e) => {
-    const boton = e.target.closest('button');
-    if (!boton) return;
-
-    const accion = boton.dataset.pinAccion;
-    if (accion === 'limpiar') input.value = '';
-    else if (accion === 'borrar') input.value = input.value.slice(0, -1);
-    else if (boton.dataset.pin) {
-      if (input.value.length >= LARGO_PIN) return;
-      input.value += boton.dataset.pin;
-    }
-
-    ocultarError();
-    refrescar();
-
-    // Vibración corta en táctil: confirma el toque sin mirar la pantalla
-    if (navigator.vibrate) navigator.vibrate(8);
-  });
-
-  /* Teclado físico.
-     ------------------------------------------------------------
-     BUG QUE ARREGLA ESTE `if`: el input está oculto con sr-only, pero
-     sigue siendo un <input> real y enfocable. Cuando tenía el foco y se
-     tecleaba un 9, pasaban DOS cosas: el navegador lo escribía por su
-     cuenta (comportamiento nativo) y además este listener lo agregaba a
-     mano. Resultado: "99" por cada tecla.
-
-     Ahora, si el evento nació dentro del propio input, se deja que el
-     navegador haga su trabajo y aquí no se toca nada. Solo se escribe a
-     mano cuando el foco está en otra parte (que es el caso normal,
-     porque el input no se enfoca solo). */
-  document.addEventListener('keydown', (e) => {
-    const modal = document.getElementById('modalLogin');
-    if (!modal || !modal.classList.contains('show')) return;
-
-    // El input ya se encarga: no duplicar
-    if (e.target === input) {
-      if (/^[0-9]$/.test(e.key)) ocultarError();
-      return;
-    }
-
-    if (/^[0-9]$/.test(e.key)) {
-      e.preventDefault();
-      if (input.value.length < LARGO_PIN) input.value += e.key;
-      ocultarError(); refrescar();
-    } else if (e.key === 'Backspace') {
-      e.preventDefault();
-      input.value = input.value.slice(0, -1);
-      refrescar();
-    } else if (e.key === 'Escape') {
-      input.value = ''; refrescar();
-    }
-  });
-
-  /* Un único punto de refresco: escriba quien escriba (el teclado en
-     pantalla, el físico o un pegado), todo pasa por aquí. */
-  window.__cancelarAutoPin = cancelarAuto;
   input.addEventListener('input', () => { ocultarError(); refrescar(); });
+
+  /* Escape limpia el campo sin cerrar nada: es el gesto natural cuando
+     te equivocaste a medio escribir. */
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); input.value = ''; refrescar(); }
+  });
+
+  /* Ver / ocultar. Útil en el mostrador cuando la clave lleva letras y
+     símbolos: escribirla a ciegas y equivocarse gasta un intento. */
+  if (btnOjo) {
+    btnOjo.addEventListener('click', () => {
+      const oculto = input.type === 'password';
+      input.type = oculto ? 'text' : 'password';
+      btnOjo.textContent = oculto ? '🙈' : '👁️';
+      btnOjo.classList.toggle('activo', oculto);
+      input.focus();
+    });
+  }
+
+  window.__cancelarAutoPin = cancelarAuto;
   refrescar();
 });
 
-/* El aviso de PIN incorrecto se borra al primer dígito nuevo: si se
-   quedara en pantalla, parecería que el intento actual también falló. */
-/* auth.js avisa cuando el PIN falló, para cortar el auto-envío y que
-   no se reintente solo en bucle. */
+/* auth.js avisa cuando el PIN falló, para cortar el auto-envío y que no
+   se reintente solo en bucle contra el freno anti-fuerza bruta. */
 document.addEventListener('pos:login-fallido', () => {
   if (window.__cancelarAutoPin) window.__cancelarAutoPin();
 });
+
+/* ÚNICO punto de limpieza del campo.
+   ------------------------------------------------------------
+   Lo llaman auth.js al entrar, al cerrar sesión y al expirar la sesión.
+   Existir en un solo lugar es lo que arregla el bug de "cerré sesión y
+   seguía viéndose lo que escribí": antes cada flujo limpiaba por su
+   cuenta, y el de logout simplemente se olvidaba. */
+function limpiarCampoPin() {
+  const input = document.getElementById('pinInput');
+  if (!input) return;
+  input.value = '';
+
+  // Si quedó en modo visible, se vuelve a ocultar: la próxima persona
+  // que entre no tiene por qué heredar esa decisión.
+  input.type = 'password';
+  const btnOjo = document.getElementById('btnVerPin');
+  if (btnOjo) { btnOjo.textContent = '👁️'; btnOjo.classList.remove('activo'); }
+
+  if (window.__cancelarAutoPin) window.__cancelarAutoPin();
+
+  const btn = document.getElementById('btnIngresar');
+  if (btn) btn.disabled = true;
+
+  ocultarError();
+}
 
 function ocultarError() {
   const err = document.getElementById('loginError');

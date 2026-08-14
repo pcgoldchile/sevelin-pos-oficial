@@ -632,6 +632,10 @@ function pintarGastosFijos() {
         </div>
         <b class="fijo-monto">${fmtCLP(g.monto)}</b>
         <div class="fijo-acciones">
+          <!-- Registrar el pago sin salir de esta pestaña. Antes había que
+               ir a Gastos y escribir todo de nuevo a mano. -->
+          <button class="btn btn-mini btn-mini-pagar" data-fijo-pagar="${g.id}"
+                  title="Registrar el pago de este mes como gasto">💸</button>
           <button class="btn btn-mini" data-fijo-pausar="${g.id}"
                   title="${g.activo ? 'Pausar: deja de contar en el punto de equilibrio' : 'Reactivar'}">
             ${g.activo ? '⏸️' : '▶️'}
@@ -641,6 +645,9 @@ function pintarGastosFijos() {
         </div>
       </div>`;
   }).join('');
+
+  caja.querySelectorAll('[data-fijo-pagar]').forEach(b => b.addEventListener('click', () =>
+    abrirModalPagarFijo(gastosFijosLista.find(g => String(g.id) === b.dataset.fijoPagar))));
 
   caja.querySelectorAll('[data-fijo-editar]').forEach(b => b.addEventListener('click', () =>
     abrirModalGastoFijo(gastosFijosLista.find(g => String(g.id) === b.dataset.fijoEditar))));
@@ -758,4 +765,238 @@ function escaparTexto(t) {
   return String(t == null ? '' : t)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/* ============================================================
+   PAGAR UN GASTO FIJO DESDE SU PROPIA PESTAÑA
+   ------------------------------------------------------------
+   Los gastos fijos son una PLANTILLA, no movimientos: alimentan el
+   punto de equilibrio pero no se registran solos (si se generaran
+   solos, un mes que no pagaste aparecería como gasto igual y el balance
+   mentiría). Esto se decidió así y no cambia.
+
+   Lo que faltaba era el puente: pagar uno y tener que ir a Gastos a
+   escribirlo todo de nuevo a mano. Ahora el botón 💸 abre este modal,
+   pregunta lo que de verdad varía —monto y fecha— y crea el gasto real
+   en `compras`.
+
+   Por qué se PREGUNTA el monto en vez de darlo por hecho:
+   una tarjeta de crédito no se paga igual dos meses seguidos, y el
+   arriendo puede traer un reajuste. Dar por bueno el monto de la
+   plantilla habría metido cifras falsas en el balance sin que nadie se
+   diera cuenta.
+   ============================================================ */
+let gastoFijoPagando = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btnCancelarPagarFijo')
+    ?.addEventListener('click', () => cerrarModal('modalPagarFijo'));
+  document.getElementById('btnConfirmarPagarFijo')
+    ?.addEventListener('click', confirmarPagoGastoFijo);
+
+  document.getElementById('modalPagarFijo')?.addEventListener('click', (e) => {
+    if (e.target.id === 'modalPagarFijo') cerrarModal('modalPagarFijo');
+  });
+
+  // Chips de monto: "el mismo" vuelve al valor de la plantilla
+  document.getElementById('pagarFijoMontoChips')?.querySelectorAll('.chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      marcarChipsFijo('pagarFijoMontoChips', chip);
+      const campo = document.getElementById('pagarFijoMonto');
+      if (chip.dataset.monto === 'igual' && campo && gastoFijoPagando) {
+        campo.value = Number(gastoFijoPagando.monto) || 0;
+      } else if (campo) {
+        campo.focus();
+        campo.select();
+      }
+      actualizarDiferenciaFijo();
+    });
+  });
+
+  // Chips de fecha: "hoy" vuelve a la fecha de Chile
+  document.getElementById('pagarFijoFechaChips')?.querySelectorAll('.chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      marcarChipsFijo('pagarFijoFechaChips', chip);
+      const campo = document.getElementById('pagarFijoFecha');
+      if (!campo) return;
+      if (chip.dataset.fecha === 'hoy') campo.value = todayISO();
+      else if (typeof campo.showPicker === 'function') { try { campo.showPicker(); } catch (_) {} }
+      actualizarAvisoFechaFijo();
+    });
+  });
+
+  document.getElementById('pagarFijoMonto')?.addEventListener('input', () => {
+    /* Si el usuario toca el monto a mano, el chip salta solo a "cambió":
+       marcar "el mismo" y tener otra cifra en el campo sería mentirle
+       al que revise después. */
+    const campo = document.getElementById('pagarFijoMonto');
+    const esperado = Number(gastoFijoPagando?.monto) || 0;
+    if (Number(campo?.value) !== esperado) {
+      const distinto = document.querySelector('#pagarFijoMontoChips .chip[data-monto="distinto"]');
+      if (distinto) marcarChipsFijo('pagarFijoMontoChips', distinto);
+    }
+    actualizarDiferenciaFijo();
+  });
+
+  document.getElementById('pagarFijoFecha')?.addEventListener('change', actualizarAvisoFechaFijo);
+});
+
+function marcarChipsFijo(idGrupo, activo) {
+  document.getElementById(idGrupo)?.querySelectorAll('.chip')
+    .forEach(c => c.classList.toggle('active', c === activo));
+}
+
+function abrirModalPagarFijo(gasto) {
+  if (!gasto) return;
+  if (!esAdmin()) { showToast('Solo el administrador registra gastos', 'err'); return; }
+
+  gastoFijoPagando = gasto;
+
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  const txt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+
+  txt('pagarFijoNombre', gasto.nombre);
+  txt('pagarFijoRef', fmtCLP(gasto.monto));
+
+  set('pagarFijoMonto', Number(gasto.monto) || 0);
+  set('pagarFijoFecha', todayISO());
+  set('pagarFijoDescripcion', '');
+  set('pagarFijoMetodo', 'Efectivo');
+
+  const chkPlantilla = document.getElementById('pagarFijoActualizarPlantilla');
+  if (chkPlantilla) chkPlantilla.checked = false;
+
+  marcarChipsFijo('pagarFijoMontoChips', document.querySelector('#pagarFijoMontoChips .chip[data-monto="igual"]'));
+  marcarChipsFijo('pagarFijoFechaChips', document.querySelector('#pagarFijoFechaChips .chip[data-fecha="hoy"]'));
+
+  llenarClasificacionesFijo(gasto);
+  actualizarDiferenciaFijo();
+  actualizarAvisoFechaFijo();
+
+  document.getElementById('modalPagarFijo')?.classList.add('show');
+  setTimeout(() => document.getElementById('pagarFijoMonto')?.focus(), 80);
+}
+
+/* Se reutiliza el catálogo de clasificaciones que ya cargó compras.js.
+   Si el gasto fijo trae una escrita y coincide, queda preseleccionada:
+   es el caso normal y ahorra un clic cada mes. */
+function llenarClasificacionesFijo(gasto) {
+  const sel = document.getElementById('pagarFijoClasificacion');
+  if (!sel) return;
+
+  const lista = (typeof clasificacionesList !== 'undefined' && Array.isArray(clasificacionesList))
+    ? clasificacionesList.filter(c => c.activo)
+    : [];
+
+  if (!lista.length) {
+    sel.innerHTML = '<option value="">(sin clasificaciones: crea una en Gastos)</option>';
+    return;
+  }
+
+  sel.innerHTML = lista.map(c => `<option value="${c.nombre}">${c.nombre}</option>`).join('');
+
+  const preferida = (gasto?.clasificacion || '').trim();
+  if (preferida && lista.some(c => c.nombre === preferida)) sel.value = preferida;
+}
+
+/* Diferencia en vivo contra la plantilla. Es la señal que hace obvio si
+   este mes se pagó de más sin tener que sacar la resta a mano. */
+function actualizarDiferenciaFijo() {
+  const nota = document.getElementById('pagarFijoDiferencia');
+  if (!nota) return;
+
+  const esperado = Number(gastoFijoPagando?.monto) || 0;
+  const real = Number(document.getElementById('pagarFijoMonto')?.value) || 0;
+  const dif = real - esperado;
+
+  if (!real) { nota.textContent = ''; nota.style.color = ''; return; }
+  if (Math.abs(dif) < 1) {
+    nota.textContent = 'Coincide con el monto habitual.';
+    nota.style.color = 'var(--green)';
+    return;
+  }
+
+  nota.textContent = dif > 0
+    ? `Este mes salió ${fmtCLP(dif)} MÁS caro que lo presupuestado.`
+    : `Este mes salió ${fmtCLP(-dif)} MÁS barato que lo presupuestado.`;
+  nota.style.color = dif > 0 ? 'var(--red)' : 'var(--green)';
+}
+
+/* Avisa si la fecha elegida se adelanta o atrasa respecto del día de
+   pago de la plantilla. No bloquea nada: solo confirma que fue a
+   propósito, que era justo lo que se pidió. */
+function actualizarAvisoFechaFijo() {
+  const nota = document.getElementById('pagarFijoAvisoFecha');
+  if (!nota) return;
+
+  const valor = document.getElementById('pagarFijoFecha')?.value;
+  const diaPlantilla = Number(gastoFijoPagando?.dia_mes) || 1;
+  if (!valor) { nota.textContent = ''; nota.style.color = ''; return; }
+
+  // Se parte el ISO a mano: new Date('2026-08-04') se lee como UTC (bug 3)
+  const dia = Number(String(valor).split('-')[2]);
+  if (!Number.isFinite(dia)) { nota.textContent = ''; return; }
+
+  const dif = dia - diaPlantilla;
+  if (dif === 0) {
+    nota.textContent = `Coincide con el día ${diaPlantilla}, el habitual de este gasto.`;
+    nota.style.color = 'var(--text-muted)';
+  } else if (dif < 0) {
+    nota.textContent = `Pago adelantado: ${Math.abs(dif)} día(s) antes del día ${diaPlantilla}.`;
+    nota.style.color = 'var(--blue)';
+  } else {
+    nota.textContent = `Pago atrasado: ${dif} día(s) después del día ${diaPlantilla}.`;
+    nota.style.color = 'var(--gold, #f59e0b)';
+  }
+}
+
+async function confirmarPagoGastoFijo() {
+  if (!gastoFijoPagando) return;
+
+  const monto = Number(document.getElementById('pagarFijoMonto')?.value) || 0;
+  const clasificacion = document.getElementById('pagarFijoClasificacion')?.value || '';
+  const fecha = document.getElementById('pagarFijoFecha')?.value || todayISO();
+
+  if (monto <= 0) { showToast('El monto pagado debe ser mayor a 0', 'err'); return; }
+  if (!clasificacion) { showToast('Elige una clasificación para el gasto', 'err'); return; }
+
+  const btn = document.getElementById('btnConfirmarPagarFijo');
+  if (btn) btn.disabled = true;
+
+  /* La descripción deja rastro del origen: al mirar el listado de Gastos
+     dentro de tres meses hay que poder saber que esa línea salió de un
+     gasto fijo y no de una compra suelta. */
+  const extra = (document.getElementById('pagarFijoDescripcion')?.value || '').trim();
+  const descripcion = `Gasto fijo: ${gastoFijoPagando.nombre}` + (extra ? ` · ${extra}` : '');
+
+  try {
+    await API.compras.crear({
+      fecha,
+      proveedor: gastoFijoPagando.nombre,
+      clasificacion,
+      metodo_pago: document.getElementById('pagarFijoMetodo')?.value || 'Efectivo',
+      costo_total: monto,
+      descripcion
+    });
+
+    // Solo si el usuario lo pidió: un cambio permanente, no el de un mes
+    if (document.getElementById('pagarFijoActualizarPlantilla')?.checked) {
+      await API.balance.actualizarGastoFijo(gastoFijoPagando.id, { monto });
+      showToast(`Gasto registrado y plantilla actualizada a ${fmtCLP(monto)}`, 'ok');
+    } else {
+      showToast(`Gasto de ${fmtCLP(monto)} registrado`, 'ok');
+    }
+
+    cerrarModal('modalPagarFijo');
+    gastoFijoPagando = null;
+
+    await cargarGastosFijos();
+    cargarBalance();                                              // caja y utilidad al día
+    if (typeof cargarCompras === 'function') cargarCompras();     // aparece en Gastos
+  } catch (err) {
+    console.error('Error al registrar el pago del gasto fijo:', err.message || err);
+    showToast(err.message || 'No se pudo registrar el gasto', 'err');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }

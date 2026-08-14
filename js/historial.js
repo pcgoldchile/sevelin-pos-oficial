@@ -17,6 +17,13 @@ let periodoModal = 'hoy';
 let ventaEditando = null;   // venta abierta en el modal de edición
 let itemsEditando = [];     // copia editable de sus ítems
 let filtroEstado = null;    // null = todas · 'PENDIENTE' = solo por pagar
+
+/* Búsqueda por producto: texto que se manda al servidor para filtrar por
+   el DETALLE de las ventas (nombre, SKU o número de serie del ítem).
+   `itemsPorVenta` guarda los ítems que coincidieron, para poder mostrar
+   en cada fila qué salió exactamente en esa venta. */
+let filtroProducto = '';
+let itemsPorVenta = {};
 let ventasSeleccionadas = new Set();
 
 /* El medio de pago real: si la venta nació "Por Pagar" y luego se cobró,
@@ -68,6 +75,11 @@ const elBtnQuitarFiltroPendientes = document.getElementById('btnQuitarFiltroPend
 const elCheckTodasVentas = document.getElementById('checkTodasVentas');
 const elPayBar = document.getElementById('payBar');
 const elPayLegend = document.getElementById('payLegend');
+
+const elHistBuscarProducto = document.getElementById('histBuscarProducto');
+const elBtnLimpiarBusquedaProducto = document.getElementById('btnLimpiarBusquedaProducto');
+const elBtnBuscarProductoTodo = document.getElementById('btnBuscarProductoTodo');
+const elHistResultadoBusqueda = document.getElementById('histResultadoBusqueda');
 
 const elModalDetalleVenta = document.getElementById('modalDetalleVenta');
 const elDetalleVentaContent = document.getElementById('detalleVentaContent');
@@ -179,6 +191,27 @@ function setupHistorialEventListeners() {
     filtroEstado = null;
     aplicarFiltroEstado();
   });
+
+  /* ---------- Buscador por producto ---------- */
+  if (elHistBuscarProducto) {
+    /* Retardo antes de consultar: escribir "cargador" son 8 pulsaciones
+       y sin esperar serían 8 consultas al servidor, cada una con su
+       JOIN contra venta_items. Se dispara al parar de escribir. */
+    let tempBusqueda = null;
+    elHistBuscarProducto.addEventListener('input', () => {
+      clearTimeout(tempBusqueda);
+      tempBusqueda = setTimeout(() => aplicarBusquedaProducto(), 350);
+    });
+
+    // Enter busca al tiro, sin esperar el retardo
+    elHistBuscarProducto.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); clearTimeout(tempBusqueda); aplicarBusquedaProducto(); }
+      if (e.key === 'Escape') { e.preventDefault(); limpiarBusquedaProducto(); }
+    });
+  }
+
+  if (elBtnLimpiarBusquedaProducto) elBtnLimpiarBusquedaProducto.addEventListener('click', limpiarBusquedaProducto);
+  if (elBtnBuscarProductoTodo) elBtnBuscarProductoTodo.addEventListener('click', buscarProductoEnTodoElHistorial);
 
   if (elBtnCerrarDetalleVenta) elBtnCerrarDetalleVenta.addEventListener('click', cerrarDetalleVenta);
   if (elBtnEliminarHistorialCompleto) elBtnEliminarHistorialCompleto.addEventListener('click', eliminarTodoHistorial);
@@ -950,7 +983,7 @@ async function handleImportarVentas(e) {
     }
 
     cargarHistorial();
-    if (typeof cargarProductos === 'function') cargarProductos();
+    if (typeof cargarProductos === 'function') cargarProductos(true);   // se repuso stock
   } catch (err) {
     console.error('Error al importar ventas:', err.message || err);
     showToast('Error al importar: ' + (err.message || 'formato no reconocido'), 'err');
@@ -969,14 +1002,33 @@ async function cargarHistorial() {
   if (elHistFechaHasta && !elHistFechaHasta.value) elHistFechaHasta.value = todayISO();
 
   try {
-    salesHistory = await API.ventas.listar(elHistFechaDesde?.value, elHistFechaHasta?.value);
+    salesHistory = await API.ventas.listar(
+      elHistFechaDesde?.value, elHistFechaHasta?.value, null, filtroProducto || null
+    );
 
     // Se descartan las selecciones de ventas que ya no están en pantalla
     const idsVisibles = new Set(salesHistory.map(v => String(v.id)));
     ventasSeleccionadas.forEach(id => { if (!idsVisibles.has(id)) ventasSeleccionadas.delete(id); });
 
+    /* Con filtro de producto se traen los ítems de esas ventas en UNA
+       llamada, para poder mostrar en cada fila qué unidades salieron.
+       Sin filtro no se piden: la tabla normal no los usa y serían datos
+       de más en cada carga. */
+    itemsPorVenta = {};
+    if (filtroProducto && salesHistory.length) {
+      try {
+        const items = await API.ventas.itemsDeVentas(salesHistory.map(v => v.id));
+        (items || []).forEach(it => {
+          (itemsPorVenta[it.venta_id] = itemsPorVenta[it.venta_id] || []).push(it);
+        });
+      } catch (err) {
+        console.warn('No se pudo traer el detalle de las ventas encontradas:', err.message || err);
+      }
+    }
+
     renderHistorialTabla(salesHistory);
     renderResumenHistorial(salesHistory);
+    actualizarAvisoBusqueda();
   } catch (err) {
     console.error('Error al cargar historial de ventas:', err.message || err);
     showToast(err.message || 'Error al consultar las ventas', 'err');
@@ -984,6 +1036,135 @@ async function cargarHistorial() {
 }
 
 function loadSalesHistory() { return cargarHistorial(); }
+
+/* ============================================================
+   BÚSQUEDA DE VENTAS POR PRODUCTO
+   ------------------------------------------------------------
+   "¿Qué ventas se hicieron con este producto?" El filtro viaja al
+   servidor porque el dato vive en venta_items y el navegador solo tiene
+   la cabecera de cada venta.
+
+   Se COMBINA con el rango de fechas en vez de reemplazarlo: buscar un
+   producto dentro de un mes concreto es tan útil como buscarlo en todo
+   el historial, y para lo segundo está el botón dedicado.
+   ============================================================ */
+function aplicarBusquedaProducto() {
+  const texto = (elHistBuscarProducto?.value || '').trim();
+
+  // Con 1 sola letra la búsqueda devuelve medio catálogo y no sirve
+  if (texto && texto.length < 2) return;
+  if (texto === filtroProducto) return;
+
+  filtroProducto = texto;
+  if (elBtnLimpiarBusquedaProducto) elBtnLimpiarBusquedaProducto.classList.toggle('hidden', !texto);
+  cargarHistorial();
+}
+
+function limpiarBusquedaProducto() {
+  if (elHistBuscarProducto) elHistBuscarProducto.value = '';
+  if (!filtroProducto) return;
+  filtroProducto = '';
+  itemsPorVenta = {};
+  if (elBtnLimpiarBusquedaProducto) elBtnLimpiarBusquedaProducto.classList.add('hidden');
+  cargarHistorial();
+}
+
+/* Amplía el rango a todo lo registrado y mantiene el producto buscado.
+   Sin esto, buscar un producto con el filtro en "Hoy" daba cero
+   resultados y parecía que el buscador no funcionaba. */
+function buscarProductoEnTodoElHistorial() {
+  const texto = (elHistBuscarProducto?.value || '').trim();
+  if (texto.length < 2) {
+    showToast('Escribe al menos 2 caracteres del producto', 'err');
+    elHistBuscarProducto?.focus();
+    return;
+  }
+
+  filtroProducto = texto;
+  if (elBtnLimpiarBusquedaProducto) elBtnLimpiarBusquedaProducto.classList.remove('hidden');
+
+  // 2020 como piso: anterior a cualquier venta registrada en el sistema
+  if (elHistFechaDesde) elHistFechaDesde.value = '2020-01-01';
+  if (elHistFechaHasta) elHistFechaHasta.value = todayISO();
+
+  periodoActivo = 'personalizado';
+  marcarChipActivo(elHistChips, 'personalizado');
+  actualizarEtiquetaPeriodo();
+  cargarHistorial();
+}
+
+/* Resumen de lo encontrado: cuántas ventas, cuántas unidades y cuánto
+   dinero movió ese producto en el período. Es la pregunta que viene
+   siempre justo después de "¿en qué ventas salió?". */
+function actualizarAvisoBusqueda() {
+  if (!elHistResultadoBusqueda) return;
+
+  if (!filtroProducto) {
+    elHistResultadoBusqueda.classList.add('hidden');
+    elHistResultadoBusqueda.textContent = '';
+    return;
+  }
+
+  elHistResultadoBusqueda.classList.remove('hidden');
+
+  if (!salesHistory.length) {
+    elHistResultadoBusqueda.innerHTML =
+      `Sin ventas con <b>"${escaparHtmlHist(filtroProducto)}"</b> en este período. ` +
+      `Prueba con “Buscar en todo el historial”.`;
+    return;
+  }
+
+  const coincide = (it) => {
+    const t = filtroProducto.toLowerCase();
+    return String(it.nombre || '').toLowerCase().includes(t) ||
+           String(it.sku || '').toLowerCase().includes(t) ||
+           String(it.serial_number || '').toLowerCase().includes(t);
+  };
+
+  let unidades = 0, dinero = 0;
+  Object.values(itemsPorVenta).forEach(items => {
+    items.filter(coincide).forEach(it => {
+      unidades += Number(it.cantidad) || 0;
+      dinero += (Number(it.precio_unitario) || 0) * (Number(it.cantidad) || 0);
+    });
+  });
+
+  elHistResultadoBusqueda.innerHTML =
+    `<b>${salesHistory.length}</b> venta(s) con <b>"${escaparHtmlHist(filtroProducto)}"</b>` +
+    (unidades ? ` · <b>${unidades}</b> unidad(es) · ${fmtCLP(dinero)}` : '');
+}
+
+/* Los términos de búsqueda los escribe el usuario y van a innerHTML */
+function escaparHtmlHist(t) {
+  return String(t == null ? '' : t)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/* Chips de los ítems que coincidieron, para la fila de la tabla */
+function chipsItemsCoincidentes(ventaId) {
+  if (!filtroProducto) return '';
+  const items = itemsPorVenta[ventaId];
+  if (!Array.isArray(items) || !items.length) return '';
+
+  const t = filtroProducto.toLowerCase();
+  const coinciden = items.filter(it =>
+    String(it.nombre || '').toLowerCase().includes(t) ||
+    String(it.sku || '').toLowerCase().includes(t) ||
+    String(it.serial_number || '').toLowerCase().includes(t));
+
+  if (!coinciden.length) return '';
+
+  return '<div class="hist-items-match">' + coinciden.slice(0, 3).map(it => {
+    const detalle = [it.sku ? `SKU ${it.sku}` : '', it.serial_number ? `S/N ${it.serial_number}` : '']
+      .filter(Boolean).join(' · ');
+    return `<span class="hist-item-chip" title="${escaparHtmlHist(detalle || it.nombre)}">` +
+           `${Number(it.cantidad) || 0}× ${escaparHtmlHist(it.nombre)}` +
+           (detalle ? ` <small>${escaparHtmlHist(detalle)}</small>` : '') + '</span>';
+  }).join('') +
+  (coinciden.length > 3 ? `<span class="hist-item-chip">+${coinciden.length - 3}</span>` : '') +
+  '</div>';
+}
 
 function alternarFiltroPendientes() {
   filtroEstado = filtroEstado === 'PENDIENTE' ? null : 'PENDIENTE';
@@ -1139,7 +1320,7 @@ async function eliminarVentasSeleccionadas() {
       (r.stock_repuesto ? ` · stock repuesto en ${r.stock_repuesto} producto(s)` : ''), 'ok');
 
     await cargarHistorial();                                  // tabla y KPIs al día
-    if (typeof cargarProductos === 'function') cargarProductos();  // inventario al día
+    if (typeof cargarProductos === 'function') cargarProductos(true);  // inventario al día
   } catch (err) {
     console.error('Error al eliminar las ventas:', err.message || err);
     showToast(err.message || 'No se pudieron eliminar las ventas', 'err');
@@ -1168,7 +1349,7 @@ function renderHistorialTabla(ventas) {
       <td class="col-check"><input type="checkbox" data-sel="${v.id}" ${marcada ? 'checked' : ''}></td>
       <td class="strong">#${String(v.numero_orden ?? v.id).padStart(5, '0')}</td>
       <td>${v.fecha || '-'}${v.hora ? ' · ' + v.hora : ''}</td>
-      <td>${v.cliente || 'Consumidor Final'}</td>
+      <td>${v.cliente || 'Consumidor Final'}${chipsItemsCoincidentes(v.id)}</td>
       <td><span class="badge ${pendiente ? 'badge-gold' : 'badge-blue'}">${metodoDeVenta(v)}</span></td>
       <td>
         <select class="dte-select dte-${claseDte(dteDeVenta(v))}" data-dte="${v.id}" title="Cambiar el documento tributario">
@@ -1294,17 +1475,30 @@ function renderItemsEditables() {
   if (itemsEditando.length === 0) {
     elEditVentaItemsList.innerHTML = '<p class="modal-hint">La venta quedó sin productos. Agrega al menos uno para poder guardar.</p>';
   } else {
+    /* SKU y NÚMERO DE SERIE editables.
+       ------------------------------------------------------------
+       Las ventas ya guardaban ambos campos en venta_items (el POS los
+       escribe al vender), pero el modal de edición no los mostraba: al
+       editar una venta se enviaba el ítem sin ellos y el backend, que
+       reemplaza el detalle completo, los dejaba en null. O sea, editar
+       una venta BORRABA el S/N con el que se había vendido el equipo.
+
+       Ahora se muestran, se pueden corregir a mano, y sobre todo
+       sobreviven a la edición. Van en una segunda línea para no apretar
+       la fila principal. */
+    const esc = (v) => String(v == null ? '' : v).replace(/"/g, '&quot;');
+
     elEditVentaItemsList.innerHTML = itemsEditando.map((it, i) => `
       <div class="edit-item-row" data-idx="${i}">
         <div class="field edit-item-nombre">
           <label>Producto</label>
-          <input type="text" data-campo="nombre" value="${String(it.nombre).replace(/"/g, '&quot;')}">
+          <input type="text" data-campo="nombre" value="${esc(it.nombre)}">
         </div>
         <div class="field edit-item-num">
           <label>Cant.</label>
           <input type="number" min="1" step="1" data-campo="cantidad" value="${it.cantidad}">
         </div>
-        <div class="field edit-item-num">
+        <div class="field edit-item-num admin-only">
           <label>Costo unit.</label>
           <input type="number" min="0" step="1" data-campo="costo_unitario" value="${it.costo_unitario}">
         </div>
@@ -1317,6 +1511,21 @@ function renderItemsEditables() {
           <strong>${fmtCLP(it.precio_unitario * it.cantidad)}</strong>
         </div>
         <button class="btn btn-icon btn-icon-del" data-quitar="${i}" title="Quitar de la venta">${ICONO_ELIMINAR}</button>
+
+        <div class="edit-item-codigos">
+          <div class="field">
+            <label>SKU</label>
+            <input type="text" data-campo="sku" placeholder="Sin SKU" value="${esc(it.sku)}">
+          </div>
+          <div class="field">
+            <label>Número de serie (S/N)</label>
+            <div class="input-scan">
+              <input type="text" data-campo="serial_number" placeholder="Sin S/N" value="${esc(it.serial_number)}">
+              <button class="btn btn-outline btn-scan" type="button"
+                      data-escanear-sn="${i}" title="Escanear el S/N con la cámara">📷</button>
+            </div>
+          </div>
+        </div>
       </div>
     `).join('');
 
@@ -1325,12 +1534,43 @@ function renderItemsEditables() {
         const fila = input.closest('.edit-item-row');
         const idx = Number(fila.dataset.idx);
         const campo = input.dataset.campo;
-        itemsEditando[idx][campo] = campo === 'nombre' ? input.value : (Number(input.value) || 0);
+        /* SKU y serial son texto, igual que el nombre: pasarlos por
+           Number() los habría convertido en 0 y borrado el dato. */
+        const CAMPOS_TEXTO = ['nombre', 'sku', 'serial_number'];
+        itemsEditando[idx][campo] = CAMPOS_TEXTO.includes(campo)
+          ? (input.value.trim() || null)
+          : (Number(input.value) || 0);
+
+        if (campo === 'nombre') itemsEditando[idx].nombre = input.value;
 
         // Actualiza subtotal y totales sin volver a dibujar todo (no pierde el foco)
         const sub = fila.querySelector('.edit-item-sub strong');
         if (sub) sub.textContent = fmtCLP(itemsEditando[idx].precio_unitario * itemsEditando[idx].cantidad);
         actualizarTotalesEdicion();
+      });
+    });
+
+    /* Escáner de cámara para el S/N.
+       ------------------------------------------------------------
+       `abrirEscaner(idInput)` recibe el ID de un input, no un callback:
+       escribe el código leído en ese elemento. Como estas filas se
+       generan dinámicamente, se le pone un id único a cada campo de S/N
+       (el atributo data-scan tampoco serviría: escaner.js registra sus
+       botones al cargar la página, antes de que existan estas filas).
+
+       Después de escanear hay que copiar el valor a itemsEditando: el
+       escáner escribe en el DOM, no en nuestro arreglo. Se hace con el
+       evento 'input' que el propio escáner dispara. */
+    elEditVentaItemsList.querySelectorAll('button[data-escanear-sn]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.dataset.escanearSn);
+        const campo = btn.closest('.input-scan')?.querySelector('input[data-campo="serial_number"]');
+        if (typeof abrirEscaner !== 'function' || !campo) {
+          showToast('El escáner no está disponible', 'err');
+          return;
+        }
+        campo.id = `editItemSN${idx}`;
+        abrirEscaner(campo.id);
       });
     });
 
@@ -1366,6 +1606,11 @@ function agregarItemAVentaEditada() {
     producto_id: null, sku: null, nombre: 'Nuevo producto',
     cantidad: 1, costo_unitario: 0, precio_unitario: 0, serial_number: null
   });
+  // El foco entra directo al nombre del ítem recién creado
+  setTimeout(() => {
+    const filas = elEditVentaItemsList?.querySelectorAll('.edit-item-row');
+    filas?.[filas.length - 1]?.querySelector('input[data-campo="nombre"]')?.focus();
+  }, 60);
   renderItemsEditables();
 }
 

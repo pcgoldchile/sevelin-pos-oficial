@@ -155,7 +155,7 @@ async function agregarLoteDesdeModal() {
     /* El lote sube el stock del producto: se refresca el catálogo para que
        el campo Stock del modal y la tabla no queden desfasados. */
     if (typeof cargarProductos === 'function') {
-      await cargarProductos();
+      await cargarProductos(true);   // se movieron capas: el catálogo cambió
       const actualizado = productsList.find(p => String(p.id) === String(editingProductId));
       const elStock = document.getElementById('prodStock');
       if (actualizado && elStock) elStock.value = actualizado.stock || 0;
@@ -175,7 +175,7 @@ async function quitarLote(productoId, loteId) {
     const r = await API.productos.eliminarLote_capa(productoId, loteId);
     showToast(`Capa eliminada (${r?.unidades_retiradas || 0} un. descontadas)`, 'ok');
     await cargarLotesDelProducto(productoId);
-    if (typeof cargarProductos === 'function') await cargarProductos();
+    if (typeof cargarProductos === 'function') await cargarProductos(true);
   } catch (err) {
     console.error('Error al eliminar la capa:', err.message || err);
     showToast(err.message || 'No se pudo eliminar la capa', 'err');
@@ -195,6 +195,22 @@ async function precargarLotesVisibles(productos) {
   const conLotes = (productos || []).filter(p => p.usa_lotes);
   lotesPorProducto = {};
   if (!conLotes.length) return;
+
+  /* RENDIMIENTO — antes esto lanzaba UNA petición por producto con
+     lotes (Promise.all sobre N llamadas a listarLotes). Con 30 productos
+     así, entrar a Productos disparaba 30 peticiones. Ahora es una sola
+     llamada que el servidor agrupa.
+
+     Se conserva el camino viejo como respaldo: si el endpoint nuevo no
+     existe todavía (backend sin actualizar), la tabla sigue funcionando
+     en vez de quedarse en "…" para siempre. */
+  try {
+    const resumen = await API.productos.lotesResumen();
+    conLotes.forEach(p => { lotesPorProducto[p.id] = resumen[p.id] || resumen[String(p.id)] || []; });
+    return;
+  } catch (err) {
+    console.warn('lotes-resumen no disponible, se usa el modo antiguo:', err.message || err);
+  }
 
   await Promise.all(conLotes.map(async (p) => {
     try {

@@ -51,7 +51,10 @@ async function manejarLogin(e) {
     if (datos.negocio) window.NEGOCIO_NOMBRE = datos.negocio;
 
     aplicarRol(datos.rol);
-    if (elPinInput) elPinInput.value = '';
+    /* Limpieza centralizada en pinpad.js: borra el valor, vuelve el campo
+       a modo oculto y cancela el auto-envío pendiente. */
+    if (typeof limpiarCampoPin === 'function') limpiarCampoPin();
+    else if (elPinInput) elPinInput.value = '';
     ocultarErrorLogin();
     ocultarLogin();
 
@@ -59,7 +62,11 @@ async function manejarLogin(e) {
     document.dispatchEvent(new CustomEvent('pos:sesion-iniciada', { detail: { rol: datos.rol } }));
   } catch (err) {
     mostrarErrorLogin(err.message || 'PIN incorrecto. Reintenta.');
+    /* Se vacía el campo pero NO se llama a limpiarCampoPin(): esa función
+       oculta el mensaje de error, y aquí el error acaba de escribirse. */
     if (elPinInput) elPinInput.value = '';
+    if (elBtnIngresar) elBtnIngresar.disabled = true;
+    setTimeout(() => elPinInput?.focus(), 60);
     /* Corta el auto-envío pendiente: sin esto, limpiar el campo podía
        encadenar reintentos y disparar el freno anti-fuerza bruta. */
     document.dispatchEvent(new CustomEvent('pos:login-fallido'));
@@ -70,6 +77,11 @@ async function manejarLogin(e) {
 
 function cerrarSesion() {
   borrarSesion();
+  /* BUG QUE ARREGLA ESTA LÍNEA: al cerrar sesión el modal volvía a
+     aparecer con lo que ya estaba escrito todavía dentro del campo (en la
+     versión con puntos, se veían los círculos pintados). Nadie limpiaba
+     el input: solo se borraba el token. */
+  if (typeof limpiarCampoPin === 'function') limpiarCampoPin();
   document.body.classList.remove('role-admin', 'role-trabajador');
   if (elRoleBadge) { elRoleBadge.textContent = 'Invitado'; elRoleBadge.className = 'badge badge-blue'; }
   mostrarLogin();
@@ -79,6 +91,8 @@ function cerrarSesion() {
 /* Llamado desde api.js cuando el backend responde 401 */
 function manejarSesionExpirada() {
   document.body.classList.remove('role-admin', 'role-trabajador');
+  // Mismo motivo que en cerrarSesion(): el campo no puede quedar sucio
+  if (typeof limpiarCampoPin === 'function') limpiarCampoPin();
   mostrarLogin();
   mostrarErrorLogin('Tu sesión expiró. Ingresa el PIN nuevamente.');
 }

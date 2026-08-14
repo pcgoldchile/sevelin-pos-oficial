@@ -146,12 +146,54 @@ function setupProductosEventListeners() {
   }
 }
 
+/* ============================================================
+   CACHÉ DEL CATÁLOGO
+   ------------------------------------------------------------
+   RENDIMIENTO. `cargarProductos()` se llamaba CADA VEZ que se entraba
+   al módulo Productos (js/config.js lo dispara en la navegación), más al
+   iniciar sesión, más después de cada venta. Cada llamada traía las 108
+   filas completas otra vez, aunque no hubiera cambiado nada, y arrastraba
+   consigo la carga de lotes.
+
+   Ahora el catálogo se considera fresco por 90 segundos. Al entrar a
+   Productos dentro de ese margen se repinta con lo que ya está en
+   memoria, sin tocar la red.
+
+   IMPORTANTE — esto NO puede dejar el stock desactualizado, porque
+   `invalidarCacheProductos()` se llama en todo lo que modifica el
+   catálogo: guardar, borrar, importar, registrar una venta, una merma o
+   un movimiento de lotes. La caché solo se salta el viaje cuando de
+   verdad no pasó nada. Y `cargarProductos(true)` la ignora siempre.
+   ============================================================ */
+const CACHE_PRODUCTOS_MS = 90000;
+let productosCargadosEn = 0;
+let cargaProductosEnCurso = null;
+
+function invalidarCacheProductos() { productosCargadosEn = 0; }
+
 // ---------- Cargar productos desde el backend ----------
-async function cargarProductos() {
+async function cargarProductos(forzar = false) {
   if (!tokenActual()) return;
 
+  const fresco = productsList.length > 0 &&
+                 (Date.now() - productosCargadosEn) < CACHE_PRODUCTOS_MS;
+
+  if (!forzar && fresco) {
+    // Se repinta igual: pudo cambiar el filtro o la página de la tabla
+    handleBuscarProductoTabla();
+    renderPanelBajoStock();
+    return;
+  }
+
+  /* Si ya hay una carga en vuelo, se devuelve ESA promesa en vez de
+     lanzar otra. Al iniciar sesión, config.js y pos.js podían pedir el
+     catálogo casi al mismo tiempo y salían dos peticiones idénticas. */
+  if (cargaProductosEnCurso) return cargaProductosEnCurso;
+
+  cargaProductosEnCurso = (async () => {
   try {
     productsList = await API.productos.listar();
+    productosCargadosEn = Date.now();
 
     // Se descartan las selecciones de productos que ya no están en pantalla
     const idsVisibles = new Set(productsList.map(p => String(p.id)));
@@ -169,7 +211,13 @@ async function cargarProductos() {
   } catch (err) {
     console.error('Error al cargar productos:', err.message || err);
     showToast(err.message || 'Error al obtener el inventario', 'err');
+    productosCargadosEn = 0;    // un fallo no debe quedar cacheado
+  } finally {
+    cargaProductosEnCurso = null;
   }
+  })();
+
+  return cargaProductosEnCurso;
 }
 
 // Alias usado por pos.js
@@ -428,7 +476,7 @@ async function eliminarProductosSeleccionados() {
     ocultarBarraSeleccion();
     showToast(`${r.eliminadas} producto(s) eliminado(s)`, 'ok');
 
-    await cargarProductos();
+    await cargarProductos(true);
   } catch (err) {
     console.error('Error al eliminar los productos:', err.message || err);
     showToast(err.message || 'No se pudieron eliminar los productos', 'err');
@@ -736,7 +784,7 @@ async function guardarProducto() {
 
     showToast(editingProductId ? 'Producto actualizado' : 'Producto creado', 'ok');
     cerrarModalProducto();
-    cargarProductos();
+    cargarProductos(true);
   } catch (err) {
     console.error('Error al guardar el producto:', err.message || err);
 
@@ -767,7 +815,7 @@ async function eliminarProducto(id) {
   try {
     await API.productos.eliminar(id);
     showToast('Producto eliminado', 'ok');
-    cargarProductos();
+    cargarProductos(true);
   } catch (err) {
     console.error('Error al eliminar producto:', err.message || err);
     showToast(err.message || 'No se pudo eliminar el producto', 'err');
@@ -787,7 +835,7 @@ async function eliminarTodosLosProductos() {
   try {
     await API.productos.eliminarTodos(pin);
     showToast('Todos los productos fueron eliminados', 'ok');
-    cargarProductos();
+    cargarProductos(true);
   } catch (err) {
     console.error('Error al eliminar todos los productos:', err.message || err);
     // Causa más común: hay ventas que referencian estos productos (venta_items.producto_id)
@@ -975,7 +1023,7 @@ async function procesarImportacion(modo) {
       showToast(`${acumulado.errores.length} fila(s) con error — revisa la consola`, 'err');
     }
 
-    cargarProductos();
+    cargarProductos(true);
   } catch (err) {
     console.error('Error al importar productos:', err.message || err);
     showToast('Error al importar: ' + (err.message || 'fallo del servidor'), 'err');
@@ -1015,7 +1063,16 @@ function nombreArchivoSeguro(texto) {
     .slice(0, 50) || 'producto';
 }
 
-function descargarArchivo(contenido, nombre, tipoMime) {
+/* BUG 34 — SEGUNDA COLISIÓN DE NOMBRES GLOBALES.
+   Esta función se llamaba `descargarArchivo` igual que la de config.js,
+   pero con los parámetros AL REVÉS:
+       config.js    → descargarArchivo(nombre, contenido, tipo)
+       productos.js → descargarArchivo(contenido, nombre, tipoMime)
+   productos.js se carga después, así que su versión pisaba a la otra y
+   los respaldos JSON de compras, ventas y productos se bajaban con el
+   nombre y el contenido intercambiados (un archivo llamado con todo el
+   JSON dentro del nombre). Renombrada para que no se pisen. */
+function descargarArchivoMime(contenido, nombre, tipoMime) {
   const blob = new Blob([contenido], { type: tipoMime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1049,7 +1106,7 @@ async function exportarProductoIndividual(formato) {
         }
       }
 
-      descargarArchivo(JSON.stringify(salida, null, 2), `${base}.json`, 'application/json;charset=utf-8;');
+      descargarArchivoMime(JSON.stringify(salida, null, 2), `${base}.json`, 'application/json;charset=utf-8;');
     } else {
       /* CSV: una sola fila con los mismos encabezados de la exportación
          masiva, para que se pueda reimportar sin tocar nada. */
@@ -1057,7 +1114,7 @@ async function exportarProductoIndividual(formato) {
       const csv = XLSX.utils.sheet_to_csv(hoja, { FS: ';' });
 
       // BOM al inicio: sin esto Excel en Windows rompe las tildes
-      descargarArchivo('\uFEFF' + csv, `${base}.csv`, 'text/csv;charset=utf-8;');
+      descargarArchivoMime('\uFEFF' + csv, `${base}.csv`, 'text/csv;charset=utf-8;');
     }
 
     showToast(`Producto exportado en ${formato.toUpperCase()}`, 'ok');

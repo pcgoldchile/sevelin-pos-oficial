@@ -654,6 +654,36 @@ app.get('/api/productos/buscar', auth(), async (req, res) => {
    ============================================================ */
 
 // Capas vigentes de un producto, en el mismo orden en que las consume el FIFO
+/* ============================================================
+   RESUMEN DE CAPAS FIFO — UNA SOLA CONSULTA
+   ------------------------------------------------------------
+   RENDIMIENTO. La tabla de productos llamaba a /productos/:id/lotes una
+   vez por cada producto con `usa_lotes = true`. Con 30 productos así
+   eran 30 peticiones HTTP (en paralelo, pero 30 conexiones y 30
+   consultas) cada vez que se entraba al módulo Productos.
+
+   Acá se traen todas de golpe y se agrupan por producto. Se descartan
+   las capas agotadas: la tabla solo muestra las vigentes, y las
+   agotadas no se borran nunca (para poder devolver stock al anular una
+   venta), así que con el tiempo son la mayoría de las filas.
+   ============================================================ */
+app.get('/api/productos/lotes-resumen', auth(true), async (req, res) => {
+  const { data, error } = await db.from('producto_lotes')
+    .select('id, producto_id, cantidad, cantidad_inicial, costo_unitario, referencia, creado_en')
+    .is('agotado_en', null)
+    .gt('cantidad', 0)
+    .order('creado_en', { ascending: true })   // orden FIFO: la más antigua primero
+    .limit(5000);
+
+  if (error) return enviarError(res, 500, error.message);
+
+  const porProducto = {};
+  (data || []).forEach(l => {
+    (porProducto[l.producto_id] = porProducto[l.producto_id] || []).push(l);
+  });
+  res.json(porProducto);
+});
+
 app.get('/api/productos/:id/lotes', auth(true), async (req, res) => {
   const { data, error } = await db.from('producto_lotes')
     .select('*')
@@ -1096,15 +1126,70 @@ function totalizar(items) {
 }
 
 app.get('/api/ventas', auth(), async (req, res) => {
-  const { desde, hasta, estado } = req.query;
+  const { desde, hasta, estado, producto } = req.query;
+
+  /* BÚSQUEDA POR PRODUCTO
+     ------------------------------------------------------------
+     "¿En qué ventas salió este producto?" El dato vive en venta_items,
+     no en ventas, así que se resuelve en dos pasos: primero se buscan
+     los ítems que coinciden y se sacan sus venta_id, y después se filtra
+     la lista de ventas por esos ids.
+
+     Se hace en el SERVIDOR y no filtrando en el navegador porque el
+     frontend solo tiene la cabecera de cada venta: los ítems se piden
+     uno por uno al abrir el detalle. Filtrar en el cliente habría
+     obligado a pedir el detalle de las 200 ventas del período.
+
+     Busca en nombre, SKU y número de serie, que son las tres formas en
+     que alguien identifica un producto en el mostrador. */
+  let idsPorProducto = null;
+  if (producto && String(producto).trim()) {
+    const texto = String(producto).trim();
+    // Se escapan los comodines de PostgREST para que un "%" escrito por
+    // el usuario busque un "%" y no "todo"
+    const patron = `%${texto.replace(/[%_,]/g, m => '\\' + m)}%`;
+
+    const { data: items, error: errItems } = await db
+      .from('venta_items')
+      .select('venta_id')
+      .or(`nombre.ilike.${patron},sku.ilike.${patron},serial_number.ilike.${patron}`)
+      .limit(5000);
+
+    if (errItems) return enviarError(res, 500, errItems.message);
+
+    idsPorProducto = [...new Set((items || []).map(i => i.venta_id).filter(Boolean))];
+    // Sin coincidencias se corta acá: consultar `ventas` con un IN vacío
+    // devolvería la lista entera en algunos clientes
+    if (idsPorProducto.length === 0) return res.json([]);
+  }
+
   let q = db.from('ventas').select('*').order('id', { ascending: false });
   if (desde) q = q.gte('fecha', desde);
   if (hasta) q = q.lte('fecha', hasta);
   if (estado) q = q.eq('estado', estado);
+  if (idsPorProducto) q = q.in('id', idsPorProducto);
 
   const { data, error } = await q.limit(limiteDe(req));
   if (error) return enviarError(res, 500, error.message);
   res.json(limpiarLista(data, req.usuario.rol));
+});
+
+/* Detalle de los ítems de VARIAS ventas en una sola llamada.
+   Lo usa el buscador del historial para mostrar, en cada fila, qué
+   unidades del producto buscado salieron en esa venta. Pedirlo venta por
+   venta serían N viajes al servidor para pintar una tabla. */
+app.get('/api/ventas/items/por-ventas', auth(), async (req, res) => {
+  const ids = String(req.query.ids || '')
+    .split(',').map(n => parseInt(n, 10)).filter(Number.isFinite).slice(0, 300);
+
+  if (!ids.length) return res.json([]);
+
+  const { data, error } = await db.from('venta_items')
+    .select('id, venta_id, nombre, sku, serial_number, cantidad, precio_unitario')
+    .in('venta_id', ids);
+
+  if (error) return enviarError(res, 500, error.message);
+  res.json(data || []);
 });
 
 // Detalle: venta + ítems (el ticket lo necesita para reimprimir)

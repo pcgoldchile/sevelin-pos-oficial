@@ -1373,35 +1373,66 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
 }
 .dark .suggestion-item::after { border-color: #475569; }
 
-/* ---------- Teclado del PIN ---------- */
-.pin-tecla {
-    height: 3.75rem;
+/* ---------- Campo del PIN (v6) ----------
+   Reemplaza al teclado numérico en pantalla y a la fila de puntos.
+   Se quitaron .pin-tecla y .pin-punto: ya no existen en el HTML.
+   El campo admite letras, números y símbolos. */
+.pin-campo { margin: 26px 0 4px; text-align: left; }
+
+.pin-label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.pin-campo-caja { position: relative; }
+
+.pin-input {
+    width: 100%;
+    height: 3.4rem;
+    padding: 0 3.2rem 0 1rem;
     border-radius: 1rem;
-    font-size: 1.35rem;
+    border: 1.5px solid var(--border-strong);
+    background: var(--bg-900, #0f172a);
+    color: var(--text-100);
+    font-size: 1.15rem;
     font-weight: 600;
-    color: #1e293b;
-    background: #f1f5f9;
-    border: 1px solid #e2e8f0;
+    /* Espaciado extra: al escribir a ciegas ayuda a contar caracteres */
+    letter-spacing: .12em;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+.pin-input::placeholder { color: var(--text-muted); letter-spacing: normal; font-weight: 500; }
+.pin-input:focus {
+    outline: none;
+    border-color: var(--blue);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, .22);
+}
+body.theme-light .pin-input { background: #fff; color: #0f172a; }
+
+/* Botón de ver / ocultar, dentro del campo */
+.pin-ojo {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 2.4rem; height: 2.4rem;
+    display: flex; align-items: center; justify-content: center;
+    border: none;
+    border-radius: .75rem;
+    background: transparent;
+    font-size: 1.05rem;
     cursor: pointer;
-    transition: background .12s ease, transform .08s ease;
-    user-select: none;
+    opacity: .65;
+    transition: opacity .15s ease, background .15s ease;
 }
-.pin-tecla:hover { background: #e2e8f0; }
-.pin-tecla:active { transform: scale(.95); background: #cbd5e1; }
-.pin-tecla-sec { font-size: 1.05rem; color: #64748b; }
+.pin-ojo:hover { opacity: 1; background: rgba(148, 163, 184, .16); }
+.pin-ojo.activo { opacity: 1; }
 
-.dark .pin-tecla { background: rgba(51,65,85,.65); border-color: #475569; color: #f1f5f9; }
-.dark .pin-tecla:hover { background: rgba(71,85,105,.8); }
-.dark .pin-tecla-sec { color: #94a3b8; }
-
-.pin-punto {
-    width: 13px; height: 13px;
-    border-radius: 50%;
-    border: 2px solid #cbd5e1;
-    transition: background .15s ease, border-color .15s ease, transform .15s ease;
-}
-.pin-punto.lleno { background: #10b981; border-color: #10b981; transform: scale(1.15); }
-.dark .pin-punto { border-color: #475569; }
+.pin-nota { margin-top: 8px; font-size: 11.5px; color: var(--text-muted); }
 
 /* Oculta el input real del PIN sin sacarlo del formulario:
    auth.js lo sigue leyendo y el teclado físico sigue escribiendo. */
@@ -2588,4 +2619,251 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
 .periodo-ancho { grid-column: 1 / -1; }
 
 #modalPeriodoContador { z-index: 10026; }
+
+/* ============================================================
+   BUG 33 — CAPAS DEL FLUJO DE ALTA DE PRODUCTO
+   ------------------------------------------------------------
+   Cuarta repetición del bug 26/29/30: modales que se abren uno sobre
+   otro con el mismo z-index. Con empate pinta encima el que va DESPUÉS
+   en el DOM, y en index.html el orden es:
+
+     #modalProducto (1789)  →  #modalMetodoAlta (1943)
+                            →  #modalPegarTiendanube (1968)
+                            →  #modalRevisarTiendanube (1996)
+
+   O sea: el formulario de producto quedaba TAPADO por el selector que
+   lo había abierto. Se abría de verdad, pero no se veía.
+
+   Los tres modales del flujo de alta van por debajo (10000) y el
+   formulario clásico por encima (10005), que es el orden en que el
+   usuario los recorre.
+   ============================================================ */
+#modalMetodoAlta,
+#modalPegarTiendanube,
+#modalRevisarTiendanube { z-index: 10000; }
+#modalProducto { z-index: 10005; }
 #modalFormatoContador { z-index: 10027; }
+
+/* ============================================================
+   23. POS — LIENZO REDIMENSIONABLE Y APROVECHAMIENTO DEL ESPACIO
+   ------------------------------------------------------------
+   Antes: `max-w-[1400px] mx-auto py-5` con un grid de 12 columnas.
+   En un monitor de 1920 sobraban ~500 px a los lados y las tarjetas
+   terminaban a media pantalla, con todo el bajo vacío.
+
+   Ahora el ancho y el alto los decide el usuario arrastrando la esquina
+   (#posRedim), y por defecto el POS ocupa el alto útil de la ventana.
+   Las dos tarjetas crecen JUNTAS porque lo que se redimensiona es este
+   contenedor, no cada tarjeta.
+
+   Las variables las escribe js/pos.js y se guardan en el equipo.
+   ============================================================ */
+.pos-lienzo {
+    /* Valores por defecto. --pos-ancho lo sobrescribe el arrastre. */
+    --pos-ancho: 1600px;
+    --pos-alto: 0px;          /* 0 = alto automático según la ventana */
+    --pos-alto-min: 30rem;
+
+    position: relative;
+    width: 100%;
+    max-width: var(--pos-ancho);
+    margin: 0 auto;
+    padding: 18px 16px 30px;
+}
+@media (min-width: 1024px) {
+    .pos-lienzo { padding: 20px 28px 34px; }
+}
+
+/* Ancho completo: se salta el max-width y usa toda la pantalla */
+.pos-lienzo.pos-ancho-completo { max-width: none; }
+
+.pos-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+    align-items: stretch;     /* las dos columnas miden lo mismo */
+}
+@media (min-width: 1024px) {
+    .pos-grid {
+        /* 7/5 como antes, pero con minmax(0,…) para que una tabla ancha
+           no empuje la columna (bug 8-9 del README: flex sin min-width). */
+        grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+
+        /* Alto: si el usuario no arrastró todavía (--pos-alto: 0px), se
+           usa el alto de la ventana menos la cabecera. Así el POS llena
+           la pantalla en vez de dejar medio monitor en blanco. */
+        min-height: max(var(--pos-alto), var(--pos-alto-min));
+    }
+    .pos-lienzo:not(.pos-alto-manual) .pos-grid {
+        min-height: clamp(30rem, calc(100vh - 190px), 60rem);
+    }
+}
+
+.pos-col { display: flex; min-width: 0; }
+.pos-col > .tarjeta-pos { width: 100%; }
+
+/* ---------- Agarre de la esquina ---------- */
+.pos-redim {
+    position: absolute;
+    right: 6px;
+    bottom: 6px;
+    width: 26px;
+    height: 26px;
+    display: none;                /* solo en escritorio: en táctil estorba */
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    color: var(--text-muted);
+    cursor: nwse-resize;
+    opacity: .5;
+    touch-action: none;
+    transition: opacity .15s ease, background .15s ease, color .15s ease;
+}
+.pos-redim svg { width: 14px; height: 14px; }
+.pos-redim:hover,
+.pos-redim:focus-visible { opacity: 1; color: var(--blue); background: rgba(59,130,246,.14); outline: none; }
+.pos-redim.arrastrando { opacity: 1; color: var(--blue); background: rgba(59,130,246,.2); }
+
+@media (min-width: 1024px) {
+    .pos-redim { display: flex; }
+}
+
+/* Mientras se arrastra: sin selección de texto ni cursor cambiando */
+body.pos-redimensionando { user-select: none; cursor: nwse-resize; }
+
+.pos-redim-barra {
+    display: none;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 10px;
+    padding-right: 32px;          /* deja libre la esquina del agarre */
+}
+@media (min-width: 1024px) {
+    .pos-redim-barra { display: flex; }
+}
+
+.pos-redim-btn {
+    height: 26px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color .15s ease, border-color .15s ease, background .15s ease;
+}
+.pos-redim-btn:hover { color: var(--blue); border-color: var(--blue); background: rgba(59,130,246,.1); }
+
+/* ---------- Aprovechamiento del espacio dentro de las tarjetas ----------
+   El detalle del carrito era el que más sufría: con min-height fijo de
+   180px quedaba un recuadro chico y mucho aire debajo del total. Ahora
+   crece con la tarjeta. */
+.pos-cart-zona { flex: 1 1 auto; min-height: 9rem; }
+
+/* La cabecera de la tabla se queda fija al hacer scroll en carritos largos */
+#cartTableBody { scroll-behavior: smooth; }
+.pos-col-der .data-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--bg-800);
+}
+body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
+
+/* ============================================================
+   24. PAGAR UN GASTO FIJO
+   ============================================================ */
+.btn-mini-pagar { color: var(--green); }
+.btn-mini-pagar:hover { background: rgba(34, 197, 94, .16); border-color: var(--green); }
+
+.pagar-fijo-ref {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 14px;
+    padding: 11px 14px;
+    border-radius: var(--radius-sm);
+    background: var(--surface-soft);
+    border: 1px solid var(--border);
+    font-size: 12.5px;
+    color: var(--text-muted);
+}
+.pagar-fijo-ref b { font-size: 16px; color: var(--text-100); }
+
+/* ============================================================
+   25. HISTORIAL — BUSCADOR POR PRODUCTO Y CÓDIGOS EN LA EDICIÓN
+   ============================================================ */
+.hist-buscador-row { align-items: flex-end; }
+.hist-buscador-campo { flex: 1 1 340px; max-width: 520px; }
+
+.hist-buscador-caja { position: relative; }
+.hist-buscador-caja input { padding-right: 34px; }
+
+.hist-buscador-limpiar {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 22px; height: 22px;
+    display: flex; align-items: center; justify-content: center;
+    border: none;
+    border-radius: 50%;
+    background: var(--surface-soft);
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    transition: color .15s ease, background .15s ease;
+}
+.hist-buscador-limpiar:hover { color: var(--red); background: rgba(239, 68, 68, .16); }
+
+.hist-buscador-resultado {
+    margin: 4px 0 14px;
+    padding: 9px 13px;
+    border-radius: var(--radius-sm);
+    background: rgba(59, 130, 246, .1);
+    border: 1px solid rgba(59, 130, 246, .3);
+    font-size: 12.5px;
+    color: var(--text-100);
+}
+
+/* Chips con los ítems que coincidieron, bajo el nombre del cliente */
+.hist-items-match { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.hist-item-chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+    max-width: 260px;
+    padding: 2px 7px;
+    border-radius: var(--radius-pill);
+    background: rgba(59, 130, 246, .14);
+    border: 1px solid rgba(59, 130, 246, .3);
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--text-100);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.hist-item-chip small { font-weight: 500; opacity: .75; }
+
+/* SKU y S/N: segunda línea de cada ítem en el modal de edición.
+   OJO: .edit-item-row es FLEX con wrap, no grid. Para forzar el salto de
+   línea y que esta caja ocupe el ancho completo se usa flex-basis:100%,
+   NO grid-column (que en un contenedor flex se ignora sin avisar). */
+.edit-item-codigos {
+    flex: 1 0 100%;
+    display: grid;
+    grid-template-columns: 1fr 1.4fr;
+    gap: 10px;
+    margin-top: 8px;
+    padding-top: 9px;
+    border-top: 1px dashed var(--border);
+}
+.edit-item-codigos .field { margin: 0; }
+.edit-item-codigos label { font-size: 10.5px; }
+@media (max-width: 720px) {
+    .edit-item-codigos { grid-template-columns: 1fr; }
+}

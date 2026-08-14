@@ -315,18 +315,18 @@ const $rev = (id) => document.getElementById(id);
 
 document.addEventListener('DOMContentLoaded', () => {
   if (elBtnAltaManual) elBtnAltaManual.addEventListener('click', () => {
-    cerrarModal(elModalMetodoAlta);
+    cerrarModalAlta(elModalMetodoAlta);
     abrirModalProducto(null);            // formulario clásico de productos.js
   });
 
   if (elBtnAltaTiendanube) elBtnAltaTiendanube.addEventListener('click', () => {
-    cerrarModal(elModalMetodoAlta);
+    cerrarModalAlta(elModalMetodoAlta);
     abrirPegarTiendanube();
   });
 
-  if (elBtnCancelarMetodoAlta) elBtnCancelarMetodoAlta.addEventListener('click', () => cerrarModal(elModalMetodoAlta));
-  if (elBtnCancelarPegar) elBtnCancelarPegar.addEventListener('click', () => cerrarModal(elModalPegar));
-  if (elBtnCancelarRevision) elBtnCancelarRevision.addEventListener('click', () => cerrarModal(elModalRevisar));
+  if (elBtnCancelarMetodoAlta) elBtnCancelarMetodoAlta.addEventListener('click', () => cerrarModalAlta(elModalMetodoAlta));
+  if (elBtnCancelarPegar) elBtnCancelarPegar.addEventListener('click', () => cerrarModalAlta(elModalPegar));
+  if (elBtnCancelarRevision) elBtnCancelarRevision.addEventListener('click', () => cerrarModalAlta(elModalRevisar));
 
   if (elBtnLimpiarPegado) elBtnLimpiarPegado.addEventListener('click', () => {
     if (elTextoTiendanube) { elTextoTiendanube.value = ''; elTextoTiendanube.focus(); }
@@ -337,7 +337,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (elBtnConfirmarTiendanube) elBtnConfirmarTiendanube.addEventListener('click', confirmarYGuardar);
 
   if (elBtnVolverAPegar) elBtnVolverAPegar.addEventListener('click', () => {
-    cerrarModal(elModalRevisar);
+    cerrarModalAlta(elModalRevisar);
     if (elModalPegar) elModalPegar.classList.add('show');
   });
 
@@ -357,11 +357,34 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   [elModalMetodoAlta, elModalPegar, elModalRevisar].forEach(m => {
-    if (m) m.addEventListener('click', (e) => { if (e.target === m) cerrarModal(m); });
+    if (m) m.addEventListener('click', (e) => { if (e.target === m) cerrarModalAlta(m); });
   });
 });
 
-function cerrarModal(modal) { if (modal) modal.classList.remove('show'); }
+/* ============================================================
+   BUG 33 — COLISIÓN DE NOMBRES ENTRE ARCHIVOS (el que dejaba
+   "Nuevo Producto" trabado)
+   ------------------------------------------------------------
+   Esta función se llamaba `cerrarModal(modal)` y recibía un ELEMENTO.
+   Pero `js/balance.js` declara TAMBIÉN una `cerrarModal(id)` que recibe
+   un STRING con el id. Como todos los archivos comparten el ámbito
+   global y balance.js se carga DESPUÉS que tiendanube.js, su versión
+   pisaba a esta. No da error en consola: las declaraciones de función se
+   sobrescriben en silencio.
+
+   Consecuencia exacta de lo que se reportó:
+     · "Cancelar" ejecutaba document.getElementById(<HTMLElement>), que
+       devuelve null → el `?.` se tragaba todo y NO PASABA NADA. Quedabas
+       atrapado en el modal.
+     · "Carga Manual" tampoco cerraba este modal, y abría #modalProducto
+       DEBAJO: ambos tenían el mismo z-index y, con empate, pinta encima
+       el que va después en el DOM (#modalMetodoAlta está más abajo en
+       index.html). Por eso "no salía" el formulario de producto.
+
+   Se renombra a `cerrarModalAlta` y NO se vuelve a usar un nombre
+   genérico en el ámbito global. Ver también el z-index asignado a estos
+   tres modales en styles.css. */
+function cerrarModalAlta(modal) { if (modal) modal.classList.remove('show'); }
 
 /* Punto de entrada del flujo, llamado desde el botón "Nuevo Producto". */
 function abrirSelectorAltaProducto() {
@@ -409,7 +432,7 @@ function procesarTextoTiendanube() {
     return;
   }
 
-  cerrarModal(elModalPegar);
+  cerrarModalAlta(elModalPegar);
   abrirRevision(datos, encontrados, faltantes);
 }
 
@@ -525,8 +548,8 @@ async function confirmarYGuardar() {
 
     await API.productos.crear(payload);
     showToast(`Producto "${nombre}" creado`, 'ok');
-    cerrarModal(elModalRevisar);
-    if (typeof cargarProductos === 'function') cargarProductos();
+    cerrarModalAlta(elModalRevisar);
+    if (typeof cargarProductos === 'function') cargarProductos(true);   // se creó un producto
   } catch (err) {
     console.error('Error al guardar el producto de Tiendanube:', err.message || err);
     showToast(err.message || 'No se pudo guardar el producto', 'err');

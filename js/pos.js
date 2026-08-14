@@ -691,7 +691,7 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
   // "Imprimir Ticket". El vuelto solo se muestra en pantalla.
 
   if (typeof cargarHistorial === 'function') cargarHistorial();
-  if (typeof cargarProductos === 'function') cargarProductos();
+  if (typeof cargarProductos === 'function') cargarProductos(true);   // la venta descontó stock
 }
 
 function mostrarModalVentaExitosa(venta, datosPago = {}, hayParte2 = false) {

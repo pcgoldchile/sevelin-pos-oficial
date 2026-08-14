@@ -499,7 +499,23 @@ function pedirTipoDte() {
 
   renderOpcionesDte();
   modal.classList.add('show');
-  document.getElementById('modalPago')?.classList.add('hay-encima');
+
+  /* BUG 35 — EL MODAL DE PAGO NO SE IBA AL ELEGIR EL DOCUMENTO.
+     ------------------------------------------------------------
+     Hasta ahora "Confirmar Pago" solo se ATENUABA detrás del paso de
+     DTE (la clase `hay-encima` le baja el brillo). En pantalla quedaban
+     dos ventanas de cobro superpuestas y no se entendía cuál estaba
+     activa ni si la venta ya se había registrado.
+
+     Ahora se oculta de verdad. Se guarda que estaba abierto para poder
+     devolverlo si el usuario cancela el paso de DTE. */
+  const pago = document.getElementById('modalPago');
+  if (pago && pago.classList.contains('show')) {
+    pago.classList.remove('show');
+    pago.classList.remove('hay-encima');
+    pago.dataset.reabrirTrasDte = '1';
+  }
+
   setTimeout(() => document.getElementById('btnConfirmarDte')?.focus(), 60);
 
   return new Promise(resolve => { dteResolver = resolve; });
@@ -536,7 +552,13 @@ function moverDte(delta) {
 function resolverDte() {
   const modal = document.getElementById('modalDte');
   if (modal) modal.classList.remove('show');
-  document.getElementById('modalPago')?.classList.remove('hay-encima');
+
+  /* Se ELIGIÓ el documento: el flujo sigue hacia el registro de la
+     venta, así que el modal de pago NO vuelve. Solo se limpia la marca
+     para que no reviva en el próximo cobro. */
+  const pago = document.getElementById('modalPago');
+  if (pago) { pago.classList.remove('hay-encima'); delete pago.dataset.reabrirTrasDte; }
+
   const r = dteResolver; dteResolver = null;
   if (r) r(OPCIONES_DTE[dteIndice].valor);
 }
@@ -544,7 +566,20 @@ function resolverDte() {
 function cancelarDte() {
   const modal = document.getElementById('modalDte');
   if (modal) modal.classList.remove('show');
-  document.getElementById('modalPago')?.classList.remove('hay-encima');
+
+  /* Se CANCELÓ: hay que volver al medio de pago con lo que ya estaba
+     elegido. Sin esto, al retroceder desde el DTE se quedaba la pantalla
+     en blanco y había que empezar el cobro de nuevo. */
+  const pago = document.getElementById('modalPago');
+  if (pago) {
+    pago.classList.remove('hay-encima');
+    if (pago.dataset.reabrirTrasDte) {
+      delete pago.dataset.reabrirTrasDte;
+      // Solo se reabre si el cobro sigue vivo (configPago no se limpió)
+      if (configPago) pago.classList.add('show');
+    }
+  }
+
   const r = dteResolver; dteResolver = null;
   if (r) r(null);
 }
@@ -577,7 +612,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function cerrarSelectorPago() {
   if (dteResolver) cancelarDte();
-  if (elModalPago) elModalPago.classList.remove('show');
+  if (elModalPago) {
+    elModalPago.classList.remove('show');
+    elModalPago.classList.remove('hay-encima');
+    delete elModalPago.dataset.reabrirTrasDte;
+  }
   configPago = null;
   metodoPagoElegido = null;
   partesPagoMixto = [];

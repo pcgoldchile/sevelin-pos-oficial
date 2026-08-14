@@ -94,19 +94,33 @@ const API = {
 
     // Capas de costo (PEPS / FIFO)
     listarLotes: (id) => apiRequest(`/productos/${id}/lotes`),
+
+    /* TODAS las capas vigentes en UNA sola llamada.
+       Antes la tabla de productos pedía los lotes producto por producto:
+       con 30 productos con lotes activos eran 30 peticiones en paralelo
+       cada vez que se entraba al módulo. */
+    lotesResumen: () => apiRequest('/productos/lotes-resumen'),
     crearLote: (id, lote) => apiRequest(`/productos/${id}/lotes`, { method: 'POST', body: lote }),
     eliminarLote_capa: (id, loteId) => apiRequest(`/productos/${id}/lotes/${loteId}`, { method: 'DELETE' })
   },
 
   ventas: {
-    listar: (desde, hasta, estado) => {
+    /* `producto` filtra por nombre, SKU o número de serie de los ítems.
+       Lo resuelve el servidor: el navegador solo tiene la cabecera de
+       cada venta, no su detalle. */
+    listar: (desde, hasta, estado, producto) => {
       const q = new URLSearchParams();
       if (desde) q.set('desde', desde);
       if (hasta) q.set('hasta', hasta);
       if (estado) q.set('estado', estado);
+      if (producto) q.set('producto', producto);
       const cadena = q.toString();
       return apiRequest('/ventas' + (cadena ? `?${cadena}` : ''));
     },
+
+    // Ítems de varias ventas de una sola vez (buscador del historial)
+    itemsDeVentas: (ids) =>
+      apiRequest(`/ventas/items/por-ventas?ids=${encodeURIComponent((ids || []).join(','))}`),
     // `pagos` solo se manda en cobros mixtos; el backend lo revalida
     registrarPago: (id, metodo, pagos) => apiRequest(`/ventas/${id}/pago`, {
       method: 'POST', body: { metodo_pago_final: metodo, pagos: pagos || null }

@@ -60,7 +60,7 @@ async function abrirModalMerma(tipo) {
 
   // Se asegura tener los catálogos cargados para poder buscar
   if (tipo === 'PRODUCTO' && (typeof productsList === 'undefined' || productsList.length === 0)) {
-    if (typeof cargarProductos === 'function') await cargarProductos();
+    if (typeof cargarProductos === 'function') await cargarProductos();   // solo lectura: la caché sirve
   }
   if (tipo === 'REPUESTO' && (typeof repuestosList === 'undefined' || repuestosList.length === 0)) {
     if (typeof cargarRepuestos === 'function') await cargarRepuestos();
@@ -232,7 +232,7 @@ async function confirmarMerma() {
     cerrarModalMerma();
 
     // Se refrescan los módulos afectados por el descuento de stock
-    if (mermaTipo === 'PRODUCTO' && typeof cargarProductos === 'function') cargarProductos();
+    if (mermaTipo === 'PRODUCTO' && typeof cargarProductos === 'function') cargarProductos(true);   // la merma bajó stock
     if (mermaTipo === 'REPUESTO' && typeof cargarRepuestos === 'function') cargarRepuestos();
     if (typeof cargarCompras === 'function') cargarCompras();
   } catch (err) {

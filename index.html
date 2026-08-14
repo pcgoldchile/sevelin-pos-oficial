@@ -43,29 +43,28 @@
       </div>
 
       <form id="formLogin" autocomplete="off">
-        <!-- El input real sigue existiendo con su id: auth.js lee de aquí.
-             El teclado de abajo solo escribe en él, así la lógica de
-             sesión no cambia en absoluto. -->
-        <input type="password" id="pinInput" class="sr-only" inputmode="numeric"
-               maxlength="6" autocomplete="off" required tabindex="-1" aria-hidden="true">
+        <!-- ============================================================
+             CAMPO DE PIN — versión de texto (v6)
+             ------------------------------------------------------------
+             Antes había un teclado numérico en pantalla (#pinPad) y una
+             fila de puntos (#pinPuntos). Se quitaron a pedido del negocio:
+             el PIN ahora se escribe con el teclado y ADMITE LETRAS, no
+             solo números, así puede ser una contraseña de verdad.
 
-        <!-- Puntos que muestran cuántos dígitos van -->
-        <div id="pinPuntos" class="flex items-center justify-center gap-3 my-6"></div>
-
-        <!-- Teclado numérico: pensado para tocar con el dedo en pantalla -->
-        <div id="pinPad" class="grid grid-cols-3 gap-2.5 max-w-[280px] mx-auto">
-          <button type="button" data-pin="1" class="pin-tecla">1</button>
-          <button type="button" data-pin="2" class="pin-tecla">2</button>
-          <button type="button" data-pin="3" class="pin-tecla">3</button>
-          <button type="button" data-pin="4" class="pin-tecla">4</button>
-          <button type="button" data-pin="5" class="pin-tecla">5</button>
-          <button type="button" data-pin="6" class="pin-tecla">6</button>
-          <button type="button" data-pin="7" class="pin-tecla">7</button>
-          <button type="button" data-pin="8" class="pin-tecla">8</button>
-          <button type="button" data-pin="9" class="pin-tecla">9</button>
-          <button type="button" data-pin-accion="limpiar" class="pin-tecla pin-tecla-sec">C</button>
-          <button type="button" data-pin="0" class="pin-tecla">0</button>
-          <button type="button" data-pin-accion="borrar" class="pin-tecla pin-tecla-sec">⌫</button>
+             Se conserva el id #pinInput porque auth.js lee de aquí; la
+             lógica de sesión no cambia en absoluto.
+             ============================================================ -->
+        <div class="pin-campo">
+          <label for="pinInput" class="pin-label">PIN o contraseña</label>
+          <div class="pin-campo-caja">
+            <input type="password" id="pinInput" class="pin-input"
+                   placeholder="Escribe tu PIN…" maxlength="64"
+                   autocomplete="current-password" autocapitalize="off"
+                   autocorrect="off" spellcheck="false" required>
+            <button type="button" id="btnVerPin" class="pin-ojo"
+                    aria-label="Mostrar u ocultar el PIN" title="Mostrar / ocultar">👁️</button>
+          </div>
+          <p class="pin-nota">Se admiten letras, números y símbolos.</p>
         </div>
 
         <button type="submit" id="btnIngresar"
@@ -91,10 +90,14 @@
 
     <div class="header-right">
       <nav class="nav-links">
+        <!-- Orden pedido por el negocio: POS · Productos · Finanzas · Servicio Técnico.
+             Es el orden real de uso en el mostrador (se vende, se revisa stock,
+             se cuadra caja, y el taller se atiende aparte). Solo cambia el orden
+             visual: los data-view y los ids de las secciones no se tocan. -->
         <button class="nav-btn active" data-view="view-pos">🛒 POS</button>
-        <button class="nav-btn" data-view="view-taller">🔧 Servicio Técnico</button>
         <button class="nav-btn admin-only" data-view="view-productos">📦 Productos</button>
         <button class="nav-btn admin-only" data-view="view-finanzas">📊 Finanzas</button>
+        <button class="nav-btn" data-view="view-taller">🔧 Servicio Técnico</button>
       </nav>
       <button class="theme-toggle" id="btnTema" title="Cambiar tema" aria-label="Cambiar tema">🌙</button>
       <button class="btn btn-outline btn-sm" id="btnLogout" title="Cerrar sesión">🚪 Cerrar Sesión</button>
@@ -118,11 +121,11 @@
            · Los campos de "Editar hora" y "Tiene S/N" nacen ocultos y
              aparecen al marcar su casilla.
            ============================================================ -->
-      <div class="pos-escala max-w-[1400px] mx-auto px-4 lg:px-8 py-5">
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+      <div class="pos-escala pos-lienzo" id="posLienzo">
+        <div class="pos-grid" id="posGrid">
 
           <!-- ========== IZQUIERDA: ingresar ========== -->
-          <div class="lg:col-span-7 flex">
+          <div class="pos-col pos-col-izq">
             <div class="tarjeta-pos flex flex-col w-full">
               <div class="h-1 bg-gradient-to-r from-blue-500 to-violet-500 rounded-t-2xl"></div>
 
@@ -232,7 +235,7 @@
           </div>
 
           <!-- ========== DERECHA: cobrar ========== -->
-          <div class="lg:col-span-5 flex">
+          <div class="pos-col pos-col-der">
             <div class="tarjeta-pos flex flex-col w-full">
               <div class="h-1 bg-gradient-to-r from-emerald-500 to-blue-500 rounded-t-2xl"></div>
 
@@ -262,7 +265,7 @@
 
                 <!-- Detalle. flex-1 hace que crezca y las dos tarjetas
                      terminen a la misma altura. -->
-                <div class="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden flex-1 flex flex-col min-h-[180px]">
+                <div class="pos-cart-zona rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col">
                   <div class="overflow-y-auto flex-1">
                     <table class="data-table w-full text-[13px]">
                       <thead>
@@ -315,6 +318,32 @@
             </div>
           </div>
 
+        </div>
+
+        <!-- ============================================================
+             AGARRE DE REDIMENSIONADO
+             ------------------------------------------------------------
+             Arrastra desde la esquina inferior derecha y las DOS tarjetas
+             crecen a la vez, porque lo que se redimensiona es el lienzo
+             que las contiene, no cada tarjeta por separado. El grid las
+             estira por igual (align-items: stretch).
+
+             Se guarda en el equipo (localStorage), así que el tamaño
+             elegido sobrevive al cierre del navegador.
+             ============================================================ -->
+        <div class="pos-redim" id="posRedim" title="Arrastra para agrandar las dos tarjetas a la vez"
+             role="separator" aria-label="Redimensionar el área del POS" tabindex="0">
+          <svg viewBox="0 0 12 12" aria-hidden="true">
+            <path d="M11 1v10H1" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+            <circle cx="8.5" cy="8.5" r="1" fill="currentColor"/>
+            <circle cx="8.5" cy="4.5" r="1" fill="currentColor"/>
+            <circle cx="4.5" cy="8.5" r="1" fill="currentColor"/>
+          </svg>
+        </div>
+
+        <div class="pos-redim-barra">
+          <button type="button" id="btnPosAncho" class="pos-redim-btn" title="Alternar entre ancho cómodo y pantalla completa">↔️ Ancho completo</button>
+          <button type="button" id="btnPosReset" class="pos-redim-btn" title="Volver al tamaño original">↺ Restablecer tamaño</button>
         </div>
       </div>
     </section>
@@ -562,6 +591,38 @@
             <button class="btn btn-primary" id="btnNuevoEncargo">➕ Nuevo Encargo</button>
           </div>
         </div>
+
+        <!-- ============================================================
+             BUSCADOR POR PRODUCTO
+             ------------------------------------------------------------
+             Responde "¿en qué ventas salió este producto?". Busca por
+             nombre, SKU o número de serie dentro del detalle de las
+             ventas, no en la cabecera, así que lo resuelve el servidor:
+             el navegador solo tiene los totales de cada venta.
+
+             Es independiente del rango de fechas: se combinan. Buscar un
+             producto sin ampliar el período mostraría solo las de hoy,
+             por eso el botón "todo el historial" de al lado.
+             ============================================================ -->
+        <div class="toolbar-row hist-buscador-row">
+          <div class="field hist-buscador-campo">
+            <label for="histBuscarProducto">Buscar ventas que incluyan un producto</label>
+            <div class="hist-buscador-caja">
+              <input type="text" id="histBuscarProducto" autocomplete="off"
+                     placeholder="Nombre, SKU o número de serie…">
+              <button type="button" id="btnLimpiarBusquedaProducto"
+                      class="hist-buscador-limpiar hidden" title="Quitar el filtro de producto">✕</button>
+            </div>
+          </div>
+          <div class="field" style="flex:0 0 auto;">
+            <label class="field-ghost-label">&nbsp;</label>
+            <button class="btn btn-outline" id="btnBuscarProductoTodo"
+                    title="Buscar este producto en todas las ventas registradas, sin importar la fecha">
+              🗂️ Buscar en todo el historial
+            </button>
+          </div>
+        </div>
+        <p class="hist-buscador-resultado hidden" id="histResultadoBusqueda"></p>
 
         <div class="kpi-grid">
           <div class="kpi-card kpi-blue">
@@ -1401,6 +1462,98 @@
       <div class="modal-foot">
         <button class="btn btn-ghost" id="btnCancelarGastoFijo">Cancelar</button>
         <button class="btn btn-primary" id="btnGuardarGastoFijo">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       PAGAR UN GASTO FIJO
+       ------------------------------------------------------------
+       Convierte una línea de la plantilla de gastos fijos en un gasto
+       REAL de la tabla `compras`, sin salir de la pestaña.
+
+       Pregunta explícitamente por el monto y por la fecha porque un
+       gasto fijo casi nunca se paga igual: la tarjeta de crédito varía
+       todos los meses, y a veces se paga adelantado. Se muestra el
+       monto de la plantilla como referencia y la diferencia en vivo,
+       para que quede claro si este mes salió más caro o más barato.
+
+       La plantilla NO se modifica al pagar (salvo que se marque la
+       casilla del final): sigue siendo el valor esperado para el punto
+       de equilibrio.
+       ============================================================ -->
+  <div id="modalPagarFijo" class="modal-overlay">
+    <div class="modal-box modal-sm">
+      <h2>Registrar pago</h2>
+      <p class="modal-hint" id="pagarFijoNombre">—</p>
+
+      <div class="pagar-fijo-ref">
+        <span>Monto de la plantilla</span>
+        <b id="pagarFijoRef">$0</b>
+      </div>
+
+      <div class="field" style="margin-top:14px;">
+        <label>¿El monto es el mismo de siempre?</label>
+        <div class="chip-group chip-group-block" id="pagarFijoMontoChips">
+          <button type="button" class="chip active" data-monto="igual">✅ Sí, el mismo</button>
+          <button type="button" class="chip" data-monto="distinto">✏️ No, cambió este mes</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="pagarFijoMonto">Monto pagado *</label>
+        <input type="number" id="pagarFijoMonto" min="0" step="1" placeholder="0">
+        <p class="modal-hint" id="pagarFijoDiferencia"></p>
+      </div>
+
+      <div class="field">
+        <label>¿Se pagó el día que corresponde?</label>
+        <div class="chip-group chip-group-block" id="pagarFijoFechaChips">
+          <button type="button" class="chip active" data-fecha="hoy">📅 Hoy</button>
+          <button type="button" class="chip" data-fecha="otra">↩️ Otra fecha (me adelanté / atrasé)</button>
+        </div>
+      </div>
+
+      <div class="grid grid-2">
+        <div class="field">
+          <label for="pagarFijoFecha">Fecha del pago</label>
+          <input type="date" id="pagarFijoFecha">
+        </div>
+        <div class="field">
+          <label for="pagarFijoMetodo">Medio de pago</label>
+          <select id="pagarFijoMetodo">
+            <option value="Efectivo">Efectivo · sale del cajón</option>
+            <option value="Transferencia">Transferencia</option>
+            <option value="Tarjeta Débito">Tarjeta Débito</option>
+            <option value="Tarjeta Crédito">Tarjeta Crédito</option>
+          </select>
+        </div>
+      </div>
+      <p class="modal-hint" id="pagarFijoAvisoFecha"></p>
+
+      <div class="field">
+        <label for="pagarFijoClasificacion">Clasificación del gasto *</label>
+        <select id="pagarFijoClasificacion"></select>
+      </div>
+
+      <div class="field">
+        <label for="pagarFijoDescripcion">Descripción (opcional)</label>
+        <input type="text" id="pagarFijoDescripcion" placeholder="Ej: cuota de agosto, incluye recargo">
+      </div>
+
+      <label class="sn-toggle" style="width:fit-content; margin-top:6px;">
+        <input type="checkbox" id="pagarFijoActualizarPlantilla">
+        Actualizar también el monto de la plantilla
+      </label>
+      <p class="modal-hint">
+        Márcalo solo si el gasto <strong>subió de forma permanente</strong> (te subieron el
+        arriendo). Para una variación de un mes, déjalo sin marcar: el punto de
+        equilibrio debe seguir usando el valor habitual.
+      </p>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarPagarFijo">Cancelar</button>
+        <button class="btn btn-primary" id="btnConfirmarPagarFijo">💸 Registrar gasto</button>
       </div>
     </div>
   </div>
@@ -3002,6 +3155,7 @@
   <script src="js/repuestos.js"></script>
   <script src="js/ot.js"></script>
   <script src="js/pos.js"></script>
+  <script src="js/pos-layout.js"></script>   <!-- después de pos.js: solo toca la maquetación -->
   <script src="js/atajos.js"></script>
   <script src="js/balance.js"></script>
   <script src="js/reportes.js"></script>
