@@ -148,7 +148,7 @@ function handleBuscarProducto() {
 
   elSugerencias.innerHTML = encontrados.map((p, i) => `
     <div class="suggestion-item" data-id="${p.id}" data-atajo="Alt+${i + 1}">
-      <span>${p.nombre}</span>
+      <span>${escHtml(p.nombre)}</span>
       <span>${fmtCLP(p.precio_unitario)} · Stock: ${p.stock ?? 0}</span>
     </div>
   `).join('');
@@ -435,8 +435,8 @@ function renderDividirVenta() {
       <label class="dividir-item${marcado ? ' marcado' : ''}">
         <input type="checkbox" data-div="${i}" ${marcado ? 'checked' : ''}>
         <span class="dividir-nombre">
-          ${item.cantidad} × ${item.nombre}
-          ${item.serial_number ? `<small>S/N: ${item.serial_number}</small>` : ''}
+          ${item.cantidad} × ${escHtml(item.nombre)}
+          ${item.serial_number ? `<small>S/N: ${escHtml(item.serial_number)}</small>` : ''}
         </span>
         <b>${fmtCLP(item.subtotal)}</b>
       </label>`;
@@ -600,8 +600,8 @@ function renderCart() {
     elCartTableBody.innerHTML = cart.map((item, idx) => `
       <tr class="row-in">
         <td>${item.cantidad}</td>
-        <td>${item.nombre}
-          ${item.serial_number ? '<br><small style="color:var(--text-muted);">S/N: ' + item.serial_number + '</small>' : ''}</td>
+        <td>${escHtml(item.nombre)}
+          ${item.serial_number ? '<br><small style="color:var(--text-muted);">S/N: ' + escHtml(item.serial_number) + '</small>' : ''}</td>
         <td>${fmtCLP(item.precio_unitario)}</td>
         <td>${fmtCLP(item.subtotal)}</td>
         <td>

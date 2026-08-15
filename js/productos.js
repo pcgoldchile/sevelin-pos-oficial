@@ -293,8 +293,8 @@ function renderPanelBajoStock() {
 function filaBajoStock(p) {
   const agotado = (Number(p.stock) || 0) <= 0;
   return `
-    <div class="alerta-stock-item" data-abrir="${p.id}" title="Editar ${String(p.nombre).replace(/"/g, '&quot;')}">
-      <span>${p.nombre}${p.sku ? ` <small style="color:var(--text-muted);">· ${p.sku}</small>` : ''}</span>
+    <div class="alerta-stock-item" data-abrir="${p.id}" title="Editar ${escHtml(p.nombre)}">
+      <span>${escHtml(p.nombre)}${p.sku ? ` <small style="color:var(--text-muted);">· ${escHtml(p.sku)}</small>` : ''}</span>
       <b class="${agotado ? 'stock-cero' : ''}">${Number(p.stock) || 0}</b>
       <span style="color:var(--text-muted);">/ mín. ${limiteStock(p)}</span>
     </div>`;
@@ -535,9 +535,9 @@ function renderProductosTabla(items) {
              El title lleva el nombre completo, porque en la celda se
              corta a 40 caracteres. -->
         <a href="#" class="nombre-editable" data-editar="${p.id}"
-           title="${String(p.nombre).replace(/"/g, '&quot;')}">${acortar(p.nombre, 40)}</a>
+           title="${escHtml(p.nombre)}">${escHtml(acortar(p.nombre, 40))}</a>
         <small class="fila-meta">
-          ${p.sku ? `SKU ${acortar(p.sku, 22)}` : ''}
+          ${p.sku ? `SKU ${escHtml(acortar(p.sku, 22))}` : ''}
           ${p.requiere_sn ? ' · <b>S/N</b>' : ''}
           ${p.es_repuesto ? ' · Repuesto' : ''}
         </small>

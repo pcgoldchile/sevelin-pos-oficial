@@ -212,13 +212,34 @@ function renderKpisCompras(lista) {
   }
 }
 
-function marcaDocumento(url, etiqueta, compraId, campo) {
-  if (!url) {
+function marcaDocumento(valor, etiqueta, compraId, campo) {
+  if (!valor) {
     // Clic en la ✖ → abre la compra con el foco puesto en ese archivo
     return `<span class="doc-check doc-falta" data-subir="${compraId}" data-campo="${campo}"
               title="Falta ${etiqueta}. Clic para subirla ahora.">✖</span>`;
   }
-  return `<a class="doc-check doc-ok" href="${url}" target="_blank" rel="noopener" title="Ver ${etiqueta}">✔</a>`;
+  /* FILE-01: lo guardado puede ser una RUTA nueva (se re-firma al abrir) o
+     una URL http antigua (se abre directo). Se distingue por el prefijo. */
+  const esUrlAntigua = /^https?:\/\//i.test(valor);
+  if (esUrlAntigua) {
+    return `<a class="doc-check doc-ok" href="${valor}" target="_blank" rel="noopener" title="Ver ${etiqueta}">✔</a>`;
+  }
+  return `<span class="doc-check doc-ok" role="button" tabindex="0" data-abrir-doc="${encodeURIComponent(valor)}"
+            title="Ver ${etiqueta}" style="cursor:pointer;">✔</span>`;
+}
+
+/* Pide una URL firmada fresca y abre el documento en una pestaña nueva.
+   Se firma en el momento del clic para que el enlace no haya caducado. */
+async function abrirDocumentoCompra(ruta) {
+  if (!ruta) return;
+  try {
+    const { url } = await API.compras.firmarArchivo(ruta);
+    if (url) window.open(url, '_blank', 'noopener');
+    else showToast('No se pudo abrir el documento', 'err');
+  } catch (err) {
+    console.error('Error al firmar el documento:', err.message || err);
+    showToast(err.message || 'No se pudo abrir el documento', 'err');
+  }
 }
 
 /* ---------- Selección múltiple ---------- */
@@ -330,11 +351,11 @@ function renderComprasTabla(listaOriginal) {
       <td class="col-check"><input type="checkbox" data-sel="${c.id}" ${marcada ? 'checked' : ''}></td>
       <td>${tsAChile(c.fecha)}</td>
       <td>
-        ${c.proveedor || '—'}
-        ${c.descripcion ? `<br><small style="color:var(--text-muted);">${c.descripcion}</small>` : ''}
+        ${escHtml(c.proveedor || '—')}
+        ${c.descripcion ? `<br><small style="color:var(--text-muted);">${escHtml(c.descripcion)}</small>` : ''}
       </td>
       <td>
-        <span class="badge ${c.origen === 'MERMA' ? 'badge-red' : 'badge-blue'}">${c.clasificacion}</span>
+        <span class="badge ${c.origen === 'MERMA' ? 'badge-red' : 'badge-blue'}">${escHtml(c.clasificacion)}</span>
         ${c.origen === 'MERMA' ? '<br><small style="color:var(--text-muted);">📉 generado por merma</small>' : ''}
       </td>
       <td class="num strong">${fmtCLP(c.costo_total)}</td>
@@ -363,6 +384,13 @@ function renderComprasTabla(listaOriginal) {
       const compra = comprasList.find(c => String(c.id) === marca.dataset.subir);
       if (compra) abrirModalCompra(compra, marca.dataset.campo);
     });
+  });
+
+  // FILE-01: abrir un documento guardado como ruta (se firma al vuelo)
+  elComprasTableBody.querySelectorAll('[data-abrir-doc]').forEach(marca => {
+    const abrir = () => abrirDocumentoCompra(decodeURIComponent(marca.dataset.abrirDoc));
+    marca.addEventListener('click', abrir);
+    marca.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrir(); } });
   });
 
   actualizarBarraCompras();
@@ -467,9 +495,14 @@ async function subirArchivoCompra(evento, campo) {
       lector.readAsDataURL(archivo);
     });
 
-    const { url } = await API.compras.subirArchivo(archivo.name, archivo.type, base64);
-    if (campo === 'url_documento' && elCompraUrlDocumento) elCompraUrlDocumento.value = url;
-    if (campo === 'url_comprobante' && elCompraUrlComprobante) elCompraUrlComprobante.value = url;
+    const { url, ruta } = await API.compras.subirArchivo(archivo.name, archivo.type, base64);
+    /* FILE-01: se guarda la RUTA (estable), no la URL firmada (caduca en
+       1h). La URL recién devuelta solo sirve para una vista previa
+       inmediata; para abrir el documento otro día se re-firma la ruta.
+       Si el backend es antiguo y no devuelve ruta, se cae a la url. */
+    const aGuardar = ruta || url;
+    if (campo === 'url_documento' && elCompraUrlDocumento) elCompraUrlDocumento.value = aGuardar;
+    if (campo === 'url_comprobante' && elCompraUrlComprobante) elCompraUrlComprobante.value = aGuardar;
 
     actualizarEstadoArchivo(campo);
     showToast('Archivo cargado', 'ok');

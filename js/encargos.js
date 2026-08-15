@@ -168,11 +168,11 @@ function renderEncargosTabla(lista) {
     return `
     <tr class="row-in${pagado ? '' : ' fila-pendiente'}">
       <td>
-        <span class="strong">${e.cliente_nombre || '—'}</span>
+        <span class="strong">${escHtml(e.cliente_nombre || '—')}</span>
         ${e.numero_ot ? `<br><small style="color:var(--text-muted);">${e.numero_ot}</small>` : ''}
-        ${e.cliente_telefono ? `<br><small style="color:var(--text-muted);">${e.cliente_telefono}</small>` : ''}
+        ${e.cliente_telefono ? `<br><small style="color:var(--text-muted);">${escHtml(e.cliente_telefono)}</small>` : ''}
       </td>
-      <td>${(e.descripcion || '').slice(0, 70)}${(e.descripcion || '').length > 70 ? '…' : ''}</td>
+      <td>${escHtml((e.descripcion || '').slice(0, 70))}${(e.descripcion || '').length > 70 ? '…' : ''}</td>
       <td class="num strong">${fmtCLP(e.monto_total)}</td>
       <td class="num" style="color:var(--green); font-weight:600;">${fmtCLP(e.monto_abonado)}</td>
       <td class="num" style="color:${pagado ? 'var(--text-muted)' : 'var(--red)'}; font-weight:700;">${fmtCLP(e.saldo)}</td>
@@ -311,7 +311,7 @@ async function buscarOTParaEncargo() {
 
   elEncargoSugerenciasOT.innerHTML = encontradas.map(o => `
     <div class="suggestion-item" data-ot="${o.id}">
-      <span>${o.numero_ot} · ${o.cliente_nombre || 'Sin cliente'}</span>
+      <span>${escHtml(o.numero_ot)} · ${escHtml(o.cliente_nombre || 'Sin cliente')}</span>
       <span>${o.dispositivo_modelo || ''}</span>
     </div>
   `).join('');
@@ -405,7 +405,7 @@ function abrirModalAbono(encargo) {
 
   if (elAbonoEncargoId) elAbonoEncargoId.value = encargo.id;
   if (elAbonoResumen) {
-    elAbonoResumen.innerHTML = `<b>${encargo.cliente_nombre}</b> · ${encargo.descripcion || ''}` +
+    elAbonoResumen.innerHTML = `<b>${escHtml(encargo.cliente_nombre)}</b> · ${escHtml(encargo.descripcion || '')}` +
       (encargo.numero_ot ? ` · ${encargo.numero_ot}` : '');
   }
   if (elAbonoSaldoActual) elAbonoSaldoActual.textContent = fmtCLP(encargo.saldo);
@@ -494,13 +494,13 @@ async function verDetalleEncargo(id) {
 
     elDetalleEncargoContent.innerHTML = `
       <div class="grid grid-2" style="gap:8px 18px; margin-bottom:12px;">
-        <p><b>Cliente:</b> ${encargo.cliente_nombre}</p>
+        <p><b>Cliente:</b> ${escHtml(encargo.cliente_nombre)}</p>
         <p><b>Estado:</b> ${badgeEstadoEncargo(encargo.estado)}</p>
-        ${encargo.numero_ot ? `<p><b>OT:</b> ${encargo.numero_ot}</p>` : ''}
-        ${encargo.cliente_telefono ? `<p><b>Teléfono:</b> ${encargo.cliente_telefono}</p>` : ''}
+        ${encargo.numero_ot ? `<p><b>OT:</b> ${escHtml(encargo.numero_ot)}</p>` : ''}
+        ${encargo.cliente_telefono ? `<p><b>Teléfono:</b> ${escHtml(encargo.cliente_telefono)}</p>` : ''}
       </div>
-      <p style="margin-bottom:12px;">${encargo.descripcion || ''}</p>
-      ${encargo.observaciones ? `<p class="modal-hint">${encargo.observaciones}</p>` : ''}
+      <p style="margin-bottom:12px;">${escHtml(encargo.descripcion || '')}</p>
+      ${encargo.observaciones ? `<p class="modal-hint">${escHtml(encargo.observaciones)}</p>` : ''}
 
       <span class="section-label" style="margin-top:14px;">Abonos recibidos</span>
       <table style="width:100%; border-collapse:collapse;">

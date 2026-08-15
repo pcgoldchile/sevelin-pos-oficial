@@ -363,11 +363,11 @@ function renderOrdenesTabla(lista) {
     const pendiente = o.estado === 'PENDIENTE';
     return `
     <tr class="row-in${pendiente ? ' fila-pendiente' : ''}">
-      <td class="strong">${o.numero_ot}</td>
+      <td class="strong">${escHtml(o.numero_ot)}</td>
       <td>${tsAChile(o.fecha_ingreso).slice(0, 10)}<br><small style="color:var(--text-muted);">${tsAChile(o.fecha_ingreso).slice(11)}</small></td>
-      <td>${o.cliente_nombre || '—'}${o.cliente_telefono ? `<br><small style="color:var(--text-muted);">${o.cliente_telefono}</small>` : ''}</td>
-      <td>${o.dispositivo_categoria || ''} ${o.dispositivo_modelo || ''}${o.dispositivo_sn ? `<br><small style="color:var(--text-muted);">S/N: ${o.dispositivo_sn}</small>` : ''}</td>
-      <td>${(o.falla_reportada || '').slice(0, 70)}${(o.falla_reportada || '').length > 70 ? '…' : ''}</td>
+      <td>${escHtml(o.cliente_nombre || '—')}${o.cliente_telefono ? `<br><small style="color:var(--text-muted);">${escHtml(o.cliente_telefono)}</small>` : ''}</td>
+      <td>${escHtml(o.dispositivo_categoria || '')} ${escHtml(o.dispositivo_modelo || '')}${o.dispositivo_sn ? `<br><small style="color:var(--text-muted);">S/N: ${escHtml(o.dispositivo_sn)}</small>` : ''}</td>
+      <td>${escHtml((o.falla_reportada || '').slice(0, 70))}${(o.falla_reportada || '').length > 70 ? '…' : ''}</td>
       <td><span class="badge ${pendiente ? 'badge-gold' : 'badge-green'}">${o.estado}</span></td>
       <td>
         <div class="cell-actions">
@@ -425,7 +425,7 @@ async function abrirModalOtRepuestos(id) {
 
   if (elOtRepuestosId) elOtRepuestosId.value = ot.id;
   if (elOtRepuestosResumen) {
-    elOtRepuestosResumen.innerHTML = `<b>${ot.numero_ot}</b> · ${ot.cliente_nombre || 'Cliente'} · ${ot.dispositivo_modelo || 'Equipo'}`;
+    elOtRepuestosResumen.innerHTML = `<b>${escHtml(ot.numero_ot)}</b> · ${escHtml(ot.cliente_nombre || 'Cliente')} · ${escHtml(ot.dispositivo_modelo || 'Equipo')}`;
   }
   limpiarFormularioRepuestoOT();
 
@@ -590,7 +590,7 @@ function abrirModalNotasOT(id) {
 
   if (elOtNotasId) elOtNotasId.value = ot.id;
   if (elOtNotasResumen) {
-    elOtNotasResumen.innerHTML = `<b>${ot.numero_ot}</b> · ${ot.cliente_nombre || 'Cliente'} · ${ot.dispositivo_modelo || 'Equipo'}`;
+    elOtNotasResumen.innerHTML = `<b>${escHtml(ot.numero_ot)}</b> · ${escHtml(ot.cliente_nombre || 'Cliente')} · ${escHtml(ot.dispositivo_modelo || 'Equipo')}`;
   }
   if (elOtNotasTecnico) elOtNotasTecnico.value = ot.obs_tecnico || '';
   if (elOtNotasInternas) elOtNotasInternas.value = ot.obs_internas || '';
@@ -656,7 +656,7 @@ function abrirModalEntrega(id) {
   otSeleccionadaEntrega = ot;
   if (elOtEntregaId) elOtEntregaId.value = ot.id;
   if (elOtEntregaResumen) {
-    elOtEntregaResumen.innerHTML = `<b>${ot.numero_ot}</b> · ${ot.cliente_nombre || 'Cliente'} · ${ot.dispositivo_modelo || 'Equipo'}`;
+    elOtEntregaResumen.innerHTML = `<b>${escHtml(ot.numero_ot)}</b> · ${escHtml(ot.cliente_nombre || 'Cliente')} · ${escHtml(ot.dispositivo_modelo || 'Equipo')}`;
   }
   if (elOtRetiraNombre) elOtRetiraNombre.value = ot.cliente_nombre || '';
   if (elOtRetiraRut) elOtRetiraRut.value = ot.cliente_rut || '';

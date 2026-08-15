@@ -9,6 +9,28 @@
 var NEGOCIO_NOMBRE = 'Sevelin'; // el backend puede sobrescribirlo al iniciar sesión
 
 /* ============================================================
+   XSS-01 · ESCAPE DE HTML — helper global canónico
+   ------------------------------------------------------------
+   Todo dato de usuario (nombre de producto, cliente, falla, SKU, S/N…)
+   que se interpole en innerHTML DEBE pasar por aquí. Sin esto, un
+   nombre como <img src=x onerror=...> se ejecuta al pintar la lista, y
+   como el token vive en sessionStorage, un trabajador podría robar la
+   sesión del admin (escalada de privilegios vía XSS persistente).
+
+   Ya existían cuatro helpers iguales dispersos (escaparHTML en print,
+   escaparTexto en balance, escaparHtmlHist en historial, escaparRep en
+   reportes). Se dejan para no romper sus llamadas, pero el código nuevo
+   usa ESTE, que es el único global y el que hay que reutilizar.
+
+   Se escapa también la comilla simple: importa cuando el valor va dentro
+   de un atributo delimitado por comillas simples. */
+function escHtml(v) {
+  return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+/* ============================================================
    COMISIÓN DEL POS TUU (HAULMER PRO 2)
    ------------------------------------------------------------
    Fórmula:  monto * 0,0079 + 65,  solo en pagos con tarjeta.

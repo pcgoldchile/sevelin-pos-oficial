@@ -215,16 +215,16 @@ function renderRepuestosTabla(lista) {
 
   elRepuestosTableBody.innerHTML = filas.map(r => `
     <tr class="row-in">
-      <td><span class="badge badge-blue">${r.area}</span></td>
-      <td>${r.categoria}</td>
+      <td><span class="badge badge-blue">${escHtml(r.area)}</span></td>
+      <td>${escHtml(r.categoria)}</td>
       <td>
-        <span class="strong">${r.modelo}</span>
-        ${r.descripcion ? `<br><small style="color:var(--text-muted);">${r.descripcion}</small>` : ''}
+        <span class="strong">${escHtml(r.modelo)}</span>
+        ${r.descripcion ? `<br><small style="color:var(--text-muted);">${escHtml(r.descripcion)}</small>` : ''}
       </td>
       <td class="admin-only num">${fmtCLP(r.costo_unitario)}</td>
       <td class="num strong">${fmtCLP(r.precio_venta)}</td>
       <td>${badgeStockRepuesto(r)}</td>
-      <td class="stock-fecha">${r.ubicacion || '—'}</td>
+      <td class="stock-fecha">${escHtml(r.ubicacion || '—')}</td>
       <td>
         <div class="cell-actions">
           <button class="btn btn-icon btn-icon-edit admin-only" data-editar="${r.id}" title="Editar repuesto">${ICO_EDITAR_REP}</button>
@@ -257,8 +257,8 @@ function renderPanelBajoStockRepuestos() {
   if (elBadgeBajoStockRepuestos) elBadgeBajoStockRepuestos.textContent = String(enAlerta.length);
   if (elListaBajoStockRepuestos) {
     elListaBajoStockRepuestos.innerHTML = enAlerta.slice(0, 12).map(r => `
-      <div class="alerta-stock-item" data-abrir="${r.id}" title="${r.area} · ${r.categoria}">
-        <span>${r.modelo}</span>
+      <div class="alerta-stock-item" data-abrir="${r.id}" title="${escHtml(r.area)} · ${escHtml(r.categoria)}">
+        <span>${escHtml(r.modelo)}</span>
         <b>${Number(r.stock) || 0}</b>
         <span style="color:var(--text-muted);">/ mín. ${limiteStockRepuesto(r)}</span>
       </div>

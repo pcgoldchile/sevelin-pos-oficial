@@ -1349,7 +1349,7 @@ function renderHistorialTabla(ventas) {
       <td class="col-check"><input type="checkbox" data-sel="${v.id}" ${marcada ? 'checked' : ''}></td>
       <td class="strong">#${String(v.numero_orden ?? v.id).padStart(5, '0')}</td>
       <td>${v.fecha || '-'}${v.hora ? ' · ' + v.hora : ''}</td>
-      <td>${v.cliente || 'Consumidor Final'}${chipsItemsCoincidentes(v.id)}</td>
+      <td>${escHtml(v.cliente || 'Consumidor Final')}${chipsItemsCoincidentes(v.id)}</td>
       <td><span class="badge ${pendiente ? 'badge-gold' : 'badge-blue'}">${metodoDeVenta(v)}</span></td>
       <td>
         <select class="dte-select dte-${claseDte(dteDeVenta(v))}" data-dte="${v.id}" title="Cambiar el documento tributario">
@@ -1669,7 +1669,7 @@ function renderDetalleVenta(venta) {
 
   const filas = (venta.items || []).map(it => `
     <tr>
-      <td style="padding:8px 0;">${it.cantidad}x ${it.nombre}${it.serial_number ? '<br><small style="color:var(--text-muted);">S/N: ' + it.serial_number + '</small>' : ''}</td>
+      <td style="padding:8px 0;">${it.cantidad}x ${escHtml(it.nombre)}${it.serial_number ? '<br><small style="color:var(--text-muted);">S/N: ' + escHtml(it.serial_number) + '</small>' : ''}</td>
       <td style="text-align:right; padding:8px 0;">${fmtCLP(it.subtotal)}</td>
     </tr>
   `).join('');
@@ -1678,7 +1678,7 @@ function renderDetalleVenta(venta) {
     <div class="grid grid-2" style="gap:8px 18px; margin-bottom:12px;">
       <p><b>Orden:</b> #${String(venta.numero_orden ?? venta.id).padStart(5, '0')}</p>
       <p><b>Fecha:</b> ${venta.fecha || '-'}${venta.hora ? ' · ' + venta.hora : ''}</p>
-      <p><b>Cliente:</b> ${venta.cliente || 'Consumidor Final'}</p>
+      <p><b>Cliente:</b> ${escHtml(venta.cliente || 'Consumidor Final')}</p>
       <p><b>Pago:</b> ${metodoDeVenta(venta)}
         <span class="badge ${estaPendiente(venta) ? 'badge-red' : 'badge-green'}">${estaPendiente(venta) ? 'PENDIENTE' : 'PAGADA'}</span>
       </p>

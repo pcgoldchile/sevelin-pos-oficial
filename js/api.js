@@ -150,6 +150,8 @@ const API = {
     eliminar: (id) => apiRequest(`/compras/${id}`, { method: 'DELETE' }),
     eliminarLote: (ids, pin) => apiRequest('/compras/eliminar-lote', { method: 'POST', body: { ids, pin } }),
     subirArchivo: (nombre, tipo, base64) => apiRequest('/compras/archivo', { method: 'POST', body: { nombre, tipo, base64 } }),
+    // FILE-01: pide una URL fresca para un documento guardado (las firmadas caducan)
+    firmarArchivo: (ruta) => apiRequest('/compras/firmar', { method: 'POST', body: { ruta } }),
 
     // Clasificaciones dinámicas de gastos
     listarClasificaciones: (incluirInactivas) =>

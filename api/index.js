@@ -18,6 +18,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
@@ -799,6 +800,59 @@ app.delete('/api/productos/:id', auth(true), async (req, res) => {
    Editar y eliminar: solo admin
    ============================================================ */
 
+/* BIZ-02 — VERIFICAR STOCK DISPONIBLE ANTES DE VENDER.
+   ------------------------------------------------------------
+   Antes se descontaba stock sin comprobar que alcanzara: se podía
+   vender 100 de un producto con 3, dejando el inventario inconsistente.
+
+   Reglas:
+     · stock_ilimitado (servicios, mano de obra) → nunca se valida.
+     · productos con lotes → los valida fifo_consumir de forma atómica
+       más adelante; aquí NO se tocan para no duplicar el chequeo.
+     · repuestos ya reservados en una OT (ot_repuesto_id) → su stock se
+       descontó al asociarlos a la OT; se omiten.
+     · el resto → se suma la cantidad pedida por producto (dos líneas del
+       mismo producto cuentan juntas) y se compara con el stock real.
+
+   Se agrupa por producto porque el carrito puede traer el mismo ítem en
+   varias líneas; validarlas por separado dejaría pasar 2+2 contra un
+   stock de 3. */
+async function verificarStockDisponible(items) {
+  const lista = Array.isArray(items) ? items : [];
+
+  // Solo productos por id, sin lotes, no reservados en OT
+  const pedidoPorProducto = new Map();
+  for (const it of lista) {
+    if (!it.producto_id || it.ot_repuesto_id) continue;
+    const n = num(it.cantidad) || 1;
+    pedidoPorProducto.set(it.producto_id, (pedidoPorProducto.get(it.producto_id) || 0) + n);
+  }
+  if (pedidoPorProducto.size === 0) return;
+
+  const ids = [...pedidoPorProducto.keys()];
+  const { data: productos, error } = await db.from('productos')
+    .select('id, nombre, stock, usa_lotes, stock_ilimitado')
+    .in('id', ids);
+  if (error) throw new Error(error.message);
+
+  const porId = new Map((productos || []).map(p => [p.id, p]));
+
+  for (const [pid, pedido] of pedidoPorProducto) {
+    const p = porId.get(pid);
+    if (!p) continue;                          // ítem manual sin ficha: no se valida
+    if (p.stock_ilimitado) continue;           // servicio: nunca falta
+    if (p.usa_lotes) continue;                 // lo valida fifo_consumir (atómico)
+
+    const disponible = num(p.stock);
+    if (pedido > disponible) {
+      throw new Error(
+        `Stock insuficiente de "${String(p.nombre || 'producto').slice(0, 40)}": ` +
+        `pides ${pedido}, hay ${disponible}.`
+      );
+    }
+  }
+}
+
 // Los totales SIEMPRE se calculan en el servidor a partir de los ítems.
 async function normalizarItems(items, rolSolicitante) {
   const lista = Array.isArray(items) ? items : [];
@@ -821,8 +875,25 @@ async function normalizarItems(items, rolSolicitante) {
 
   return lista.map(it => {
     const cantidad = Math.max(1, Math.round(num(it.cantidad) || 1));
-    const precio = num(it.precio_unitario);
-    const costoCliente = num(it.costo_unitario);
+
+    /* BIZ-01 — PRECIO Y COSTO NO PUEDEN SER NEGATIVOS.
+       ------------------------------------------------------------
+       Antes se aceptaba cualquier número. Una línea con precio -9000
+       bajaba el total de la venta: se podía cobrar de menos y cuadrar
+       un arqueo con un "descuento" falso. Los descuentos, si se
+       necesitan, se modelan aparte; una línea de venta jamás resta.
+       Se rechaza en el SERVIDOR: el navegador es manipulable. */
+    const precioCrudo = num(it.precio_unitario);
+    if (precioCrudo < 0) {
+      throw new Error(`Precio inválido en "${String(it.nombre || 'ítem').slice(0, 40)}": no puede ser negativo`);
+    }
+    const costoCrudo = num(it.costo_unitario);
+    if (costoCrudo < 0) {
+      throw new Error(`Costo inválido en "${String(it.nombre || 'ítem').slice(0, 40)}": no puede ser negativo`);
+    }
+
+    const precio = precioCrudo;
+    const costoCliente = costoCrudo;
     const costoCatalogo = it.producto_id
       ? (costosCatalogo[it.producto_id] || 0)
       : (it.repuesto_id ? (costosRepuesto[it.repuesto_id] || 0) : 0);
@@ -1209,6 +1280,11 @@ app.get('/api/ventas/:id', auth(), async (req, res) => {
 app.post('/api/ventas', auth(), async (req, res) => {
   try {
     const items = await normalizarItems(req.body?.items, req.usuario.rol);
+
+    /* BIZ-02: se comprueba el stock ANTES de escribir nada. Si algo no
+       alcanza, la venta se rechaza con 400 y la base queda intacta. Los
+       productos con lotes se validan dentro de aplicarCostosFifo. */
+    await verificarStockDisponible(items);
 
     /* PEPS: consume las capas y corrige el costo de cada línea ANTES de
        totalizar, para que la utilidad guardada sea la real. Los productos
@@ -2404,14 +2480,70 @@ app.post('/api/compras/archivo', auth(true), async (req, res) => {
     if (buffer.length > 4 * 1024 * 1024) return enviarError(res, 413, 'El archivo supera los 4 MB');
 
     const limpio = String(nombre).replace(/[^\w.\-]/g, '_').slice(-80);
-    const ruta = `${new Date().getFullYear()}/${Date.now()}_${limpio}`;
+
+    /* FILE-01 — RUTA NO ENUMERABLE.
+       ------------------------------------------------------------
+       Antes la ruta era AÑO/<Date.now()>_nombre. El timestamp es
+       predecible: quien supiera cuándo se subió un comprobante podía
+       tantear la URL pública y bajar facturas de proveedores sin
+       autenticarse. Un UUID aleatorio hace la ruta imposible de adivinar. */
+    const ruta = `${new Date().getFullYear()}/${crypto.randomUUID()}_${limpio}`;
 
     const { error } = await db.storage.from('compras-documentos')
       .upload(ruta, buffer, { contentType: tipo || 'application/octet-stream', upsert: false });
     if (error) throw new Error(error.message);
 
-    const { data } = db.storage.from('compras-documentos').getPublicUrl(ruta);
-    res.status(201).json({ url: data.publicUrl, ruta });
+    /* FILE-01 — URL FIRMADA EN VEZ DE PÚBLICA.
+       ------------------------------------------------------------
+       getPublicUrl exige un bucket público: cualquiera con el enlace
+       (o que lo adivine) entra. createSignedUrl entrega un enlace que
+       caduca, y solo se obtiene pasando por este endpoint autenticado.
+
+       REQUISITO DE CONFIGURACIÓN: el bucket 'compras-documentos' debe
+       estar en PRIVADO en Supabase → Storage. Si sigue público, esto
+       funciona igual pero el archivo también seguiría accesible por su
+       URL pública; ponerlo en privado es lo que cierra el hallazgo.
+
+       Se guarda la RUTA (no la URL) en la base: la URL caduca, la ruta
+       no, y se vuelve a firmar cuando alguien quiera abrir el documento. */
+    const { data, error: errFirma } = await db.storage.from('compras-documentos')
+      .createSignedUrl(ruta, 60 * 60);   // 1 hora
+    if (errFirma) throw new Error(errFirma.message);
+
+    /* Se devuelven las dos cosas:
+         url  → firmada, para ver el archivo ahora mismo (caduca en 1h).
+         ruta → estable, es lo que se guarda en la compra para poder
+                volver a firmar cuando alguien abra el documento otro día. */
+    res.status(201).json({ url: data.signedUrl, ruta });
+  } catch (err) {
+    enviarError(res, 500, err.message || 'No se pudo subir el archivo');
+  }
+});
+
+/* FILE-01 — RE-FIRMAR UN DOCUMENTO YA GUARDADO.
+   ------------------------------------------------------------
+   Como las URLs firmadas caducan, la compra guarda la RUTA del archivo,
+   no un enlace. Cuando el admin quiere abrir un comprobante, el front
+   pide aquí una URL fresca. Requiere sesión admin: los documentos de
+   compra son información de costos.
+
+   Compatibilidad: si en la base quedó guardada una URL pública antigua
+   (de antes de este cambio) en vez de una ruta, el front la abre directo
+   y no llama aquí. Este endpoint es solo para las rutas nuevas. */
+app.post('/api/compras/firmar', auth(true), async (req, res) => {
+  const ruta = String(req.body?.ruta || '').trim();
+  if (!ruta) return enviarError(res, 400, 'Falta la ruta del archivo');
+
+  // Defensa: la ruta debe quedar dentro del bucket, sin subir de carpeta
+  if (ruta.includes('..') || ruta.startsWith('/')) {
+    return enviarError(res, 400, 'Ruta de archivo inválida');
+  }
+
+  try {
+    const { data, error } = await db.storage.from('compras-documentos')
+      .createSignedUrl(ruta, 60 * 60);
+    if (error) throw new Error(error.message);
+    res.json({ url: data.signedUrl });
   } catch (err) {
     enviarError(res, 500, err.message || 'No se pudo subir el archivo');
   }
