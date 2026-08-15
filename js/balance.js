@@ -260,10 +260,15 @@ function pintarGrupos(porGrupo, porClasificacion, totalGastos) {
   caja.innerHTML = GRUPOS_GASTO.map(g => {
     const monto = Number(porGrupo?.[g.valor]) || 0;
     const pct = totalGastos > 0 ? (monto / totalGastos) * 100 : 0;
+    /* req.4 — el gasto en mercadería (grupo INVENTARIO) se resalta como
+       bloque destacado: es la métrica que el negocio mira para saber
+       cuánto se reinvirtió en productos para reventa en el período. */
+    const destacado = g.valor === 'INVENTARIO' ? ' barra-fila-destacada' : '';
+    const etiqueta = g.valor === 'INVENTARIO' ? '📦 Mercadería / Reventa' : g.etiqueta;
     return `
-      <div class="barra-fila">
+      <div class="barra-fila${destacado}">
         <div class="barra-cabecera">
-          <span>${g.etiqueta} <small>${g.desc}</small></span>
+          <span>${etiqueta} <small>${g.desc}</small></span>
           <b>${fmtCLP(monto)} <small>${pct.toFixed(0)}%</small></b>
         </div>
         <div class="barra-pista"><div class="barra-relleno barra-${g.color}" style="width:${pct}%"></div></div>
@@ -976,7 +981,9 @@ async function confirmarPagoGastoFijo() {
       clasificacion,
       metodo_pago: document.getElementById('pagarFijoMetodo')?.value || 'Efectivo',
       costo_total: monto,
-      descripcion
+      descripcion,
+      // Vínculo para el checklist del mes (req. 4): marca este fijo como pagado
+      gasto_fijo_id: gastoFijoPagando.id
     });
 
     // Solo si el usuario lo pidió: un cambio permanente, no el de un mes
@@ -1013,6 +1020,7 @@ async function confirmarPagoGastoFijo() {
    ============================================================ */
 
 let saldosActuales = null;   // último cálculo recibido, para el modal de traspaso
+let checklistFijosActual = null;   // último checklist de gastos fijos del mes (para el modal)
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnTraspaso')?.addEventListener('click', abrirModalTraspaso);
@@ -1055,6 +1063,19 @@ async function cargarSaldosCanales() {
     // Un saldo negativo es una señal de error de registro: se resalta
     document.getElementById('saldoEfectivo')?.classList.toggle('saldo-negativo', s.efectivo < 0);
     document.getElementById('saldoBanco')?.classList.toggle('saldo-negativo', s.banco < 0);
+
+    /* Resguardo dinámico (req. 4): el mínimo a resguardar es la suma de
+       los gastos fijos que AÚN faltan por pagar este mes. Se pide aparte
+       porque necesita cruzar gastos fijos con las compras del mes. */
+    try {
+      const chk = await API.balance.gastosFijosMes();
+      checklistFijosActual = chk;
+      set('saldoResguardo', chk.totalPendiente);
+      // Si el total disponible no cubre lo pendiente, el resguardo se pinta en alerta
+      document.getElementById('saldoResguardo')?.classList.toggle('saldo-negativo', s.total < chk.totalPendiente);
+    } catch (e) {
+      console.warn('No se pudo cargar el checklist de fijos:', e.message || e);
+    }
 
     evaluarCobertura(s);
   } catch (err) {

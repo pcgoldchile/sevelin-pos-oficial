@@ -769,23 +769,53 @@
            próximos vencimientos fijos.
            ============================================================ -->
       <div class="widget-saldos" id="widgetSaldos">
+        <!-- Grid de 4 tarjetas de igual tamaño (req. 2):
+             Efectivo · Banco · Total · Resguardo.
+             Efectivo y Banco llevan lápiz de ajuste (req. 3); el Total NO,
+             porque se calcula (efectivo + banco). Resguardo abre el
+             checklist de gastos fijos del mes (req. 4). -->
         <div class="saldo-tarjetas">
           <div class="saldo-card saldo-efectivo">
-            <span class="saldo-label">💵 Efectivo · Caja chica</span>
+            <div class="saldo-card-top">
+              <span class="saldo-label">💵 Efectivo · Caja chica</span>
+              <button class="saldo-editar" data-ajustar-canal="EFECTIVO"
+                      title="Ajustar el efectivo manualmente" aria-label="Ajustar efectivo">✏️</button>
+            </div>
             <b class="saldo-monto" id="saldoEfectivo">$0</b>
           </div>
+
           <div class="saldo-card saldo-banco">
-            <span class="saldo-label">🏦 Banco · Cuentas</span>
+            <div class="saldo-card-top">
+              <span class="saldo-label">🏦 Banco · Cuentas</span>
+              <button class="saldo-editar" data-ajustar-canal="BANCO"
+                      title="Ajustar el banco manualmente" aria-label="Ajustar banco">✏️</button>
+            </div>
             <b class="saldo-monto" id="saldoBanco">$0</b>
           </div>
+
           <div class="saldo-card saldo-total">
-            <span class="saldo-label">💰 Saldo total disponible</span>
+            <div class="saldo-card-top">
+              <span class="saldo-label">💰 Saldo total disponible</span>
+            </div>
             <b class="saldo-monto" id="saldoTotal">$0</b>
           </div>
-          <div class="saldo-acciones">
-            <button class="btn btn-outline btn-sm" id="btnTraspaso" title="Mover dinero entre efectivo y banco">🔄 Traspaso interno</button>
-            <button class="btn btn-ghost btn-sm" id="btnResguardo" title="Definir el mínimo de caja para las alertas">⚙️ Resguardo</button>
+
+          <div class="saldo-card saldo-resguardo">
+            <div class="saldo-card-top">
+              <span class="saldo-label">🛡️ Resguardo de caja</span>
+              <button class="saldo-editar" id="btnResguardo"
+                      title="Configurar el resguardo mínimo" aria-label="Configurar resguardo">⚙️</button>
+            </div>
+            <b class="saldo-monto saldo-monto-sm" id="saldoResguardo">$0</b>
+            <button class="saldo-mini-btn" id="btnChecklistFijos"
+                    title="Ver los gastos fijos del mes: pagados y pendientes">📋 Gastos fijos del mes</button>
           </div>
+        </div>
+
+        <div class="saldo-acciones-fila">
+          <button class="btn btn-outline btn-sm" id="btnTraspaso" title="Mover dinero entre efectivo y banco">🔄 Traspaso interno</button>
+          <!-- req.6: gestión de aportes de capital (historial + agregar + borrar) -->
+          <button class="btn btn-outline btn-sm" id="btnAportesCapital" title="Ver y gestionar los aportes de capital">💼 Aportes de capital</button>
         </div>
 
         <!-- Badge de cobertura: aparece solo cuando hay algo que avisar -->
@@ -1509,6 +1539,157 @@
   <!-- ============================================================
        RESGUARDO DE CAJA (mínimo para las alertas de cobertura)
        ============================================================ -->
+  <!-- ============================================================
+       GATE DE FINANZAS (req. 1)
+       ------------------------------------------------------------
+       Se pide el PIN de admin CADA vez que se entra a Finanzas, aunque
+       la sesión ya esté abierta. El PIN se valida en el servidor
+       (/api/verificar-pin); aquí solo se recoge. Mientras no se acierte,
+       la vista de Finanzas queda oculta detrás de este overlay.
+       ============================================================ -->
+  <div id="modalGateFinanzas" class="modal-overlay">
+    <div class="modal-box modal-sm">
+      <h2>🔒 Acceso a Finanzas</h2>
+      <p class="modal-hint">
+        Esta sección muestra datos sensibles del negocio. Ingresa tu PIN de
+        administrador para continuar.
+      </p>
+
+      <div class="field" style="margin-top:16px;">
+        <label for="gatePin">PIN de administrador</label>
+        <div class="pin-campo-caja">
+          <input type="password" id="gatePin" class="pin-input"
+                 placeholder="Ingresa tu PIN…" maxlength="64"
+                 autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="text">
+          <button type="button" id="gateVerPin" class="pin-ojo" title="Mostrar / ocultar">👁️</button>
+        </div>
+        <p class="modal-hint" id="gateError" style="color:var(--red); display:none;">PIN incorrecto.</p>
+      </div>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnGateCancelar">Cancelar</button>
+        <button class="btn btn-primary" id="btnGateEntrar">Entrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       AJUSTE MANUAL DE SALDO (req. 3) — con pestaña de historial
+       ============================================================ -->
+  <div id="modalAjusteSaldo" class="modal-overlay">
+    <div class="modal-box">
+      <h2 id="ajusteTitulo">Ajustar saldo</h2>
+
+      <div class="tabs-mini" role="tablist">
+        <button class="tab-mini activo" data-ajuste-tab="editar" role="tab">✏️ Ajustar</button>
+        <button class="tab-mini" data-ajuste-tab="historial" role="tab">🕓 Historial de ajustes</button>
+      </div>
+
+      <!-- Pestaña: ajustar -->
+      <div data-ajuste-panel="editar">
+        <div class="ajuste-actual">
+          <span>Saldo calculado actual</span>
+          <b id="ajusteSaldoActual">$0</b>
+        </div>
+
+        <div class="field" style="margin-top:14px;">
+          <label for="ajusteNuevoSaldo">Nuevo saldo real *</label>
+          <input type="number" id="ajusteNuevoSaldo" step="1" placeholder="0">
+          <p class="modal-hint" id="ajusteDiferencia"></p>
+        </div>
+
+        <div class="field">
+          <label for="ajusteMotivo">Observación / Justificación *</label>
+          <textarea id="ajusteMotivo" rows="3"
+                    placeholder="Ej: conté el cajón y sobraban $3.000; cargo bancario no registrado…"></textarea>
+          <p class="modal-hint">Obligatorio. Queda registrado en el historial de ajustes.</p>
+        </div>
+
+        <div class="modal-foot">
+          <button class="btn btn-ghost" id="btnCancelarAjuste">Cancelar</button>
+          <button class="btn btn-primary" id="btnConfirmarAjuste">Guardar ajuste</button>
+        </div>
+      </div>
+
+      <!-- Pestaña: historial -->
+      <div data-ajuste-panel="historial" class="hidden">
+        <div class="ajuste-historial" id="ajusteHistorialLista">
+          <p class="modal-hint">Cargando…</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       CHECKLIST DE GASTOS FIJOS DEL MES (req. 4)
+       ============================================================ -->
+  <div id="modalChecklistFijos" class="modal-overlay">
+    <div class="modal-box">
+      <h2>📋 Gastos fijos del mes</h2>
+      <p class="modal-hint">Marcados como pagados según los gastos ya registrados este mes.</p>
+
+      <div class="checklist-cuadre" id="checklistCuadre">
+        <p class="modal-hint">Cargando…</p>
+      </div>
+
+      <div class="checklist-lista" id="checklistLista"></div>
+
+      <div class="modal-foot">
+        <button class="btn btn-primary" id="btnCerrarChecklist">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       APORTES DE CAPITAL (req. 6)
+       ------------------------------------------------------------
+       Historial de aportes propios al negocio, con opción de agregar uno
+       nuevo y de borrar. Un aporte suma al saldo del canal; al borrarlo,
+       el saldo baja solo (se recalcula). El pop-up de borrado lo confirma.
+       ============================================================ -->
+  <div id="modalAportes" class="modal-overlay">
+    <div class="modal-box">
+      <h2>💼 Aportes de capital</h2>
+      <p class="modal-hint">
+        Dinero propio que entra al negocio. Suma a la caja, pero <strong>no</strong>
+        cuenta como ingreso por ventas.
+      </p>
+
+      <!-- Formulario para agregar un aporte -->
+      <div class="aportes-form">
+        <div class="grid grid-2">
+          <div class="field">
+            <label for="aporteMonto">Monto *</label>
+            <input type="number" id="aporteMonto" min="0" step="1" placeholder="0">
+          </div>
+          <div class="field">
+            <label for="aporteMetodo">¿Cómo entra?</label>
+            <select id="aporteMetodo">
+              <option value="Efectivo">Efectivo · caja chica</option>
+              <option value="Transferencia">Transferencia · banco</option>
+              <option value="Tarjeta Débito">Tarjeta Débito · banco</option>
+              <option value="Tarjeta Crédito">Tarjeta Crédito · banco</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="aporteDescripcion">Descripción (opcional)</label>
+          <input type="text" id="aporteDescripcion" placeholder="Ej: aporte del socio, reinversión">
+        </div>
+        <button class="btn btn-primary" id="btnAgregarAporte">+ Registrar aporte</button>
+      </div>
+
+      <h3 class="aportes-subtitulo">Historial de aportes</h3>
+      <div class="aportes-lista" id="aportesLista">
+        <p class="modal-hint">Cargando…</p>
+      </div>
+
+      <div class="modal-foot">
+        <button class="btn btn-primary" id="btnCerrarAportes">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modalResguardo" class="modal-overlay">
     <div class="modal-box modal-sm">
       <h2>⚙️ Resguardo de caja</h2>
@@ -3310,6 +3491,8 @@
   <script src="js/pos-layout.js"></script>   <!-- después de pos.js: solo toca la maquetación -->
   <script src="js/atajos.js"></script>
   <script src="js/balance.js"></script>
+  <script src="js/finanzas-ajustes.js"></script>   <!-- ajustes de saldo + checklist (req 3 y 4) -->
+  <script src="js/finanzas-gate.js"></script>   <!-- después de balance/config: intercepta la navegación a Finanzas -->
   <script src="js/reportes.js"></script>
   <script src="js/print.js"></script>
 

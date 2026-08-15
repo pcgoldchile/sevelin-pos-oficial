@@ -4,7 +4,7 @@
 > y LEEME anteriores. Está escrito para que otra persona —o una IA en una sesión nueva— retome el
 > trabajo sin contexto previo.
 >
-> **Estado:** v9 · 15 de agosto de 2026 · en uso operativo real.
+> **Estado:** v10 · 15 de agosto de 2026 · en uso operativo real.
 >
 > **Cómo se versiona la documentación (importante):**
 > Este README maestro se mantiene **siempre al día** con el estado actual del sistema. Cada entrega
@@ -139,6 +139,8 @@ sevelin-pos/
 │   ├── pago.js         ← Medios de pago, vuelto, pago mixto, paso de DTE
 │   ├── balance.js      ← Finanzas: balance, gastos fijos, inyecciones, arqueo,
 │   │                      widget de saldos por canal, traspasos, resguardo
+│   ├── finanzas-gate.js    ← PIN obligatorio al entrar a Finanzas (req. seguridad)
+│   ├── finanzas-ajustes.js ← Ajuste manual de saldos, checklist de fijos, aportes
 │   ├── productos.js · lotes.js · tiendanube.js
 │   ├── historial.js · compras.js · mermas.js
 │   ├── repuestos.js · ot.js · encargos.js
@@ -193,7 +195,18 @@ de selección de DTE. El área es **redimensionable**: se arrastra la esquina y 
 (Ingresar producto / Carrito) crecen juntas; el tamaño se guarda por equipo en `localStorage`.
 
 ### 6.2 Finanzas
+**Acceso protegido:** al entrar a Finanzas se pide el **PIN de administrador cada vez** (aunque la
+sesión esté abierta), y se vuelve a pedir al salir y regresar. Lo maneja `js/finanzas-gate.js`,
+validando contra `POST /api/verificar-pin`.
+
 Sub-pestañas, en orden: **Historial de Ventas** (por defecto) · Balance · Gastos · Gastos Fijos.
+
+**Widget de 4 tarjetas** (Efectivo · Banco · Total · Resguardo). Efectivo y Banco tienen un lápiz que
+abre un modal de **ajuste manual con justificación obligatoria e historial** (los ajustes guardan un
+delta, no reescriben el saldo). El Total no se edita: se calcula. La tarjeta Resguardo muestra la suma
+de **gastos fijos pendientes del mes** y abre un **checklist** con el cuadre saldo-vs-pendiente.
+Botones: traspaso interno y **gestión de aportes de capital** (historial, agregar, borrar con aviso de
+efecto en el saldo). En el Balance, el gasto en **mercadería** se resalta como bloque destacado.
 
 **Widget de saldos por canal** (vive dentro del panel Balance): calcula en tiempo real cuánto hay en
 **Efectivo (caja chica)** y en **Banco (cuentas)**, más el total. El canal de cada movimiento lo

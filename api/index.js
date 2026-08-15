@@ -377,6 +377,21 @@ app.get('/api/me', auth(), (req, res) => {
   res.json({ rol: req.usuario.rol, negocio: NEGOCIO_NOMBRE });
 });
 
+/* ============================================================
+   VERIFICAR PIN — puerta de entrada a Finanzas (req. 1)
+   ------------------------------------------------------------
+   Finanzas exige el PIN de admin CADA vez que se entra, aunque la sesión
+   ya esté abierta. Este endpoint solo valida el PIN; no emite token ni
+   cambia la sesión. Reutiliza exigirPinAdmin, que ya trae el freno
+   anti-fuerza-bruta (5 intentos → 1 min de espera).
+
+   Se responde 200 solo si el PIN es correcto. El gate vive en el
+   frontend, pero la validación es del servidor: el PIN nunca se compara
+   en el navegador. */
+app.post('/api/verificar-pin', auth(true), exigirPinAdmin, (req, res) => {
+  res.json({ ok: true });
+});
+
 /* Ping simple + lista de módulos activos: si algún día vuelve a salir
    "Endpoint no encontrado" en un módulo, este endpoint sirve para
    confirmar rápido si el despliegue en Vercel quedó desactualizado. */
@@ -1792,7 +1807,10 @@ async function sanearCompra(body = {}) {
       costo_total: costo,
       descripcion: (body.descripcion || '').trim() || null,
       url_documento: (body.url_documento || '').trim() || null,
-      url_comprobante: (body.url_comprobante || '').trim() || null
+      url_comprobante: (body.url_comprobante || '').trim() || null,
+      // Vínculo opcional con un gasto fijo (req. 4). Solo lo trae el pago
+      // de un gasto fijo; las compras normales lo dejan en null.
+      gasto_fijo_id: body.gasto_fijo_id ? Number(body.gasto_fijo_id) : null
     }
   };
 }
@@ -2553,9 +2571,19 @@ app.get('/api/finanzas/saldos', auth(true), async (req, res) => {
       if (t.origen === 'BANCO') traspDeBanco += num(t.monto);
     });
 
-    const efectivo = fondoInicial + ventasEfectivo + inyEfectivo + traspAEfectivo
+    /* Ajustes manuales de saldo (req. 3). Cada ajuste guarda un DELTA que
+       se suma al canal: si contaste el cajón y sobraban $3.000, hay un
+       ajuste de +3000 en EFECTIVO. No reescriben el saldo, lo corrigen. */
+    const { data: ajustesRaw } = await db.from('ajustes_saldo').select('canal, delta').limit(100000);
+    let ajusteEfectivo = 0, ajusteBanco = 0;
+    (ajustesRaw || []).forEach(a => {
+      if (a.canal === 'EFECTIVO') ajusteEfectivo += num(a.delta);
+      if (a.canal === 'BANCO') ajusteBanco += num(a.delta);
+    });
+
+    const efectivo = fondoInicial + ventasEfectivo + inyEfectivo + traspAEfectivo + ajusteEfectivo
                    - gastosEfectivo - traspDeEfectivo;
-    const banco = ventasBanco + inyBanco + traspABanco
+    const banco = ventasBanco + inyBanco + traspABanco + ajusteBanco
                 - gastosBanco - comisiones - traspDeBanco;
 
     // Compromisos fijos activos, para las alertas de cobertura
@@ -2575,7 +2603,8 @@ app.get('/api/finanzas/saldos', auth(true), async (req, res) => {
         inyEfectivo, inyBanco,
         gastosEfectivo, gastosBanco,
         comisiones,
-        traspAEfectivo, traspDeEfectivo, traspABanco, traspDeBanco
+        traspAEfectivo, traspDeEfectivo, traspABanco, traspDeBanco,
+        ajusteEfectivo, ajusteBanco
       },
       gastosFijos: fijosRaw || [],
       config: {
@@ -2586,6 +2615,115 @@ app.get('/api/finanzas/saldos', auth(true), async (req, res) => {
   } catch (e) {
     enviarError(res, 500, e.message || 'No se pudieron calcular los saldos');
   }
+});
+
+/* ============================================================
+   CHECKLIST DE GASTOS FIJOS DEL MES (req. 4)
+   ------------------------------------------------------------
+   Devuelve cada gasto fijo activo con si YA se pagó este mes o no, y el
+   total pendiente. "Pagado" = existe una compra de este mes vinculada a
+   ese gasto fijo (gasto_fijo_id) o, para compras antiguas sin ese
+   vínculo, una compra cuya descripción empieza con "Gasto fijo: <nombre>".
+
+   El resguardo dinámico usa el total pendiente: no tiene sentido
+   resguardar plata para algo que ya se pagó.
+   ============================================================ */
+app.get('/api/finanzas/gastos-fijos-mes', auth(true), async (req, res) => {
+  try {
+    const hoy = fechaHoyChile();              // YYYY-MM-DD (Chile)
+    const [anio, mes] = hoy.split('-');
+    const desdeMes = `${anio}-${mes}-01`;
+    const hastaMes = `${anio}-${mes}-31T23:59:59`;
+
+    const { data: fijosRaw } = await db.from('gastos_fijos').select('*').eq('activo', true);
+    const fijos = fijosRaw || [];
+
+    // Compras del mes: sirven para saber qué gasto fijo ya se pagó
+    const { data: comprasRaw } = await db.from('compras')
+      .select('gasto_fijo_id, descripcion, costo_total')
+      .gte('fecha', desdeMes).lte('fecha', hastaMes);
+    const compras = comprasRaw || [];
+
+    const pagadosPorId = new Set(compras.map(c => c.gasto_fijo_id).filter(Boolean));
+
+    const items = fijos.map(f => {
+      // Pagado por vínculo directo, o por descripción (compras antiguas)
+      const pagadoPorVinculo = pagadosPorId.has(f.id);
+      const pagadoPorTexto = compras.some(c =>
+        String(c.descripcion || '').toLowerCase().startsWith(`gasto fijo: ${String(f.nombre).toLowerCase()}`));
+      const pagado = pagadoPorVinculo || pagadoPorTexto;
+      return {
+        id: f.id,
+        nombre: f.nombre,
+        monto: num(f.monto),
+        dia_mes: f.dia_mes,
+        clasificacion: f.clasificacion || null,
+        pagado
+      };
+    });
+
+    const totalMes = items.reduce((a, i) => a + i.monto, 0);
+    const totalPagado = items.filter(i => i.pagado).reduce((a, i) => a + i.monto, 0);
+    const totalPendiente = totalMes - totalPagado;
+
+    res.json({
+      periodo: { anio: Number(anio), mes: Number(mes) },
+      items,
+      totalMes,
+      totalPagado,
+      totalPendiente,
+      cantidadPendiente: items.filter(i => !i.pagado).length
+    });
+  } catch (e) {
+    enviarError(res, 500, e.message || 'No se pudo calcular el checklist de gastos fijos');
+  }
+});
+
+/* ============================================================
+   AJUSTES MANUALES DE SALDO (req. 3)
+   ------------------------------------------------------------
+   Corrige el saldo de un canal cuando la realidad no cuadra con lo
+   calculado. Guarda un DELTA con justificación obligatoria. El total no
+   se ajusta nunca: se calcula como efectivo + banco.
+   ============================================================ */
+app.post('/api/finanzas/ajuste-saldo', auth(true), async (req, res) => {
+  const canal = String(req.body?.canal || '').trim().toUpperCase();
+  const motivo = String(req.body?.motivo || '').trim();
+  const saldoNuevo = num(req.body?.saldo_nuevo);
+  const saldoAnterior = num(req.body?.saldo_anterior);
+
+  if (canal !== 'EFECTIVO' && canal !== 'BANCO') {
+    return enviarError(res, 400, 'El canal debe ser EFECTIVO o BANCO');
+  }
+  // La justificación es obligatoria: un ajuste sin motivo tapa errores
+  if (motivo.length < 3) {
+    return enviarError(res, 400, 'La justificación es obligatoria (mínimo 3 caracteres)');
+  }
+
+  const delta = saldoNuevo - saldoAnterior;
+  if (delta === 0) return enviarError(res, 400, 'El saldo nuevo es igual al actual: no hay nada que ajustar');
+
+  const { data, error } = await db.from('ajustes_saldo').insert([{
+    canal, delta,
+    saldo_anterior: saldoAnterior,
+    saldo_nuevo: saldoNuevo,
+    motivo,
+    rol: req.usuario?.rol || null
+  }]).select().single();
+
+  if (error) return enviarError(res, 500, error.message);
+  res.status(201).json(data);
+});
+
+/* Historial de ajustes manuales (para el pop-up de consulta) */
+app.get('/api/finanzas/ajustes-saldo', auth(true), async (req, res) => {
+  let q = db.from('ajustes_saldo').select('*').order('creado_en', { ascending: false });
+  const canal = String(req.query?.canal || '').trim().toUpperCase();
+  if (canal === 'EFECTIVO' || canal === 'BANCO') q = q.eq('canal', canal);
+
+  const { data, error } = await q.limit(limiteDe(req));
+  if (error) return enviarError(res, 500, error.message);
+  res.json(data || []);
 });
 
 /* Traspaso interno de dinero entre canales (no es ingreso ni gasto) */

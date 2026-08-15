@@ -236,6 +236,15 @@ const API = {
     saldos: () => apiRequest('/finanzas/saldos'),
     traspaso: (datos) => apiRequest('/finanzas/traspaso', { method: 'POST', body: datos }),
     listarTraspasos: () => apiRequest('/finanzas/traspasos'),
+    // req.1 — verificar PIN para el gate de Finanzas (no cambia la sesión)
+    verificarPin: (pin) => apiRequest('/verificar-pin', { method: 'POST', body: { pin }, silencioso: true }),
+    // req.3 — ajustes manuales de saldo con justificación e historial
+    ajustarSaldo: (datos) => apiRequest('/finanzas/ajuste-saldo', { method: 'POST', body: datos }),
+    historialAjustes: (canal) => apiRequest('/finanzas/ajustes-saldo' + (canal ? `?canal=${canal}` : '')),
+    // req.4 — checklist de gastos fijos del mes (pagados vs pendientes)
+    gastosFijosMes: () => apiRequest('/finanzas/gastos-fijos-mes'),
+    // req.6 — todos los aportes de capital (sin filtro de período)
+    todosLosAportes: () => apiRequest('/inyecciones'),
     eliminarTraspaso: (id, pin) => apiRequest(`/finanzas/traspaso/${id}`, { method: 'DELETE', body: { pin } }),
     guardarConfig: (datos) => apiRequest('/finanzas/config', { method: 'PUT', body: datos }),
 

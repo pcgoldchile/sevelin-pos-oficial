@@ -7,6 +7,7 @@
 
 let comprasList = [];
 let editandoCompraId = null;
+let compraOriginalCanal = null;   // req.5 — método/monto antes de editar
 let filtroDocumentos = '';           // '' | 'sin_documento' | 'sin_comprobante'
 let archivosPendientes = { url_documento: null, url_comprobante: null };
 let comprasSeleccionadas = new Set();
@@ -427,6 +428,12 @@ function abrirModalCompra(compra = null, campoFoco = null) {
 
   if (compra) {
     editandoCompraId = compra.id;
+    // req.5 — se guarda el estado original para detectar si el cambio mueve
+    // dinero entre canales (Efectivo ↔ Banco) o altera el monto.
+    compraOriginalCanal = {
+      metodo_pago: compra.metodo_pago || 'Efectivo',
+      costo_total: Number(compra.costo_total) || 0
+    };
     if (elCompraFormTitle) elCompraFormTitle.textContent = 'Editar Compra';
     if (elCompraEditId) elCompraEditId.value = compra.id;
     // datetime-local necesita "YYYY-MM-DDTHH:MM" en hora local de Chile
@@ -550,8 +557,38 @@ async function guardarCompra() {
   if (elBtnGuardarCompra) elBtnGuardarCompra.disabled = true;
 
   try {
-    if (editandoCompraId) await API.compras.actualizar(editandoCompraId, payload);
-    else await API.compras.crear(payload);
+    if (editandoCompraId) {
+      /* req.5 — CONFIRMACIÓN DE RECÁLCULO DE CANALES.
+         ------------------------------------------------------------
+         El saldo por canal se DERIVA del método de pago de cada compra:
+         no hay un saldo almacenado que ajustar, se recalcula solo al
+         releer. Por eso, si esta edición cambia el método (mueve el
+         gasto de Efectivo a Banco o viceversa) o el monto, los saldos se
+         moverán automáticamente. Se avisa para que sea una decisión
+         consciente, no una sorpresa. */
+      const antes = compraOriginalCanal || {};
+      const cambioMetodo = String(antes.metodo_pago) !== String(payload.metodo_pago);
+      const cambioMonto = num(antes.costo_total) !== num(payload.costo_total);
+
+      if (cambioMetodo || cambioMonto) {
+        const canalAntes = esCompraEfectivo(antes.metodo_pago) ? 'Efectivo' : 'Banco';
+        const canalAhora = esCompraEfectivo(payload.metodo_pago) ? 'Efectivo' : 'Banco';
+        let detalle = '';
+        if (cambioMetodo) detalle += `\n• El gasto pasará de descontarse de ${canalAntes} a ${canalAhora}.`;
+        if (cambioMonto) detalle += `\n• El monto cambia de ${fmtCLP(num(antes.costo_total))} a ${fmtCLP(num(payload.costo_total))}.`;
+
+        const ok = window.confirm(
+          `Este cambio moverá los saldos de tus canales:` + detalle +
+          `\n\n¿Deseas recalcular automáticamente los saldos (Efectivo/Banco)?\n\n` +
+          `Aceptar = guardar y recalcular.\nCancelar = no guardar.`
+        );
+        if (!ok) { if (elBtnGuardarCompra) elBtnGuardarCompra.disabled = false; return; }
+      }
+
+      await API.compras.actualizar(editandoCompraId, payload);
+    } else {
+      await API.compras.crear(payload);
+    }
 
     showToast(editandoCompraId ? 'Compra actualizada' : 'Compra registrada', 'ok');
     // Avisa al widget de saldos que el dinero se movió
@@ -567,16 +604,31 @@ async function guardarCompra() {
 }
 
 async function eliminarCompra(id) {
-  if (!confirm('¿Eliminar esta compra del registro? Esta acción no se puede deshacer.')) return;
+  /* req.5 — al eliminar, el gasto deja de descontar de su canal, así que
+     el saldo de ese canal SUBIRÁ al recalcular. Se avisa del efecto. */
+  const compra = comprasList.find(c => String(c.id) === String(id));
+  const canal = compra ? (esCompraEfectivo(compra.metodo_pago) ? 'Efectivo' : 'Banco') : null;
+  const extra = compra
+    ? `\n\nAl borrarla, ${fmtCLP(num(compra.costo_total))} se sumarán de vuelta al saldo de ${canal} (el gasto deja de contar).`
+    : '';
+
+  if (!confirm('¿Eliminar esta compra del registro? Esta acción no se puede deshacer.' + extra)) return;
 
   try {
     await API.compras.eliminar(id);
-    showToast('Compra eliminada', 'ok');
+    showToast('Compra eliminada · saldos recalculados', 'ok');
+    document.dispatchEvent(new CustomEvent('pos:movimiento-dinero'));
     cargarCompras();
   } catch (err) {
     console.error('Error al eliminar la compra:', err.message || err);
     showToast(err.message || 'No se pudo eliminar la compra', 'err');
   }
+}
+
+/* Espejo de esEfectivo del backend, solo para etiquetar el canal en los
+   avisos. El backend sigue siendo la fuente de verdad del cálculo. */
+function esCompraEfectivo(metodo) {
+  return String(metodo || '').trim().toLowerCase() === 'efectivo';
 }
 
 // ============================================================
