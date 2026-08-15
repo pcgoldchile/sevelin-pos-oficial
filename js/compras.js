@@ -131,6 +131,19 @@ function setupComprasEventListeners() {
   if (elBtnNuevaCompra) elBtnNuevaCompra.addEventListener('click', () => abrirModalCompra());
   if (elBtnCancelarCompra) elBtnCancelarCompra.addEventListener('click', cerrarModalCompra);
   if (elBtnGuardarCompra) elBtnGuardarCompra.addEventListener('click', guardarCompra);
+
+  /* El campo "banco" solo tiene sentido cuando el pago no es en efectivo.
+     Se muestra/oculta según el método elegido. "No aplica (merma)" tampoco
+     pide banco: no es una salida de dinero real. */
+  if (elCompraMetodoPago) {
+    const toggleBancoCompra = () => {
+      const m = elCompraMetodoPago.value || 'Efectivo';
+      const pideBanco = m !== 'Efectivo' && m !== 'No aplica (merma)';
+      document.getElementById('compraBancoWrap')?.classList.toggle('hidden', !pideBanco);
+    };
+    elCompraMetodoPago.addEventListener('change', toggleBancoCompra);
+    toggleBancoCompra();
+  }
   if (elModalCompra) elModalCompra.addEventListener('click', (e) => { if (e.target === elModalCompra) cerrarModalCompra(); });
 
   if (elBtnSubirDocumento) elBtnSubirDocumento.addEventListener('click', () => elCompraArchivoDocumento?.click());
@@ -528,6 +541,8 @@ async function guardarCompra() {
     descripcion: elCompraDescripcion?.value.trim() || null,
     // Define si el gasto sale de la caja física
     metodo_pago: elCompraMetodoPago?.value || 'Efectivo',
+    // Banco de origen (solo si no es efectivo); el backend lo ignora si lo es
+    banco: document.getElementById('compraBanco')?.value.trim() || null,
     url_documento: elCompraUrlDocumento?.value.trim() || null,
     url_comprobante: elCompraUrlComprobante?.value.trim() || null
   };
@@ -539,6 +554,8 @@ async function guardarCompra() {
     else await API.compras.crear(payload);
 
     showToast(editandoCompraId ? 'Compra actualizada' : 'Compra registrada', 'ok');
+    // Avisa al widget de saldos que el dinero se movió
+    document.dispatchEvent(new CustomEvent('pos:movimiento-dinero'));
     cerrarModalCompra();
     cargarCompras();
   } catch (err) {

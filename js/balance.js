@@ -1000,3 +1000,248 @@ async function confirmarPagoGastoFijo() {
     if (btn) btn.disabled = false;
   }
 }
+
+/* ============================================================
+   WIDGET DE SALDO EN TIEMPO REAL · CANALES DE DINERO
+   ------------------------------------------------------------
+   Muestra cuánto hay en efectivo (caja chica) y en banco, más el total.
+   El canal de cada movimiento lo deriva el backend del método de pago,
+   así que aquí solo se pinta y se refresca. Los traspasos internos mueven
+   plata entre canales sin tocar la utilidad.
+
+   Todo dato que se interpola en innerHTML pasa por escHtml() (regla v7).
+   ============================================================ */
+
+let saldosActuales = null;   // último cálculo recibido, para el modal de traspaso
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btnTraspaso')?.addEventListener('click', abrirModalTraspaso);
+  document.getElementById('btnCancelarTraspaso')?.addEventListener('click', () => cerrarModal('modalTraspaso'));
+  document.getElementById('btnConfirmarTraspaso')?.addEventListener('click', confirmarTraspaso);
+  document.getElementById('modalTraspaso')?.addEventListener('click', (e) => { if (e.target.id === 'modalTraspaso') cerrarModal('modalTraspaso'); });
+
+  document.getElementById('btnResguardo')?.addEventListener('click', abrirModalResguardo);
+  document.getElementById('btnCancelarResguardo')?.addEventListener('click', () => cerrarModal('modalResguardo'));
+  document.getElementById('btnGuardarResguardo')?.addEventListener('click', guardarResguardo);
+  document.getElementById('modalResguardo')?.addEventListener('click', (e) => { if (e.target.id === 'modalResguardo') cerrarModal('modalResguardo'); });
+
+  // El origen del traspaso cambia el disponible mostrado y si pide banco
+  document.getElementById('traspasoOrigen')?.addEventListener('change', sincronizarTraspaso);
+  document.getElementById('traspasoDestino')?.addEventListener('change', sincronizarTraspaso);
+  document.getElementById('traspasoMonto')?.addEventListener('input', sincronizarTraspaso);
+
+  /* Cuando una venta se registra en el POS, el widget debe refrescarse.
+     pos.js emite este evento tras cobrar; también lo emiten los flujos de
+     gasto y OT. Así el saldo queda al día sin recargar. */
+  document.addEventListener('pos:movimiento-dinero', () => {
+    if (document.getElementById('view-finanzas')?.classList.contains('activo-view') ||
+        !document.getElementById('view-finanzas')?.classList.contains('hidden')) {
+      cargarSaldosCanales();
+    }
+  });
+});
+
+async function cargarSaldosCanales() {
+  if (!esAdmin()) return;
+  try {
+    const s = await API.balance.saldos();
+    saldosActuales = s;
+
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = fmtCLP(v); };
+    set('saldoEfectivo', s.efectivo);
+    set('saldoBanco', s.banco);
+    set('saldoTotal', s.total);
+
+    // Un saldo negativo es una señal de error de registro: se resalta
+    document.getElementById('saldoEfectivo')?.classList.toggle('saldo-negativo', s.efectivo < 0);
+    document.getElementById('saldoBanco')?.classList.toggle('saldo-negativo', s.banco < 0);
+
+    evaluarCobertura(s);
+  } catch (err) {
+    console.error('No se pudieron cargar los saldos:', err.message || err);
+  }
+}
+
+/* ============================================================
+   ALERTA DE COBERTURA
+   ------------------------------------------------------------
+   Arma el calendario de vencimientos fijos (gastos_fijos.dia_mes) dentro
+   de la ventana configurada y avisa si el saldo disponible no alcanza a
+   cubrir el próximo compromiso manteniendo el resguardo mínimo.
+   ============================================================ */
+function evaluarCobertura(s) {
+  const badge = document.getElementById('badgeCobertura');
+  if (!badge) return;
+
+  const fijos = (s.gastosFijos || []).filter(f => f.activo);
+  const resguardo = num(s.config?.resguardo_caja);
+  const dias = parseInt(s.config?.dias_alerta, 10) || 15;
+
+  const proximos = proximosVencimientos(fijos, dias);
+
+  if (!proximos.length) {
+    // Sin vencimientos próximos: solo se avisa si ya se está bajo el resguardo
+    if (resguardo > 0 && s.total < resguardo) {
+      pintarBadgeCobertura('warn',
+        `⚠️ Saldo total (${fmtCLP(s.total)}) bajo tu resguardo de ${fmtCLP(resguardo)}.`);
+    } else {
+      badge.classList.add('hidden');
+    }
+    return;
+  }
+
+  // Suma de lo que vence en la ventana
+  const totalPorVencer = proximos.reduce((a, v) => a + num(v.monto), 0);
+  const saldoTrasPagar = s.total - totalPorVencer;
+  const prox = proximos[0];
+
+  if (saldoTrasPagar < 0) {
+    pintarBadgeCobertura('crit',
+      `🔴 Cobertura crítica: los próximos ${proximos.length} vencimiento(s) suman ${fmtCLP(totalPorVencer)}, ` +
+      `más que tu saldo disponible (${fmtCLP(s.total)}). El más cercano: ${escHtml(prox.nombre)} (día ${prox.dia_mes}).`);
+  } else if (resguardo > 0 && saldoTrasPagar < resguardo) {
+    // Sugerencia de flujo: ¿el canal correcto tiene lo suficiente?
+    const consejo = sugerenciaTraspaso(s, prox);
+    pintarBadgeCobertura('warn',
+      `⚠️ Próximo vencimiento: día ${prox.dia_mes} · ${escHtml(prox.nombre)} (${fmtCLP(prox.monto)}). ` +
+      `Tras pagarlo quedarías en ${fmtCLP(saldoTrasPagar)}, bajo tu resguardo de ${fmtCLP(resguardo)}. ${consejo}`);
+  } else {
+    pintarBadgeCobertura('ok',
+      `✅ Cobertura al día. Próximo: día ${prox.dia_mes} · ${escHtml(prox.nombre)} (${fmtCLP(prox.monto)}). ` +
+      `Quedarías con ${fmtCLP(saldoTrasPagar)}.`);
+  }
+}
+
+/* Sugiere un traspaso si la plata está en el canal equivocado. Los
+   compromisos fijos (tarjetas, préstamos) se pagan por banco; si el banco
+   no alcanza pero el efectivo sí, se propone mover fondos. */
+function sugerenciaTraspaso(s, prox) {
+  const monto = num(prox.monto);
+  if (s.banco < monto && s.efectivo >= (monto - s.banco)) {
+    const falta = monto - s.banco;
+    return `Tu banco (${fmtCLP(s.banco)}) no alcanza para esta cuota; ` +
+           `traspasa al menos ${fmtCLP(falta)} de Efectivo a Banco antes de la fecha.`;
+  }
+  return 'Considera reponer caja antes del vencimiento.';
+}
+
+/* Calcula qué gastos fijos vencen en los próximos `dias` días, ordenados
+   por cercanía. dia_mes es el día del mes; se proyecta al próximo que
+   caiga dentro de la ventana. */
+function proximosVencimientos(fijos, dias) {
+  const hoyISO = todayISO();
+  const [ay, am, ad] = hoyISO.split('-').map(Number);
+  const hoy = new Date(ay, am - 1, ad);
+
+  const lista = [];
+  fijos.forEach(f => {
+    const dia = Math.min(31, Math.max(1, parseInt(f.dia_mes, 10) || 1));
+    // Próxima ocurrencia de ese día: este mes si aún no pasó, si no el que viene
+    let cand = new Date(ay, am - 1, dia);
+    if (cand < hoy) cand = new Date(ay, am, dia);   // mes siguiente
+    const diff = Math.round((cand - hoy) / (1000 * 60 * 60 * 24));
+    if (diff >= 0 && diff <= dias) {
+      lista.push({ ...f, diasRestantes: diff });
+    }
+  });
+  return lista.sort((a, b) => a.diasRestantes - b.diasRestantes);
+}
+
+function pintarBadgeCobertura(tipo, mensaje) {
+  const badge = document.getElementById('badgeCobertura');
+  if (!badge) return;
+  badge.classList.remove('hidden', 'cobertura-ok', 'cobertura-warn', 'cobertura-crit');
+  badge.classList.add(tipo === 'crit' ? 'cobertura-crit' : tipo === 'warn' ? 'cobertura-warn' : 'cobertura-ok');
+  badge.textContent = mensaje;   // ya viene con escHtml en las partes de usuario
+}
+
+/* ---------- Traspaso interno ---------- */
+function abrirModalTraspaso() {
+  if (!esAdmin()) { showToast('Solo el administrador mueve fondos', 'err'); return; }
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  set('traspasoMonto', '');
+  set('traspasoBanco', '');
+  set('traspasoNota', '');
+  const org = document.getElementById('traspasoOrigen'); if (org) org.value = 'EFECTIVO';
+  const dst = document.getElementById('traspasoDestino'); if (dst) dst.value = 'BANCO';
+  sincronizarTraspaso();
+  document.getElementById('modalTraspaso')?.classList.add('show');
+  setTimeout(() => document.getElementById('traspasoMonto')?.focus(), 80);
+}
+
+/* Mantiene coherente el modal: evita origen == destino, muestra el
+   disponible del canal de origen y pide banco solo cuando toca. */
+function sincronizarTraspaso() {
+  const org = document.getElementById('traspasoOrigen');
+  const dst = document.getElementById('traspasoDestino');
+  if (!org || !dst) return;
+
+  // Si coinciden, se voltea el destino automáticamente
+  if (org.value === dst.value) dst.value = org.value === 'EFECTIVO' ? 'BANCO' : 'EFECTIVO';
+
+  const disponible = saldosActuales
+    ? (org.value === 'EFECTIVO' ? saldosActuales.efectivo : saldosActuales.banco)
+    : 0;
+  const nota = document.getElementById('traspasoDisponible');
+  if (nota) {
+    const monto = num(document.getElementById('traspasoMonto')?.value);
+    nota.textContent = `Disponible en ${org.value === 'EFECTIVO' ? 'efectivo' : 'banco'}: ${fmtCLP(disponible)}` +
+      (monto > disponible ? ' · ⚠️ el monto supera lo disponible' : '');
+    nota.style.color = monto > disponible ? 'var(--red)' : 'var(--text-muted)';
+  }
+
+  // El banco se pide cuando el traspaso toca una cuenta bancaria
+  const pideBanco = org.value === 'BANCO' || dst.value === 'BANCO';
+  document.getElementById('traspasoBancoWrap')?.classList.toggle('hidden', !pideBanco);
+}
+
+async function confirmarTraspaso() {
+  const origen = document.getElementById('traspasoOrigen')?.value;
+  const destino = document.getElementById('traspasoDestino')?.value;
+  const monto = num(document.getElementById('traspasoMonto')?.value);
+  const banco = (document.getElementById('traspasoBanco')?.value || '').trim();
+  const nota = (document.getElementById('traspasoNota')?.value || '').trim();
+
+  if (!(monto > 0)) { showToast('Ingresa un monto mayor a 0', 'err'); return; }
+  if (origen === destino) { showToast('El origen y el destino no pueden ser iguales', 'err'); return; }
+
+  const btn = document.getElementById('btnConfirmarTraspaso');
+  if (btn) btn.disabled = true;
+  try {
+    await API.balance.traspaso({ origen, destino, monto, banco, nota });
+    showToast(`Traspaso de ${fmtCLP(monto)} registrado`, 'ok');
+    cerrarModal('modalTraspaso');
+    cargarSaldosCanales();
+  } catch (err) {
+    showToast(err.message || 'No se pudo registrar el traspaso', 'err');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+/* ---------- Resguardo de caja ---------- */
+function abrirModalResguardo() {
+  if (!esAdmin()) return;
+  const cfg = saldosActuales?.config || { resguardo_caja: 0, dias_alerta: 15 };
+  const m = document.getElementById('resguardoMonto'); if (m) m.value = num(cfg.resguardo_caja) || '';
+  const d = document.getElementById('resguardoDias'); if (d) d.value = String(cfg.dias_alerta || 15);
+  document.getElementById('modalResguardo')?.classList.add('show');
+  setTimeout(() => document.getElementById('resguardoMonto')?.focus(), 80);
+}
+
+async function guardarResguardo() {
+  const resguardo_caja = num(document.getElementById('resguardoMonto')?.value);
+  const dias_alerta = parseInt(document.getElementById('resguardoDias')?.value, 10) || 15;
+  const btn = document.getElementById('btnGuardarResguardo');
+  if (btn) btn.disabled = true;
+  try {
+    await API.balance.guardarConfig({ resguardo_caja, dias_alerta });
+    showToast('Resguardo actualizado', 'ok');
+    cerrarModal('modalResguardo');
+    cargarSaldosCanales();
+  } catch (err) {
+    showToast(err.message || 'No se pudo guardar', 'err');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}

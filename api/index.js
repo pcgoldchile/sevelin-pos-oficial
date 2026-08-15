@@ -28,11 +28,27 @@ const {
   SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY,
   JWT_SECRET,
-  ADMIN_PIN = '9067',
-  WORKER_PIN = '0495',
-  CORS_ORIGINS = '*',
+  ADMIN_PIN,
+  WORKER_PIN,
+  CORS_ORIGINS = '',
   NEGOCIO_NOMBRE = 'Sevelin'
 } = process.env;
+
+/* PRIORIDAD 8 — sin defaults de PIN.
+   ------------------------------------------------------------
+   Antes ADMIN_PIN caía a '9067' y WORKER_PIN a '0495' si no estaban
+   definidos: los mismos valores del .env.example versionado en git, o
+   sea PINs públicos. Ahora, si faltan, se avisa fuerte y el login queda
+   inutilizable (compararán contra undefined y siempre fallará), en vez
+   de aceptar silenciosamente una clave conocida. */
+if (!ADMIN_PIN || !WORKER_PIN) {
+  console.error('[POS] FALTAN ADMIN_PIN o WORKER_PIN. Defínelos en las variables de entorno; ' +
+                'el login no funcionará hasta configurarlos con valores propios.');
+}
+if (ADMIN_PIN === '9067' || WORKER_PIN === '0495') {
+  console.error('[POS] ADMIN_PIN/WORKER_PIN son los valores de ejemplo del repositorio. ' +
+                'Cámbialos: son públicos y cualquiera con el código los conoce.');
+}
 
 const TOKEN_TTL = '12h';
 
@@ -49,16 +65,49 @@ const db = createClient(SUPABASE_URL || 'http://localhost', SUPABASE_SERVICE_ROL
 });
 
 /* ---------- Middlewares base ---------- */
-app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+/* PRIORIDAD 6 — CSP también en las respuestas de la API.
+   ------------------------------------------------------------
+   La CSP de vercel.json cubre los archivos estáticos (el HTML del POS),
+   pero /api/* lo sirve Express, y antes helmet iba con la CSP apagada:
+   esas respuestas salían sin ninguna política. Aunque la API devuelve
+   JSON (no HTML que ejecute scripts), por defensa en profundidad se le
+   pone una CSP mínima y estricta: nada de scripts, nada embebible.
+   Es deliberadamente más cerrada que la del front porque una respuesta
+   de API nunca necesita cargar recursos. */
+app.use(helmet({
+  contentSecurityPolicy: {
+    useDefaults: false,
+    directives: {
+      defaultSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+      baseUri: ["'none'"],
+      formAction: ["'none'"]
+    }
+  },
+  crossOriginResourcePolicy: { policy: 'cross-origin' }
+}));
 // 6 MB: los documentos de compras viajan en base64 dentro del JSON.
 // (Vercel corta las peticiones sobre ~4.5 MB, por eso el front limita a 4 MB.)
 app.use(express.json({ limit: '6mb' }));
 
 const origenesPermitidos = CORS_ORIGINS.split(',').map(o => o.trim()).filter(Boolean);
+
+/* PRIORIDAD 8 — CORS sin fallback a "*".
+   ------------------------------------------------------------
+   Antes, si CORS_ORIGINS no estaba definida o traía "*", se aceptaba
+   cualquier origen. Un deploy sin la variable quedaba abierto de par en
+   par. Ahora, si no hay orígenes configurados, en producción se deniega
+   por defecto (la protección real sigue siendo el JWT, no CORS).
+
+   Las peticiones sin cabecera Origin (curl, Postman, apps móviles) se
+   siguen permitiendo: CORS no las cubre de todos modos, y el token es
+   quien las autoriza o rechaza. */
 app.use(cors({
   origin(origin, cb) {
-    // Permite herramientas sin Origin (curl, Postman) y el mismo dominio de Vercel
-    if (!origin || origenesPermitidos.includes('*') || origenesPermitidos.includes(origin)) return cb(null, true);
+    if (!origin) return cb(null, true);                 // sin Origin: lo decide el JWT
+    if (origenesPermitidos.includes(origin)) return cb(null, true);
+    // "*" explícito sigue siendo válido SOLO si alguien lo pone a propósito
+    if (origenesPermitidos.includes('*')) return cb(null, true);
     return cb(new Error('Origen no permitido por CORS'));
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -1644,8 +1693,16 @@ app.post('/api/ventas/:id/pago', auth(), async (req, res) => {
    Se usa desde el selector rápido del Historial (guarda con 1 clic).
    Lo puede hacer cualquier usuario autenticado: es una corrección
    tributaria de caja, no una edición de montos. */
-app.post('/api/ventas/:id/dte', auth(), async (req, res) => {
+app.post('/api/ventas/:id/dte', auth(true), async (req, res) => {
   const tipo = tipoDteValido(req.body?.tipo_dte);
+
+  /* PRIORIDAD 7 — antes esto era auth() (cualquier trabajador) y sin
+     rastro. Cambiar el tipo de documento de una venta ya registrada es
+     sensible tributariamente, así que exige admin Y deja traza. */
+
+  // Se lee el valor anterior ANTES de actualizar, para la auditoría
+  const { data: previa } = await db.from('ventas')
+    .select('tipo_dte').eq('id', req.params.id).maybeSingle();
 
   const { data, error } = await db.from('ventas')
     .update({ tipo_dte: tipo })
@@ -1654,6 +1711,20 @@ app.post('/api/ventas/:id/dte', auth(), async (req, res) => {
     .single();
 
   if (error) return enviarError(res, 500, error.message);
+
+  /* Registro de auditoría (tabla auditoria_dte, migración 15). Solo-append.
+     Si la tabla no existe todavía (backend nuevo, migración sin correr) el
+     fallo NO rompe el cambio de DTE: se registra en consola y sigue. */
+  if (previa && previa.tipo_dte !== tipo) {
+    const { error: errAudit } = await db.from('auditoria_dte').insert([{
+      venta_id: Number(req.params.id),
+      tipo_anterior: previa.tipo_dte || null,
+      tipo_nuevo: tipo,
+      rol: req.usuario?.rol || null
+    }]);
+    if (errAudit) console.error('[AUDITORÍA DTE] no se pudo registrar el cambio:', errAudit.message);
+  }
+
   res.json(limpiarParaRol(data, req.usuario.rol));
 });
 
@@ -1712,6 +1783,12 @@ async function sanearCompra(body = {}) {
       clasificacion,
       // Solo los gastos en efectivo descuentan de la caja física
       metodo_pago: (body.metodo_pago || 'Efectivo').trim(),
+      /* Banco/cuenta de destino: solo tiene sentido si NO es efectivo.
+         Si el método es efectivo se fuerza a null para no dejar datos
+         inconsistentes ("Efectivo en Santander"). */
+      banco: esEfectivo((body.metodo_pago || 'Efectivo').trim())
+        ? null
+        : ((body.banco || '').trim() || null),
       costo_total: costo,
       descripcion: (body.descripcion || '').trim() || null,
       url_documento: (body.url_documento || '').trim() || null,
@@ -1849,10 +1926,13 @@ app.get('/api/inyecciones', auth(true), async (req, res) => {
 });
 
 app.post('/api/inyecciones', auth(true), async (req, res) => {
+  const metodo = (req.body?.metodo || 'Efectivo').trim();
   const inyeccion = {
     fecha: (req.body?.fecha || '').trim() || fechaHoyChile(),
     monto: num(req.body?.monto),
-    metodo: (req.body?.metodo || 'Efectivo').trim(),
+    metodo,
+    // Banco solo cuando el aporte NO entra como efectivo
+    banco: esEfectivo(metodo) ? null : ((req.body?.banco || '').trim() || null),
     descripcion: (req.body?.descripcion || '').trim() || null
   };
   if (!(inyeccion.monto > 0)) return enviarError(res, 400, 'El monto del aporte debe ser mayor a 0');
@@ -2372,6 +2452,193 @@ app.get('/api/balance', auth(true), async (req, res) => {
   } catch (e) {
     enviarError(res, 500, e.message || 'No se pudo calcular el balance');
   }
+});
+
+/* ============================================================
+   SALDO POR CANAL EN TIEMPO REAL  (widget de Finanzas)
+   ------------------------------------------------------------
+   Calcula, sobre TODA la historia (no un período), cuánto dinero hay
+   ahora mismo en cada canal:
+
+     Caja chica (efectivo) = fondos iniciales de arqueo
+                           + ventas cobradas en efectivo
+                           + inyecciones en efectivo
+                           + traspasos que ENTRAN a efectivo
+                           - gastos pagados en efectivo (sin mermas)
+                           - traspasos que SALEN de efectivo
+
+     Banco = ventas cobradas por débito/crédito/transferencia
+           + inyecciones no-efectivo
+           + traspasos que ENTRAN a banco
+           - gastos no-efectivo
+           - comisiones del POS (se descuentan del abono bancario)
+           - traspasos que SALEN de banco
+
+   El canal se DERIVA del método de pago: esEfectivo() decide. No hay
+   una columna "canal" que pueda quedar desincronizada.
+
+   Se hace en el servidor de un tirón porque son varias tablas; el
+   frontend solo pinta el resultado y lo refresca tras cada venta/gasto.
+   ============================================================ */
+app.get('/api/finanzas/saldos', auth(true), async (req, res) => {
+  try {
+    // Solo ventas efectivamente cobradas (PAGADA) cuentan como dinero real
+    const { data: ventasRaw } = await db.from('ventas')
+      .select('id, total, comision_pos, metodo_pago, metodo_pago_final, pago_mixto, estado')
+      .eq('estado', 'PAGADA');
+    const ventas = ventasRaw || [];
+    const ids = ventas.map(v => v.id);
+
+    let pagos = [];
+    if (ids.length) {
+      // Se pide en tandas para no exceder límites de URL con muchas ventas
+      for (let i = 0; i < ids.length; i += 300) {
+        const trozo = ids.slice(i, i + 300);
+        const { data } = await db.from('venta_pagos').select('*').in('venta_id', trozo);
+        if (data) pagos = pagos.concat(data);
+      }
+    }
+    const pagosPorVenta = {};
+    pagos.forEach(p => { (pagosPorVenta[p.venta_id] = pagosPorVenta[p.venta_id] || []).push(p); });
+
+    let ventasEfectivo = 0, ventasBanco = 0;
+    ventas.forEach(v => {
+      const desglose = pagosPorVenta[v.id];
+      if (v.pago_mixto && desglose?.length) {
+        desglose.forEach(p => {
+          if (esEfectivo(p.metodo)) ventasEfectivo += num(p.monto);
+          else ventasBanco += num(p.monto);
+        });
+      } else {
+        const m = v.metodo_pago_final || v.metodo_pago;
+        if (esEfectivo(m)) ventasEfectivo += num(v.total);
+        else ventasBanco += num(v.total);
+      }
+    });
+
+    // Comisiones del POS: salen del abono bancario (las cobra la máquina)
+    const comisiones = ventas.reduce((a, v) => a + num(v.comision_pos), 0);
+
+    // Gastos (compras). Las mermas no son salida de dinero.
+    const { data: gastosRaw } = await db.from('compras')
+      .select('costo_total, origen, metodo_pago').limit(100000);
+    const gastos = gastosRaw || [];
+    let gastosEfectivo = 0, gastosBanco = 0;
+    gastos.forEach(g => {
+      if (g.origen === 'MERMA') return;
+      if (esEfectivo(g.metodo_pago)) gastosEfectivo += num(g.costo_total);
+      else gastosBanco += num(g.costo_total);
+    });
+
+    // Inyecciones de capital
+    const { data: inyRaw } = await db.from('inyecciones_capital').select('monto, metodo').limit(100000);
+    const inyecciones = inyRaw || [];
+    let inyEfectivo = 0, inyBanco = 0;
+    inyecciones.forEach(i => {
+      if (esEfectivo(i.metodo)) inyEfectivo += num(i.monto);
+      else inyBanco += num(i.monto);
+    });
+
+    // Fondo inicial: suma de los fondos de arqueo (base del cajón)
+    const { data: arqueosRaw } = await db.from('arqueos').select('fondo_inicial').limit(100000);
+    const fondoInicial = (arqueosRaw || []).reduce((a, x) => a + num(x.fondo_inicial), 0);
+
+    // Traspasos internos entre canales
+    const { data: traspRaw } = await db.from('traspasos').select('origen, destino, monto').limit(100000);
+    let traspAEfectivo = 0, traspDeEfectivo = 0, traspABanco = 0, traspDeBanco = 0;
+    (traspRaw || []).forEach(t => {
+      if (t.destino === 'EFECTIVO') traspAEfectivo += num(t.monto);
+      if (t.origen === 'EFECTIVO') traspDeEfectivo += num(t.monto);
+      if (t.destino === 'BANCO') traspABanco += num(t.monto);
+      if (t.origen === 'BANCO') traspDeBanco += num(t.monto);
+    });
+
+    const efectivo = fondoInicial + ventasEfectivo + inyEfectivo + traspAEfectivo
+                   - gastosEfectivo - traspDeEfectivo;
+    const banco = ventasBanco + inyBanco + traspABanco
+                - gastosBanco - comisiones - traspDeBanco;
+
+    // Compromisos fijos activos, para las alertas de cobertura
+    const { data: fijosRaw } = await db.from('gastos_fijos').select('*').eq('activo', true);
+
+    // Configuración (resguardo mínimo, ventana de días)
+    const { data: cfgRaw } = await db.from('config_finanzas').select('*').eq('id', 1).maybeSingle();
+    const config = cfgRaw || { resguardo_caja: 0, dias_alerta: 15 };
+
+    res.json({
+      efectivo,
+      banco,
+      total: efectivo + banco,
+      detalle: {
+        fondoInicial,
+        ventasEfectivo, ventasBanco,
+        inyEfectivo, inyBanco,
+        gastosEfectivo, gastosBanco,
+        comisiones,
+        traspAEfectivo, traspDeEfectivo, traspABanco, traspDeBanco
+      },
+      gastosFijos: fijosRaw || [],
+      config: {
+        resguardo_caja: num(config.resguardo_caja),
+        dias_alerta: parseInt(config.dias_alerta, 10) || 15
+      }
+    });
+  } catch (e) {
+    enviarError(res, 500, e.message || 'No se pudieron calcular los saldos');
+  }
+});
+
+/* Traspaso interno de dinero entre canales (no es ingreso ni gasto) */
+app.post('/api/finanzas/traspaso', auth(true), async (req, res) => {
+  const origen = String(req.body?.origen || '').trim().toUpperCase();
+  const destino = String(req.body?.destino || '').trim().toUpperCase();
+  const monto = num(req.body?.monto);
+
+  const CANALES = ['EFECTIVO', 'BANCO'];
+  if (!CANALES.includes(origen) || !CANALES.includes(destino)) {
+    return enviarError(res, 400, 'Origen y destino deben ser EFECTIVO o BANCO');
+  }
+  if (origen === destino) return enviarError(res, 400, 'El origen y el destino no pueden ser iguales');
+  if (!(monto > 0)) return enviarError(res, 400, 'El monto del traspaso debe ser mayor a 0');
+
+  const fila = {
+    origen, destino, monto,
+    fecha: (req.body?.fecha || '').trim() || fechaHoyChile(),
+    banco: (req.body?.banco || '').trim() || null,
+    nota: (req.body?.nota || '').trim() || null
+  };
+  const { data, error } = await db.from('traspasos').insert([fila]).select().single();
+  if (error) return enviarError(res, 500, error.message);
+  res.status(201).json(data);
+});
+
+/* Historial de traspasos (para poder revisarlos y eliminarlos) */
+app.get('/api/finanzas/traspasos', auth(true), async (req, res) => {
+  const { data, error } = await db.from('traspasos')
+    .select('*').order('fecha', { ascending: false }).order('id', { ascending: false })
+    .limit(limiteDe(req));
+  if (error) return enviarError(res, 500, error.message);
+  res.json(data || []);
+});
+
+app.delete('/api/finanzas/traspaso/:id', auth(true), exigirPinAdmin, async (req, res) => {
+  const { error } = await db.from('traspasos').delete().eq('id', req.params.id);
+  if (error) return enviarError(res, 500, error.message);
+  res.json({ ok: true });
+});
+
+/* Configuración de Finanzas: resguardo mínimo de caja y ventana de alerta */
+app.put('/api/finanzas/config', auth(true), async (req, res) => {
+  const fila = {
+    id: 1,
+    resguardo_caja: Math.max(0, num(req.body?.resguardo_caja)),
+    dias_alerta: Math.min(60, Math.max(1, parseInt(req.body?.dias_alerta, 10) || 15)),
+    actualizado_en: new Date().toISOString()
+  };
+  const { data, error } = await db.from('config_finanzas')
+    .upsert([fila], { onConflict: 'id' }).select().single();
+  if (error) return enviarError(res, 500, error.message);
+  res.json(data);
 });
 
 app.get('/api/compras/clasificaciones', auth(), async (req, res) => {

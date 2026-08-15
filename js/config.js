@@ -302,13 +302,15 @@ function initNavegacion() {
 
       if (viewId === 'view-productos' && typeof cargarProductos === 'function') cargarProductos();
 
-      /* Historial y Gastos pasaron a ser sub-pestañas de Finanzas, así
-         que ya no llegan como vistas propias. Al entrar a Finanzas se
-         carga el balance; las otras pestañas cargan al abrirse
-         (js/balance.js → mostrarPanelFinanzas). */
+      /* Historial y Gastos pasaron a ser sub-pestañas de Finanzas. La
+         pestaña por defecto ahora es Historial de Ventas (antes Balance):
+         es lo que más se consulta día a día. Se abre por su función de
+         panel para que cargue sus datos. */
       if (viewId === 'view-finanzas') {
-        if (typeof cargarBalance === 'function') cargarBalance();
-        if (typeof cargarGastosFijos === 'function') cargarGastosFijos();
+        if (typeof mostrarPanelFinanzas === 'function') mostrarPanelFinanzas('ventas');
+        else if (typeof cargarHistorial === 'function') cargarHistorial();
+        // El widget de saldos vive arriba y se refresca siempre al entrar
+        if (typeof cargarSaldosCanales === 'function') cargarSaldosCanales();
       }
       if (viewId === 'view-taller' && typeof cargarOrdenes === 'function') cargarOrdenes();
       /* Abonos y Repuestos pasaron a ser sub-pestañas de Servicio

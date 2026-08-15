@@ -748,15 +748,47 @@
          ============================================================ -->
     <section id="view-finanzas" class="view-section admin-only">
 
+      <!-- ============================================================
+           WIDGET DE SALDO EN TIEMPO REAL (Cajas y Cuentas)
+           ------------------------------------------------------------
+           Efectivo en caja chica, dinero en banco y total disponible.
+           Se refresca al entrar a Finanzas y tras cada venta/gasto/OT.
+           El badge de cobertura avisa si el saldo alcanza para los
+           próximos vencimientos fijos.
+           ============================================================ -->
+      <div class="widget-saldos" id="widgetSaldos">
+        <div class="saldo-tarjetas">
+          <div class="saldo-card saldo-efectivo">
+            <span class="saldo-label">💵 Efectivo · Caja chica</span>
+            <b class="saldo-monto" id="saldoEfectivo">$0</b>
+          </div>
+          <div class="saldo-card saldo-banco">
+            <span class="saldo-label">🏦 Banco · Cuentas</span>
+            <b class="saldo-monto" id="saldoBanco">$0</b>
+          </div>
+          <div class="saldo-card saldo-total">
+            <span class="saldo-label">💰 Saldo total disponible</span>
+            <b class="saldo-monto" id="saldoTotal">$0</b>
+          </div>
+          <div class="saldo-acciones">
+            <button class="btn btn-outline btn-sm" id="btnTraspaso" title="Mover dinero entre efectivo y banco">🔄 Traspaso interno</button>
+            <button class="btn btn-ghost btn-sm" id="btnResguardo" title="Definir el mínimo de caja para las alertas">⚙️ Resguardo</button>
+          </div>
+        </div>
+
+        <!-- Badge de cobertura: aparece solo cuando hay algo que avisar -->
+        <div class="badge-cobertura hidden" id="badgeCobertura" role="status"></div>
+      </div>
+
       <nav class="subtabs" id="subtabsFinanzas">
-        <button class="subtab activo" data-subtab="balance">📊 Balance</button>
-        <button class="subtab" data-subtab="ventas">📋 Historial de Ventas</button>
-        <button class="subtab" data-subtab="gastos">🧾 Gastos</button>
+        <button class="subtab activo" data-subtab="ventas">📜 Historial de Ventas</button>
+        <button class="subtab" data-subtab="balance">📊 Balance</button>
+        <button class="subtab" data-subtab="gastos">📑 Gastos</button>
         <button class="subtab" data-subtab="fijos">🔁 Gastos Fijos</button>
       </nav>
 
       <!-- ---------- BALANCE ---------- -->
-      <div class="panel-finanzas activo" data-panel-finanzas="balance">
+      <div class="panel-finanzas" data-panel-finanzas="balance">
 
         <div class="card">
           <div class="card-head">
@@ -950,7 +982,7 @@
         </div>
       </div>
 
-<div class="panel-finanzas" data-panel-finanzas="ventas">
+<div class="panel-finanzas activo" data-panel-finanzas="ventas">
 
       <div class="card">
         <div class="card-head">
@@ -1397,6 +1429,12 @@
         </select>
       </div>
 
+      <!-- Banco: solo visible cuando el método no es efectivo (lo maneja balance.js) -->
+      <div class="field hidden" id="inyeccionBancoWrap">
+        <label for="inyeccionBanco">¿A qué banco / cuenta?</label>
+        <input type="text" id="inyeccionBanco" placeholder="Ej: BancoEstado, Santander, Mercado Pago…" list="listaBancos">
+      </div>
+
       <div class="field">
         <label for="inyeccionDescripcion">Descripción (opcional)</label>
         <input type="text" id="inyeccionDescripcion" placeholder="Ej: capital de trabajo, reposición de caja chica">
@@ -1408,6 +1446,111 @@
       </div>
     </div>
   </div>
+
+  <!-- ============================================================
+       TRASPASO INTERNO ENTRE CANALES
+       ------------------------------------------------------------
+       Mover dinero de Efectivo a Banco o al revés. No es ingreso ni
+       gasto: el saldo total no cambia, solo se reparte distinto.
+       ============================================================ -->
+  <div id="modalTraspaso" class="modal-overlay">
+    <div class="modal-box modal-sm">
+      <h2>🔄 Traspaso interno</h2>
+      <p class="modal-hint">
+        Mueve dinero entre tus cajas (por ejemplo, depositar en el banco el
+        efectivo del día). <strong>No es un gasto ni un ingreso</strong>: el
+        saldo total se mantiene, solo cambia de canal.
+      </p>
+
+      <div class="traspaso-flujo">
+        <div class="field">
+          <label for="traspasoOrigen">Sale de</label>
+          <select id="traspasoOrigen">
+            <option value="EFECTIVO">💵 Efectivo</option>
+            <option value="BANCO">🏦 Banco</option>
+          </select>
+        </div>
+        <span class="traspaso-flecha">→</span>
+        <div class="field">
+          <label for="traspasoDestino">Entra a</label>
+          <select id="traspasoDestino">
+            <option value="BANCO">🏦 Banco</option>
+            <option value="EFECTIVO">💵 Efectivo</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="traspasoMonto">Monto a mover</label>
+        <input type="number" id="traspasoMonto" min="0" step="1" placeholder="0">
+        <p class="modal-hint" id="traspasoDisponible"></p>
+      </div>
+
+      <div class="field hidden" id="traspasoBancoWrap">
+        <label for="traspasoBanco">Banco / cuenta</label>
+        <input type="text" id="traspasoBanco" placeholder="Ej: BancoEstado, Santander…" list="listaBancos">
+      </div>
+
+      <div class="field">
+        <label for="traspasoNota">Nota (opcional)</label>
+        <input type="text" id="traspasoNota" placeholder="Ej: depósito de la recaudación del viernes">
+      </div>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarTraspaso">Cancelar</button>
+        <button class="btn btn-primary" id="btnConfirmarTraspaso">Mover dinero</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       RESGUARDO DE CAJA (mínimo para las alertas de cobertura)
+       ============================================================ -->
+  <div id="modalResguardo" class="modal-overlay">
+    <div class="modal-box modal-sm">
+      <h2>⚙️ Resguardo de caja</h2>
+      <p class="modal-hint">
+        Define el <strong>mínimo que quieres mantener disponible</strong>. Si al
+        descontar el próximo compromiso fijo el saldo cayera bajo este monto,
+        Finanzas te avisará con anticipación.
+      </p>
+
+      <div class="field" style="margin-top:14px;">
+        <label for="resguardoMonto">Monto mínimo de resguardo</label>
+        <input type="number" id="resguardoMonto" min="0" step="1000" placeholder="Ej: 200000">
+      </div>
+
+      <div class="field">
+        <label for="resguardoDias">Ventana de aviso (días)</label>
+        <select id="resguardoDias">
+          <option value="7">Próximos 7 días</option>
+          <option value="15" selected>Próximos 15 días</option>
+          <option value="30">Próximos 30 días</option>
+        </select>
+        <p class="modal-hint">Cuántos días hacia adelante se vigilan los vencimientos fijos.</p>
+      </div>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarResguardo">Cancelar</button>
+        <button class="btn btn-primary" id="btnGuardarResguardo">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lista de bancos frecuentes, reutilizada por varios campos -->
+  <datalist id="listaBancos">
+    <option value="BancoEstado"></option>
+    <option value="Banco de Chile"></option>
+    <option value="Santander"></option>
+    <option value="BCI"></option>
+    <option value="Itaú"></option>
+    <option value="Scotiabank"></option>
+    <option value="Falabella"></option>
+    <option value="Mercado Pago"></option>
+    <option value="Haulmer / Tuu"></option>
+    <option value="Tenpo"></option>
+    <option value="MACH"></option>
+  </datalist>
 
   <!-- ============================================================
        GASTO FIJO / RECURRENTE
@@ -2484,12 +2627,18 @@
           <label>¿Con qué se pagó? *</label>
           <select id="compraMetodoPago">
             <option value="Efectivo">Efectivo · sale del cajón</option>
-            <option value="Transferencia">Transferencia</option>
-            <option value="Tarjeta Débito">Tarjeta Débito</option>
-            <option value="Tarjeta Crédito">Tarjeta Crédito</option>
+            <option value="Transferencia">Transferencia · sale del banco</option>
+            <option value="Tarjeta Débito">Tarjeta Débito · banco</option>
+            <option value="Tarjeta Crédito">Tarjeta Crédito · banco</option>
             <option value="No aplica (merma)">No aplica · merma o ajuste</option>
           </select>
         </div>
+      </div>
+
+      <!-- Banco: aparece solo cuando el pago NO es en efectivo (balance.js lo alterna) -->
+      <div class="field hidden" id="compraBancoWrap">
+        <label for="compraBanco">¿Desde qué banco / cuenta salió?</label>
+        <input type="text" id="compraBanco" placeholder="Ej: BancoEstado, Santander, Haulmer…" list="listaBancos">
       </div>
 
       <div class="grid grid-2" style="margin-top:12px;">

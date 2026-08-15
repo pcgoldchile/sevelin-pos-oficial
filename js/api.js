@@ -232,6 +232,13 @@ const API = {
     obtener: (desde, hasta) =>
       apiRequest(`/balance?desde=${encodeURIComponent(desde)}&hasta=${encodeURIComponent(hasta)}`),
 
+    // Saldo por canal en tiempo real (widget)
+    saldos: () => apiRequest('/finanzas/saldos'),
+    traspaso: (datos) => apiRequest('/finanzas/traspaso', { method: 'POST', body: datos }),
+    listarTraspasos: () => apiRequest('/finanzas/traspasos'),
+    eliminarTraspaso: (id, pin) => apiRequest(`/finanzas/traspaso/${id}`, { method: 'DELETE', body: { pin } }),
+    guardarConfig: (datos) => apiRequest('/finanzas/config', { method: 'PUT', body: datos }),
+
     listarGastosFijos: () => apiRequest('/gastos-fijos'),
     crearGastoFijo: (datos) => apiRequest('/gastos-fijos', { method: 'POST', body: datos }),
     actualizarGastoFijo: (id, datos) => apiRequest(`/gastos-fijos/${id}`, { method: 'PUT', body: datos }),
