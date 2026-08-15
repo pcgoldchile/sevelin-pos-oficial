@@ -31,6 +31,23 @@ function escHtml(v) {
 }
 
 /* ============================================================
+   num() — conversión numérica tolerante (helper global)
+   ------------------------------------------------------------
+   BUG QUE ARREGLA: el widget de saldos y los modales de Traspaso y
+   Resguardo (balance.js) llamaban a num(), pero esa función solo existía
+   en el BACKEND (api/index.js). En el navegador lanzaba
+   "ReferenceError: num is not defined" apenas se hacía clic en los
+   botones, ANTES de que el modal recibiera la clase .show. Resultado: los
+   botones "no hacían nada" (en realidad, reventaban en silencio).
+
+   Se define aquí, en config.js (carga primero), espejando la del backend:
+   devuelve 0 ante null, undefined, '' o texto no numérico, nunca NaN. */
+function num(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/* ============================================================
    COMISIÓN DEL POS TUU (HAULMER PRO 2)
    ------------------------------------------------------------
    Fórmula:  monto * 0,0079 + 65,  solo en pagos con tarjeta.

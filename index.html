@@ -748,8 +748,20 @@
          ============================================================ -->
     <section id="view-finanzas" class="view-section admin-only">
 
+
+      <nav class="subtabs" id="subtabsFinanzas">
+        <button class="subtab activo" data-subtab="ventas">📜 Historial de Ventas</button>
+        <button class="subtab" data-subtab="balance">📊 Balance</button>
+        <button class="subtab" data-subtab="gastos">📑 Gastos</button>
+        <button class="subtab" data-subtab="fijos">🔁 Gastos Fijos</button>
+      </nav>
+
+      <!-- ---------- BALANCE ---------- -->
+      <div class="panel-finanzas" data-panel-finanzas="balance">
       <!-- ============================================================
            WIDGET DE SALDO EN TIEMPO REAL (Cajas y Cuentas)
+           Reubicado DENTRO del panel Balance (antes quedaba apretado
+           encima de las pestañas). La navegación superior queda limpia.
            ------------------------------------------------------------
            Efectivo en caja chica, dinero en banco y total disponible.
            Se refresca al entrar a Finanzas y tras cada venta/gasto/OT.
@@ -780,15 +792,6 @@
         <div class="badge-cobertura hidden" id="badgeCobertura" role="status"></div>
       </div>
 
-      <nav class="subtabs" id="subtabsFinanzas">
-        <button class="subtab activo" data-subtab="ventas">📜 Historial de Ventas</button>
-        <button class="subtab" data-subtab="balance">📊 Balance</button>
-        <button class="subtab" data-subtab="gastos">📑 Gastos</button>
-        <button class="subtab" data-subtab="fijos">🔁 Gastos Fijos</button>
-      </nav>
-
-      <!-- ---------- BALANCE ---------- -->
-      <div class="panel-finanzas" data-panel-finanzas="balance">
 
         <div class="card">
           <div class="card-head">

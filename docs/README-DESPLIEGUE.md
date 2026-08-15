@@ -26,7 +26,7 @@ sevelin-pos/
 
 ## 2. Base de datos
 
-En Supabase → **SQL Editor**, ejecuta `sql/01-actualizaciones.sql`. Agrega los campos de
+En Supabase → **SQL Editor**, ejecuta las migraciones de `sql/` **en orden** (01 … 15). Son idempotentes. La 01 agrega los campos de Tiendanube; las siguientes, el resto del sistema (FIFO, finanzas, canales de dinero, auditoría de DTE). Agrega los campos de
 Tiendanube (`peso_kg`, `alto_cm`, `ancho_cm`, `profundidad_cm`, `descripcion`), el borrado
 en cascada del detalle de ventas y activa RLS.
 
@@ -70,13 +70,17 @@ vercel --prod     # producción
 
 ## 5. Variables de entorno (Vercel → Settings → Environment Variables)
 
+> **Seguridad:** estas variables van en Vercel, **no en un archivo `.env` subido a git**. El `.env`
+> real nunca se versiona ni se comparte; usa `.env.example` como plantilla. Ver la auditoría en
+> `docs/AUDITORIA-SEGURIDAD-SEVELIN-POS.md`.
+
 | Nombre | Ejemplo | Nota |
 |---|---|---|
-| `SUPABASE_URL` | `https://etpndrjdxidfwamhswab.supabase.co` | |
-| `SUPABASE_SERVICE_ROLE_KEY` | `eyJhbGciOi...` | secreta |
+| `SUPABASE_URL` | `https://tu-proyecto.supabase.co` | |
+| `SUPABASE_SERVICE_ROLE_KEY` | `sb_secret_...` (o service_role) | secreta |
 | `JWT_SECRET` | cadena de 64+ caracteres | secreta |
-| `ADMIN_PIN` | `9067` | cambiable sin tocar código |
-| `WORKER_PIN` | `0495` | |
+| `ADMIN_PIN` | (clave propia) | NO uses 9067/1234; el backend rechaza los de ejemplo |
+| `WORKER_PIN` | (clave propia) | admite letras y símbolos |
 | `CORS_ORIGINS` | `https://tu-proyecto.vercel.app` | separa varios con coma |
 | `NEGOCIO_NOMBRE` | `Sevelin` | sale impreso en el ticket |
 
@@ -90,7 +94,7 @@ curl https://tu-proyecto.vercel.app/api/health
 # {"ok":true,"servicio":"sevelin-pos-api"}
 
 curl -X POST https://tu-proyecto.vercel.app/api/login \
-  -H "Content-Type: application/json" -d '{"pin":"9067"}'
+  -H "Content-Type: application/json" -d '{"pin":"TU_PIN_ADMIN"}'
 # {"token":"eyJ...","rol":"admin",...}
 ```
 
@@ -116,7 +120,7 @@ y agrega ese origen a `CORS_ORIGINS`.
 
 ## 8. Qué puede hacer cada rol
 
-| Acción | Admin (9067) | Trabajador (0495) |
+| Acción | Admin | Trabajador |
 |---|---|---|
 | Registrar ventas e imprimir tickets | ✅ | ✅ |
 | Ver historial y reimprimir | ✅ | ✅ |

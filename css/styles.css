@@ -2867,3 +2867,102 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
 @media (max-width: 720px) {
     .edit-item-codigos { grid-template-columns: 1fr; }
 }
+
+/* ============================================================
+   26. WIDGET DE SALDOS POR CANAL (Finanzas)
+   ------------------------------------------------------------
+   Este bloque no existía: el widget se renderizaba sin estilos, por eso
+   se veía "apretado y feo" encima de las pestañas. Ahora vive dentro del
+   panel Balance y se presenta como una tira de tarjetas.
+   ============================================================ */
+.widget-saldos {
+    margin: 0 0 22px;
+    padding: 16px 18px;
+    border-radius: var(--radius);
+    background: linear-gradient(135deg, rgba(59,130,246,.08), rgba(34,197,94,.05));
+    border: 1px solid var(--border);
+}
+
+.saldo-tarjetas {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr) auto;
+    gap: 14px;
+    align-items: stretch;
+}
+@media (max-width: 900px) {
+    .saldo-tarjetas { grid-template-columns: 1fr 1fr; }
+    .saldo-acciones { grid-column: 1 / -1; }
+}
+@media (max-width: 560px) {
+    .saldo-tarjetas { grid-template-columns: 1fr; }
+}
+
+.saldo-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 14px 16px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-800);
+    border: 1px solid var(--border);
+}
+.saldo-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: .01em;
+}
+.saldo-monto {
+    font-size: 1.6rem;
+    font-weight: 800;
+    line-height: 1.1;
+    color: var(--text-100);
+    font-variant-numeric: tabular-nums;
+}
+
+/* El canal "total" se resalta como la cifra principal */
+.saldo-total { background: linear-gradient(135deg, rgba(34,197,94,.14), rgba(34,197,94,.04)); border-color: rgba(34,197,94,.35); }
+.saldo-total .saldo-monto { color: var(--green); }
+
+/* Un saldo negativo (error de registro) se pinta en rojo, lo marca balance.js */
+.saldo-monto.saldo-negativo { color: var(--red); }
+
+.saldo-acciones {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 8px;
+    min-width: 170px;
+}
+@media (max-width: 900px) {
+    .saldo-acciones { flex-direction: row; }
+    .saldo-acciones .btn { flex: 1; }
+}
+
+/* ---------- Badge de cobertura ---------- */
+.badge-cobertura {
+    margin-top: 14px;
+    padding: 11px 15px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.45;
+    border: 1px solid transparent;
+}
+.badge-cobertura.hidden { display: none; }
+
+.cobertura-ok {
+    background: rgba(34,197,94,.12);
+    border-color: rgba(34,197,94,.35);
+    color: var(--green);
+}
+.cobertura-warn {
+    background: rgba(251,191,36,.12);
+    border-color: rgba(251,191,36,.4);
+    color: var(--gold);
+}
+.cobertura-crit {
+    background: rgba(239,68,68,.12);
+    border-color: rgba(239,68,68,.4);
+    color: var(--red);
+}
