@@ -105,6 +105,11 @@ function setupPosEventListeners() {
     if (elGrupoPosHora) elGrupoPosHora.style.display = activo ? 'block' : 'none';
     if (!elPosHora) return;
     if (activo) {
+      /* Se re-habilita SIEMPRE: tras completar una venta el campo queda
+         disabled (ver limpieza al final de confirmarVenta). Sin esto, al
+         marcar la casilla el grupo aparecía pero el input seguía
+         bloqueado, y parecía que "no se podía editar la hora". */
+      elPosHora.disabled = false;
       if (!elPosHora.value) elPosHora.value = horaActualCorta();
       setTimeout(() => elPosHora.focus(), 50);
     }

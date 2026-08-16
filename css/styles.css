@@ -2772,6 +2772,23 @@ body.pos-redimensionando { user-select: none; cursor: nwse-resize; }
 }
 body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
 
+/* BUG — la casilla "Editar hora de la venta" se bloqueaba tras agregar un
+   producto al carrito.
+   ------------------------------------------------------------
+   La cabecera sticky de la tabla del carrito (arriba, z-index:2) crea un
+   contexto de apilamiento que, con el carrito lleno, quedaba por delante
+   del bloque de controles (fecha/cliente/hora), que estaba en z-index
+   automático. La franja del checkbox quedaba cubierta y los clics los
+   capturaba la cabecera, no la casilla. Con el carrito vacío la cabecera
+   no molestaba, por eso "la primera vez" sí funcionaba.
+
+   Se eleva el bloque de controles por encima: así el checkbox siempre
+   recibe sus clics, con o sin productos en el carrito. */
+.pos-cart-controles {
+    position: relative;
+    z-index: 5;
+}
+
 /* ============================================================
    24. PAGAR UN GASTO FIJO
    ============================================================ */
