@@ -635,6 +635,15 @@ function renderCart() {
 function abrirModalPago() {
   if (cart.length === 0) { showToast('Agrega al menos un producto al carrito', 'err'); return; }
 
+  /* Punto 4: sin un turno de caja abierto no se registran cobros. El
+     estado lo mantiene caja.js; si el módulo no está cargado, no se
+     bloquea (hayCajaAbierta no existiría). */
+  if (typeof hayCajaAbierta === 'function' && !hayCajaAbierta()) {
+    showToast('Abre la caja antes de cobrar', 'err');
+    document.getElementById('btnAbrirCajaPos')?.click();
+    return;
+  }
+
   const total = cart.reduce((acc, it) => acc + it.subtotal, 0);
 
   abrirSelectorPago({
@@ -642,6 +651,7 @@ function abrirModalPago() {
     subtitulo: 'Elige el medio de pago. Con efectivo se calcula el vuelto; con Mixto puedes repartir el total entre varios medios.',
     total,
     textoConfirmar: 'Confirmar Venta',
+    pedirEntrega: true,   // punto 3: tras el DTE se pregunta retiro/despacho
     onConfirmar: (metodo, datos) => confirmarVenta(metodo, datos)
   });
 }
@@ -664,6 +674,12 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
        backend lo revalida contra el total y calcula la comisión sobre
        cada parte con tarjeta por separado. */
     pagos: datosPago.pagos || null,
+    // Vincula la venta al turno de caja abierto, para el arqueo (punto 4)
+    caja_id: (typeof cajaActivaActual !== 'undefined' && cajaActivaActual) ? cajaActivaActual.id : null,
+    /* Datos de entrega (punto 3): retiro/despacho, dirección, notas,
+       origen del pago y comisión de pasarela. El backend los normaliza
+       (retiro → entregado, despacho → pendiente de envío). */
+    ...(datosPago.entrega || {}),
     // El backend descuenta el stock (comercial e interno) recién aquí
     /* Las ventas ya NO se vinculan a una Orden de Trabajo. Las OT viven
        en su propio módulo; mezclarlas con la venta obligaba a mantener

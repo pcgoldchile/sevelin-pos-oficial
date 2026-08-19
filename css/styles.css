@@ -863,12 +863,92 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
 .btn-scan:hover { border-color: var(--blue-light); }
 
 .escaner-lector {
-    width: 100%; min-height: 240px; margin-top: 14px;
-    background: #000; border-radius: var(--radius-sm); overflow: hidden;
+    width: 100%; height: 100%;
+    background: #000;
+    overflow: hidden;
+}
+.escaner-lector video { width: 100% !important; height: 100% !important; object-fit: cover; display: block; }
+.escaner-lector img { max-width: 100%; }
+
+/* ============================================================
+   ESCÁNER — rediseño v12 (captura manual + cargar foto + móvil)
+   ============================================================ */
+.escaner-box { max-width: 480px; width: 100%; }
+
+/* Pestañas Cámara / Cargar Foto */
+.escaner-tabs {
+    display: flex; gap: 6px;
+    margin: 6px 0 14px;
+    background: var(--surface-soft);
+    padding: 4px; border-radius: var(--radius-sm);
+}
+.escaner-tab {
+    flex: 1; padding: 9px 10px;
+    border: none; background: transparent;
+    color: var(--text-muted); font-weight: 600; font-size: 14px;
+    border-radius: calc(var(--radius-sm) - 2px);
+    cursor: pointer; transition: background .15s, color .15s;
+}
+.escaner-tab.activo { background: var(--bg-800); color: var(--text-100); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+
+.escaner-panel.hidden { display: none; }
+
+/* Visor de cámara con recuadro de enfoque encima */
+.escaner-visor {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    max-height: 60vh;
+    background: #000;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
     border: 1.5px solid var(--border-strong);
 }
-.escaner-lector video { width: 100% !important; height: auto !important; display: block; }
-.escaner-lector img { max-width: 100%; }
+.escaner-marco {
+    position: absolute; inset: 0;
+    pointer-events: none;
+    display: flex; align-items: center; justify-content: center;
+}
+/* Recuadro central que guía el enfoque del código */
+.escaner-marco::before {
+    content: '';
+    width: 78%; height: 42%;
+    border: 3px solid rgba(59,130,246,.9);
+    border-radius: 12px;
+    box-shadow: 0 0 0 100vmax rgba(0,0,0,.35);
+}
+
+/* Fila de controles: cambiar cámara · capturar · linterna */
+.escaner-controles {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 12px;
+}
+.escaner-capturar { flex: 1; font-size: 15px; padding: 12px; font-weight: 700; }
+#btnLinterna.activo, #btnCambiarCamara.activo { background: var(--gold); color: #1b1b1b; border-color: var(--gold); }
+
+/* Cargar foto: zona para elegir imagen */
+.escaner-dropzone {
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    padding: 30px 18px; margin-top: 8px;
+    border: 2px dashed var(--border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--surface-soft);
+    color: var(--text-muted); font-weight: 600;
+    cursor: pointer; text-align: center;
+    transition: border-color .15s, background .15s;
+}
+.escaner-dropzone:hover { border-color: var(--blue); background: rgba(59,130,246,.06); }
+.escaner-dropzone-ico { font-size: 34px; }
+
+.escaner-manual-campo { margin-top: 16px; }
+
+/* --- Móvil vertical: el modal ocupa casi toda la pantalla --- */
+@media (max-width: 560px) {
+    .escaner-box { max-width: 100%; height: 100%; border-radius: 0; }
+    .escaner-visor { aspect-ratio: 3 / 4; max-height: 52vh; }
+    .escaner-capturar { padding: 14px; font-size: 16px; }
+    .escaner-tab { font-size: 15px; padding: 11px; }
+}
 
 .opcional { font-weight: 500; color: var(--text-muted); font-size: 11.5px; }
 .obligatorio { color: var(--red); font-weight: 800; }
@@ -3150,3 +3230,114 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
     border: 1px solid rgba(59, 130, 246, .28);
 }
 .barra-fila-destacada .barra-cabecera b { color: var(--blue-light, #7cb0ff); }
+
+/* ============================================================
+   28. BARRA Y MODALES DE CAJA (punto 4)
+   ============================================================ */
+.caja-barra {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+    padding: 12px 16px;
+    margin-bottom: 14px;
+    border-radius: var(--radius);
+    background: var(--bg-800);
+    border: 1px solid var(--border);
+}
+.caja-barra-info { display: flex; align-items: center; gap: 12px; }
+.caja-barra-titulo { font-weight: 700; font-size: 14px; color: var(--text-100); }
+.caja-barra-sub { font-size: 12px; color: var(--text-muted); }
+.caja-barra-acciones { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.caja-estado-punto {
+    width: 12px; height: 12px; border-radius: 999px;
+    flex-shrink: 0;
+    background: var(--text-muted);
+    box-shadow: 0 0 0 4px rgba(148,163,184,.15);
+}
+.caja-estado-punto.abierta { background: var(--green); box-shadow: 0 0 0 4px rgba(34,197,94,.18); }
+.caja-estado-punto.cerrada { background: var(--red);   box-shadow: 0 0 0 4px rgba(239,68,68,.18); }
+
+/* Toggle Ingreso/Egreso del modal de movimiento */
+.mov-tipo-toggle { display: flex; gap: 8px; }
+.mov-tipo-btn {
+    flex: 1;
+    padding: 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--surface-soft);
+    color: var(--text-muted);
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .15s ease;
+}
+.mov-tipo-btn.activo {
+    border-color: var(--blue);
+    background: rgba(59,130,246,.12);
+    color: var(--text-100);
+}
+
+/* Diferencia del arqueo de caja (reutiliza la estética de cuadre) */
+.arqueo-diferencia {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 11px 15px;
+    margin: 4px 0 8px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    font-weight: 700;
+}
+.arqueo-diferencia.hidden { display: none; }
+.arqueo-diferencia.cuadre-ok    { background: rgba(34,197,94,.12);  border-color: rgba(34,197,94,.35);  color: var(--green); }
+.arqueo-diferencia.cuadre-sobra { background: rgba(59,130,246,.12); border-color: rgba(59,130,246,.35); color: var(--blue-light,#7cb0ff); }
+.arqueo-diferencia.cuadre-falta { background: rgba(239,68,68,.12);  border-color: rgba(239,68,68,.35);  color: var(--red); }
+
+/* Botón de cobrar bloqueado cuando no hay caja abierta (punto 4) */
+.bloqueado-sin-caja {
+    opacity: .5;
+    cursor: not-allowed !important;
+    filter: grayscale(.4);
+}
+
+/* ============================================================
+   TIPO DE ENTREGA (punto 3) — modal de despacho
+   ============================================================ */
+.entrega-tipo-toggle { display: flex; gap: 8px; }
+.entrega-tipo-btn {
+    flex: 1;
+    padding: 12px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--bg-800);
+    color: var(--text-100);
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+}
+.entrega-tipo-btn:hover { border-color: var(--border-strong); }
+.entrega-tipo-btn.activo {
+    border-color: var(--green);
+    background: rgba(34,197,94,.10);
+    color: var(--green);
+}
+.entrega-comision-fila { display: flex; gap: 8px; align-items: center; }
+.entrega-comision-fila input { flex: 1; }
+
+/* Punto 5: controles de orden y filtro de envío en el historial */
+.hist-controles { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.hist-select {
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--bg-800);
+    color: var(--text-100);
+    font-size: 13px;
+    cursor: pointer;
+}
+/* Badge que además es botón (estado de envío clickeable) */
+.badge-boton { border: none; cursor: pointer; font: inherit; }
+.badge-boton:hover { filter: brightness(1.1); }

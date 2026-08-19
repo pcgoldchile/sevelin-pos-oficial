@@ -122,6 +122,29 @@
              aparecen al marcar su casilla.
            ============================================================ -->
       <div class="pos-escala pos-lienzo" id="posLienzo">
+        <!-- ============================================================
+             BARRA DE ESTADO DE CAJA (punto 4)
+             ------------------------------------------------------------
+             Muestra si hay un turno de caja abierto y su efectivo estimado.
+             Sin caja abierta, el botón de cobrar se bloquea y aquí aparece
+             "Abrir caja". Con caja abierta: movimientos y cerrar/arqueo.
+             ============================================================ -->
+        <div class="caja-barra" id="cajaBarra">
+          <div class="caja-barra-info">
+            <span class="caja-estado-punto" id="cajaEstadoPunto"></span>
+            <div>
+              <div class="caja-barra-titulo" id="cajaBarraTitulo">Verificando caja…</div>
+              <div class="caja-barra-sub" id="cajaBarraSub">—</div>
+            </div>
+          </div>
+          <div class="caja-barra-acciones" id="cajaBarraAcciones">
+            <!-- Los botones se muestran/ocultan según haya o no caja abierta -->
+            <button class="btn btn-green btn-sm" id="btnAbrirCajaPos" type="button" style="display:none;">🔓 Abrir caja</button>
+            <button class="btn btn-outline btn-sm" id="btnMovimientoCaja" type="button" style="display:none;">± Movimiento</button>
+            <button class="btn btn-outline btn-sm" id="btnCerrarCajaPos" type="button" style="display:none;">🔒 Cerrar caja</button>
+          </div>
+        </div>
+
         <div class="pos-grid" id="posGrid">
 
           <!-- ========== IZQUIERDA: ingresar ========== -->
@@ -1112,9 +1135,24 @@
       </div>
 
       <div class="card">
-        <div class="card-head" style="margin-bottom:12px;">
+        <div class="card-head" style="margin-bottom:12px; flex-wrap:wrap; gap:10px;">
           <span class="section-label" style="margin:0;" id="histFiltroEstadoLabel">Todas las ventas del período</span>
-          <button class="btn btn-outline btn-sm hidden" id="btnQuitarFiltroPendientes">✖ Quitar filtro de pendientes</button>
+          <div class="hist-controles">
+            <!-- Punto 5: filtro por estado de envío -->
+            <select id="histFiltroEnvio" class="hist-select" title="Filtrar por estado de envío">
+              <option value="">📦 Todos los envíos</option>
+              <option value="pendiente">⏳ Pendiente</option>
+              <option value="preparacion">📋 En preparación</option>
+              <option value="enviado">🚚 Enviado</option>
+              <option value="entregado">✅ Entregado</option>
+            </select>
+            <!-- Punto 5: orden por fecha -->
+            <select id="histOrden" class="hist-select" title="Ordenar por fecha">
+              <option value="desc">↓ Más reciente primero</option>
+              <option value="asc">↑ Más antigua primero</option>
+            </select>
+            <button class="btn btn-outline btn-sm hidden" id="btnQuitarFiltroPendientes">✖ Quitar filtro de pendientes</button>
+          </div>
         </div>
         <div class="table-wrapper">
           <table class="data-table">
@@ -1127,13 +1165,14 @@
                 <th>Medio Pago</th>
                 <th>DTE</th>
                 <th>Estado</th>
+                <th>Envío</th>
                 <th class="num">Total</th>
                 <th class="num admin-only">Utilidad</th>
                 <th style="text-align:right;">Acciones</th>
               </tr>
             </thead>
             <tbody id="historialTableBody">
-              <tr class="empty-row"><td colspan="10">Cargando ventas...</td></tr>
+              <tr class="empty-row"><td colspan="11">Cargando ventas...</td></tr>
             </tbody>
           </table>
         </div>
@@ -2052,10 +2091,184 @@
   </div>
 
   <!-- ============================================================
+       TIPO DE ENTREGA (punto 3) — retiro o despacho
+       ------------------------------------------------------------
+       Se pide tras el DTE, antes de registrar la venta. Retiro deja la
+       venta como entregada; despacho pide dirección y notas y la marca
+       pendiente de envío. También recoge el origen del pago y, si es por
+       pasarela web, la comisión a descontar del margen.
+       ============================================================ -->
+  <!-- ============================================================
+       ACTUALIZAR ENVÍO (punto 5) — estado + número de seguimiento
+       ============================================================ -->
+  <div id="modalEnvio" class="modal-overlay">
+    <div class="modal-box modal-sm">
+      <h2>🚚 Estado del envío</h2>
+      <p class="modal-hint" id="envioVentaRef">—</p>
+
+      <div class="field" style="margin-top:14px;">
+        <label for="envioEstado">Estado</label>
+        <select id="envioEstado">
+          <option value="pendiente">⏳ Pendiente</option>
+          <option value="preparacion">📋 En preparación</option>
+          <option value="enviado">🚚 Enviado</option>
+          <option value="entregado">✅ Entregado</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="envioSeguimiento">N° de seguimiento (Starken / Chilexpress)</label>
+        <input type="text" id="envioSeguimiento" placeholder="Opcional" maxlength="60">
+      </div>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarEnvio" type="button">Cancelar</button>
+        <button class="btn btn-primary" id="btnGuardarEnvio" type="button">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalEntrega" class="modal-overlay">
+    <div class="modal-box modal-sm">
+      <h2>📦 Entrega del pedido</h2>
+
+      <div class="field" style="margin-top:6px;">
+        <label>¿Cómo recibe el cliente?</label>
+        <div class="entrega-tipo-toggle">
+          <button type="button" class="entrega-tipo-btn activo" data-entrega-tipo="retiro">🏪 Retiro en tienda</button>
+          <button type="button" class="entrega-tipo-btn" data-entrega-tipo="despacho">🚚 Envío / Despacho</button>
+        </div>
+      </div>
+
+      <!-- Campos que solo aparecen si es despacho -->
+      <div id="entregaCamposDespacho" style="display:none;">
+        <div class="field">
+          <label for="entregaDireccion">Dirección de envío</label>
+          <input type="text" id="entregaDireccion" placeholder="Calle, número, comuna" maxlength="200">
+        </div>
+        <div class="field">
+          <label for="entregaNotas">Notas de despacho</label>
+          <input type="text" id="entregaNotas" placeholder="Ej: entregar en conserjería, llamar antes" maxlength="200">
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="entregaOrigenPago">Origen del pago</label>
+        <select id="entregaOrigenPago">
+          <option value="presencial">Presencial (en tienda)</option>
+          <option value="transferencia">Transferencia</option>
+          <option value="pago_web">Pago Web (tarjeta / pasarela)</option>
+        </select>
+      </div>
+
+      <!-- La comisión de pasarela solo aplica al pago web -->
+      <div class="field" id="entregaComisionCampo" style="display:none;">
+        <label for="entregaComision">Comisión de pasarela</label>
+        <div class="entrega-comision-fila">
+          <input type="number" id="entregaComision" min="0" step="1" placeholder="0" inputmode="numeric">
+          <button type="button" class="btn btn-outline btn-sm" id="btnComisionAuto" title="Calcular 2.9% + IVA">Auto 2.9%+IVA</button>
+        </div>
+        <p class="modal-hint" id="entregaComisionHint">Se descuenta del margen neto en Finanzas.</p>
+      </div>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarEntrega">Volver</button>
+        <button class="btn btn-green" id="btnConfirmarEntrega">Registrar venta</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
        DIVIDIR VENTA
        Marca lo que va en la primera venta; el resto queda para la
        segunda, con su propio medio de pago y documento.
        ============================================================ -->
+  <!-- ============================================================
+       MODALES DE CAJA (punto 4)
+       ============================================================ -->
+
+  <!-- Apertura de caja -->
+  <div id="modalAperturaPos" class="modal-overlay">
+    <div class="modal-box modal-sm">
+      <h2>🔓 Apertura de Caja</h2>
+      <p class="modal-hint">
+        Ingresa el efectivo con el que parte la caja hoy (fondo inicial). Sin una
+        caja abierta no se pueden registrar cobros.
+      </p>
+      <div class="field" style="margin-top:14px;">
+        <label for="aperturaFondo">Fondo inicial en efectivo</label>
+        <input type="number" id="aperturaFondo" min="0" step="1000" placeholder="Ej: 50000" inputmode="numeric">
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarApertura" type="button">Cancelar</button>
+        <button class="btn btn-green" id="btnConfirmarApertura" type="button">Abrir caja</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Movimiento rápido de caja chica -->
+  <div id="modalMovimientoCaja" class="modal-overlay">
+    <div class="modal-box modal-sm">
+      <h2>± Movimiento de Caja</h2>
+      <p class="modal-hint">Registra un ingreso o egreso rápido de la caja chica (pago de flete, compra de insumos, etc.).</p>
+
+      <div class="field" style="margin-top:14px;">
+        <label>Tipo</label>
+        <div class="mov-tipo-toggle">
+          <button type="button" class="mov-tipo-btn activo" data-mov-tipo="EGRESO">➖ Egreso (sale)</button>
+          <button type="button" class="mov-tipo-btn" data-mov-tipo="INGRESO">➕ Ingreso (entra)</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="movMonto">Monto</label>
+        <input type="number" id="movMonto" min="0" step="100" placeholder="0" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label for="movConcepto">Concepto</label>
+        <input type="text" id="movConcepto" placeholder="Ej: pago de flete rápido" maxlength="120">
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarMovimiento" type="button">Cancelar</button>
+        <button class="btn btn-primary" id="btnConfirmarMovimiento" type="button">Registrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cierre de caja con arqueo -->
+  <div id="modalCierrePos" class="modal-overlay">
+    <div class="modal-box">
+      <h2>🔒 Cierre y Arqueo de Caja</h2>
+      <p class="modal-hint">Cuenta el efectivo físico del cajón y compáralo con lo que el sistema espera.</p>
+
+      <div class="arqueo-cifras" id="cierreResumen">
+        <div><span>Fondo inicial</span><strong id="cierreFondo">—</strong></div>
+        <div><span>+ Ventas en efectivo</span><strong id="cierreVentas">—</strong></div>
+        <div><span>+ Ingresos</span><strong id="cierreIngresos">—</strong></div>
+        <div><span>− Egresos</span><strong id="cierreEgresos">—</strong></div>
+        <div class="arqueo-total"><span>= Efectivo esperado</span><strong id="cierreEsperado">—</strong></div>
+      </div>
+
+      <div class="field" style="margin-top:16px;">
+        <label for="cierreContado">Efectivo contado (real)</label>
+        <input type="number" id="cierreContado" min="0" step="100" placeholder="0" inputmode="numeric">
+      </div>
+
+      <div class="arqueo-diferencia hidden" id="cierreDiferenciaCaja">
+        <span id="cierreDiferenciaLabel">Diferencia</span>
+        <strong id="cierreDiferenciaValor">—</strong>
+      </div>
+
+      <div class="field">
+        <label for="cierreNotas">Notas de cierre (opcional)</label>
+        <input type="text" id="cierreNotas" placeholder="Observaciones del turno" maxlength="200">
+      </div>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarCierre" type="button">Cancelar</button>
+        <button class="btn btn-primary" id="btnConfirmarCierre" type="button">Cerrar caja</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modalDividir" class="modal-overlay">
     <div class="modal-box modal-lg">
       <h2>✂️ Dividir la venta en dos</h2>
@@ -2230,6 +2443,53 @@
           <button type="button" class="dte-btn active" data-dte="SIN DTE">SIN DTE</button>
           <button type="button" class="dte-btn" data-dte="BOLETA">BOLETA</button>
           <button type="button" class="dte-btn" data-dte="FACTURA">FACTURA</button>
+        </div>
+      </div>
+
+      <!-- ============================================================
+           TIPO DE ENTREGA (punto 3) — retiro en tienda o despacho.
+           Deja preparada la logística para el e-commerce sevelin.cl.
+           ============================================================ -->
+      <div class="pago-entrega" id="pagoEntregaBox">
+        <span class="section-label">Tipo de entrega</span>
+        <div class="entrega-botones" id="pagoEntregaBotones">
+          <button type="button" class="entrega-btn active" data-entrega="retiro">🏪 Retiro en tienda</button>
+          <button type="button" class="entrega-btn" data-entrega="despacho">🚚 Envío / Despacho</button>
+        </div>
+
+        <!-- Campos que solo aparecen si es despacho -->
+        <div class="entrega-campos hidden" id="pagoEntregaCampos">
+          <div class="field">
+            <label for="pagoDireccion">Dirección de envío</label>
+            <input type="text" id="pagoDireccion" placeholder="Calle, número, comuna" maxlength="200">
+          </div>
+          <div class="field">
+            <label for="pagoNotasDespacho">Notas de despacho</label>
+            <input type="text" id="pagoNotasDespacho" placeholder="Ej: entregar en conserjería, llamar antes" maxlength="200">
+          </div>
+        </div>
+      </div>
+
+      <!-- ============================================================
+           ORIGEN DEL PAGO Y COMISIÓN DE PASARELA (punto 3)
+           Para el margen neto: un pago web con tarjeta descuenta la
+           comisión de la pasarela (ej. 2,9% + IVA).
+           ============================================================ -->
+      <div class="pago-origen" id="pagoOrigenBox">
+        <span class="section-label">Origen del pago</span>
+        <div class="origen-botones" id="pagoOrigenBotones">
+          <button type="button" class="origen-btn active" data-origen="presencial">🏬 Presencial</button>
+          <button type="button" class="origen-btn" data-origen="transferencia">🏦 Transferencia</button>
+          <button type="button" class="origen-btn" data-origen="pasarela">💳 Pago web (pasarela)</button>
+        </div>
+
+        <!-- Comisión: solo visible si el origen es una pasarela web -->
+        <div class="origen-comision hidden" id="pagoComisionBox">
+          <div class="field">
+            <label for="pagoComisionPct">Comisión pasarela (%)</label>
+            <input type="number" id="pagoComisionPct" min="0" step="0.1" value="2.9" inputmode="decimal">
+          </div>
+          <p class="modal-hint" id="pagoComisionEstimada">—</p>
         </div>
       </div>
 
@@ -2955,21 +3215,55 @@
 
   <!-- MODAL: ESCÁNER DE CÓDIGO DE BARRAS CON CÁMARA -->
   <div id="modalEscaner" class="modal-overlay">
-    <div class="modal-box" style="max-width: 520px;">
-      <h2>📷 Escanear Código de Barras</h2>
-      <p class="modal-hint" id="escanerEstado">Apunta la cámara al código del producto.</p>
+    <div class="modal-box escaner-box">
+      <h2>📷 Escanear Código</h2>
 
-      <div id="escanerLector" class="escaner-lector"></div>
+      <!-- Pestañas: cámara con captura por botón · cargar foto de galería -->
+      <div class="escaner-tabs">
+        <button class="escaner-tab activo" data-escaner-tab="camara" type="button">📸 Cámara</button>
+        <button class="escaner-tab" data-escaner-tab="archivo" type="button">📁 Cargar Foto</button>
+      </div>
 
-      <div class="field" style="margin-top:14px;">
-        <label>¿No enfoca? Escribe el código a mano</label>
-        <input type="text" id="escanerManual" placeholder="Código de barras / SKU" autocomplete="off">
+      <!-- ===== Pestaña CÁMARA ===== -->
+      <div class="escaner-panel" data-escaner-panel="camara">
+        <p class="modal-hint" id="escanerEstado">Apunta la cámara al código y pulsa el botón.</p>
+
+        <!-- Visor con recuadro de enfoque encima -->
+        <div class="escaner-visor">
+          <div id="escanerLector" class="escaner-lector"></div>
+          <div class="escaner-marco" aria-hidden="true"></div>
+        </div>
+
+        <div class="escaner-controles">
+          <button class="btn btn-outline btn-sm" id="btnCambiarCamara" type="button" title="Cambiar de cámara">🔄</button>
+          <button class="btn btn-primary escaner-capturar" id="btnCapturarFoto" type="button">📸 Tomar Foto / Escanear</button>
+          <button class="btn btn-outline btn-sm" id="btnLinterna" type="button" title="Encender / apagar linterna">🔦</button>
+        </div>
+      </div>
+
+      <!-- ===== Pestaña CARGAR FOTO ===== -->
+      <div class="escaner-panel hidden" data-escaner-panel="archivo">
+        <p class="modal-hint">
+          Elige una foto del código desde tu galería. La imagen se procesa solo
+          para leer el código; <strong>no se guarda</strong> en ningún lado.
+        </p>
+        <label for="escanerArchivo" class="escaner-dropzone">
+          <span class="escaner-dropzone-ico">🖼️</span>
+          <span>Toca aquí para elegir una foto</span>
+          <input type="file" id="escanerArchivo" accept="image/*" hidden>
+        </label>
+        <p class="modal-hint" id="escanerArchivoEstado" style="display:none;"></p>
+      </div>
+
+      <!-- Respaldo manual: siempre disponible bajo las dos pestañas -->
+      <div class="field escaner-manual-campo">
+        <label for="escanerManual">¿No lee? Escribe el código a mano</label>
+        <input type="text" id="escanerManual" placeholder="Código de barras / SKU" autocomplete="off" inputmode="text">
       </div>
 
       <div class="modal-foot">
-        <button class="btn btn-ghost" id="btnCerrarEscaner">Cancelar</button>
-        <button class="btn btn-outline" id="btnCambiarCamara">🔄 Cambiar cámara</button>
-        <button class="btn btn-primary" id="btnUsarCodigoManual">Usar este código</button>
+        <button class="btn btn-ghost" id="btnCerrarEscaner" type="button">Cancelar</button>
+        <button class="btn btn-primary" id="btnUsarCodigoManual" type="button">Usar este código</button>
       </div>
     </div>
   </div>
@@ -3489,6 +3783,7 @@
   <script src="js/ot.js"></script>
   <script src="js/pos.js"></script>
   <script src="js/pos-layout.js"></script>   <!-- después de pos.js: solo toca la maquetación -->
+  <script src="js/caja.js"></script>   <!-- apertura/arqueo de caja en el POS (punto 4) -->
   <script src="js/atajos.js"></script>
   <script src="js/balance.js"></script>
   <script src="js/finanzas-ajustes.js"></script>   <!-- ajustes de saldo + checklist (req 3 y 4) -->

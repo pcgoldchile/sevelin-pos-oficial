@@ -4,7 +4,7 @@
 > y LEEME anteriores. Está escrito para que otra persona —o una IA en una sesión nueva— retome el
 > trabajo sin contexto previo.
 >
-> **Estado:** v10 · 15 de agosto de 2026 · en uso operativo real.
+> **Estado:** v14 · 18 de agosto de 2026 · en uso operativo real.
 >
 > **Cómo se versiona la documentación (importante):**
 > Este README maestro se mantiene **siempre al día** con el estado actual del sistema. Cada entrega

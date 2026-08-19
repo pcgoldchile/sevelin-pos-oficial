@@ -17,6 +17,8 @@ let periodoModal = 'hoy';
 let ventaEditando = null;   // venta abierta en el modal de edición
 let itemsEditando = [];     // copia editable de sus ítems
 let filtroEstado = null;    // null = todas · 'PENDIENTE' = solo por pagar
+let filtroEnvio = '';       // '' = todos · 'pendiente'|'preparacion'|'enviado'|'entregado'
+let ordenHistorial = 'desc'; // 'desc' = más reciente primero · 'asc' = más antigua
 
 /* Búsqueda por producto: texto que se manda al servidor para filtrar por
    el DETALLE de las ventas (nombre, SKU o número de serie del ítem).
@@ -190,6 +192,16 @@ function setupHistorialEventListeners() {
   if (elBtnQuitarFiltroPendientes) elBtnQuitarFiltroPendientes.addEventListener('click', () => {
     filtroEstado = null;
     aplicarFiltroEstado();
+  });
+
+  // Punto 5: filtro por estado de envío y orden por fecha
+  document.getElementById('histFiltroEnvio')?.addEventListener('change', (e) => {
+    filtroEnvio = e.target.value || '';
+    renderHistorialTabla(salesHistory);
+  });
+  document.getElementById('histOrden')?.addEventListener('change', (e) => {
+    ordenHistorial = e.target.value === 'asc' ? 'asc' : 'desc';
+    renderHistorialTabla(salesHistory);
   });
 
   /* ---------- Buscador por producto ---------- */
@@ -1330,13 +1342,28 @@ async function eliminarVentasSeleccionadas() {
 function renderHistorialTabla(ventas) {
   if (!elHistorialTableBody) return;
 
-  const lista = (ventas || []).filter(v => !filtroEstado || (v.estado || 'PAGADA') === filtroEstado);
+  let lista = (ventas || []).filter(v => !filtroEstado || (v.estado || 'PAGADA') === filtroEstado);
+
+  // Punto 5: filtro por estado de envío
+  if (filtroEnvio) {
+    lista = lista.filter(v => (v.estado_envio || '') === filtroEnvio);
+  }
+
+  // Punto 5: orden por fecha real de la venta (vendida_en, con id de desempate)
+  lista = lista.slice().sort((a, b) => {
+    const fa = a.vendida_en || `${a.fecha || ''}T${a.hora || '00:00'}`;
+    const fb = b.vendida_en || `${b.fecha || ''}T${b.hora || '00:00'}`;
+    const cmp = String(fa).localeCompare(String(fb)) || ((a.id || 0) - (b.id || 0));
+    return ordenHistorial === 'asc' ? cmp : -cmp;
+  });
 
   if (lista.length === 0) {
     const msg = filtroEstado === 'PENDIENTE'
       ? 'No hay ventas pendientes de pago en este período.'
-      : 'No hay ventas en este período. Prueba con otro filtro o registra una venta nueva.';
-    elHistorialTableBody.innerHTML = `<tr class="empty-row"><td colspan="10">${msg}</td></tr>`;
+      : filtroEnvio
+        ? 'No hay ventas con ese estado de envío en el período.'
+        : 'No hay ventas en este período. Prueba con otro filtro o registra una venta nueva.';
+    elHistorialTableBody.innerHTML = `<tr class="empty-row"><td colspan="11">${msg}</td></tr>`;
     actualizarBarraVentas();
     return;
   }
@@ -1359,6 +1386,7 @@ function renderHistorialTabla(ventas) {
       <td>
         <span class="badge ${pendiente ? 'badge-red' : 'badge-green'}">${pendiente ? 'PENDIENTE' : 'PAGADA'}</span>
       </td>
+      <td>${celdaEnvio(v)}</td>
       <td class="num strong">${fmtCLP(v.total)}</td>
       <td class="num admin-only" style="color:var(--green); font-weight:600;">${pendiente ? '—' : fmtCLP(v.utilidad)}</td>
       <td>
@@ -1389,6 +1417,9 @@ function renderHistorialTabla(ventas) {
 
   elHistorialTableBody.querySelectorAll('button[data-pagar]').forEach(btn => {
     btn.addEventListener('click', () => pagarVentaPendiente(btn.dataset.pagar));
+  });
+  elHistorialTableBody.querySelectorAll('button[data-envio]').forEach(btn => {
+    btn.addEventListener('click', () => abrirModalEnvio(btn.dataset.envio));
   });
   elHistorialTableBody.querySelectorAll('button[data-ver]').forEach(btn => {
     btn.addEventListener('click', () => verDetalleVenta(btn.dataset.ver));
@@ -1705,3 +1736,77 @@ function cerrarDetalleVenta() {
   if (elModalDetalleVenta) elModalDetalleVenta.classList.remove('show');
   currentSaleDetails = null;
 }
+
+/* ============================================================
+   ENVÍO EN EL HISTORIAL (punto 5)
+   ------------------------------------------------------------
+   Muestra el estado de envío de cada venta y permite cambiarlo, además
+   de registrar el número de seguimiento. Solo las ventas de tipo
+   'despacho' son editables; el retiro en tienda se marca como entregado.
+   ============================================================ */
+const ETIQUETAS_ENVIO = {
+  pendiente:   { txt: '⏳ Pendiente',   clase: 'badge-gold' },
+  preparacion: { txt: '📋 Preparación', clase: 'badge-blue' },
+  enviado:     { txt: '🚚 Enviado',     clase: 'badge-blue' },
+  entregado:   { txt: '✅ Entregado',   clase: 'badge-green' }
+};
+
+function celdaEnvio(v) {
+  // Retiro en tienda (o ventas antiguas sin dato): no hay envío que gestionar
+  if (!v.tipo_entrega || v.tipo_entrega === 'retiro') {
+    return '<span style="color:var(--text-muted);">🏪 Retiro</span>';
+  }
+  const e = v.estado_envio || 'pendiente';
+  const info = ETIQUETAS_ENVIO[e] || ETIQUETAS_ENVIO.pendiente;
+  const seg = v.numero_seguimiento
+    ? `<br><small style="color:var(--text-muted);">${escHtml(v.numero_seguimiento)}</small>` : '';
+  return `<button class="badge ${info.clase} badge-boton" data-envio="${v.id}" title="Cambiar estado de envío">${info.txt}</button>${seg}`;
+}
+
+let envioEditandoId = null;
+
+function abrirModalEnvio(id) {
+  const venta = salesHistory.find(v => String(v.id) === String(id));
+  if (!venta) return;
+  envioEditandoId = venta.id;
+
+  const ref = document.getElementById('envioVentaRef');
+  if (ref) ref.textContent =
+    `Orden #${String(venta.numero_orden ?? venta.id).padStart(5, '0')} · ${venta.cliente || 'Consumidor Final'}` +
+    (venta.direccion_envio ? ` · ${venta.direccion_envio}` : '');
+
+  const est = document.getElementById('envioEstado');
+  const seg = document.getElementById('envioSeguimiento');
+  if (est) est.value = venta.estado_envio || 'pendiente';
+  if (seg) seg.value = venta.numero_seguimiento || '';
+
+  document.getElementById('modalEnvio')?.classList.add('show');
+}
+
+async function guardarEnvio() {
+  if (!envioEditandoId) return;
+  const estado_envio = document.getElementById('envioEstado')?.value || 'pendiente';
+  const numero_seguimiento = (document.getElementById('envioSeguimiento')?.value || '').trim();
+
+  const btn = document.getElementById('btnGuardarEnvio');
+  if (btn) btn.disabled = true;
+  try {
+    await API.ventas.actualizarEnvio(envioEditandoId, { estado_envio, numero_seguimiento });
+    showToast('Envío actualizado', 'ok');
+    document.getElementById('modalEnvio')?.classList.remove('show');
+    await cargarHistorial();
+  } catch (err) {
+    showToast(err.message || 'No se pudo actualizar el envío', 'err');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btnCancelarEnvio')?.addEventListener('click', () =>
+    document.getElementById('modalEnvio')?.classList.remove('show'));
+  document.getElementById('btnGuardarEnvio')?.addEventListener('click', guardarEnvio);
+  document.getElementById('modalEnvio')?.addEventListener('click', (e) => {
+    if (e.target.id === 'modalEnvio') document.getElementById('modalEnvio').classList.remove('show');
+  });
+});

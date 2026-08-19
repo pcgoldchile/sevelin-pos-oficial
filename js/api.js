@@ -127,6 +127,8 @@ const API = {
     }),
     // Cambia solo el tipo de DTE (edición rápida desde el Historial)
     cambiarDTE: (id, tipo) => apiRequest(`/ventas/${id}/dte`, { method: 'POST', body: { tipo_dte: tipo } }),
+    // Actualiza estado de envío y número de seguimiento (logística)
+    actualizarEnvio: (id, datos) => apiRequest(`/ventas/${id}/envio`, { method: 'PUT', body: datos }),
     importar: (ventas) => apiRequest('/ventas/importar', { method: 'POST', body: { ventas } }),
     detalle: (id) => apiRequest(`/ventas/${id}`),
     crear: (venta) => apiRequest('/ventas', { method: 'POST', body: venta }),
@@ -245,6 +247,11 @@ const API = {
     gastosFijosMes: () => apiRequest('/finanzas/gastos-fijos-mes'),
     // req.6 — todos los aportes de capital (sin filtro de período)
     todosLosAportes: () => apiRequest('/inyecciones'),
+    // Caja diaria (migración 17)
+    cajaActiva: () => apiRequest('/caja/activa'),
+    abrirCajaTurno: (fondo_inicial) => apiRequest('/caja/abrir', { method: 'POST', body: { fondo_inicial } }),
+    movimientoCaja: (datos) => apiRequest('/caja/movimiento', { method: 'POST', body: datos }),
+    cerrarCajaTurno: (datos) => apiRequest('/caja/cerrar', { method: 'POST', body: datos }),
     eliminarTraspaso: (id, pin) => apiRequest(`/finanzas/traspaso/${id}`, { method: 'DELETE', body: { pin } }),
     guardarConfig: (datos) => apiRequest('/finanzas/config', { method: 'PUT', body: datos }),
 

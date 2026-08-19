@@ -917,6 +917,27 @@ async function verificarStockDisponible(items) {
   }
 }
 
+/* Normaliza los campos de despacho de una venta (migración 17).
+   Retiro en tienda → estado_envio 'entregado' (no hay nada que despachar).
+   Envío → 'pendiente', con dirección y notas. */
+function construirDatosEnvio(body) {
+  const tipo = String(body?.tipo_entrega || 'retiro').trim().toLowerCase();
+  if (tipo === 'despacho') {
+    return {
+      tipo_entrega: 'despacho',
+      direccion_envio: (body?.direccion_envio || '').trim() || null,
+      notas_despacho: (body?.notas_despacho || '').trim() || null,
+      estado_envio: 'pendiente'
+    };
+  }
+  return {
+    tipo_entrega: 'retiro',
+    direccion_envio: null,
+    notas_despacho: null,
+    estado_envio: 'entregado'
+  };
+}
+
 // Los totales SIEMPRE se calculan en el servidor a partir de los ítems.
 async function normalizarItems(items, rolSolicitante) {
   const lista = Array.isArray(items) ? items : [];
@@ -1393,7 +1414,14 @@ app.post('/api/ventas', auth(), async (req, res) => {
       ...totales,
       comision_pos: comisionPos,
       pago_mixto: !!pagosMixtos,
-      impreso: false
+      impreso: false,
+      // --- Despacho / logística (migración 17) ---
+      ...construirDatosEnvio(req.body),
+      // Comisión de pasarela web (para el margen neto cuando llegue el e-commerce)
+      origen_pago: (req.body?.origen_pago || 'presencial'),
+      comision_pasarela: Math.max(0, num(req.body?.comision_pasarela)),
+      // Turno de caja activo, si hay uno abierto (se resuelve abajo)
+      caja_id: req.body?.caja_id ? Number(req.body.caja_id) : null
     };
 
     // En una venta mixta el método de cabecera queda como "Mixto"
@@ -1700,6 +1728,28 @@ app.post('/api/ventas/:id/pago', auth(), async (req, res) => {
     .select()
     .single();
 
+  if (error) return enviarError(res, 500, error.message);
+  res.json(limpiarParaRol(data, req.usuario.rol));
+});
+
+/* Actualiza el estado de envío y el número de seguimiento de una venta
+   (punto 5). Cualquier usuario autenticado: es logística, no montos. */
+app.put('/api/ventas/:id/envio', auth(), async (req, res) => {
+  const estados = ['pendiente', 'preparacion', 'enviado', 'entregado'];
+  const cambios = {};
+
+  if (req.body?.estado_envio !== undefined) {
+    const e = String(req.body.estado_envio || '').trim().toLowerCase();
+    if (!estados.includes(e)) return enviarError(res, 400, 'Estado de envío inválido');
+    cambios.estado_envio = e;
+  }
+  if (req.body?.numero_seguimiento !== undefined) {
+    cambios.numero_seguimiento = String(req.body.numero_seguimiento || '').trim() || null;
+  }
+  if (Object.keys(cambios).length === 0) return enviarError(res, 400, 'Nada que actualizar');
+
+  const { data, error } = await db.from('ventas')
+    .update(cambios).eq('id', req.params.id).select().single();
   if (error) return enviarError(res, 500, error.message);
   res.json(limpiarParaRol(data, req.usuario.rol));
 });
@@ -2498,6 +2548,111 @@ app.get('/api/balance', auth(true), async (req, res) => {
    Se hace en el servidor de un tirón porque son varias tablas; el
    frontend solo pinta el resultado y lo refresca tras cada venta/gasto.
    ============================================================ */
+/* ============================================================
+   CAJA DIARIA — apertura, arqueo, movimientos (entregable 2)
+   ------------------------------------------------------------
+   Un turno de caja se abre con un fondo inicial y se cierra con un
+   arqueo. Solo puede haber UNA caja abierta a la vez. Las ventas en
+   efectivo y los movimientos rápidos (ingresos/egresos) se cruzan al
+   cerrar para calcular el efectivo esperado.
+   ============================================================ */
+
+// Devuelve el turno de caja abierto (o null). Lo usa el POS al arrancar.
+app.get('/api/caja/activa', auth(), async (req, res) => {
+  const { data, error } = await db.from('cajas_diarias')
+    .select('*').eq('estado', 'abierta')
+    .order('fecha_apertura', { ascending: false }).limit(1).maybeSingle();
+  if (error) return enviarError(res, 500, error.message);
+  if (!data) return res.json({ activa: null });
+
+  // Se adjuntan los movimientos del turno, para el resumen en el POS
+  const { data: movs } = await db.from('caja_movimientos')
+    .select('*').eq('caja_id', data.id).order('creado_en', { ascending: false });
+  res.json({ activa: data, movimientos: movs || [] });
+});
+
+// Abre un turno. Rechaza si ya hay uno abierto.
+app.post('/api/caja/abrir', auth(), async (req, res) => {
+  const fondo = num(req.body?.fondo_inicial);
+  if (fondo < 0) return enviarError(res, 400, 'El fondo inicial no puede ser negativo');
+
+  const { data: yaAbierta } = await db.from('cajas_diarias')
+    .select('id').eq('estado', 'abierta').limit(1).maybeSingle();
+  if (yaAbierta) return enviarError(res, 400, 'Ya hay una caja abierta. Ciérrala antes de abrir otra.');
+
+  const { data, error } = await db.from('cajas_diarias').insert([{
+    fondo_inicial: fondo,
+    estado: 'abierta',
+    abierta_por: req.usuario?.rol || null
+  }]).select().single();
+  if (error) return enviarError(res, 500, error.message);
+  res.status(201).json(data);
+});
+
+// Registra un ingreso o egreso rápido de caja chica en el turno abierto.
+app.post('/api/caja/movimiento', auth(), async (req, res) => {
+  const tipo = String(req.body?.tipo || '').trim().toUpperCase();
+  const monto = num(req.body?.monto);
+  const concepto = String(req.body?.concepto || '').trim();
+
+  if (tipo !== 'INGRESO' && tipo !== 'EGRESO') return enviarError(res, 400, 'Tipo inválido (INGRESO o EGRESO)');
+  if (!(monto > 0)) return enviarError(res, 400, 'El monto debe ser mayor a 0');
+  if (concepto.length < 2) return enviarError(res, 400, 'Escribe un concepto para el movimiento');
+
+  const { data: caja } = await db.from('cajas_diarias')
+    .select('id').eq('estado', 'abierta').limit(1).maybeSingle();
+  if (!caja) return enviarError(res, 400, 'No hay una caja abierta');
+
+  const { data, error } = await db.from('caja_movimientos').insert([{
+    caja_id: caja.id, tipo, monto, concepto
+  }]).select().single();
+  if (error) return enviarError(res, 500, error.message);
+  res.status(201).json(data);
+});
+
+// Cierra el turno con arqueo. Calcula el efectivo esperado en el servidor.
+app.post('/api/caja/cerrar', auth(), async (req, res) => {
+  const contado = num(req.body?.efectivo_contado);
+  const notas = String(req.body?.notas_cierre || '').trim() || null;
+
+  const { data: caja } = await db.from('cajas_diarias')
+    .select('*').eq('estado', 'abierta').limit(1).maybeSingle();
+  if (!caja) return enviarError(res, 400, 'No hay una caja abierta que cerrar');
+
+  /* Efectivo esperado = fondo + ventas en efectivo del turno + ingresos
+     - egresos. Todo se recalcula en el servidor: el cliente no manda
+     cifras que afecten el arqueo, solo el efectivo que contó. */
+  const { data: ventasCaja } = await db.from('ventas')
+    .select('total, metodo_pago, metodo_pago_final, estado')
+    .eq('caja_id', caja.id).eq('estado', 'PAGADA');
+
+  let ventasEfectivo = 0;
+  (ventasCaja || []).forEach(v => {
+    const m = v.metodo_pago_final || v.metodo_pago;
+    if (esEfectivo(m)) ventasEfectivo += num(v.total);
+  });
+
+  const { data: movs } = await db.from('caja_movimientos').select('tipo, monto').eq('caja_id', caja.id);
+  let ingresos = 0, egresos = 0;
+  (movs || []).forEach(m => { if (m.tipo === 'INGRESO') ingresos += num(m.monto); else egresos += num(m.monto); });
+
+  const esperado = num(caja.fondo_inicial) + ventasEfectivo + ingresos - egresos;
+  const diferencia = contado - esperado;
+
+  const { data, error } = await db.from('cajas_diarias').update({
+    estado: 'cerrada',
+    fecha_cierre: new Date().toISOString(),
+    efectivo_esperado: esperado,
+    efectivo_contado: contado,
+    diferencia,
+    notas_cierre: notas,
+    cerrada_por: req.usuario?.rol || null
+  }).eq('id', caja.id).select().single();
+  if (error) return enviarError(res, 500, error.message);
+
+  res.json({ ...data, detalle: { fondo_inicial: num(caja.fondo_inicial), ventasEfectivo, ingresos, egresos, esperado, contado, diferencia } });
+});
+
 app.get('/api/finanzas/saldos', auth(true), async (req, res) => {
   try {
     // Solo ventas efectivamente cobradas (PAGADA) cuentan como dinero real

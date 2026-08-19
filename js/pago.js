@@ -372,7 +372,17 @@ async function confirmarSelectorPago() {
     elegirTipoDte(dte);
   }
 
-  const datos = datosPagoActuales();
+  /* Paso de entrega (punto 3): retiro o despacho + origen de pago.
+     Se pide solo en ventas del POS (no en abonos ni cobros de pendientes,
+     que pasan pedirEntrega:false). Si el usuario vuelve atrás, se cancela
+     el cobro para que reordene. */
+  let datosEntrega = { tipo_entrega: 'retiro', origen_pago: 'presencial' };
+  if (configPago.pedirEntrega) {
+    datosEntrega = await pedirDatosEntrega();
+    if (datosEntrega === null) return;   // volvió atrás
+  }
+
+  const datos = { ...datosPagoActuales(), entrega: datosEntrega };
   const metodo = metodoPagoElegido;
   const alConfirmar = configPago.onConfirmar;
 
@@ -620,4 +630,91 @@ function cerrarSelectorPago() {
   configPago = null;
   metodoPagoElegido = null;
   partesPagoMixto = [];
+}
+
+/* ============================================================
+   TIPO DE ENTREGA (punto 3) — retiro / despacho + origen de pago
+   ------------------------------------------------------------
+   Se pide tras el DTE. Devuelve una promesa con los datos de entrega
+   (o null si el usuario cancela). El POS los suma al payload de la venta.
+   Sigue el mismo patrón de promesa que pedirTipoDte().
+   ============================================================ */
+let entregaResolver = null;
+let entregaTipo = 'retiro';
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Toggle retiro / despacho
+  document.querySelectorAll('[data-entrega-tipo]').forEach(btn => {
+    btn.addEventListener('click', () => seleccionarTipoEntrega(btn.dataset.entregaTipo));
+  });
+
+  // El campo de comisión aparece solo con pago web
+  document.getElementById('entregaOrigenPago')?.addEventListener('change', (e) => {
+    const esWeb = e.target.value === 'pago_web';
+    const campo = document.getElementById('entregaComisionCampo');
+    if (campo) campo.style.display = esWeb ? 'block' : 'none';
+  });
+
+  // Cálculo automático de la comisión de pasarela (2.9% + IVA sobre el total)
+  document.getElementById('btnComisionAuto')?.addEventListener('click', () => {
+    const total = num(configPago?.total);
+    // 2.9% de comisión, y sobre esa comisión un 19% de IVA
+    const comision = Math.round(total * 0.029 * 1.19);
+    const campo = document.getElementById('entregaComision');
+    if (campo) campo.value = comision;
+  });
+
+  document.getElementById('btnCancelarEntrega')?.addEventListener('click', cancelarEntregaVenta);
+  document.getElementById('btnConfirmarEntrega')?.addEventListener('click', confirmarEntregaVenta);
+});
+
+function seleccionarTipoEntrega(tipo) {
+  entregaTipo = tipo === 'despacho' ? 'despacho' : 'retiro';
+  document.querySelectorAll('[data-entrega-tipo]').forEach(b =>
+    b.classList.toggle('activo', b.dataset.entregaTipo === entregaTipo));
+  const campos = document.getElementById('entregaCamposDespacho');
+  if (campos) campos.style.display = entregaTipo === 'despacho' ? 'block' : 'none';
+}
+
+/* Abre el paso de entrega y devuelve una promesa con los datos elegidos.
+   Si el modal no existe (HTML viejo), no bloquea: retorna retiro por defecto. */
+function pedirDatosEntrega() {
+  const modal = document.getElementById('modalEntrega');
+  if (!modal) return Promise.resolve({ tipo_entrega: 'retiro', origen_pago: 'presencial' });
+
+  // Reset a valores por defecto en cada apertura
+  seleccionarTipoEntrega('retiro');
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  set('entregaDireccion', '');
+  set('entregaNotas', '');
+  set('entregaOrigenPago', 'presencial');
+  set('entregaComision', '');
+  const campoCom = document.getElementById('entregaComisionCampo');
+  if (campoCom) campoCom.style.display = 'none';
+
+  modal.classList.add('show');
+  setTimeout(() => document.getElementById('btnConfirmarEntrega')?.focus(), 60);
+  return new Promise(resolve => { entregaResolver = resolve; });
+}
+
+function confirmarEntregaVenta() {
+  const origen = document.getElementById('entregaOrigenPago')?.value || 'presencial';
+  const datos = {
+    tipo_entrega: entregaTipo,
+    origen_pago: origen,
+    comision_pasarela: origen === 'pago_web' ? num(document.getElementById('entregaComision')?.value) : 0
+  };
+  if (entregaTipo === 'despacho') {
+    datos.direccion_envio = (document.getElementById('entregaDireccion')?.value || '').trim() || null;
+    datos.notas_despacho = (document.getElementById('entregaNotas')?.value || '').trim() || null;
+  }
+  document.getElementById('modalEntrega')?.classList.remove('show');
+  const r = entregaResolver; entregaResolver = null;
+  if (r) r(datos);
+}
+
+function cancelarEntregaVenta() {
+  document.getElementById('modalEntrega')?.classList.remove('show');
+  const r = entregaResolver; entregaResolver = null;
+  if (r) r(null);   // null = el usuario volvió atrás
 }
