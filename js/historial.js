@@ -70,7 +70,7 @@ const elKpiPorPagarCard = document.getElementById('kpiPorPagarCard');
 // Comisión del POS Tuu y utilidad neta (solo admin)
 const elKpiComisionTuu = document.getElementById('kpiComisionTuu');
 const elKpiComisionDetalle = document.getElementById('kpiComisionDetalle');
-const elKpiUtilidadNeta = document.getElementById('kpiUtilidadNeta');
+const elKpiUtilidadNeta = document.getElementById('kpiUtilidadNetaPos');
 const elKpiMargenNeto = document.getElementById('kpiMargenNeto');
 const elHistFiltroEstadoLabel = document.getElementById('histFiltroEstadoLabel');
 const elBtnQuitarFiltroPendientes = document.getElementById('btnQuitarFiltroPendientes');

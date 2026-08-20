@@ -58,17 +58,15 @@ Node/Express (`api/index.js`, serverless en Vercel) · JavaScript **vanilla** de
 de saldo). Todas idempotentes, corren en orden. Aplicar en Supabase → SQL Editor.
 
 ## Bugs conocidos ACTIVOS
-- **`id` duplicado `kpiUtilidadNeta`** entre dos vistas de KPI (Balance e Historial). Preexistente, no
-  rompe nada visible; conviene renombrar uno. No se tocó por estar fuera del alcance de las tareas.
+(ninguno pendiente relacionado a ids duplicados; ver Pendiente para el resto del backlog)
 
 ## Pendiente (backlog, no bloqueante)
-1. Renombrar el `id` duplicado `kpiUtilidadNeta`.
-2. BIZ-02 atómico: stock check + descuento en una transacción (`SELECT ... FOR UPDATE`) para productos
+1. BIZ-02 atómico: stock check + descuento en una transacción (`SELECT ... FOR UPDATE`) para productos
    sin lotes.
-3. Unificar los ~5 helpers de escape en `escHtml`.
-4. Conectar el e-commerce (sevelin.cl): las columnas de despacho y comisión ya existen; falta el sitio
+2. Unificar los ~5 helpers de escape en `escHtml`.
+3. Conectar el e-commerce (sevelin.cl): las columnas de despacho y comisión ya existen; falta el sitio
    que cree ventas por la API con `origen_pago='pago_web'`.
-5. (Opcional, grande) Migrar a Supabase Auth + RLS por rol. Partir `api/index.js` en routers.
+4. (Opcional, grande) Migrar a Supabase Auth + RLS por rol. Partir `api/index.js` en routers.
 
 ## Trampas específicas ya descubiertas (no repetir)
 - `confirmarEntrega` existía en `ot.js` y `pago.js` → las de venta ahora son `confirmarEntregaVenta`/
