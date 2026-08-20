@@ -289,7 +289,15 @@ function auth(requiereAdmin = false) {
     if (!token) return enviarError(res, 401, 'Falta el token de sesión');
 
     try {
-      req.usuario = jwt.verify(token, JWT_SECRET || 'dev-secret-cambiar');
+      /* Tolerancia de reloj (leeway) de 120s. jsonwebtoken compara `exp` y
+         `nbf` contra el reloj del propio proceso que verifica; si ese
+         reloj y el del proceso que firmó el token (otra instancia
+         serverless, no siempre perfectamente sincronizada) difieren unos
+         segundos, un token recién emitido puede parecer "ya vencido" y
+         rechazarse con 401 aunque siga siendo válido. clockTolerance
+         perdona esa diferencia sin dejar de expirar el token cuando
+         corresponde: solo corre el margen, no lo desactiva. */
+      req.usuario = jwt.verify(token, JWT_SECRET || 'dev-secret-cambiar', { clockTolerance: 120 });
     } catch (_) {
       return enviarError(res, 401, 'Sesión inválida o expirada');
     }
@@ -877,12 +885,26 @@ app.delete('/api/productos/:id', auth(true), async (req, res) => {
    Editar y eliminar: solo admin
    ============================================================ */
 
-/* BIZ-02 — VERIFICAR STOCK DISPONIBLE ANTES DE VENDER.
+/* BIZ-02 — CHEQUEO + DESCUENTO DE STOCK ATÓMICOS (productos sin lotes).
    ------------------------------------------------------------
-   Antes se descontaba stock sin comprobar que alcanzara: se podía
-   vender 100 de un producto con 3, dejando el inventario inconsistente.
+   Antes esto eran dos pasos separados en el tiempo: se leía el stock y
+   se comparaba contra lo pedido (verificarStockDisponible), y más abajo,
+   ya con la venta insertada, ajustarStock() volvía a leer y a escribir.
+   Entre esos dos pasos había una ventana: dos cajas vendiendo el mismo
+   producto al mismo tiempo podían pasar AMBAS la validación (cada una ve
+   stock=3, pide 2) y las dos descontar — el stock terminaba en -1 aunque
+   el chequeo "aprobó" las dos ventas.
 
-   Reglas:
+   Ahora el chequeo y el descuento pasan en una sola llamada a la base
+   (mismo enfoque que ya usa fifo_consumir para productos con lotes, ver
+   sql/09-lotes-fifo-comision.sql): la función SQL descontar_stock_venta
+   (sql/19-stock-atomico.sql) bloquea cada fila de producto con
+   SELECT ... FOR UPDATE, compara el stock real y descuenta dentro de la
+   MISMA transacción. Si algún producto no alcanza, lanza una excepción y
+   Postgres deshace todo lo que esa llamada ya había descontado: la venta
+   se acepta o se rechaza como un bloque, nunca a medias.
+
+   Reglas (las mismas que antes, ahora aplicadas dentro de la función SQL):
      · stock_ilimitado (servicios, mano de obra) → nunca se valida.
      · productos con lotes → los valida fifo_consumir de forma atómica
        más adelante; aquí NO se tocan para no duplicar el chequeo.
@@ -891,43 +913,32 @@ app.delete('/api/productos/:id', auth(true), async (req, res) => {
      · el resto → se suma la cantidad pedida por producto (dos líneas del
        mismo producto cuentan juntas) y se compara con el stock real.
 
-   Se agrupa por producto porque el carrito puede traer el mismo ítem en
-   varias líneas; validarlas por separado dejaría pasar 2+2 contra un
-   stock de 3. */
-async function verificarStockDisponible(items) {
+   Devuelve el Set de producto_id que la función SQL ya descontó, para
+   que ajustarStock() no los vuelva a tocar más abajo (mismo patrón que
+   la marca item._fifo de aplicarCostosFifo). */
+async function descontarStockNoLotes(items) {
   const lista = Array.isArray(items) ? items : [];
 
-  // Solo productos por id, sin lotes, no reservados en OT
+  // Solo productos por id, no reservados en OT. Se agrupa por producto
+  // porque el carrito puede traer el mismo ítem en varias líneas;
+  // validarlas por separado dejaría pasar 2+2 contra un stock de 3.
   const pedidoPorProducto = new Map();
   for (const it of lista) {
     if (!it.producto_id || it.ot_repuesto_id) continue;
     const n = num(it.cantidad) || 1;
     pedidoPorProducto.set(it.producto_id, (pedidoPorProducto.get(it.producto_id) || 0) + n);
   }
-  if (pedidoPorProducto.size === 0) return;
+  if (pedidoPorProducto.size === 0) return new Set();
 
-  const ids = [...pedidoPorProducto.keys()];
-  const { data: productos, error } = await db.from('productos')
-    .select('id, nombre, stock, usa_lotes, stock_ilimitado')
-    .in('id', ids);
+  const p_items = [...pedidoPorProducto.entries()]
+    .map(([producto_id, cantidad]) => ({ producto_id, cantidad }));
+
+  const { data, error } = await db.rpc('descontar_stock_venta', { p_items });
   if (error) throw new Error(error.message);
 
-  const porId = new Map((productos || []).map(p => [p.id, p]));
-
-  for (const [pid, pedido] of pedidoPorProducto) {
-    const p = porId.get(pid);
-    if (!p) continue;                          // ítem manual sin ficha: no se valida
-    if (p.stock_ilimitado) continue;           // servicio: nunca falta
-    if (p.usa_lotes) continue;                 // lo valida fifo_consumir (atómico)
-
-    const disponible = num(p.stock);
-    if (pedido > disponible) {
-      throw new Error(
-        `Stock insuficiente de "${String(p.nombre || 'producto').slice(0, 40)}": ` +
-        `pides ${pedido}, hay ${disponible}.`
-      );
-    }
-  }
+  // Solo quedan en la respuesta los producto_id que la función realmente
+  // descontó (existen, no son ilimitados y no usan lotes).
+  return new Set((data || []).map(r => r.producto_id));
 }
 
 /* Normaliza los campos de despacho de una venta (migración 17).
@@ -1174,11 +1185,13 @@ async function ajustarStock(items, signo = -1, omitirProductoIds = null) {
      a 3 + 1 tanda paralela.
      ------------------------------------------------------------ */
   const pendientes = (items || []).filter(item => {
-    /* Los ítems costeados por lotes ya movieron su stock:
-       · al vender, lo hizo aplicarCostosFifo()  → marca item._fifo
-       · al anular, lo hizo devolverConsumoLotes() → llega en omitir
-       Volver a tocarlos acá duplicaría el movimiento. */
+    /* Los ítems que ya movieron su stock por otro camino no se vuelven a
+       tocar acá, o el movimiento quedaría duplicado:
+       · al vender con lotes, lo hizo aplicarCostosFifo()      → item._fifo
+       · al vender sin lotes, lo hizo descontarStockNoLotes()  → item._stockAtomico
+       · al anular, lo hizo devolverConsumoLotes()             → llega en omitir */
     if (item._fifo) return false;
+    if (item._stockAtomico) return false;
     if (item.producto_id && omitir.has(item.producto_id)) return false;
     return true;
   });
@@ -1395,10 +1408,15 @@ app.post('/api/ventas', auth(), async (req, res) => {
   try {
     const items = await normalizarItems(req.body?.items, req.usuario.rol);
 
-    /* BIZ-02: se comprueba el stock ANTES de escribir nada. Si algo no
-       alcanza, la venta se rechaza con 400 y la base queda intacta. Los
-       productos con lotes se validan dentro de aplicarCostosFifo. */
-    await verificarStockDisponible(items);
+    /* BIZ-02: se comprueba el stock Y se descuenta en una sola llamada
+       atómica ANTES de escribir la venta. Si algo no alcanza, la función
+       SQL lanza una excepción, no descuenta nada y la venta se rechaza
+       con 400: la base queda intacta. Los productos con lotes se validan
+       y descuentan aparte, dentro de aplicarCostosFifo. */
+    const yaDescontados = await descontarStockNoLotes(items);
+    items.forEach(it => {
+      if (it.producto_id && yaDescontados.has(it.producto_id)) it._stockAtomico = true;
+    });
 
     /* PEPS: consume las capas y corrige el costo de cada línea ANTES de
        totalizar, para que la utilidad guardada sea la real. Los productos
@@ -1459,9 +1477,10 @@ app.post('/api/ventas', auth(), async (req, res) => {
     const { data: venta, error } = await db.from('ventas').insert([cabecera]).select().single();
     if (error) throw new Error(error.message);
 
-    /* _fifo es una marca interna de este proceso: no existe como columna,
-       así que se quita antes de insertar o Postgres rechaza la fila. */
-    const itemsParaGuardar = items.map(({ _fifo, ...i }) => ({ ...i, venta_id: venta.id }));
+    /* _fifo y _stockAtomico son marcas internas de este proceso: no
+       existen como columna, así que se quitan antes de insertar o
+       Postgres rechaza la fila. */
+    const itemsParaGuardar = items.map(({ _fifo, _stockAtomico, ...i }) => ({ ...i, venta_id: venta.id }));
 
     const { data: itemsGuardados, error: errItems } = await db.from('venta_items')
       .insert(itemsParaGuardar)
@@ -1830,8 +1849,14 @@ const CLASIFICACION_MERMA = 'Mermas / Pérdidas de Inventario';
 /* Las clasificaciones ahora viven en su propia tabla y se validan contra
    ella (antes eran una lista fija en el código y un CHECK en la base). */
 async function clasificacionValida(nombre) {
-  const { data } = await db.from('compra_clasificaciones')
+  const { data, error } = await db.from('compra_clasificaciones')
     .select('nombre, activo').eq('nombre', nombre).maybeSingle();
+  /* Antes se ignoraba `error` y un fallo de conexión a la base se
+     confundía con "la clasificación no existe" (400 engañoso). Ahora un
+     error real de la base se distingue y sube como excepción, para que
+     el endpoint lo reporte como lo que es: un fallo del servidor, no un
+     dato inválido del usuario. */
+  if (error) throw new Error('No se pudo validar la clasificación: ' + error.message);
   return !!(data && data.activo);
 }
 
@@ -1909,22 +1934,43 @@ app.get('/api/compras', auth(true), async (req, res) => {
   res.json(data || []);
 });
 
+/* BUG CORREGIDO — "el gasto no se guarda y no avisa nada".
+   ------------------------------------------------------------
+   Este handler (y el de abajo) no tenían try/catch. En Express 4, si un
+   handler async lanza una excepción que nadie captura, Express NO la
+   convierte en una respuesta de error: la promesa rechazada queda sin
+   manejar y la petición se queda colgada sin que el navegador reciba
+   nunca una respuesta (ni éxito ni error). Desde la interfaz eso se ve
+   exactamente como "no pasa nada" — el famoso fallo silencioso.
+   Con el try/catch, cualquier error inesperado (por ejemplo el nuevo
+   throw de clasificacionValida cuando la base no responde) siempre
+   termina en una respuesta JSON con un mensaje claro. */
 app.post('/api/compras', auth(true), async (req, res) => {
-  const { datos, error: errValidacion } = await sanearCompra(req.body);
-  if (errValidacion) return enviarError(res, 400, errValidacion);
+  try {
+    const { datos, error: errValidacion } = await sanearCompra(req.body);
+    if (errValidacion) return enviarError(res, 400, errValidacion);
 
-  const { data, error } = await db.from('compras').insert([datos]).select().single();
-  if (error) return enviarError(res, 500, error.message);
-  res.status(201).json(data);
+    const { data, error } = await db.from('compras').insert([datos]).select().single();
+    if (error) return enviarError(res, 500, error.message);
+    res.status(201).json(data);
+  } catch (err) {
+    console.error('[COMPRAS] no se pudo guardar el gasto:', err.message);
+    enviarError(res, 500, err.message || 'No se pudo guardar el gasto');
+  }
 });
 
 app.put('/api/compras/:id', auth(true), async (req, res) => {
-  const { datos, error: errValidacion } = await sanearCompra(req.body);
-  if (errValidacion) return enviarError(res, 400, errValidacion);
+  try {
+    const { datos, error: errValidacion } = await sanearCompra(req.body);
+    if (errValidacion) return enviarError(res, 400, errValidacion);
 
-  const { data, error } = await db.from('compras').update(datos).eq('id', req.params.id).select().single();
-  if (error) return enviarError(res, 500, error.message);
-  res.json(data);
+    const { data, error } = await db.from('compras').update(datos).eq('id', req.params.id).select().single();
+    if (error) return enviarError(res, 500, error.message);
+    res.json(data);
+  } catch (err) {
+    console.error('[COMPRAS] no se pudo actualizar el gasto:', err.message);
+    enviarError(res, 500, err.message || 'No se pudo actualizar el gasto');
+  }
 });
 
 app.post('/api/compras/eliminar-lote', auth(true), exigirPinAdmin, async (req, res) => {

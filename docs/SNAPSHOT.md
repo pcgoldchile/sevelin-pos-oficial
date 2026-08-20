@@ -3,7 +3,7 @@
 > Actualiza SOLO este archivo al cerrar una sesión. Para el detalle completo, ver `docs/README.md`.
 > Para saber qué otro documento leer según lo que necesites, ver `docs/README-DOCS.md`.
 
-**Fecha:** 19-08-2026 · **Versión activa:** v16 · **En producción:** https://sevelin-pos-oficial.vercel.app
+**Fecha:** 20-08-2026 · **Versión activa:** v19 · **En producción:** https://sevelin-pos-oficial.vercel.app
 
 ---
 
@@ -34,7 +34,7 @@ Node/Express (`api/index.js`, serverless en Vercel) · JavaScript **vanilla** de
 
 ---
 
-## Estado: qué está HECHO (v10 → v16)
+## Estado: qué está HECHO (v10 → v19)
 - **Finanzas (v10):** gate de PIN al entrar, grid de 4 tarjetas (efectivo/banco/total/resguardo),
   ajuste manual de saldos con justificación e historial, checklist de gastos fijos del mes con cuadre,
   aportes de capital, recálculo de canales al editar compras.
@@ -52,21 +52,34 @@ Node/Express (`api/index.js`, serverless en Vercel) · JavaScript **vanilla** de
   barras/fecha/fecha+hora/total, con sugerencias en vivo. El barcode se resuelve contra el catálogo.
 - **Ventas por pagar:** estado PENDIENTE, filtro con badge, botón cobrar por fila, modal de cobro. (Ya
   existía desde antes; confirmado funcionando.)
+- **v17:** fix `id` duplicado `kpiUtilidadNeta` entre Balance e Historial → el de Historial pasó a
+  `kpiUtilidadNetaPos`.
+- **BIZ-02 atómico (v18):** el chequeo de stock y el descuento, para productos sin lotes, ahora pasan en
+  una sola transacción SQL con `SELECT ... FOR UPDATE` (función `descontar_stock_venta`, igual enfoque
+  que `fifo_consumir` para productos con lotes). Cierra la condición de carrera donde dos ventas
+  concurrentes del mismo producto podían pasar ambas la validación y sobrevender. Ver
+  `docs/CHANGELOG-V18.md`.
+- **v19:** dos fixes de sesión/backend — (1) tolerancia de reloj (`clockTolerance: 120`) en
+  `jwt.verify()` (`auth()` en `api/index.js`), para que un pequeño desfase de reloj entre instancias
+  serverless no rechace sesiones válidas; (2) `POST /api/compras` y `PUT /api/compras/:id` (guardar un
+  gasto en Finanzas → Gastos) ahora envuelven el handler en `try/catch` y `clasificacionValida()` ya no
+  confunde un error real de conexión con "clasificación inexistente": antes, un fallo inesperado dejaba
+  la petición colgada sin ninguna respuesta (fallo silencioso); ahora siempre responde con un mensaje
+  claro. Ver `docs/CHANGELOG-V19.md`.
 
 ## Esquema SQL: última migración
-`sql/18-gastos-programados.sql` (tabla `gastos_programados`). Antes: 17 (caja + despacho), 16 (ajustes
-de saldo). Todas idempotentes, corren en orden. Aplicar en Supabase → SQL Editor.
+`sql/19-stock-atomico.sql` (función `descontar_stock_venta`). Antes: 18 (gastos programados), 17 (caja +
+despacho). Todas idempotentes, corren en orden. Aplicar en Supabase → SQL Editor.
 
 ## Bugs conocidos ACTIVOS
-(ninguno pendiente relacionado a ids duplicados; ver Pendiente para el resto del backlog)
+(ninguno pendiente relacionado a ids duplicados ni a sobreventa de stock; ver Pendiente para el resto
+del backlog)
 
 ## Pendiente (backlog, no bloqueante)
-1. BIZ-02 atómico: stock check + descuento en una transacción (`SELECT ... FOR UPDATE`) para productos
-   sin lotes.
-2. Unificar los ~5 helpers de escape en `escHtml`.
-3. Conectar el e-commerce (sevelin.cl): las columnas de despacho y comisión ya existen; falta el sitio
+1. Unificar los ~5 helpers de escape en `escHtml`.
+2. Conectar el e-commerce (sevelin.cl): las columnas de despacho y comisión ya existen; falta el sitio
    que cree ventas por la API con `origen_pago='pago_web'`.
-4. (Opcional, grande) Migrar a Supabase Auth + RLS por rol. Partir `api/index.js` en routers.
+3. (Opcional, grande) Migrar a Supabase Auth + RLS por rol. Partir `api/index.js` en routers.
 
 ## Trampas específicas ya descubiertas (no repetir)
 - `confirmarEntrega` existía en `ot.js` y `pago.js` → las de venta ahora son `confirmarEntregaVenta`/
