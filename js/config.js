@@ -17,10 +17,10 @@ var NEGOCIO_NOMBRE = 'Sevelin'; // el backend puede sobrescribirlo al iniciar se
    como el token vive en sessionStorage, un trabajador podría robar la
    sesión del admin (escalada de privilegios vía XSS persistente).
 
-   Ya existían cuatro helpers iguales dispersos (escaparHTML en print,
+   (v20) Existían cuatro helpers duplicados (escaparHTML en print,
    escaparTexto en balance, escaparHtmlHist en historial, escaparRep en
-   reportes). Se dejan para no romper sus llamadas, pero el código nuevo
-   usa ESTE, que es el único global y el que hay que reutilizar.
+   reportes). Se unificaron en este: todos los archivos usan ahora
+   escHtml directamente.
 
    Se escapa también la comilla simple: importa cuando el valor va dentro
    de un atributo delimitado por comillas simples. */

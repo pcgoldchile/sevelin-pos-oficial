@@ -65,10 +65,6 @@ function aplicarAnchoTicket() {
   document.documentElement.style.setProperty('--ticket-ancho', anchoTicket());
 }
 
-function escaparHTML(txt) {
-  return String(txt ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-}
-
 function construirTicketHTML(venta, items) {
   const lista = items || venta.items || [];
   const numero = String(venta.numero_orden ?? venta.id ?? 0).padStart(5, '0');
@@ -77,8 +73,8 @@ function construirTicketHTML(venta, items) {
   const filas = lista.map(it => `
     <tr>
       <td class="t-desc">
-        ${it.cantidad}x ${escaparHTML(it.nombre)}
-        ${it.serial_number ? `<div class="t-sn">S/N: ${escaparHTML(it.serial_number)}</div>` : ''}
+        ${it.cantidad}x ${escHtml(it.nombre)}
+        ${it.serial_number ? `<div class="t-sn">S/N: ${escHtml(it.serial_number)}</div>` : ''}
       </td>
       <td class="t-right">${fmtCLP(it.subtotal)}</td>
     </tr>
@@ -86,14 +82,14 @@ function construirTicketHTML(venta, items) {
 
   return `
     <div class="t-head">
-      <h3>${escaparHTML(NEGOCIO_NOMBRE)}</h3>
+      <h3>${escHtml(NEGOCIO_NOMBRE)}</h3>
       <p>Comprobante</p>
       <p><b>Orden #${numero}</b></p>
     </div>
     <div class="t-line"></div>
-    <p><b>Fecha:</b> ${escaparHTML(venta.fecha || todayISO())}${venta.hora ? ' ' + escaparHTML(venta.hora) : ''}</p>
-    ${venta.cliente && String(venta.cliente).trim() ? `<p><b>Cliente:</b> ${escaparHTML(venta.cliente)}</p>` : ''}
-    <p><b>Pago:</b> ${escaparHTML(venta.metodo_pago || '-')}</p>
+    <p><b>Fecha:</b> ${escHtml(venta.fecha || todayISO())}${venta.hora ? ' ' + escHtml(venta.hora) : ''}</p>
+    ${venta.cliente && String(venta.cliente).trim() ? `<p><b>Cliente:</b> ${escHtml(venta.cliente)}</p>` : ''}
+    <p><b>Pago:</b> ${escHtml(venta.metodo_pago || '-')}</p>
     <div class="t-line"></div>
     <table>
       <tbody>${filas}</tbody>
@@ -172,7 +168,7 @@ function reimprimirTicket(venta, items, opciones) {
    ============================================================ */
 function filaOT(etiqueta, valor) {
   if (valor === null || valor === undefined || valor === '' || valor === false) return '';
-  return `<div class="ot-dato"><span>${etiqueta}</span><b>${escaparHTML(valor)}</b></div>`;
+  return `<div class="ot-dato"><span>${etiqueta}</span><b>${escHtml(valor)}</b></div>`;
 }
 
 function construirComprobanteOT(ot, etiquetaCopia) {
@@ -186,18 +182,18 @@ function construirComprobanteOT(ot, etiquetaCopia) {
     <div class="ot-doc">
       <div class="ot-doc-head">
         <div>
-          <h3>${escaparHTML(NEGOCIO_NOMBRE)}</h3>
+          <h3>${escHtml(NEGOCIO_NOMBRE)}</h3>
           <p>Orden de Trabajo · Servicio Técnico</p>
         </div>
         <div class="ot-doc-num">
-          <strong>${escaparHTML(ot.numero_ot || '—')}</strong>
+          <strong>${escHtml(ot.numero_ot || '—')}</strong>
           <span>${etiquetaCopia}</span>
         </div>
       </div>
 
       <div class="ot-doc-meta">
         <span>Ingreso: <b>${tsAChile(ot.fecha_ingreso)}</b></span>
-        <span>Estado: <b>${escaparHTML(ot.estado || 'PENDIENTE')}</b></span>
+        <span>Estado: <b>${escHtml(ot.estado || 'PENDIENTE')}</b></span>
         ${entregado ? `<span>Entrega: <b>${tsAChile(ot.fecha_entrega)}</b></span>` : ''}
       </div>
 
@@ -225,9 +221,9 @@ function construirComprobanteOT(ot, etiquetaCopia) {
 
       <section class="ot-doc-bloque">
         <h4>Falla reportada</h4>
-        <p>${escaparHTML(ot.falla_reportada || '—')}</p>
-        ${ot.obs_cliente ? `<h4>Observaciones del cliente</h4><p>${escaparHTML(ot.obs_cliente)}</p>` : ''}
-        ${ot.obs_tecnico ? `<h4>Observaciones del técnico</h4><p>${escaparHTML(ot.obs_tecnico)}</p>` : ''}
+        <p>${escHtml(ot.falla_reportada || '—')}</p>
+        ${ot.obs_cliente ? `<h4>Observaciones del cliente</h4><p>${escHtml(ot.obs_cliente)}</p>` : ''}
+        ${ot.obs_tecnico ? `<h4>Observaciones del técnico</h4><p>${escHtml(ot.obs_tecnico)}</p>` : ''}
       </section>
 
       <p class="ot-doc-legal">
@@ -243,7 +239,7 @@ function construirComprobanteOT(ot, etiquetaCopia) {
             : '<span class="ot-firma-vacia"></span>'}
           <span class="ot-firma-linea"></span>
           <small>Firma de conformidad del cliente</small>
-          ${ot.retira_nombre ? `<small><b>${escaparHTML(ot.retira_nombre)}</b>${ot.retira_rut ? ' · ' + escaparHTML(ot.retira_rut) : ''}</small>` : ''}
+          ${ot.retira_nombre ? `<small><b>${escHtml(ot.retira_nombre)}</b>${ot.retira_rut ? ' · ' + escHtml(ot.retira_rut) : ''}</small>` : ''}
         </div>
         <div class="ot-firma-box">
           <span class="ot-firma-vacia"></span>
@@ -293,24 +289,24 @@ function imprimirTicketAbono(encargo, montoAbono) {
 
   const historial = (encargo.abonos || []).map(a => `
     <tr>
-      <td class="t-desc">${tsAChile(a.fecha).slice(0, 16)}<div class="t-sn">${escaparHTML(a.metodo_pago || '')}</div></td>
+      <td class="t-desc">${tsAChile(a.fecha).slice(0, 16)}<div class="t-sn">${escHtml(a.metodo_pago || '')}</div></td>
       <td class="t-right">${fmtCLP(a.monto)}</td>
     </tr>
   `).join('');
 
   container.innerHTML = `
     <div class="t-head">
-      <h3>${escaparHTML(NEGOCIO_NOMBRE)}</h3>
+      <h3>${escHtml(NEGOCIO_NOMBRE)}</h3>
       <p>Comprobante de Abono</p>
-      ${encargo.numero_ot ? `<p><b>${escaparHTML(encargo.numero_ot)}</b></p>` : ''}
+      ${encargo.numero_ot ? `<p><b>${escHtml(encargo.numero_ot)}</b></p>` : ''}
     </div>
     <div class="t-line"></div>
     <p><b>Fecha:</b> ${fechaHoraChile()}</p>
-    <p><b>Cliente:</b> ${escaparHTML(encargo.cliente_nombre || 'Cliente')}</p>
-    ${encargo.cliente_telefono ? `<p><b>Teléfono:</b> ${escaparHTML(encargo.cliente_telefono)}</p>` : ''}
+    <p><b>Cliente:</b> ${escHtml(encargo.cliente_nombre || 'Cliente')}</p>
+    ${encargo.cliente_telefono ? `<p><b>Teléfono:</b> ${escHtml(encargo.cliente_telefono)}</p>` : ''}
     <div class="t-line"></div>
     <p><b>Encargo:</b></p>
-    <p>${escaparHTML(encargo.descripcion || '')}</p>
+    <p>${escHtml(encargo.descripcion || '')}</p>
     <div class="t-line"></div>
     ${historial ? `<p><b>Abonos registrados:</b></p><table><tbody>${historial}</tbody></table><div class="t-line"></div>` : ''}
     <div class="t-total"><span>ABONO</span><span>${fmtCLP(abonoMostrado)}</span></div>
@@ -362,7 +358,7 @@ function imprimirFichaManual() {
   const ficha = `
     <div class="ficha-doc">
       <div class="ficha-head">
-        <h3>${escaparHTML(NEGOCIO_NOMBRE)}</h3>
+        <h3>${escHtml(NEGOCIO_NOMBRE)}</h3>
         <p>Ficha de datos del cliente · Servicio Técnico</p>
       </div>
       ${lineas}

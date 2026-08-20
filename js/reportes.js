@@ -175,12 +175,12 @@ function pintarRankingCompleto(criterio) {
     const pct = Math.max(2, (Math.abs(valor) / max) * 100);
     const negativo = valor < 0;
     return `
-      <div class="rank-fila rank-clicable" data-producto="${escaparRep(p.nombre)}"
-           title="Abrir ${escaparRep(p.nombre)}">
+      <div class="rank-fila rank-clicable" data-producto="${escHtml(p.nombre)}"
+           title="Abrir ${escHtml(p.nombre)}">
         <span class="rank-pos">${i + 1}</span>
         <div class="rank-cuerpo">
           <div class="rank-cabecera">
-            <span class="rank-nombre">${escaparRep(acortarRep(p.nombre, 45))}</span>
+            <span class="rank-nombre">${escHtml(acortarRep(p.nombre, 45))}</span>
             <b class="${negativo ? 'rank-negativo' : ''}">${c.principal(p)}</b>
           </div>
           <div class="barra-pista">
@@ -299,12 +299,12 @@ function pintarRanking(contenedorId, lista, campo, valorPrincipal, valorSecundar
     const negativo = valor < 0;
 
     return `
-      <div class="rank-fila rank-clicable" data-producto="${escaparRep(p.nombre)}"
-           title="Abrir ${escaparRep(p.nombre)}">
+      <div class="rank-fila rank-clicable" data-producto="${escHtml(p.nombre)}"
+           title="Abrir ${escHtml(p.nombre)}">
         <span class="rank-pos">${i + 1}</span>
         <div class="rank-cuerpo">
           <div class="rank-cabecera">
-            <span class="rank-nombre">${escaparRep(acortarRep(p.nombre, 40))}</span>
+            <span class="rank-nombre">${escHtml(acortarRep(p.nombre, 40))}</span>
             <b class="${negativo ? 'rank-negativo' : ''}">${valorPrincipal(p)}</b>
           </div>
           <div class="barra-pista">
@@ -398,7 +398,7 @@ async function abrirReposicion() {
     listaReposicion = await API.balance.reposicion();
     pintarReposicion(listaReposicion);
   } catch (err) {
-    lista.innerHTML = `<p class="vacio-nota error">${escaparRep(err.message || 'Error')}</p>`;
+    lista.innerHTML = `<p class="vacio-nota error">${escHtml(err.message || 'Error')}</p>`;
   }
 }
 
@@ -433,8 +433,8 @@ function pintarReposicion(r) {
       <tbody>
         ${r.productos.map(p => `
           <tr${p.agotado ? ' class="fila-agotada"' : ''}>
-            <td>${escaparRep(p.nombre)}</td>
-            <td>${escaparRep(p.sku || '—')}</td>
+            <td>${escHtml(p.nombre)}</td>
+            <td>${escHtml(p.sku || '—')}</td>
             <td style="text-align:right;" class="${p.agotado ? 'stock-agotado' : ''}">
               ${p.stock}${p.agotado ? ' ⚠️' : ''}
             </td>
@@ -738,8 +738,3 @@ function generarContadorPDF(d) {
   showToast('PDF para el contador descargado', 'ok');
 }
 
-function escaparRep(t) {
-  return String(t == null ? '' : t)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}

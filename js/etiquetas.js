@@ -83,9 +83,9 @@ function construirEtiquetaHTML(p, opciones) {
 
   return `
     <div class="etiqueta" data-altura="${alturaBarras}">
-      ${conNombre ? `<div class="etq-nombre" style="font-size:${tamNombre}px;">${escaparHTML(p.nombre)}</div>` : ''}
+      ${conNombre ? `<div class="etq-nombre" style="font-size:${tamNombre}px;">${escHtml(p.nombre)}</div>` : ''}
       ${conPrecio ? `<div class="etq-precio" style="font-size:${tamPrecio}px;">${fmtCLP(p.precio_unitario)}</div>` : ''}
-      ${conCodigo ? `<svg class="etq-barcode" data-codigo="${escaparHTML(codigoDeEtiqueta(p))}"></svg>` : ''}
+      ${conCodigo ? `<svg class="etq-barcode" data-codigo="${escHtml(codigoDeEtiqueta(p))}"></svg>` : ''}
       ${!conNombre && !conPrecio && !conCodigo ? '<div class="etq-nombre">Marca al menos un dato</div>' : ''}
     </div>
   `;
@@ -112,7 +112,7 @@ function pintarBarras(contenedor, alturaPorDefecto) {
       try {
         JsBarcode(svg, codigo, { format: 'CODE128', width: 1.6, height: altura, fontSize: 12, margin: 2 });
       } catch (__) {
-        svg.outerHTML = `<div class="etq-nombre">${escaparHTML(codigo)}</div>`;
+        svg.outerHTML = `<div class="etq-nombre">${escHtml(codigo)}</div>`;
       }
     }
   });

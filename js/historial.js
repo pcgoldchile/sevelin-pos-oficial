@@ -1129,7 +1129,7 @@ function actualizarAvisoBusqueda() {
 
   if (!salesHistory.length) {
     elHistResultadoBusqueda.innerHTML =
-      `Sin ventas con <b>"${escaparHtmlHist(filtroProducto)}"</b> en este período. ` +
+      `Sin ventas con <b>"${escHtml(filtroProducto)}"</b> en este período. ` +
       `Prueba con “Buscar en todo el historial”.`;
     return;
   }
@@ -1150,15 +1150,8 @@ function actualizarAvisoBusqueda() {
   });
 
   elHistResultadoBusqueda.innerHTML =
-    `<b>${salesHistory.length}</b> venta(s) con <b>"${escaparHtmlHist(filtroProducto)}"</b>` +
+    `<b>${salesHistory.length}</b> venta(s) con <b>"${escHtml(filtroProducto)}"</b>` +
     (unidades ? ` · <b>${unidades}</b> unidad(es) · ${fmtCLP(dinero)}` : '');
-}
-
-/* Los términos de búsqueda los escribe el usuario y van a innerHTML */
-function escaparHtmlHist(t) {
-  return String(t == null ? '' : t)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 /* Chips de los ítems que coincidieron, para la fila de la tabla */
@@ -1178,9 +1171,9 @@ function chipsItemsCoincidentes(ventaId) {
   return '<div class="hist-items-match">' + coinciden.slice(0, 3).map(it => {
     const detalle = [it.sku ? `SKU ${it.sku}` : '', it.serial_number ? `S/N ${it.serial_number}` : '']
       .filter(Boolean).join(' · ');
-    return `<span class="hist-item-chip" title="${escaparHtmlHist(detalle || it.nombre)}">` +
-           `${Number(it.cantidad) || 0}× ${escaparHtmlHist(it.nombre)}` +
-           (detalle ? ` <small>${escaparHtmlHist(detalle)}</small>` : '') + '</span>';
+    return `<span class="hist-item-chip" title="${escHtml(detalle || it.nombre)}">` +
+           `${Number(it.cantidad) || 0}× ${escHtml(it.nombre)}` +
+           (detalle ? ` <small>${escHtml(detalle)}</small>` : '') + '</span>';
   }).join('') +
   (coinciden.length > 3 ? `<span class="hist-item-chip">+${coinciden.length - 3}</span>` : '') +
   '</div>';
@@ -1882,7 +1875,7 @@ function mostrarSugerenciasVenta(det) {
     const fh = `${v.fecha || ''} ${(v.hora || '').slice(0, 5)}`.trim();
     return `<button type="button" class="hist-sug-item" data-sug-venta="${v.id}">
       <span class="hist-sug-orden">#${orden}</span>
-      <span class="hist-sug-fh">${escaparHtmlHist(fh)}</span>
+      <span class="hist-sug-fh">${escHtml(fh)}</span>
       <span class="hist-sug-total">${fmtCLP(v.total)}</span>
     </button>`;
   }).join('');
@@ -1926,7 +1919,7 @@ function buscarVentaUniversal() {
     const etiqueta = det.tipo === 'total' ? `total ${fmtCLP(det.valor)}`
       : det.tipo === 'fechahora' ? `${det.valor}` : `fecha ${det.valor}`;
     elHistResultadoBusqueda.innerHTML = coincidencias.length
-      ? `<b>${coincidencias.length}</b> venta(s) con ${escaparHtmlHist(etiqueta)}.`
-      : `Sin ventas con ${escaparHtmlHist(etiqueta)} en este período. Prueba “Buscar en todo el historial” o amplía las fechas.`;
+      ? `<b>${coincidencias.length}</b> venta(s) con ${escHtml(etiqueta)}.`
+      : `Sin ventas con ${escHtml(etiqueta)} en este período. Prueba “Buscar en todo el historial” o amplía las fechas.`;
   }
 }

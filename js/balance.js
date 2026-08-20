@@ -243,7 +243,7 @@ function pintarMedios(porMedio) {
     return `
       <div class="barra-fila">
         <div class="barra-cabecera">
-          <span>${escaparTexto(metodo)}</span>
+          <span>${escHtml(metodo)}</span>
           <b>${fmtCLP(monto)} <small>${pct.toFixed(0)}%</small></b>
         </div>
         <div class="barra-pista"><div class="barra-relleno" style="width:${pct}%"></div></div>
@@ -282,7 +282,7 @@ function pintarGrupos(porGrupo, porClasificacion, totalGastos) {
     detalle.innerHTML = filas.length
       ? filas.map(([nombre, monto]) => `
           <div class="detalle-fila">
-            <span>${escaparTexto(nombre)}</span>
+            <span>${escHtml(nombre)}</span>
             <b>${fmtCLP(monto)}</b>
           </div>`).join('')
       : '';
@@ -377,7 +377,7 @@ function pintarArqueo(b) {
           ? '✅ La caja cuadró exacta'
           : `${dif > 0 ? '🔵' : '⚠️'} ${estadoDif} ${fmtCLP(Math.abs(dif))} respecto de lo esperado`}
       </div>
-      ${a.observaciones ? `<p class="modal-hint">📝 ${escaparTexto(a.observaciones)}</p>` : ''}`;
+      ${a.observaciones ? `<p class="modal-hint">📝 ${escHtml(a.observaciones)}</p>` : ''}`;
 
     if (btnAbrir) btnAbrir.style.display = 'none';
     if (btnCerrar) btnCerrar.style.display = 'none';
@@ -535,7 +535,7 @@ function mostrarResultadoArqueo(a) {
         ? '✅ La caja cuadró exacta'
         : (dif > 0 ? `🔵 Sobran ${fmtCLP(dif)}` : `⚠️ Faltan ${fmtCLP(-dif)}`)}
     </div>
-    ${a.observaciones ? `<p class="modal-hint">📝 ${escaparTexto(a.observaciones)}</p>` : ''}
+    ${a.observaciones ? `<p class="modal-hint">📝 ${escHtml(a.observaciones)}</p>` : ''}
     <p class="modal-hint">Cerrado el ${a.fecha} · ${new Date(a.cerrado_en || Date.now()).toLocaleString('es-CL')}</p>`;
 
   document.getElementById('modalResultadoArqueo')?.classList.add('show');
@@ -555,7 +555,7 @@ function pintarInyecciones(lista) {
 
   caja.innerHTML = lista.map(i => `
     <div class="detalle-fila">
-      <span>${i.fecha} · ${escaparTexto(i.metodo)}${i.descripcion ? ' · ' + escaparTexto(i.descripcion) : ''}</span>
+      <span>${i.fecha} · ${escHtml(i.metodo)}${i.descripcion ? ' · ' + escHtml(i.descripcion) : ''}</span>
       <b>${fmtCLP(i.monto)}</b>
     </div>`).join('');
 }
@@ -627,13 +627,13 @@ function pintarGastosFijos() {
     return `
       <div class="fijo-item${g.activo ? '' : ' pausado'}">
         <div class="fijo-info">
-          <strong>${escaparTexto(g.nombre)}</strong>
+          <strong>${escHtml(g.nombre)}</strong>
           <small>
             Día ${g.dia_mes} de cada mes · ${grupo.etiqueta}
-            ${g.clasificacion ? ' · ' + escaparTexto(g.clasificacion) : ''}
+            ${g.clasificacion ? ' · ' + escHtml(g.clasificacion) : ''}
             ${g.activo ? '' : ' · <span class="tag-pausado">Pausado</span>'}
           </small>
-          ${g.notas ? `<small class="fijo-notas">${escaparTexto(g.notas)}</small>` : ''}
+          ${g.notas ? `<small class="fijo-notas">${escHtml(g.notas)}</small>` : ''}
         </div>
         <b class="fijo-monto">${fmtCLP(g.monto)}</b>
         <div class="fijo-acciones">
@@ -763,13 +763,6 @@ async function borrarGastoFijo(gasto) {
   } catch (err) {
     showToast(err.message || 'No se pudo eliminar', 'err');
   }
-}
-
-/* Escape básico: los nombres los escribe el usuario y van a innerHTML. */
-function escaparTexto(t) {
-  return String(t == null ? '' : t)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 /* ============================================================
