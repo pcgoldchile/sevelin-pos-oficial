@@ -3,7 +3,7 @@
 > Actualiza SOLO este archivo al cerrar una sesión. Para el detalle completo, ver `docs/README.md`.
 > Para saber qué otro documento leer según lo que necesites, ver `docs/README-DOCS.md`.
 
-**Fecha:** 20-08-2026 · **Versión activa:** v20 · **En producción:** https://sevelin-pos-oficial.vercel.app
+**Fecha:** 20-08-2026 · **Versión activa:** v21 · **En producción:** https://sevelin-pos-oficial.vercel.app
 
 ---
 
@@ -72,6 +72,14 @@ Node/Express (`api/index.js`, serverless en Vercel) · JavaScript **vanilla** de
   `escaparHTML` (print.js) y `escaparRep` (reportes.js), y se migraron todas sus llamadas —incluida
   `etiquetas.js`, que usaba la de print.js— a `escHtml`. Sin cambio de comportamiento visible: `escHtml`
   es un superset (también escapa la comilla simple `'`). Ver `docs/CHANGELOG-V20.md`.
+- **v21:** protección por inactividad + ventana de gracia del PIN en Finanzas (`js/finanzas-gate.js`).
+  Con la vista Finanzas activa, 60s sin interacción (`mousemove`/`click`/`keydown`/`touchstart`)
+  redirigen solos al POS. El permiso de un solo uso (`finanzasDesbloqueada`) se reemplazó por un
+  timestamp (`finanzasUltimaActividad`): reentrar dentro de los 60s desde la última actividad o el
+  último PIN válido no vuelve a pedirlo; pasado ese tiempo (incluido el caso de haber sido expulsado
+  por inactividad, que no da ventana de gracia) sí lo exige. No existe aún una vista "Configuración"
+  en el frontend, así que el mecanismo solo cubre Finanzas (que incluye el sub-panel Balance) pero
+  quedó escrito genérico para sumar otra vista sensible sin rehacerlo. Ver `docs/CHANGELOG-V21.md`.
 
 ## Esquema SQL: última migración
 `sql/19-stock-atomico.sql` (función `descontar_stock_venta`). Antes: 18 (gastos programados), 17 (caja +

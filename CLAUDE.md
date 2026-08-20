@@ -92,12 +92,12 @@ inserte en el DOM pasa por `escHtml`** (regla de seguridad).
 
 ## Backlog (pendientes, ninguno bloqueante)
 
-1. **BIZ-02 atómico:** chequeo de stock + descuento en una transacción (`SELECT ... FOR UPDATE`) para
-   productos sin lotes.
-2. **Unificar los ~5 helpers de escape** en `escHtml`.
-3. **Conectar el e-commerce (sevelin.cl):** las columnas de despacho/comisión ya existen; falta el
+1. **Conectar el e-commerce (sevelin.cl):** las columnas de despacho/comisión ya existen; falta el
    sitio que cree ventas por la API con `origen_pago='pago_web'`.
-4. **(Opcional, grande)** Migrar a Supabase Auth + RLS por rol; partir `api/index.js` en routers.
+2. **(Opcional, grande)** Migrar a Supabase Auth + RLS por rol; partir `api/index.js` en routers.
+
+> BIZ-02 atómico y la unificación de helpers de escape ya están hechos (v18 y v20, ver
+> `docs/SNAPSHOT.md`).
 
 ---
 

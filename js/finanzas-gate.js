@@ -1,47 +1,91 @@
 // ==========================================
-// FINANZAS-GATE.JS — PIN obligatorio al entrar a Finanzas (req. 1)
+// FINANZAS-GATE.JS — PIN + inactividad para Finanzas (vista sensible)
 // ------------------------------------------
-// Finanzas pide el PIN de admin CADA vez que se entra, aunque la sesión
-// ya esté abierta y aunque se acabe de salir y volver. Si el usuario va a
-// otro módulo y regresa, se pide de nuevo.
+// Finanzas pide el PIN de admin al entrar, salvo que el usuario haya
+// estado ahí (autenticado o activo) hace menos de 60s: esa es la
+// "ventana de gracia". Además, mientras está DENTRO de Finanzas, si pasan
+// 60s sin ninguna interacción (mousemove/click/keydown/touchstart), se lo
+// redirige solo al POS.
 //
-// CÓMO FUNCIONA
+// Ambas reglas comparten un mismo timestamp, `finanzasUltimaActividad`:
+// - Se fija al autenticar con el PIN y en cada interacción mientras la
+//   vista está activa.
+// - La ventana de gracia para re-entrar sin PIN se mide contra ese mismo
+//   timestamp (por eso, si lo sacó el timer de inactividad, ya está
+//   vencida: no hay "puerta trasera" para el auto-logout).
+//
+// CÓMO FUNCIONA EL GATE DE PIN
 // El botón "Finanzas" del menú tiene su listener en config.js
 // (initNavegacion). Para no reescribir esa navegación, este módulo
 // intercepta el clic en FASE DE CAPTURA (antes de que burbujee al
-// listener de config.js). Si el acceso no está concedido para esta
-// visita, detiene el evento, muestra el gate y — solo si el PIN es
-// correcto — reenvía el clic para que la navegación siga normal.
-//
-// El "permiso" es de un solo uso: se consume al entrar y se revoca al
-// salir de Finanzas, así volver a entrar exige el PIN otra vez.
+// listener de config.js). Si no hay acceso vigente, detiene el evento,
+// muestra el gate y — solo si el PIN es correcto — reenvía el clic para
+// que la navegación siga normal.
 // ==========================================
 
-let finanzasDesbloqueada = false;   // permiso para ESTA visita, se revoca al salir
+const FINANZAS_GRACIA_MS = 60000;        // ventana de gracia para re-entrar sin PIN
+const FINANZAS_INACTIVIDAD_MS = 60000;   // tiempo sin interacción antes de expulsar al POS
+const FINANZAS_EVENTOS_ACTIVIDAD = ['mousemove', 'click', 'keydown', 'touchstart'];
+
+let finanzasUltimaActividad = 0;   // timestamp del último PIN válido o interacción en Finanzas
+let finanzasTimerInactividad = null;
+
+function finanzasAccesoVigente() {
+  return (Date.now() - finanzasUltimaActividad) < FINANZAS_GRACIA_MS;
+}
+
+function finanzasVistaActiva() {
+  return document.getElementById('view-finanzas')?.classList.contains('active') || false;
+}
+
+function marcarActividadFinanzas() {
+  finanzasUltimaActividad = Date.now();
+  clearTimeout(finanzasTimerInactividad);
+  finanzasTimerInactividad = setTimeout(finanzasExpulsarPorInactividad, FINANZAS_INACTIVIDAD_MS);
+}
+
+function finanzasExpulsarPorInactividad() {
+  if (!finanzasVistaActiva()) return;
+  if (typeof showToast === 'function') showToast('Finanzas se cerró por inactividad');
+  document.querySelector('.nav-links .nav-btn[data-view="view-pos"]')?.click();
+}
+
+function activarVigilanciaFinanzas() {
+  marcarActividadFinanzas();
+  FINANZAS_EVENTOS_ACTIVIDAD.forEach(ev => document.addEventListener(ev, marcarActividadFinanzas));
+}
+
+function desactivarVigilanciaFinanzas() {
+  FINANZAS_EVENTOS_ACTIVIDAD.forEach(ev => document.removeEventListener(ev, marcarActividadFinanzas));
+  clearTimeout(finanzasTimerInactividad);
+  finanzasTimerInactividad = null;
+}
 
 document.addEventListener('DOMContentLoaded', () => {
   const btnFinanzas = document.querySelector('.nav-links .nav-btn[data-view="view-finanzas"]');
   if (!btnFinanzas) return;
 
   /* Intercepta en captura (true): corre ANTES del listener de navegación
-     de config.js. Si no hay permiso, corta aquí mismo. */
+     de config.js. Si no hay acceso vigente, corta aquí mismo. */
   btnFinanzas.addEventListener('click', (e) => {
-    if (finanzasDesbloqueada) return;              // ya autorizado en esta visita
-    if (!esAdmin()) return;                         // el trabajador lo bloquea config.js
+    if (finanzasAccesoVigente()) return;             // PIN reciente o dentro de la ventana de gracia
+    if (!esAdmin()) return;                          // el trabajador lo bloquea config.js
     e.preventDefault();
     e.stopPropagation();
     abrirGateFinanzas();
   }, true);
 
-  // Al SALIR de Finanzas (entrar a cualquier otra vista) se revoca el permiso
+  // Al entrar/salir de Finanzas se activa o apaga la vigilancia de inactividad
   document.addEventListener('pos:vista-activa', (ev) => {
-    if (ev.detail?.vista && ev.detail.vista !== 'view-finanzas') {
-      finanzasDesbloqueada = false;
-    }
+    if (ev.detail?.vista === 'view-finanzas') activarVigilanciaFinanzas();
+    else desactivarVigilanciaFinanzas();
   });
 
-  // Cerrar sesión también revoca
-  document.getElementById('btnLogout')?.addEventListener('click', () => { finanzasDesbloqueada = false; });
+  // Cerrar sesión revoca el acceso vigente y apaga la vigilancia
+  document.getElementById('btnLogout')?.addEventListener('click', () => {
+    finanzasUltimaActividad = 0;
+    desactivarVigilanciaFinanzas();
+  });
 
   // --- Controles del modal del gate ---
   const input = document.getElementById('gatePin');
@@ -90,10 +134,10 @@ async function intentarEntrarFinanzas() {
   if (btn) btn.disabled = true;
   try {
     await API.balance.verificarPin(pin);          // 200 solo si el PIN es correcto
-    finanzasDesbloqueada = true;
+    finanzasUltimaActividad = Date.now();
     cerrarGateFinanzas();
-    /* Se reenvía el clic al botón: ahora finanzasDesbloqueada es true, así
-       que el interceptor lo deja pasar y config.js hace la navegación. */
+    /* Se reenvía el clic al botón: ahora hay acceso vigente, así que el
+       interceptor lo deja pasar y config.js hace la navegación. */
     document.querySelector('.nav-links .nav-btn[data-view="view-finanzas"]')?.click();
   } catch (e) {
     if (err) {
