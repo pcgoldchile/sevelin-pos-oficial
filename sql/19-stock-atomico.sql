@@ -3,6 +3,13 @@
 -- Archivo: sql/19-stock-atomico.sql
 -- Ejecutar en Supabase → SQL Editor, después de los scripts 01 a 18.
 -- Es idempotente: puede correrse varias veces sin efectos secundarios.
+--
+-- NOTA: la función tal como quedó definida aquí abajo tiene un bug
+-- ("column reference 'stock' is ambiguous" al confirmar cualquier
+-- venta) corregido en sql/20-fix-descontar-stock-ambiguo.sql. Se deja
+-- este archivo sin tocar como registro histórico; en una base nueva
+-- basta con correr 19 y luego 20 en orden, igual que cualquier otra
+-- migración.
 -- ============================================================
 --
 -- PROBLEMA QUE RESUELVE

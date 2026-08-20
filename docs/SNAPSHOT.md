@@ -3,7 +3,7 @@
 > Actualiza SOLO este archivo al cerrar una sesión. Para el detalle completo, ver `docs/README.md`.
 > Para saber qué otro documento leer según lo que necesites, ver `docs/README-DOCS.md`.
 
-**Fecha:** 20-08-2026 · **Versión activa:** v21 · **En producción:** https://sevelin-pos-oficial.vercel.app
+**Fecha:** 20-08-2026 · **Versión activa:** v22 · **En producción:** https://sevelin-pos-oficial.vercel.app
 
 ---
 
@@ -80,14 +80,23 @@ Node/Express (`api/index.js`, serverless en Vercel) · JavaScript **vanilla** de
   por inactividad, que no da ventana de gracia) sí lo exige. No existe aún una vista "Configuración"
   en el frontend, así que el mecanismo solo cubre Finanzas (que incluye el sub-panel Balance) pero
   quedó escrito genérico para sumar otra vista sensible sin rehacerlo. Ver `docs/CHANGELOG-V21.md`.
+- **v22 (fix crítico):** `descontar_stock_venta` (v18/v19) fallaba con "column reference 'stock' is
+  ambiguous" en **toda** venta que no fuera 100% de productos con lotes — el nombre de columna de salida
+  de la función (`stock`, de `RETURNS TABLE`) chocaba con `productos.stock` dentro del `UPDATE`. Corregido
+  en `sql/20-fix-descontar-stock-ambiguo.sql` (usa el valor ya leído bajo el lock en vez de releer la
+  columna). **Hay que correr `sql/20-...sql` en Supabase → SQL Editor** para que el fix llegue a
+  producción (no se aplica solo, las migraciones SQL son manuales). Ver `docs/CHANGELOG-V22.md`.
 
 ## Esquema SQL: última migración
-`sql/19-stock-atomico.sql` (función `descontar_stock_venta`). Antes: 18 (gastos programados), 17 (caja +
-despacho). Todas idempotentes, corren en orden. Aplicar en Supabase → SQL Editor.
+`sql/20-fix-descontar-stock-ambiguo.sql` (fix de `descontar_stock_venta`, ver v22 más arriba —
+**pendiente de aplicar en Supabase**). Antes: 19 (stock atómico, con el bug), 18 (gastos programados).
+Todas idempotentes, corren en orden. Aplicar en Supabase → SQL Editor.
 
 ## Bugs conocidos ACTIVOS
-(ninguno pendiente relacionado a ids duplicados ni a sobreventa de stock; ver Pendiente para el resto
-del backlog)
+- **Crítico, en producción hasta que se corra `sql/20-fix-descontar-stock-ambiguo.sql` en Supabase:**
+  toda venta con al menos un producto sin lotes falla al confirmarse ("column reference 'stock' is
+  ambiguous"). Ver v22 arriba. El fix ya está en el repo (`sql/20-fix-descontar-stock-ambiguo.sql`);
+  falta aplicarlo en la base real. `api/index.js` no necesitó cambios: el bug era solo de la función SQL.
 
 ## Pendiente (backlog, no bloqueante)
 1. Conectar el e-commerce (sevelin.cl): las columnas de despacho y comisión ya existen; falta el sitio
