@@ -122,49 +122,76 @@ function renderLotesModal(productoId, lotes) {
 }
 
 async function agregarLoteDesdeModal() {
-  if (!editingProductId) {
-    showToast('Guarda el producto antes de cargarle lotes', 'err');
-    return;
-  }
-
-  const cantidad = Number(elProdLoteCantidad?.value) || 0;
-  const costo = Number(elProdLoteCosto?.value) || 0;
-
-  if (cantidad <= 0) { showToast('La cantidad del lote debe ser mayor a 0', 'err'); return; }
-  if (costo <= 0 && !confirm('El costo del lote es $0. ¿Cargarlo igual?')) return;
-
-  if (elBtnAgregarLote) elBtnAgregarLote.disabled = true;
-
+  /* Este bloque se ejecuta al pulsar "Cargar lote". Si algo falla, SIEMPRE
+     hay que dar feedback: el bug reportado era que "no pasaba nada", sin
+     siquiera un aviso. Por eso todo va dentro de un try/catch amplio. */
   try {
-    await API.productos.crearLote(editingProductId, {
-      cantidad,
-      costo_unitario: costo,
-      referencia: (elProdLoteReferencia?.value || '').trim() || null
-    });
+    if (typeof showToast !== 'function') {
+      // Sin toasts no hay forma de avisar; al menos que quede en consola
+      console.error('showToast no disponible al cargar lote');
+    }
 
-    showToast(`Lote cargado: ${cantidad} un. a ${fmtCLP(costo)}`, 'ok');
+    if (!editingProductId) {
+      showToast('Guarda el producto antes de cargarle lotes', 'err');
+      return;
+    }
 
-    // Se limpia para encadenar varias cargas seguidas
-    if (elProdLoteCantidad) elProdLoteCantidad.value = '';
-    if (elProdLoteCosto) elProdLoteCosto.value = '';
-    if (elProdLoteReferencia) elProdLoteReferencia.value = '';
-    elProdLoteCantidad?.focus();
+    // El producto debe tener los lotes ACTIVOS y GUARDADOS en la base. Si el
+    // usuario marcó la casilla pero no pulsó "Guardar Producto", en la base
+    // sigue con usa_lotes=false y el backend rechazaría la carga. Se detecta
+    // aquí para dar un mensaje claro en vez de un error genérico.
+    const prodEnLista = (typeof productsList !== 'undefined' && Array.isArray(productsList))
+      ? productsList.find(p => String(p.id) === String(editingProductId))
+      : null;
+    if (prodEnLista && prodEnLista.usa_lotes === false) {
+      showToast('Activa los lotes y pulsa "Guardar Producto" antes de cargar capas', 'err');
+      return;
+    }
 
-    await cargarLotesDelProducto(editingProductId);
+    const cantidad = Number(elProdLoteCantidad?.value) || 0;
+    const costo = Number(elProdLoteCosto?.value) || 0;
 
-    /* El lote sube el stock del producto: se refresca el catálogo para que
-       el campo Stock del modal y la tabla no queden desfasados. */
-    if (typeof cargarProductos === 'function') {
-      await cargarProductos(true);   // se movieron capas: el catálogo cambió
-      const actualizado = productsList.find(p => String(p.id) === String(editingProductId));
-      const elStock = document.getElementById('prodStock');
-      if (actualizado && elStock) elStock.value = actualizado.stock || 0;
+    if (cantidad <= 0) { showToast('La cantidad del lote debe ser mayor a 0', 'err'); return; }
+    if (costo <= 0 && !confirm('El costo del lote es $0. ¿Cargarlo igual?')) return;
+
+    if (elBtnAgregarLote) elBtnAgregarLote.disabled = true;
+
+    try {
+      await API.productos.crearLote(editingProductId, {
+        cantidad,
+        costo_unitario: costo,
+        referencia: (elProdLoteReferencia?.value || '').trim() || null
+      });
+
+      const montoTxt = (typeof fmtCLP === 'function') ? fmtCLP(costo) : `$${costo}`;
+      showToast(`Lote cargado: ${cantidad} un. a ${montoTxt}`, 'ok');
+
+      // Se limpia para encadenar varias cargas seguidas
+      if (elProdLoteCantidad) elProdLoteCantidad.value = '';
+      if (elProdLoteCosto) elProdLoteCosto.value = '';
+      if (elProdLoteReferencia) elProdLoteReferencia.value = '';
+      elProdLoteCantidad?.focus();
+
+      await cargarLotesDelProducto(editingProductId);
+
+      /* El lote sube el stock del producto: se refresca el catálogo para que
+         el campo Stock del modal y la tabla no queden desfasados. */
+      if (typeof cargarProductos === 'function') {
+        await cargarProductos(true);   // se movieron capas: el catálogo cambió
+        const actualizado = (typeof productsList !== 'undefined')
+          ? productsList.find(p => String(p.id) === String(editingProductId)) : null;
+        const elStock = document.getElementById('prodStock');
+        if (actualizado && elStock) elStock.value = actualizado.stock || 0;
+      }
+    } finally {
+      if (elBtnAgregarLote) elBtnAgregarLote.disabled = false;
     }
   } catch (err) {
-    console.error('Error al cargar el lote:', err.message || err);
-    showToast(err.message || 'No se pudo cargar el lote', 'err');
-  } finally {
-    if (elBtnAgregarLote) elBtnAgregarLote.disabled = false;
+    // Feedback GARANTIZADO ante cualquier fallo, esperado o no
+    console.error('Error al cargar el lote:', err);
+    const msg = (err && err.message) ? err.message : 'No se pudo cargar el lote';
+    if (typeof showToast === 'function') showToast(msg, 'err');
+    else alert(msg);
   }
 }
 

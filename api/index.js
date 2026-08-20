@@ -264,6 +264,19 @@ function fechaHoyChile() {
   }).format(new Date());
 }
 
+/* Suma n meses a una fecha 'YYYY-MM-DD' y devuelve otra 'YYYY-MM-DD'.
+   Si el día no existe en el mes destino (ej. 31 de feb), cae al último día
+   del mes. Se usa para repartir las cuotas mes a mes. */
+function sumarMeses(fechaISO, n) {
+  const [a, m, d] = fechaISO.split('-').map(Number);
+  const base = new Date(Date.UTC(a, (m - 1) + n, 1));
+  const anio = base.getUTCFullYear();
+  const mes = base.getUTCMonth();
+  const ultimoDia = new Date(Date.UTC(anio, mes + 1, 0)).getUTCDate();
+  const dia = Math.min(d, ultimoDia);
+  return `${anio}-${String(mes + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+}
+
 function firmarToken(rol) {
   return jwt.sign({ rol }, JWT_SECRET || 'dev-secret-cambiar', { expiresIn: TOKEN_TTL });
 }
@@ -1305,10 +1318,26 @@ app.get('/api/ventas', auth(), async (req, res) => {
     // el usuario busque un "%" y no "todo"
     const patron = `%${texto.replace(/[%_,]/g, m => '\\' + m)}%`;
 
+    /* El barcode NO se guarda en venta_items (el POS lo descarta al vender),
+       pero sí está en el catálogo. Si lo escrito calza con el código de
+       barras de un producto, se traducen a su SKU y nombre para poder
+       encontrar sus ventas. Así "buscar por barcode" funciona igual. */
+    let extraSku = '', extraNombre = '';
+    const { data: prods } = await db.from('productos')
+      .select('sku, nombre, codigo_barras')
+      .or(`codigo_barras.ilike.${patron},sku.ilike.${patron}`)
+      .limit(50);
+    if (prods && prods.length) {
+      const skus = [...new Set(prods.map(p => p.sku).filter(Boolean))];
+      const nombres = [...new Set(prods.map(p => p.nombre).filter(Boolean))];
+      if (skus.length) extraSku = ',' + skus.map(s => `sku.eq.${s}`).join(',');
+      if (nombres.length) extraNombre = ',' + nombres.map(n => `nombre.eq.${n}`).join(',');
+    }
+
     const { data: items, error: errItems } = await db
       .from('venta_items')
       .select('venta_id')
-      .or(`nombre.ilike.${patron},sku.ilike.${patron},serial_number.ilike.${patron}`)
+      .or(`nombre.ilike.${patron},sku.ilike.${patron},serial_number.ilike.${patron}${extraSku}${extraNombre}`)
       .limit(5000);
 
     if (errItems) return enviarError(res, 500, errItems.message);
@@ -1911,6 +1940,104 @@ app.delete('/api/compras/:id', auth(true), async (req, res) => {
   const { error } = await db.from('compras').delete().eq('id', req.params.id);
   if (error) return enviarError(res, 500, error.message);
   res.json({ ok: true });
+});
+
+/* ============================================================
+   GASTOS PROGRAMADOS — pendientes / cuotas (migración 18)
+   ------------------------------------------------------------
+   Compras que se registran hoy pero se pagan (y cargan a gastos) en una
+   fecha futura: tarjeta de crédito, o cuotas. Al vencer se materializan
+   como compras reales.
+   ============================================================ */
+
+// Lista los programados. Por defecto los pendientes, ordenados por fecha.
+app.get('/api/gastos-programados', auth(true), async (req, res) => {
+  let q = db.from('gastos_programados').select('*').order('fecha_vencimiento', { ascending: true });
+  const estado = String(req.query?.estado || 'pendiente').trim().toLowerCase();
+  if (estado !== 'todos') q = q.eq('estado', estado);
+  const { data, error } = await q.limit(limiteDe(req));
+  if (error) return enviarError(res, 500, error.message);
+  res.json(data || []);
+});
+
+/* Crea uno o varios gastos programados. Si viene cuotas>1, genera N
+   hermanos: uno por mes a partir de la primera fecha, cada uno por
+   monto/cuotas (el último ajusta el redondeo para cuadrar el total). */
+app.post('/api/gastos-programados', auth(true), async (req, res) => {
+  const proveedor = (req.body?.proveedor || '').trim() || null;
+  const clasificacion = (req.body?.clasificacion || '').trim();
+  const descripcion = (req.body?.descripcion || '').trim() || null;
+  const metodo_pago = (req.body?.metodo_pago || 'Tarjeta Crédito').trim();
+  const montoTotal = num(req.body?.monto);
+  const cuotas = Math.max(1, Math.min(48, parseInt(req.body?.cuotas, 10) || 1));
+  const primeraFecha = (req.body?.fecha_vencimiento || '').trim();
+
+  if (!clasificacion) return enviarError(res, 400, 'Falta la clasificación');
+  if (montoTotal <= 0) return enviarError(res, 400, 'El monto debe ser mayor a 0');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(primeraFecha)) return enviarError(res, 400, 'Fecha de vencimiento inválida');
+
+  const grupo = cuotas > 1 ? `cuotas_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` : null;
+  const montoCuota = Math.round(montoTotal / cuotas);
+  const filas = [];
+  for (let i = 0; i < cuotas; i++) {
+    // El último ajusta el redondeo para que la suma dé el total exacto
+    const monto = (i === cuotas - 1) ? (montoTotal - montoCuota * (cuotas - 1)) : montoCuota;
+    filas.push({
+      proveedor, clasificacion, descripcion, metodo_pago,
+      monto,
+      fecha_vencimiento: sumarMeses(primeraFecha, i),
+      estado: 'pendiente',
+      grupo_cuotas: grupo,
+      cuota_numero: cuotas > 1 ? i + 1 : null,
+      cuota_total: cuotas > 1 ? cuotas : null
+    });
+  }
+
+  const { data, error } = await db.from('gastos_programados').insert(filas).select();
+  if (error) return enviarError(res, 500, error.message);
+  res.status(201).json(data);
+});
+
+// Cancela un programado pendiente (no se materializará)
+app.delete('/api/gastos-programados/:id', auth(true), async (req, res) => {
+  const { data, error } = await db.from('gastos_programados')
+    .update({ estado: 'cancelado' }).eq('id', req.params.id).eq('estado', 'pendiente').select().maybeSingle();
+  if (error) return enviarError(res, 500, error.message);
+  if (!data) return enviarError(res, 400, 'El gasto no existe o ya no está pendiente');
+  res.json({ ok: true });
+});
+
+/* Materializa los programados vencidos (fecha <= hoy): crea la compra real
+   y marca el programado como 'aplicado'. Lo llama el frontend al abrir
+   Finanzas. Devuelve cuántos se aplicaron. */
+app.post('/api/gastos-programados/procesar-vencidos', auth(true), async (req, res) => {
+  const hoy = fechaHoyChile();
+  const { data: vencidos, error } = await db.from('gastos_programados')
+    .select('*').eq('estado', 'pendiente').lte('fecha_vencimiento', hoy);
+  if (error) return enviarError(res, 500, error.message);
+
+  let aplicados = 0;
+  for (const g of (vencidos || [])) {
+    // Se crea la compra real con la fecha de vencimiento (cuando corresponde el gasto)
+    const desc = g.cuota_total
+      ? `${g.descripcion || g.proveedor || 'Gasto'} · cuota ${g.cuota_numero}/${g.cuota_total}`
+      : (g.descripcion || null);
+    const { data: compra, error: eC } = await db.from('compras').insert([{
+      fecha: g.fecha_vencimiento,
+      proveedor: g.proveedor,
+      clasificacion: g.clasificacion,
+      costo_total: num(g.monto),
+      descripcion: desc,
+      metodo_pago: g.metodo_pago || null
+    }]).select().single();
+    if (eC) continue;   // si una falla, se sigue con las demás
+
+    await db.from('gastos_programados')
+      .update({ estado: 'aplicado', compra_id: compra.id, aplicado_en: new Date().toISOString() })
+      .eq('id', g.id);
+    aplicados++;
+  }
+  res.json({ aplicados });
 });
 
 /* Subida de factura / comprobante al bucket "compras-documentos".

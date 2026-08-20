@@ -212,12 +212,12 @@ function setupHistorialEventListeners() {
     let tempBusqueda = null;
     elHistBuscarProducto.addEventListener('input', () => {
       clearTimeout(tempBusqueda);
-      tempBusqueda = setTimeout(() => aplicarBusquedaProducto(), 350);
+      tempBusqueda = setTimeout(() => buscarVentaUniversal(), 350);
     });
 
     // Enter busca al tiro, sin esperar el retardo
     elHistBuscarProducto.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); clearTimeout(tempBusqueda); aplicarBusquedaProducto(); }
+      if (e.key === 'Enter') { e.preventDefault(); clearTimeout(tempBusqueda); buscarVentaUniversal(); }
       if (e.key === 'Escape') { e.preventDefault(); limpiarBusquedaProducto(); }
     });
   }
@@ -1074,7 +1074,15 @@ function aplicarBusquedaProducto() {
 
 function limpiarBusquedaProducto() {
   if (elHistBuscarProducto) elHistBuscarProducto.value = '';
-  if (!filtroProducto) return;
+  document.getElementById('histSugerencias')?.classList.add('hidden');
+  if (elHistResultadoBusqueda) { elHistResultadoBusqueda.classList.add('hidden'); elHistResultadoBusqueda.textContent = ''; }
+  // Si había una búsqueda local (fecha/total) activa, repinta todo
+  const habiaLocal = elHistBuscarProducto && !filtroProducto;
+  if (!filtroProducto) {
+    if (habiaLocal && typeof renderHistorialTabla === 'function') renderHistorialTabla(salesHistory);
+    if (elBtnLimpiarBusquedaProducto) elBtnLimpiarBusquedaProducto.classList.add('hidden');
+    return;
+  }
   filtroProducto = '';
   itemsPorVenta = {};
   if (elBtnLimpiarBusquedaProducto) elBtnLimpiarBusquedaProducto.classList.add('hidden');
@@ -1810,3 +1818,115 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.id === 'modalEnvio') document.getElementById('modalEnvio').classList.remove('show');
   });
 });
+
+/* ============================================================
+   BUSCADOR UNIVERSAL DE VENTAS
+   ------------------------------------------------------------
+   Un solo campo que entiende varios tipos de búsqueda y sugiere en vivo
+   sobre las ventas ya cargadas:
+     · Fecha exacta        2026-08-18
+     · Fecha y hora        2026-08-18 19:56
+     · Total de la venta   100000  ó  $100.000
+     · Producto/SKU/código texto libre → usa el buscador del backend
+   El tipo se detecta por el formato de lo escrito. Para fecha/hora/total
+   el filtrado es local (instantáneo); para producto va al servidor porque
+   el detalle vive en venta_items.
+   ============================================================ */
+
+// Detecta qué tipo de búsqueda es el texto escrito
+function detectarTipoBusqueda(texto) {
+  const t = texto.trim();
+  if (/^\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}$/.test(t)) return { tipo: 'fechahora', valor: t };
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return { tipo: 'fecha', valor: t };
+  // Monto: solo dígitos, puntos o $ (ej. 100000 o $100.000), al menos 3 dígitos
+  const soloNum = t.replace(/[$.\s]/g, '');
+  if (/^\d{3,}$/.test(soloNum) && /^[$\d.\s]+$/.test(t)) return { tipo: 'total', valor: Number(soloNum) };
+  return { tipo: 'texto', valor: t };
+}
+
+/* Ventas de salesHistory que coinciden con una búsqueda local (no-texto).
+   Para 'total' se admite una pequeña tolerancia por redondeo. */
+function ventasQueCoinciden(det) {
+  const lista = salesHistory || [];
+  if (det.tipo === 'fecha') {
+    return lista.filter(v => (v.fecha || (v.vendida_en || '').slice(0, 10)) === det.valor);
+  }
+  if (det.tipo === 'fechahora') {
+    const [f, h] = det.valor.split(/\s+/);
+    const hhmm = h.padStart(5, '0');
+    return lista.filter(v => {
+      const vf = v.fecha || (v.vendida_en || '').slice(0, 10);
+      const vh = (v.hora || (v.vendida_en || '').slice(11, 16) || '').slice(0, 5);
+      return vf === f && vh === hhmm;
+    });
+  }
+  if (det.tipo === 'total') {
+    return lista.filter(v => Math.abs((Number(v.total) || 0) - det.valor) < 1);
+  }
+  return [];
+}
+
+/* Panel de sugerencias en vivo: muestra hasta 6 ventas que calzan, con su
+   orden, fecha/hora y total. Al hacer clic, abre el detalle de esa venta. */
+function mostrarSugerenciasVenta(det) {
+  const caja = document.getElementById('histSugerencias');
+  if (!caja) return;
+
+  if (det.tipo === 'texto' || !det.valor) { caja.classList.add('hidden'); caja.innerHTML = ''; return; }
+
+  const coincidencias = ventasQueCoinciden(det).slice(0, 6);
+  if (!coincidencias.length) { caja.classList.add('hidden'); caja.innerHTML = ''; return; }
+
+  caja.innerHTML = coincidencias.map(v => {
+    const orden = String(v.numero_orden ?? v.id).padStart(5, '0');
+    const fh = `${v.fecha || ''} ${(v.hora || '').slice(0, 5)}`.trim();
+    return `<button type="button" class="hist-sug-item" data-sug-venta="${v.id}">
+      <span class="hist-sug-orden">#${orden}</span>
+      <span class="hist-sug-fh">${escaparHtmlHist(fh)}</span>
+      <span class="hist-sug-total">${fmtCLP(v.total)}</span>
+    </button>`;
+  }).join('');
+  caja.classList.remove('hidden');
+
+  caja.querySelectorAll('[data-sug-venta]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      caja.classList.add('hidden');
+      if (typeof verDetalleVenta === 'function') verDetalleVenta(btn.dataset.sugVenta);
+    });
+  });
+}
+
+/* Punto de entrada del buscador universal. Decide entre filtrar local
+   (fecha/hora/total) o delegar en el buscador de producto del backend. */
+function buscarVentaUniversal() {
+  const texto = (elHistBuscarProducto?.value || '').trim();
+  if (elBtnLimpiarBusquedaProducto) elBtnLimpiarBusquedaProducto.classList.toggle('hidden', !texto);
+
+  if (!texto) { limpiarBusquedaProducto(); return; }
+
+  const det = detectarTipoBusqueda(texto);
+
+  if (det.tipo === 'texto') {
+    // Producto / SKU / código de barras → buscador del servidor (ya existente)
+    document.getElementById('histSugerencias')?.classList.add('hidden');
+    aplicarBusquedaProducto();
+    return;
+  }
+
+  /* Fecha / hora / total: se filtra localmente sobre lo ya cargado. Se
+     limpia el filtro de producto para no mezclar criterios. */
+  if (filtroProducto) { filtroProducto = ''; itemsPorVenta = {}; }
+  mostrarSugerenciasVenta(det);
+
+  const coincidencias = ventasQueCoinciden(det);
+  renderHistorialTabla(coincidencias);
+
+  if (elHistResultadoBusqueda) {
+    elHistResultadoBusqueda.classList.remove('hidden');
+    const etiqueta = det.tipo === 'total' ? `total ${fmtCLP(det.valor)}`
+      : det.tipo === 'fechahora' ? `${det.valor}` : `fecha ${det.valor}`;
+    elHistResultadoBusqueda.innerHTML = coincidencias.length
+      ? `<b>${coincidencias.length}</b> venta(s) con ${escaparHtmlHist(etiqueta)}.`
+      : `Sin ventas con ${escaparHtmlHist(etiqueta)} en este período. Prueba “Buscar en todo el historial” o amplía las fechas.`;
+  }
+}

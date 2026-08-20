@@ -4,7 +4,7 @@
 > y LEEME anteriores. Está escrito para que otra persona —o una IA en una sesión nueva— retome el
 > trabajo sin contexto previo.
 >
-> **Estado:** v14 · 18 de agosto de 2026 · en uso operativo real.
+> **Estado:** v16 · 19 de agosto de 2026 · en uso operativo real.
 >
 > **Cómo se versiona la documentación (importante):**
 > Este README maestro se mantiene **siempre al día** con el estado actual del sistema. Cada entrega
@@ -81,8 +81,11 @@ bug de los botones de Finanzas en la v9 fue exactamente esto: `num()` solo exist
 grep -rn "function nombreDeLaFuncion" js/
 
 # CHEQUEO OBLIGATORIO tras tocar varios archivos: funciones duplicadas
-for f in js/*.js; do grep -oP '^(async )?function \K[A-Za-z_$][\w$]*' "$f" | sed "s|\$| $f|"; done \
-  | sort | awk '{print $1}' | uniq -d
+# (este patrón captura también las funciones indentadas y las async —
+#  el patrón viejo con '^(async )?function' se saltaba las indentadas y
+#  dejó pasar la colisión de confirmarEntrega, ver sección 11)
+for f in js/*.js; do grep -oP '^\s*(async\s+)?function\s+\K[A-Za-z_$][\w$]*' "$f"; done \
+  | sort | uniq -d
 # ↑ debe salir VACÍO. Si sale algo, hay una función pisando a otra.
 ```
 
@@ -149,13 +152,16 @@ sevelin-pos/
 │
 ├── api/index.js                ← TODO el backend
 │
-├── sql/                        ← Migraciones, EN ORDEN (01 … 15)
+├── sql/                        ← Migraciones, EN ORDEN (01 … 18)
 │
-└── docs/                       ← ESTE documento + los changelog por versión
+└── docs/                       ← documentación (empezar por README-DOCS.md)
+    ├── README-DOCS.md          ← índice: qué leer según lo que necesitas
+    ├── SNAPSHOT.md             ← foto del estado actual (punto de retomada)
     ├── README.md               ← el maestro (este archivo)
     ├── README-DESPLIEGUE.md    ← guía de despliegue detallada
-    ├── CHANGELOG-V9.md         ← cambios de cada versión, dependen del maestro
-    └── (versiones anteriores V5–V8 conservadas como histórico)
+    ├── AUDITORIA-SEGURIDAD-SEVELIN-POS.md
+    ├── CHANGELOG-V10.md … CHANGELOG-V16.md  ← changelogs recientes
+    └── archivo/                ← histórico: READMEs viejos y CHANGELOG-V5…V9
 ```
 
 > **`api/index.js` debe llamarse exactamente así y estar en `api/`.** Si queda en la raíz, Vercel lo
@@ -287,12 +293,37 @@ Guía completa en `docs/README-DESPLIEGUE.md`. Resumen del flujo:
 
 ## 10. Lo que falta (backlog)
 
+Estado a v16. Lo que ya se completó (caja por turnos, despacho/envíos, escáner, ventas por pagar,
+gastos programados, buscador de ventas) está en los changelogs V12–V16 y en las secciones de este
+maestro.
+
+**Pendientes técnicos (no bloqueantes):**
 - **BIZ-02 atómico:** la validación de stock y el descuento no son una sola transacción para productos
   sin lotes. Ventana muy estrecha en un mostrador; la solución es `SELECT ... FOR UPDATE` en Postgres.
 - **Migrar a Supabase Auth + RLS por rol:** hoy la autorización vive en el backend (`service_role`
   omite RLS). Es un refactor grande, opcional para un negocio de un solo local.
 - **Unificar los 5 helpers de escape** (`escaparHTML`, `escaparTexto`, etc.) en el único `escHtml`.
-- Verificación en uso real del arqueo y del widget de cobertura durante un mes completo.
+- **`id` duplicado `kpiUtilidadNeta`:** aparece en dos vistas de KPI (Balance e Historial). Preexistente,
+  no rompe nada visible, pero conviene renombrar uno para que ambos se actualicen siempre.
+- **Refactor de archivos grandes:** `api/index.js` (~3800 líneas) e `index.html` siguen creciendo. En
+  algún punto conviene partir el backend en routers por dominio. Decisión tomada: no ahora, priorizar
+  features.
+
+**Integración e-commerce (sevelin.cl), preparada pero no conectada:**
+- Las columnas de despacho (`tipo_entrega`, `estado_envio`, `numero_seguimiento`…) y de comisión de
+  pasarela (`origen_pago`, `comision_pasarela`) ya existen y el POS las usa. Falta el sitio web que
+  cree ventas por la API con `origen_pago = 'pago_web'`.
+
+---
+
+## 10.1 Migraciones SQL aplicadas (referencia rápida)
+
+Corren en orden, todas idempotentes. Las más recientes:
+
+- `16-ajustes-saldo-y-gasto-fijo.sql` — ajustes manuales de saldo; vínculo gasto fijo ↔ compra.
+- `17-caja-diaria-y-despacho.sql` — `cajas_diarias`, `caja_movimientos`; columnas de despacho y
+  comisión en `ventas`.
+- `18-gastos-programados.sql` — `gastos_programados` (pendientes / cuotas de tarjeta de crédito).
 
 ---
 
@@ -310,16 +341,44 @@ Guía completa en `docs/README-DESPLIEGUE.md`. Resumen del flujo:
   `escHtml` en todos los módulos.
 - **Precio negativo:** una línea de venta con precio `-9000` cuadraba arqueos con un descuento falso.
   → rechazado en el servidor.
+- **Casilla "Editar hora" bloqueada tras agregar producto (v11):** la cabecera sticky del carrito
+  (z-index) tapaba el clic, y el campo quedaba `disabled` tras una venta. → bloque de controles elevado
+  con `z-index` y el checkbox re-habilita el campo siempre.
+- **Colisión `confirmarEntrega` (v14):** una en `ot.js` (entrega de OT) pisaba a la de `pago.js`
+  (entrega de venta), y el cobro se colgaba tras el DTE. → las de venta se renombraron a
+  `confirmarEntregaVenta` / `cancelarEntregaVenta`. **Reveló que el chequeo anti-colisión viejo no
+  capturaba funciones indentadas** — ver el patrón corregido en 2.2.
+- **Colisión de `id` de modal caja Finanzas vs POS (v13):** `modalAbrirCaja`/`modalCerrarCaja` existían
+  en dos vistas; `getElementById` tomaba siempre el primero y los del POS quedaban muertos. → los del
+  POS se renombraron a `modalAperturaPos`/`modalCierrePos`.
+- **`fechaHoyChile` no existe en el frontend (v15):** un módulo la referenció (solo está en el backend);
+  al no estar definida, lanzaba `ReferenceError` silencioso. → usar `todayISO()` (el helper real del
+  frontend, en `config.js`) y proteger con `typeof`.
+- **Lotes "no pasaba nada" al cargar (v15):** si se activaba la casilla de lotes pero no se guardaba el
+  producto, el backend rechazaba y el error no se mostraba. → feedback garantizado con try/catch amplio
+  y detección explícita del producto sin guardar.
 
 ---
 
 ## 12. Cómo versionar la documentación de aquí en adelante
 
-- **Este archivo (`docs/README.md`) es el maestro** y se mantiene siempre reflejando el estado actual.
-- Cada entrega nueva añade un **changelog propio**: `docs/CHANGELOG-V9.md`, `docs/CHANGELOG-V10.md`, …
-  Describe solo lo que cambió en esa versión y **depende de este maestro** para el contexto (no repite
-  la arquitectura completa).
-- Cuando un cambio altera algo estructural (un módulo, una regla, el modelo de datos), se actualiza
-  **también** la sección correspondiente de este maestro, para que nunca quede desactualizado.
-- Los README históricos (V5–V8) se conservan en `docs/` como registro, pero **este maestro los
-  reemplaza** como fuente de verdad.
+El sistema de documentación tiene **tres piezas**, cada una con un rol distinto:
+
+1. **`docs/README.md` (este archivo) — el maestro.** Refleja siempre el estado actual completo:
+   arquitectura, reglas, módulos, modelo de datos, despliegue, backlog y bugs memorables. Es la fuente
+   de verdad. Se actualiza cuando un cambio altera algo estructural.
+
+2. **`docs/CHANGELOG-Vx.md` — el detalle por versión.** Cada entrega añade el suyo. Describe solo lo
+   que cambió en esa versión y **depende del maestro** para el contexto (no repite la arquitectura).
+
+3. **`docs/SNAPSHOT.md` — el punto de retomada.** Un resumen corto y accionable del estado *ahora
+   mismo*: en qué se está trabajando, qué se acaba de terminar, qué falta, y las trampas activas. Es lo
+   que se pega o se lee **al abrir un chat nuevo o llevar el proyecto a otra IA**. Se actualiza al
+   cerrar cada sesión de trabajo. A diferencia del maestro (exhaustivo), el snapshot es breve y va
+   directo a "por dónde sigo".
+
+**Regla de actualización al cerrar una sesión:** actualiza el `SNAPSHOT.md` (siempre) y, si el cambio
+fue estructural, la sección correspondiente del maestro. Crea el `CHANGELOG-Vx.md` de la versión.
+
+Los README históricos (V5–V8) viven en `docs/archivo/` como registro; **este maestro los reemplaza**
+como fuente de verdad.

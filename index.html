@@ -629,18 +629,22 @@
              ============================================================ -->
         <div class="toolbar-row hist-buscador-row">
           <div class="field hist-buscador-campo">
-            <label for="histBuscarProducto">Buscar ventas que incluyan un producto</label>
+            <label for="histBuscarProducto">Buscar ventas
+              <span class="font-normal">(producto · SKU · código de barras · fecha · fecha y hora · total $)</span>
+            </label>
             <div class="hist-buscador-caja">
               <input type="text" id="histBuscarProducto" autocomplete="off"
-                     placeholder="Nombre, SKU o número de serie…">
+                     placeholder="Ej: notebook · 7801234567890 · 2026-08-18 · 2026-08-18 19:56 · 100000">
               <button type="button" id="btnLimpiarBusquedaProducto"
-                      class="hist-buscador-limpiar hidden" title="Quitar el filtro de producto">✕</button>
+                      class="hist-buscador-limpiar hidden" title="Quitar la búsqueda">✕</button>
+              <!-- Sugerencias en vivo de las ventas ya cargadas -->
+              <div id="histSugerencias" class="hist-sugerencias hidden"></div>
             </div>
           </div>
           <div class="field" style="flex:0 0 auto;">
             <label class="field-ghost-label">&nbsp;</label>
             <button class="btn btn-outline" id="btnBuscarProductoTodo"
-                    title="Buscar este producto en todas las ventas registradas, sin importar la fecha">
+                    title="Buscar un producto en todas las ventas registradas, sin importar la fecha">
               🗂️ Buscar en todo el historial
             </button>
           </div>
@@ -1188,6 +1192,7 @@
           </div>
           <div class="toolbar-group">
             <button class="btn btn-outline" id="btnAdminClasificaciones">🗂️ Clasificaciones</button>
+            <button class="btn btn-outline" id="btnGastosPendientes">🗓️ Gastos pendientes</button>
             <button class="btn btn-outline" id="btnExportarCompras">📤 Exportar</button>
             <button class="btn btn-primary" id="btnNuevaCompra">➕ Registrar Gasto</button>
             <!-- Movido desde el POS: una merma es un gasto, no una venta.
@@ -3043,6 +3048,71 @@
   </div>
 
   <!-- MODAL: REGISTRAR COMPRA -->
+  <!-- ============================================================
+       GASTOS PENDIENTES / CUOTAS (tarjeta de crédito)
+       ------------------------------------------------------------
+       Gastos que se registran hoy pero se pagan en una fecha futura.
+       Al llegar su fecha se cargan solos a Gastos. Las cuotas se generan
+       como varios pendientes, uno por mes.
+       ============================================================ -->
+  <div id="modalGastosPendientes" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <h2>🗓️ Gastos pendientes / cuotas</h2>
+      <p class="modal-hint">
+        Registra ahora una compra que pagarás después (tarjeta de crédito, cuotas).
+        Al llegar su fecha se carga sola a Gastos. Ideal para no olvidar lo que viene.
+      </p>
+
+      <!-- Alta de un gasto programado -->
+      <div class="prog-form">
+        <div class="grid grid-2">
+          <div class="field">
+            <label for="progProveedor">Proveedor / descripción</label>
+            <input type="text" id="progProveedor" placeholder="Ej: MercadoLibre, notebook" maxlength="120">
+          </div>
+          <div class="field">
+            <label for="progClasificacion">Clasificación *</label>
+            <select id="progClasificacion"></select>
+          </div>
+        </div>
+        <div class="grid grid-3">
+          <div class="field">
+            <label for="progMonto">Monto total *</label>
+            <input type="number" id="progMonto" min="0" step="1" placeholder="0" inputmode="numeric">
+          </div>
+          <div class="field">
+            <label for="progCuotas">Cuotas</label>
+            <input type="number" id="progCuotas" min="1" max="48" step="1" value="1" inputmode="numeric">
+          </div>
+          <div class="field">
+            <label for="progFecha">1ª fecha de pago *</label>
+            <input type="date" id="progFecha">
+          </div>
+        </div>
+        <div class="field">
+          <label for="progMetodo">¿Cómo se pagará?</label>
+          <select id="progMetodo">
+            <option value="Tarjeta Crédito">Tarjeta de Crédito</option>
+            <option value="Transferencia">Transferencia</option>
+            <option value="Efectivo">Efectivo</option>
+            <option value="Tarjeta Débito">Tarjeta Débito</option>
+          </select>
+        </div>
+        <p class="modal-hint" id="progAvisoCuotas" style="display:none;"></p>
+        <button class="btn btn-primary" id="btnAgregarProgramado" type="button">+ Programar gasto</button>
+      </div>
+
+      <h3 class="prog-subtitulo">Pendientes por vencer</h3>
+      <div class="prog-lista" id="progLista">
+        <p class="modal-hint">Cargando…</p>
+      </div>
+
+      <div class="modal-foot">
+        <button class="btn btn-primary" id="btnCerrarProgramados" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modalCompra" class="modal-overlay">
     <div class="modal-box modal-lg">
       <h2 id="compraFormTitle">Registrar Gasto</h2>
@@ -3777,6 +3847,7 @@
   <script src="js/escaner.js"></script>
   <script src="js/etiquetas.js"></script>
   <script src="js/compras.js"></script>
+  <script src="js/gastos-programados.js"></script>   <!-- gastos pendientes/cuotas: usa clasificacionesList de compras.js -->
   <script src="js/mermas.js"></script>
   <script src="js/encargos.js"></script>
   <script src="js/repuestos.js"></script>

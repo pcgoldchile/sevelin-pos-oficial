@@ -148,6 +148,11 @@ const API = {
       return apiRequest('/compras' + (cadena ? `?${cadena}` : ''));
     },
     crear: (c) => apiRequest('/compras', { method: 'POST', body: c }),
+    // Gastos programados (pendientes / cuotas)
+    listarProgramados: (estado) => apiRequest('/gastos-programados' + (estado ? `?estado=${estado}` : '')),
+    crearProgramado: (datos) => apiRequest('/gastos-programados', { method: 'POST', body: datos }),
+    cancelarProgramado: (id) => apiRequest(`/gastos-programados/${id}`, { method: 'DELETE' }),
+    procesarVencidos: () => apiRequest('/gastos-programados/procesar-vencidos', { method: 'POST' }),
     actualizar: (id, c) => apiRequest(`/compras/${id}`, { method: 'PUT', body: c }),
     eliminar: (id) => apiRequest(`/compras/${id}`, { method: 'DELETE' }),
     eliminarLote: (ids, pin) => apiRequest('/compras/eliminar-lote', { method: 'POST', body: { ids, pin } }),

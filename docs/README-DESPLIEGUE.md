@@ -26,7 +26,7 @@ sevelin-pos/
 
 ## 2. Base de datos
 
-En Supabase → **SQL Editor**, ejecuta las migraciones de `sql/` **en orden** (01 … 15). Son idempotentes. La 01 agrega los campos de Tiendanube; las siguientes, el resto del sistema (FIFO, finanzas, canales de dinero, auditoría de DTE). Agrega los campos de
+En Supabase → **SQL Editor**, ejecuta las migraciones de `sql/` **en orden** (01 … 18). Son idempotentes. La 01 agrega los campos de Tiendanube; las siguientes, el resto del sistema (FIFO, finanzas, canales de dinero, auditoría de DTE, ajustes de saldo, caja diaria y despacho, gastos programados). Agrega los campos de
 Tiendanube (`peso_kg`, `alto_cm`, `ancho_cm`, `profundidad_cm`, `descripcion`), el borrado
 en cascada del detalle de ventas y activa RLS.
 

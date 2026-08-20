@@ -3341,3 +3341,72 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
 /* Badge que además es botón (estado de envío clickeable) */
 .badge-boton { border: none; cursor: pointer; font: inherit; }
 .badge-boton:hover { filter: brightness(1.1); }
+
+/* ============================================================
+   GASTOS PROGRAMADOS / CUOTAS
+   ============================================================ */
+.prog-form {
+    padding: 14px;
+    border-radius: var(--radius-sm);
+    background: var(--surface-soft);
+    border: 1px solid var(--border);
+    margin-bottom: 18px;
+}
+.prog-form .btn { margin-top: 8px; width: 100%; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.prog-subtitulo {
+    font-size: 13px; font-weight: 700; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: .03em; margin: 4px 0 10px;
+}
+.prog-lista { display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto; }
+.prog-fila {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 13px; border-radius: var(--radius-sm);
+    background: var(--bg-800); border: 1px solid var(--border);
+}
+.prog-fila.prog-vence { border-color: rgba(239,68,68,.4); background: rgba(239,68,68,.06); }
+.prog-info { display: flex; flex-direction: column; gap: 2px; }
+.prog-info b { font-size: 15px; color: var(--text-100); }
+.prog-info span { font-size: 13px; color: var(--text-100); }
+.prog-info small { color: var(--text-muted); font-size: 12px; }
+.prog-fecha { display: flex; align-items: center; gap: 8px; }
+.prog-venc-badge { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.prog-venc-badge.vence-ya { color: var(--red); font-weight: 700; }
+
+/* ============================================================
+   BUSCADOR UNIVERSAL DE VENTAS — panel de sugerencias
+   ============================================================ */
+.hist-buscador-caja { position: relative; }
+.hist-sugerencias {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0; right: 0;
+    z-index: 30;
+    background: var(--bg-800);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 8px 24px rgba(0,0,0,.28);
+    overflow: hidden;
+    max-height: 280px;
+    overflow-y: auto;
+}
+.hist-sugerencias.hidden { display: none; }
+.hist-sug-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 9px 13px;
+    border: none;
+    background: transparent;
+    color: var(--text-100);
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+.hist-sug-item:last-child { border-bottom: none; }
+.hist-sug-item:hover { background: var(--surface-soft); }
+.hist-sug-orden { font-weight: 700; color: var(--blue-light, #7cb0ff); min-width: 56px; }
+.hist-sug-fh { flex: 1; color: var(--text-muted); font-size: 13px; }
+.hist-sug-total { font-weight: 700; font-variant-numeric: tabular-nums; }
