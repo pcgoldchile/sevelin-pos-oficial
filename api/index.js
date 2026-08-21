@@ -298,7 +298,14 @@ function auth(requiereAdmin = false) {
          perdona esa diferencia sin dejar de expirar el token cuando
          corresponde: solo corre el margen, no lo desactiva. */
       req.usuario = jwt.verify(token, JWT_SECRET || 'dev-secret-cambiar', { clockTolerance: 120 });
-    } catch (_) {
+    } catch (err) {
+      /* El mensaje al cliente se deja genérico a propósito (no hay que
+         revelarle a quien mande un token inválido si fue por vencimiento,
+         firma incorrecta, etc.). Este log sí distingue la causa real
+         (TokenExpiredError / JsonWebTokenError / NotBeforeError) en la
+         consola del servidor, para poder diagnosticar sin adivinar la
+         próxima vez que alguien reporte una sesión rechazada "sin motivo". */
+      console.warn('[AUTH] token rechazado:', err.name, '-', err.message);
       return enviarError(res, 401, 'Sesión inválida o expirada');
     }
     if (requiereAdmin && req.usuario.rol !== 'admin') {
