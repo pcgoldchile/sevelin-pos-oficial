@@ -3,7 +3,7 @@
 > Actualiza SOLO este archivo al cerrar una sesión. Para el detalle completo, ver `docs/README.md`.
 > Para saber qué otro documento leer según lo que necesites, ver `docs/README-DOCS.md`.
 
-**Fecha:** 20-08-2026 · **Versión activa:** v22 · **En producción:** https://sevelin-pos-oficial.vercel.app
+**Fecha:** 21-08-2026 · **Versión activa:** v23 · **En producción:** https://sevelin-pos-oficial.vercel.app
 
 ---
 
@@ -86,6 +86,19 @@ Node/Express (`api/index.js`, serverless en Vercel) · JavaScript **vanilla** de
   en `sql/20-fix-descontar-stock-ambiguo.sql` (usa el valor ya leído bajo el lock en vez de releer la
   columna). **Hay que correr `sql/20-...sql` en Supabase → SQL Editor** para que el fix llegue a
   producción (no se aplica solo, las migraciones SQL son manuales). Ver `docs/CHANGELOG-V22.md`.
+- **v22 (chore):** el `catch` de `auth()` (`api/index.js`) devolvía siempre el mismo mensaje genérico
+  al cliente sin importar la causa real del rechazo del JWT (vencido, firma inválida, malformado).
+  Se agregó un `console.warn` que distingue el tipo de error real en los logs del servidor (Vercel),
+  sin cambiar la respuesta al cliente. Esto fue lo que permitió encontrar la causa real de v23 (abajo).
+- **v23 (fix):** "JWT issued at future" en Servicio Técnico → Órdenes de Trabajo (`GET /api/ot`) no era
+  el JWT propio del POS (ver v22 arriba) sino PostgREST rechazando transitoriamente la llave
+  `service_role` — se ve sobre todo justo después de rotarla en Supabase (Settings → API → Reset), unos
+  segundos mientras el nuevo token se propaga a todos los nodos que lo validan. `GET /api/ot` ahora
+  reintenta (`consultarConReintento`, hasta 3 intentos con 400ms de pausa) cuando el mensaje de error de
+  Supabase matchea ese patrón; si persiste tras los 3 intentos, responde 503 con un mensaje claro en vez
+  del texto crudo de Supabase, y loguea el detalle real en el servidor. Un error de Supabase que NO sea
+  de este tipo (ej. una columna inexistente) sigue respondiendo 500 de inmediato, sin reintentar. Ver
+  `docs/CHANGELOG-V23.md`.
 
 ## Esquema SQL: última migración
 `sql/20-fix-descontar-stock-ambiguo.sql` (fix de `descontar_stock_venta`, ver v22 más arriba —

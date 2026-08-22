@@ -120,6 +120,30 @@ const num = v => Number(v) || 0;
 const enviarError = (res, code, msg, extra) =>
   res.status(code).json({ error: msg, ...(extra || {}) });
 
+/* PostgREST (la API REST de Supabase) puede rechazar la llave service_role
+   con un error del tipo "JWT issued at future" — se vio justo después de
+   rotarla en Supabase → Settings → API → Reset: al nuevo token le toma
+   unos segundos propagarse a todos los nodos que lo validan, así que
+   durante esa ventana algunos rechazan un token que en realidad es válido.
+   Es transitorio y ajeno a nuestro JWT propio (auth() más abajo, que ya
+   tiene su propio clockTolerance): reintentar la misma consulta un par de
+   veces con una pausa corta alcanza para que se resuelva solo. */
+const esperar = (ms) => new Promise(r => setTimeout(r, ms));
+function esErrorJwtTransitorio(mensaje) {
+  return /jwt/i.test(mensaje || '') && /(future|iat|clock)/i.test(mensaje || '');
+}
+async function consultarConReintento(construirQuery, intentos = 3, esperaMs = 400) {
+  let ultimoError = null;
+  for (let i = 0; i < intentos; i++) {
+    const { data, error } = await construirQuery();
+    if (!error) return { data, error: null };
+    ultimoError = error;
+    if (!esErrorJwtTransitorio(error.message) || i === intentos - 1) break;
+    await esperar(esperaMs);
+  }
+  return { data: null, error: ultimoError };
+}
+
 const TIPOS_DTE = ['BOLETA', 'FACTURA', 'SIN DTE'];
 
 /* Tope de filas por consulta.
@@ -3317,11 +3341,19 @@ function sanearOT(body = {}) {
 
 app.get('/api/ot', auth(), async (req, res) => {
   const { estado, buscar } = req.query;
-  let q = db.from('ordenes_trabajo').select('*').order('id', { ascending: false });
-  if (estado) q = q.eq('estado', estado);
 
-  const { data, error } = await q;
-  if (error) return enviarError(res, 500, error.message);
+  const { data, error } = await consultarConReintento(() => {
+    let q = db.from('ordenes_trabajo').select('*').order('id', { ascending: false });
+    if (estado) q = q.eq('estado', estado);
+    return q;
+  });
+  if (error) {
+    if (esErrorJwtTransitorio(error.message)) {
+      console.warn('[OT] Supabase rechazó la llave por reloj/JWT tras reintentar:', error.message);
+      return enviarError(res, 503, 'La base de datos no respondió a tiempo. Intenta de nuevo en unos segundos.');
+    }
+    return enviarError(res, 500, error.message);
+  }
 
   let filas = data || [];
   if (buscar) {
