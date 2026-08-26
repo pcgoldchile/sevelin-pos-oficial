@@ -40,6 +40,17 @@ const elProdAlto = document.getElementById('prodAlto');
 const elProdAncho = document.getElementById('prodAncho');
 const elProdProfundidad = document.getElementById('prodProfundidad');
 const elProdDescripcion = document.getElementById('prodDescripcion');
+const elProdWebSinGuardarAviso = document.getElementById('prodWebSinGuardarAviso');
+const elCampoProdFotos = document.getElementById('campoProdFotos');
+const elProdFotoInput = document.getElementById('prodFotoInput');
+const elProdFotoCanvas = document.getElementById('prodFotoCanvas');
+const elProdFotoEstado = document.getElementById('prodFotoEstado');
+const elProdFotosGrid = document.getElementById('prodFotosGrid');
+const elProdPublicadoWeb = document.getElementById('prodPublicadoWeb');
+const elProdPrecioWeb = document.getElementById('prodPrecioWeb');
+const elProdCategoriaWeb = document.getElementById('prodCategoriaWeb');
+const elProdDescripcionWeb = document.getElementById('prodDescripcionWeb');
+let productoEnEdicionImagenUrls = [];
 const elBtnNuevoProducto = document.getElementById('btnNuevoProducto');
 const elBtnCancelarProducto = document.getElementById('btnCancelarProducto');
 const elBtnGuardarProducto = document.getElementById('btnGuardarProducto');
@@ -137,6 +148,8 @@ function setupProductosEventListeners() {
   if (elModalProducto) {
     elModalProducto.addEventListener('click', (e) => { if (e.target === elModalProducto) cerrarModalProducto(); });
   }
+
+  if (elProdFotoInput) elProdFotoInput.addEventListener('change', manejarSeleccionFotoProducto);
 
   if (elBtnValorizacion) elBtnValorizacion.addEventListener('click', abrirValorizacion);
   if (elProdStockIlimitado) elProdStockIlimitado.addEventListener('change', aplicarStockIlimitadoProductoUI);
@@ -718,6 +731,11 @@ function abrirModalProducto(producto = null) {
     if (elProdAncho) elProdAncho.value = producto.ancho_cm || 0;
     if (elProdProfundidad) elProdProfundidad.value = producto.profundidad_cm || 0;
     if (elProdDescripcion) elProdDescripcion.value = producto.descripcion || '';
+    if (elProdPublicadoWeb) elProdPublicadoWeb.checked = !!producto.publicado_web;
+    if (elProdPrecioWeb) elProdPrecioWeb.value = producto.precio_web ?? '';
+    if (elProdCategoriaWeb) elProdCategoriaWeb.value = producto.categoria_web || '';
+    if (elProdDescripcionWeb) elProdDescripcionWeb.value = producto.descripcion_web || '';
+    productoEnEdicionImagenUrls = Array.isArray(producto.imagen_urls) ? [...producto.imagen_urls] : [];
   } else {
     editingProductId = null;
     if (elProductoFormTitle) elProductoFormTitle.textContent = 'Nuevo Producto';
@@ -733,6 +751,11 @@ function abrirModalProducto(producto = null) {
     if (elProdUsaLotes) elProdUsaLotes.checked = false;
     if (elProdStockIlimitado) elProdStockIlimitado.checked = false;
     if (elProdStockActualizado) elProdStockActualizado.textContent = 'Última actualización de stock: se registrará al guardar.';
+    if (elProdPublicadoWeb) elProdPublicadoWeb.checked = false;
+    if (elProdPrecioWeb) elProdPrecioWeb.value = '';
+    if (elProdCategoriaWeb) elProdCategoriaWeb.value = '';
+    if (elProdDescripcionWeb) elProdDescripcionWeb.value = '';
+    productoEnEdicionImagenUrls = [];
   }
 
   aplicarStockIlimitadoProductoUI();
@@ -741,6 +764,14 @@ function abrirModalProducto(producto = null) {
   // Solo se exporta lo que ya existe en la base
   if (elBtnExportarProducto) elBtnExportarProducto.style.display = producto ? '' : 'none';
 
+  // Las fotos necesitan un producto ya guardado (el endpoint cuelga de
+  // /api/productos/:id/imagen): sin id, se oculta el campo y se avisa.
+  if (elCampoProdFotos) elCampoProdFotos.style.display = producto ? '' : 'none';
+  if (elProdWebSinGuardarAviso) elProdWebSinGuardarAviso.style.display = producto ? 'none' : '';
+  if (elProdFotoEstado) elProdFotoEstado.textContent = '';
+  if (elProdFotoInput) elProdFotoInput.value = '';
+  renderFotosProducto();
+
   elModalProducto.classList.add('show');
   setTimeout(() => elProdNombre?.focus(), 80);
 }
@@ -748,6 +779,7 @@ function abrirModalProducto(producto = null) {
 function cerrarModalProducto() {
   if (elModalProducto) elModalProducto.classList.remove('show');
   editingProductId = null;
+  productoEnEdicionImagenUrls = [];
 }
 
 // ---------- Guardar (crear / actualizar) ----------
@@ -773,7 +805,13 @@ async function guardarProducto() {
     alto_cm: Number(elProdAlto?.value) || 0,
     ancho_cm: Number(elProdAncho?.value) || 0,
     profundidad_cm: Number(elProdProfundidad?.value) || 0,
-    descripcion: elProdDescripcion?.value.trim() || null
+    descripcion: elProdDescripcion?.value.trim() || null,
+    // --- Tienda web (e-commerce Fase 0). imagen_urls NO va acá: se sube
+    // aparte, foto por foto, con API.productos.subirImagen/quitarImagen. ---
+    publicado_web: !!(elProdPublicadoWeb && elProdPublicadoWeb.checked),
+    precio_web: elProdPrecioWeb?.value.trim() ? Number(elProdPrecioWeb.value) : null,
+    categoria_web: elProdCategoriaWeb?.value.trim() || null,
+    descripcion_web: elProdDescripcionWeb?.value.trim() || null
   };
 
   if (elBtnGuardarProducto) elBtnGuardarProducto.disabled = true;
@@ -805,6 +843,131 @@ async function guardarProducto() {
     showToast(err.message || 'Error al guardar el producto', 'err');
   } finally {
     if (elBtnGuardarProducto) elBtnGuardarProducto.disabled = false;
+  }
+}
+
+// ---------- Fotos de producto (e-commerce Fase 0) ----------
+const FOTO_LADO_PX = 1000;
+const FOTO_CALIDAD_INICIAL = 0.85;
+const FOTO_CALIDAD_MINIMA = 0.5;
+const FOTO_OBJETIVO_BYTES = 150 * 1024;
+
+function renderFotosProducto() {
+  if (!elProdFotosGrid) return;
+  if (!productoEnEdicionImagenUrls.length) {
+    elProdFotosGrid.innerHTML = '<p class="modal-hint">Sin fotos todavía.</p>';
+    return;
+  }
+  elProdFotosGrid.innerHTML = productoEnEdicionImagenUrls.map(url => `
+    <div style="position:relative; width:90px; height:90px;">
+      <img src="${escHtml(url)}" style="width:100%; height:100%; object-fit:cover; border-radius:8px; border:1px solid #d8dee9;">
+      <button type="button" class="btn-quitar-foto" data-url="${escHtml(url)}"
+        style="position:absolute; top:-6px; right:-6px; width:22px; height:22px; border-radius:999px; border:none; background:#dc2626; color:#fff; cursor:pointer; line-height:1;">×</button>
+    </div>`).join('');
+
+  elProdFotosGrid.querySelectorAll('.btn-quitar-foto').forEach(btn => {
+    btn.addEventListener('click', () => quitarFotoProducto(btn.dataset.url));
+  });
+}
+
+/* Lee el archivo elegido, lo dibuja centrado sobre un lienzo 1000x1000 con
+   fondo blanco (sin deformar ni recortar), lo exporta a webp bajando la
+   calidad hasta acercarse a ~150KB, y lo sube (el producto ya debe existir:
+   el endpoint cuelga de su id). */
+async function manejarSeleccionFotoProducto(event) {
+  const archivo = event.target.files?.[0];
+  event.target.value = ''; // permite elegir el mismo archivo dos veces seguidas
+  if (!archivo) return;
+
+  if (!editingProductId) {
+    showToast('Guarda el producto antes de agregarle fotos', 'err');
+    return;
+  }
+  if (!archivo.type.startsWith('image/')) {
+    showToast('Elige un archivo de imagen', 'err');
+    return;
+  }
+
+  if (elProdFotoEstado) elProdFotoEstado.textContent = 'Procesando imagen...';
+
+  try {
+    const bitmap = await cargarBitmapDeArchivo(archivo);
+    const dataUrlWebp = await dibujarYComprimirFoto(bitmap);
+
+    if (elProdFotoEstado) elProdFotoEstado.textContent = 'Subiendo...';
+    const actualizado = await API.productos.subirImagen(editingProductId, dataUrlWebp);
+    productoEnEdicionImagenUrls = actualizado.imagen_urls || productoEnEdicionImagenUrls;
+    renderFotosProducto();
+    if (elProdFotoEstado) elProdFotoEstado.textContent = 'Foto subida.';
+    showToast('Foto subida', 'ok');
+  } catch (err) {
+    console.error('Error al subir la foto:', err.message || err);
+    if (elProdFotoEstado) elProdFotoEstado.textContent = '';
+    showToast(err.message || 'No se pudo subir la foto', 'err');
+  }
+}
+
+function cargarBitmapDeArchivo(archivo) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const urlObjeto = URL.createObjectURL(archivo);
+    img.onload = () => { URL.revokeObjectURL(urlObjeto); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(urlObjeto); reject(new Error('No se pudo leer la imagen')); };
+    img.src = urlObjeto;
+  });
+}
+
+function dibujarYComprimirFoto(img) {
+  const canvas = elProdFotoCanvas || document.createElement('canvas');
+  canvas.width = FOTO_LADO_PX;
+  canvas.height = FOTO_LADO_PX;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, FOTO_LADO_PX, FOTO_LADO_PX);
+
+  // "Contain": mantiene proporción, centrada, sin recortar ni deformar
+  const escala = Math.min(FOTO_LADO_PX / img.width, FOTO_LADO_PX / img.height);
+  const w = img.width * escala;
+  const h = img.height * escala;
+  ctx.drawImage(img, (FOTO_LADO_PX - w) / 2, (FOTO_LADO_PX - h) / 2, w, h);
+
+  return new Promise((resolve, reject) => {
+    const intentar = (calidad) => {
+      canvas.toBlob((blob) => {
+        if (!blob) { reject(new Error('No se pudo generar la imagen')); return; }
+        if (blob.size > FOTO_OBJETIVO_BYTES && calidad > FOTO_CALIDAD_MINIMA) {
+          intentar(Math.round((calidad - 0.1) * 100) / 100);
+          return;
+        }
+        blobADataUrl(blob).then(resolve, reject);
+      }, 'image/webp', calidad);
+    };
+    intentar(FOTO_CALIDAD_INICIAL);
+  });
+}
+
+function blobADataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const lector = new FileReader();
+    lector.onload = () => resolve(lector.result);
+    lector.onerror = () => reject(new Error('No se pudo leer la imagen procesada'));
+    lector.readAsDataURL(blob);
+  });
+}
+
+async function quitarFotoProducto(url) {
+  if (!editingProductId || !url) return;
+  if (!confirm('¿Quitar esta foto?')) return;
+
+  try {
+    const actualizado = await API.productos.quitarImagen(editingProductId, url);
+    productoEnEdicionImagenUrls = actualizado.imagen_urls || productoEnEdicionImagenUrls.filter(u => u !== url);
+    renderFotosProducto();
+    showToast('Foto eliminada', 'ok');
+  } catch (err) {
+    console.error('Error al quitar la foto:', err.message || err);
+    showToast(err.message || 'No se pudo quitar la foto', 'err');
   }
 }
 

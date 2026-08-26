@@ -3,7 +3,8 @@
 > Actualiza SOLO este archivo al cerrar una sesión. Para el detalle completo, ver `docs/README.md`.
 > Para saber qué otro documento leer según lo que necesites, ver `docs/README-DOCS.md`.
 
-**Fecha:** 21-08-2026 · **Versión activa:** v23 · **En producción:** https://sevelin-pos-oficial.vercel.app
+**Fecha:** 26-08-2026 · **Versión activa:** v24 · **En producción:** https://sevelin-pos-oficial.vercel.app
+**Rama en curso:** `feature/fase-0-ecommerce` (v24 todavía no está en `main`).
 
 ---
 
@@ -99,21 +100,36 @@ Node/Express (`api/index.js`, serverless en Vercel) · JavaScript **vanilla** de
   del texto crudo de Supabase, y loguea el detalle real en el servidor. Un error de Supabase que NO sea
   de este tipo (ej. una columna inexistente) sigue respondiendo 500 de inmediato, sin reintentar. Ver
   `docs/CHANGELOG-V23.md`.
+- **v24 (e-commerce Fase 0, cimientos):** en la rama `feature/fase-0-ecommerce`. El stock atómico
+  (0.1/0.2 del plan de Fase 0) ya estaba resuelto desde v18/v22 (`descontar_stock_venta`, no se tocó).
+  Se agregó: `sql/21-imagenes-web.sql` (columnas `imagen_urls`, `publicado_web`, `descripcion_web`,
+  `precio_web`, `categoria_web` en `productos`); bucket `productos-imagenes` documentado
+  (`docs/README-BUCKET-IMAGENES.md`, no creado todavía — falta hacerlo a mano en Supabase); pipeline de
+  fotos (Canvas 1000×1000 → webp) + controles de tienda web en el modal de producto (`js/productos.js`,
+  `index.html`); endpoints `POST`/`DELETE /api/productos/:id/imagen` y
+  `GET /api/productos/auditoria-envio` (diagnóstico, no corrige nada). Ver `docs/CHANGELOG-V24.md` para
+  el detalle completo y el orden seguro de despliegue. **Ojo:** `ajustarStock()` sigue sin ser atómico
+  para repuestos internos y otros call-sites fuera de `POST /api/ventas` — no se tocó en esta fase (ver
+  nota para la Fase 1 en el changelog).
 
 ## Esquema SQL: última migración
-`sql/20-fix-descontar-stock-ambiguo.sql` (fix de `descontar_stock_venta`, ver v22 más arriba —
-**pendiente de aplicar en Supabase**). Antes: 19 (stock atómico, con el bug), 18 (gastos programados).
-Todas idempotentes, corren en orden. Aplicar en Supabase → SQL Editor.
+`sql/21-imagenes-web.sql` (e-commerce Fase 0, columnas de imagen/web en `productos` — **pendiente de
+aplicar en Supabase**, y en la rama `feature/fase-0-ecommerce`, no en `main` todavía). Antes:
+`sql/20-fix-descontar-stock-ambiguo.sql` (fix de `descontar_stock_venta`, ver v22 — **también
+pendiente de aplicar en Supabase**), 19 (stock atómico, con el bug), 18 (gastos programados). Todas
+idempotentes, corren en orden. Aplicar en Supabase → SQL Editor.
 
 ## Bugs conocidos ACTIVOS
 - **Crítico, en producción hasta que se corra `sql/20-fix-descontar-stock-ambiguo.sql` en Supabase:**
   toda venta con al menos un producto sin lotes falla al confirmarse ("column reference 'stock' is
   ambiguous"). Ver v22 arriba. El fix ya está en el repo (`sql/20-fix-descontar-stock-ambiguo.sql`);
   falta aplicarlo en la base real. `api/index.js` no necesitó cambios: el bug era solo de la función SQL.
+  **Este bug es anterior y ajeno a la Fase 0 del e-commerce, pero sigue sin aplicarse.**
 
 ## Pendiente (backlog, no bloqueante)
-1. Conectar el e-commerce (sevelin.cl): las columnas de despacho y comisión ya existen; falta el sitio
-   que cree ventas por la API con `origen_pago='pago_web'`.
+1. E-commerce: Fase 0 (cimientos, ver v24 arriba) hecha en rama, falta aplicar SQL/bucket y mergear a
+   `main`. Fases 1-6 (sitio público, checkout, pagos, envíos, panel de pedidos) sin empezar — ver
+   `README-ECOMMERCE-SEVELIN.md` sección 8.
 2. (Opcional, grande) Migrar a Supabase Auth + RLS por rol. Partir `api/index.js` en routers.
 
 ## Trampas específicas ya descubiertas (no repetir)

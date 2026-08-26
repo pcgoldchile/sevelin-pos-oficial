@@ -2671,6 +2671,44 @@
         </label>
       </div>
 
+      <!-- ============================================================
+           TIENDA WEB (e-commerce Fase 0)
+           Administración enteramente desde el POS — ver
+           README-ECOMMERCE-SEVELIN.md sección 2.1. Las fotos solo se
+           pueden subir con el producto ya guardado (necesitan su id).
+           ============================================================ -->
+      <span class="section-label" style="margin-top:18px;">Tienda web</span>
+      <p class="modal-hint" id="prodWebSinGuardarAviso">Guarda el producto primero para poder agregarle fotos.</p>
+
+      <div class="field" id="campoProdFotos" style="margin-top:8px;">
+        <label>Fotos (se procesan automáticamente a 1000×1000, fondo blanco)</label>
+        <input type="file" id="prodFotoInput" accept="image/*">
+        <canvas id="prodFotoCanvas" width="1000" height="1000" style="display:none;"></canvas>
+        <p class="modal-hint" id="prodFotoEstado"></p>
+        <div id="prodFotosGrid" style="display:flex; flex-wrap:wrap; gap:10px; margin-top:8px;"></div>
+      </div>
+
+      <label class="check-item" id="itemProdPublicadoWeb" style="margin:12px 0;">
+        <input type="checkbox" id="prodPublicadoWeb">
+        <span>🌐 Publicar en la web (sevelin.cl)</span>
+      </label>
+
+      <div class="grid grid-2">
+        <div class="field">
+          <label>Precio web (opcional)</label>
+          <input type="number" id="prodPrecioWeb" min="0" step="1" placeholder="Vacío = usa el precio normal">
+        </div>
+        <div class="field">
+          <label>Categoría web</label>
+          <input type="text" id="prodCategoriaWeb" placeholder="Cómo se agrupa en la tienda">
+        </div>
+      </div>
+
+      <div class="field" style="margin-top:12px;">
+        <label>Descripción web</label>
+        <textarea id="prodDescripcionWeb" rows="3" placeholder="Ficha que verá el cliente en la tienda (opcional; si queda vacía, no se muestra descripción)"></textarea>
+      </div>
+
       <div class="modal-foot">
         <!-- Exporta SOLO este producto. Se oculta al crear uno nuevo:
              no hay nada que exportar hasta que exista. -->

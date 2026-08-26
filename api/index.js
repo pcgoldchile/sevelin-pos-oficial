@@ -461,7 +461,11 @@ app.get('/api/health', (_req, res) => res.json({
 const CAMPOS_PRODUCTO = [
   'sku', 'codigo_barras', 'nombre', 'costo_unitario', 'precio_unitario', 'stock',
   'requiere_sn', 'peso_kg', 'alto_cm', 'ancho_cm', 'profundidad_cm', 'descripcion',
-  'stock_minimo', 'alerta_stock', 'es_repuesto', 'stock_ilimitado', 'usa_lotes'
+  'stock_minimo', 'alerta_stock', 'es_repuesto', 'stock_ilimitado', 'usa_lotes',
+  // Controles de la tienda web (e-commerce Fase 0). imagen_urls NO va acá:
+  // se administra aparte con POST /api/productos/:id/imagen (append/quitar
+  // una foto a la vez), no reemplazando el arreglo completo en cada guardado.
+  'publicado_web', 'precio_web', 'descripcion_web', 'categoria_web'
 ];
 
 /* Normaliza el código de barras: SOLO dígitos.
@@ -515,6 +519,21 @@ function sanearProducto(body = {}) {
 
   // El código de barras se normaliza aparte: solo dígitos
   if (p.codigo_barras !== undefined) p.codigo_barras = limpiarCodigoBarras(p.codigo_barras);
+
+  // --- Controles de la tienda web ---
+  if (body.publicado_web !== undefined) p.publicado_web = !!body.publicado_web;
+  // precio_web vacío/0 = NULL a propósito: "usa el precio normal del POS"
+  // (ver sql/21-imagenes-web.sql). Un 0 real congelaría el producto gratis.
+  if (p.precio_web !== undefined) {
+    const v = num(p.precio_web);
+    p.precio_web = v > 0 ? v : null;
+  }
+  ['descripcion_web', 'categoria_web'].forEach(k => {
+    if (p[k] !== undefined) {
+      const t = String(p[k]).trim();
+      p[k] = (!t || ['null', 'undefined'].includes(t.toLowerCase())) ? null : t;
+    }
+  });
 
   return p;
 }
@@ -814,6 +833,35 @@ app.get('/api/productos/:id/lotes', auth(true), async (req, res) => {
   res.json(data || []);
 });
 
+/* Auditoría de envío (Fase 0, punto 0.6 del e-commerce) — SOLO diagnostica,
+   no corrige nada. `productos` no tiene columna `activo` (no hay soft-delete:
+   se borra la fila con DELETE /api/productos/:id), así que "activo" acá es
+   "existe en el catálogo". Se excluyen los productos con stock_ilimitado
+   (servicios/mano de obra: nunca se despachan, no necesitan peso ni medidas).
+   Es de solo lectura y temporal: no la usa ningún flujo real todavía. */
+app.get('/api/productos/auditoria-envio', auth(true), async (req, res) => {
+  const { data, error } = await db.from('productos')
+    .select('id, nombre, sku, peso_kg, alto_cm, ancho_cm, profundidad_cm')
+    .eq('stock_ilimitado', false);
+  if (error) return enviarError(res, 500, error.message);
+
+  const productos = data || [];
+  const sinDatos = productos.filter(p =>
+    !(num(p.peso_kg) > 0) || !(num(p.alto_cm) > 0) ||
+    !(num(p.ancho_cm) > 0) || !(num(p.profundidad_cm) > 0));
+
+  res.json({
+    totalProductos: productos.length,
+    totalSinDatosDeEnvio: sinDatos.length,
+    porcentaje: productos.length ? Math.round((sinDatos.length / productos.length) * 1000) / 10 : 0,
+    productos: sinDatos.map(p => ({
+      id: p.id, nombre: p.nombre, sku: p.sku,
+      peso_kg: num(p.peso_kg), alto_cm: num(p.alto_cm),
+      ancho_cm: num(p.ancho_cm), profundidad_cm: num(p.profundidad_cm)
+    }))
+  });
+});
+
 /* Carga una capa nueva. El stock del producto sube en la misma operación:
    productos.stock sigue siendo el número que se muestra en pantalla y el
    que usan las alertas de bajo stock; los lotes solo explican su costo. */
@@ -880,6 +928,81 @@ app.put('/api/productos/:id', auth(true), async (req, res) => {
   if (dup) return enviarError(res, 409, errorDuplicado(dup), { duplicado: dup });
 
   const { data, error } = await db.from('productos').update(producto).eq('id', req.params.id).select().single();
+  if (error) return enviarError(res, 500, error.message);
+  res.json(data);
+});
+
+const BUCKET_IMAGENES_PRODUCTO = 'productos-imagenes';
+const MAX_BYTES_IMAGEN_PRODUCTO = 1 * 1024 * 1024; // el Canvas del front apunta a ~100-150KB; 1MB es margen generoso
+
+/* Sube una foto ya procesada por el Canvas del front (1000x1000, webp) al
+   bucket público `productos-imagenes` (ver docs/README-BUCKET-IMAGENES.md)
+   y la agrega a productos.imagen_urls. El navegador nunca ve la llave de
+   Supabase: solo manda el webp en base64 y el backend sube con
+   service_role, igual que /api/compras/archivo con compras-documentos. */
+app.post('/api/productos/:id/imagen', auth(true), async (req, res) => {
+  try {
+    const base64 = req.body?.imagen_base64;
+    if (!base64) return enviarError(res, 400, 'Falta la imagen');
+
+    const { data: producto } = await db.from('productos')
+      .select('id, imagen_urls').eq('id', req.params.id).maybeSingle();
+    if (!producto) return enviarError(res, 404, 'Producto no encontrado');
+
+    const contenido = String(base64).includes(',') ? String(base64).split(',')[1] : String(base64);
+    const buffer = Buffer.from(contenido, 'base64');
+    if (buffer.length > MAX_BYTES_IMAGEN_PRODUCTO) {
+      return enviarError(res, 413, 'La imagen supera 1 MB. El navegador debería haberla comprimido antes de subirla.');
+    }
+
+    // Ruta no enumerable (mismo criterio FILE-01 que compras-documentos):
+    // un UUID aleatorio en vez del id de producto + timestamp.
+    const ruta = `${req.params.id}/${crypto.randomUUID()}.webp`;
+
+    const { error: errSubida } = await db.storage.from(BUCKET_IMAGENES_PRODUCTO)
+      .upload(ruta, buffer, { contentType: 'image/webp', upsert: false });
+    if (errSubida) throw new Error(errSubida.message);
+
+    // Bucket público a propósito (ver README-ECOMMERCE-SEVELIN.md sección
+    // 4.1): la tienda sirve la foto directo al navegador del cliente, sin
+    // pasar por ningún backend.
+    const { data: pub } = db.storage.from(BUCKET_IMAGENES_PRODUCTO).getPublicUrl(ruta);
+    const url = pub.publicUrl;
+
+    const imagenUrls = [...(producto.imagen_urls || []), url];
+    const { data, error } = await db.from('productos')
+      .update({ imagen_urls: imagenUrls }).eq('id', req.params.id).select('id, imagen_urls').single();
+    if (error) throw new Error(error.message);
+
+    res.status(201).json(data);
+  } catch (err) {
+    enviarError(res, 500, err.message || 'No se pudo subir la imagen');
+  }
+});
+
+// Quita una foto ya subida: la borra del bucket y del arreglo del producto.
+app.delete('/api/productos/:id/imagen', auth(true), async (req, res) => {
+  const url = String(req.body?.url || '').trim();
+  if (!url) return enviarError(res, 400, 'Falta la url de la imagen a quitar');
+
+  const { data: producto } = await db.from('productos')
+    .select('id, imagen_urls').eq('id', req.params.id).maybeSingle();
+  if (!producto) return enviarError(res, 404, 'Producto no encontrado');
+
+  const imagenUrls = (producto.imagen_urls || []).filter(u => u !== url);
+
+  // La ruta dentro del bucket es todo lo que sigue después del nombre del
+  // bucket en la URL pública; si no matchea (url externa/antigua) igual se
+  // quita del arreglo, pero no se intenta borrar nada del storage.
+  const marca = `/${BUCKET_IMAGENES_PRODUCTO}/`;
+  const idx = url.indexOf(marca);
+  if (idx !== -1) {
+    const ruta = url.slice(idx + marca.length);
+    await db.storage.from(BUCKET_IMAGENES_PRODUCTO).remove([ruta]);
+  }
+
+  const { data, error } = await db.from('productos')
+    .update({ imagen_urls: imagenUrls }).eq('id', req.params.id).select('id, imagen_urls').single();
   if (error) return enviarError(res, 500, error.message);
   res.json(data);
 });

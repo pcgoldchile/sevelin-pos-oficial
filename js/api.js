@@ -101,7 +101,18 @@ const API = {
        cada vez que se entraba al módulo. */
     lotesResumen: () => apiRequest('/productos/lotes-resumen'),
     crearLote: (id, lote) => apiRequest(`/productos/${id}/lotes`, { method: 'POST', body: lote }),
-    eliminarLote_capa: (id, loteId) => apiRequest(`/productos/${id}/lotes/${loteId}`, { method: 'DELETE' })
+    eliminarLote_capa: (id, loteId) => apiRequest(`/productos/${id}/lotes/${loteId}`, { method: 'DELETE' }),
+
+    // Fotos de producto (e-commerce Fase 0). El producto debe existir ya
+    // (tener id) antes de poder subirle fotos.
+    subirImagen: (id, imagenBase64) =>
+      apiRequest(`/productos/${id}/imagen`, { method: 'POST', body: { imagen_base64: imagenBase64 } }),
+    quitarImagen: (id, url) =>
+      apiRequest(`/productos/${id}/imagen`, { method: 'DELETE', body: { url } }),
+
+    // Diagnóstico de sección 0.6: cuántos productos no tienen peso/medidas
+    // cargadas todavía (para dimensionar el trabajo antes de Shipit).
+    auditoriaEnvio: () => apiRequest('/productos/auditoria-envio')
   },
 
   ventas: {
