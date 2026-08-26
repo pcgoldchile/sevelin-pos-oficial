@@ -2013,10 +2013,60 @@ app.post('/api/compras/eliminar-lote', auth(true), exigirPinAdmin, async (req, r
   res.json({ eliminadas: ids.length });
 });
 
+/* Al eliminar un gasto, el saldo del canal de origen sube solo (se
+   recalcula desde `compras`, que ya no lo cuenta). Dos parámetros
+   opcionales permiten decidir ese efecto en vez de sufrirlo:
+     - revertirDinero (bool, default true): si es false, el registro
+       contable se borra pero el dinero NO vuelve — se anula con un
+       ajuste manual negativo para que el saldo quede igual que antes.
+     - metodoDevolucion ('efectivo'|'banco'): a qué canal vuelve el
+       monto cuando SÍ se revierte. Si difiere del canal donde se pagó
+       el gasto, se registra un traspaso interno (la eliminación ya
+       repuso el monto en el canal de origen).
+   Ambos son opcionales y compatibles con llamadas viejas: sin body,
+   el comportamiento es el de siempre (revertir al mismo canal). */
 app.delete('/api/compras/:id', auth(true), async (req, res) => {
-  const { error } = await db.from('compras').delete().eq('id', req.params.id);
-  if (error) return enviarError(res, 500, error.message);
-  res.json({ ok: true });
+  try {
+    const { data: compra, error: errBuscar } = await db.from('compras')
+      .select('costo_total, metodo_pago, clasificacion, descripcion')
+      .eq('id', req.params.id).maybeSingle();
+    if (errBuscar) return enviarError(res, 500, errBuscar.message);
+    if (!compra) return enviarError(res, 404, 'El gasto no existe');
+
+    const revertirDinero = req.body?.revertirDinero !== false;
+    const metodoDevolucion = String(req.body?.metodoDevolucion || '').trim().toLowerCase();
+    const canalOrigen = esEfectivo(compra.metodo_pago) ? 'EFECTIVO' : 'BANCO';
+    const descripcionGasto = `${compra.clasificacion}${compra.descripcion ? ' — ' + compra.descripcion : ''}`;
+
+    if (revertirDinero) {
+      const canalDestino = metodoDevolucion === 'banco' ? 'BANCO'
+        : metodoDevolucion === 'efectivo' ? 'EFECTIVO' : canalOrigen;
+      if (canalDestino !== canalOrigen) {
+        const { error: errTraspaso } = await db.from('traspasos').insert([{
+          origen: canalOrigen, destino: canalDestino, monto: compra.costo_total,
+          nota: `Reverso de gasto eliminado: ${descripcionGasto}`
+        }]);
+        if (errTraspaso) return enviarError(res, 500, errTraspaso.message);
+      }
+    } else {
+      const { error: errAjuste } = await db.from('ajustes_saldo').insert([{
+        canal: canalOrigen,
+        delta: -Number(compra.costo_total),
+        saldo_anterior: Number(compra.costo_total),
+        saldo_nuevo: 0,
+        motivo: `Eliminación de gasto sin reversar dinero: ${descripcionGasto}`,
+        rol: req.usuario?.rol || null
+      }]);
+      if (errAjuste) return enviarError(res, 500, errAjuste.message);
+    }
+
+    const { error } = await db.from('compras').delete().eq('id', req.params.id);
+    if (error) return enviarError(res, 500, error.message);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[COMPRAS] no se pudo eliminar el gasto:', err.message);
+    enviarError(res, 500, err.message || 'No se pudo eliminar el gasto');
+  }
 });
 
 /* ============================================================

@@ -3195,6 +3195,36 @@
     </div>
   </div>
 
+  <!-- MODAL: ELIMINAR GASTO — reemplaza el confirm() nativo para poder
+       elegir si se reajusta el saldo y a qué canal vuelve el dinero. -->
+  <div id="modalEliminarGasto" class="modal-overlay">
+    <div class="modal-box" style="max-width: 480px;">
+      <h2>🗑️ Eliminar Gasto</h2>
+      <p class="modal-hint" id="elimGastoResumen">—</p>
+
+      <div class="field" style="margin-top:14px;">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+          <input type="checkbox" id="elimGastoRevertir" class="w-4 h-4 accent-blue-600" checked>
+          Reajustar el dinero (devolver el monto al saldo)
+        </label>
+        <p class="modal-hint" id="elimGastoRevertirHint"></p>
+      </div>
+
+      <div class="field" id="elimGastoDestinoWrap">
+        <label for="elimGastoDestino">¿A qué canal vuelve el dinero?</label>
+        <select id="elimGastoDestino">
+          <option value="efectivo">💵 Efectivo · caja chica</option>
+          <option value="banco">🏦 Banco / Cuenta</option>
+        </select>
+      </div>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarEliminarGasto">Cancelar</button>
+        <button class="btn btn-red" id="btnConfirmarEliminarGasto">Eliminar Gasto</button>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL: VISTA PREVIA DE LA ORDEN DE TRABAJO -->
   <div id="modalOtPreview" class="modal-overlay">
     <div class="modal-box modal-lg">

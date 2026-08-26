@@ -48,6 +48,15 @@ const elCompraDescripcion = document.getElementById('compraDescripcion');
 const elCompraMetodoPago = document.getElementById('compraMetodoPago');
 const elCompraUrlDocumento = document.getElementById('compraUrlDocumento');
 const elCompraUrlComprobante = document.getElementById('compraUrlComprobante');
+
+const elModalEliminarGasto = document.getElementById('modalEliminarGasto');
+const elElimGastoResumen = document.getElementById('elimGastoResumen');
+const elElimGastoRevertir = document.getElementById('elimGastoRevertir');
+const elElimGastoRevertirHint = document.getElementById('elimGastoRevertirHint');
+const elElimGastoDestinoWrap = document.getElementById('elimGastoDestinoWrap');
+const elElimGastoDestino = document.getElementById('elimGastoDestino');
+const elBtnCancelarEliminarGasto = document.getElementById('btnCancelarEliminarGasto');
+const elBtnConfirmarEliminarGasto = document.getElementById('btnConfirmarEliminarGasto');
 const elCompraArchivoDocumento = document.getElementById('compraArchivoDocumento');
 const elCompraArchivoComprobante = document.getElementById('compraArchivoComprobante');
 const elBtnSubirDocumento = document.getElementById('btnSubirDocumento');
@@ -149,6 +158,13 @@ function setupComprasEventListeners() {
 
   if (elBtnSubirDocumento) elBtnSubirDocumento.addEventListener('click', () => elCompraArchivoDocumento?.click());
   if (elBtnSubirComprobante) elBtnSubirComprobante.addEventListener('click', () => elCompraArchivoComprobante?.click());
+
+  if (elBtnCancelarEliminarGasto) elBtnCancelarEliminarGasto.addEventListener('click', cerrarModalEliminarGasto);
+  if (elBtnConfirmarEliminarGasto) elBtnConfirmarEliminarGasto.addEventListener('click', confirmarEliminarGasto);
+  if (elElimGastoRevertir) elElimGastoRevertir.addEventListener('change', actualizarVistaEliminarGasto);
+  if (elModalEliminarGasto) {
+    elModalEliminarGasto.addEventListener('click', (e) => { if (e.target === elModalEliminarGasto) cerrarModalEliminarGasto(); });
+  }
   if (elCompraArchivoDocumento) elCompraArchivoDocumento.addEventListener('change', (e) => subirArchivoCompra(e, 'url_documento'));
   if (elCompraArchivoComprobante) elCompraArchivoComprobante.addEventListener('change', (e) => subirArchivoCompra(e, 'url_comprobante'));
 
@@ -603,25 +619,65 @@ async function guardarCompra() {
   }
 }
 
-async function eliminarCompra(id) {
-  /* req.5 — al eliminar, el gasto deja de descontar de su canal, así que
-     el saldo de ese canal SUBIRÁ al recalcular. Se avisa del efecto. */
+/* Modal de eliminación de gasto (reemplaza el confirm() nativo).
+   Permite decidir si se reajusta el saldo y, si se reajusta, a qué
+   canal (Efectivo/Banco) vuelve el dinero — puede ser distinto de con
+   qué se pagó originalmente. Ver DELETE /api/compras/:id. */
+let gastoEliminandoId = null;
+
+function eliminarCompra(id) {
   const compra = comprasList.find(c => String(c.id) === String(id));
-  const canal = compra ? (esCompraEfectivo(compra.metodo_pago) ? 'Efectivo' : 'Banco') : null;
-  const extra = compra
-    ? `\n\nAl borrarla, ${fmtCLP(num(compra.costo_total))} se sumarán de vuelta al saldo de ${canal} (el gasto deja de contar).`
-    : '';
+  if (!compra) { showToast('No se encontró el gasto', 'err'); return; }
 
-  if (!confirm('¿Eliminar esta compra del registro? Esta acción no se puede deshacer.' + extra)) return;
+  gastoEliminandoId = id;
+  const canal = esCompraEfectivo(compra.metodo_pago) ? 'efectivo' : 'banco';
 
+  if (elElimGastoResumen) {
+    elElimGastoResumen.innerHTML =
+      `Vas a eliminar <b>${fmtCLP(num(compra.costo_total))}</b> · ${escHtml(compra.clasificacion || '')}` +
+      (compra.descripcion ? ` — ${escHtml(compra.descripcion)}` : '') +
+      `<br>Se pagó con <b>${escHtml(compra.metodo_pago || '')}</b> (canal ${canal === 'efectivo' ? 'Efectivo' : 'Banco'}).`;
+  }
+
+  if (elElimGastoRevertir) elElimGastoRevertir.checked = true;
+  if (elElimGastoDestino) elElimGastoDestino.value = canal;
+  actualizarVistaEliminarGasto();
+
+  elModalEliminarGasto?.classList.add('show');
+}
+
+function actualizarVistaEliminarGasto() {
+  const revertir = !!elElimGastoRevertir?.checked;
+  if (elElimGastoDestinoWrap) elElimGastoDestinoWrap.classList.toggle('hidden', !revertir);
+  if (elElimGastoRevertirHint) {
+    elElimGastoRevertirHint.textContent = revertir
+      ? 'El monto volverá a sumarse al saldo del canal elegido.'
+      : 'El registro contable se borra, pero el dinero NO vuelve al saldo (queda como ya gastado).';
+  }
+}
+
+function cerrarModalEliminarGasto() {
+  elModalEliminarGasto?.classList.remove('show');
+  gastoEliminandoId = null;
+}
+
+async function confirmarEliminarGasto() {
+  if (!gastoEliminandoId) return;
+  const revertirDinero = !!elElimGastoRevertir?.checked;
+  const metodoDevolucion = elElimGastoDestino?.value === 'banco' ? 'banco' : 'efectivo';
+
+  if (elBtnConfirmarEliminarGasto) elBtnConfirmarEliminarGasto.disabled = true;
   try {
-    await API.compras.eliminar(id);
-    showToast('Compra eliminada · saldos recalculados', 'ok');
+    await API.compras.eliminar(gastoEliminandoId, { revertirDinero, metodoDevolucion });
+    showToast(revertirDinero ? 'Gasto eliminado · saldo recalculado' : 'Gasto eliminado sin reajustar el saldo', 'ok');
     document.dispatchEvent(new CustomEvent('pos:movimiento-dinero'));
+    cerrarModalEliminarGasto();
     cargarCompras();
   } catch (err) {
     console.error('Error al eliminar la compra:', err.message || err);
-    showToast(err.message || 'No se pudo eliminar la compra', 'err');
+    showToast(err.message || 'No se pudo eliminar el gasto', 'err');
+  } finally {
+    if (elBtnConfirmarEliminarGasto) elBtnConfirmarEliminarGasto.disabled = false;
   }
 }
 

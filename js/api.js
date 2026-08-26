@@ -154,7 +154,7 @@ const API = {
     cancelarProgramado: (id) => apiRequest(`/gastos-programados/${id}`, { method: 'DELETE' }),
     procesarVencidos: () => apiRequest('/gastos-programados/procesar-vencidos', { method: 'POST' }),
     actualizar: (id, c) => apiRequest(`/compras/${id}`, { method: 'PUT', body: c }),
-    eliminar: (id) => apiRequest(`/compras/${id}`, { method: 'DELETE' }),
+    eliminar: (id, opciones = {}) => apiRequest(`/compras/${id}`, { method: 'DELETE', body: opciones }),
     eliminarLote: (ids, pin) => apiRequest('/compras/eliminar-lote', { method: 'POST', body: { ids, pin } }),
     subirArchivo: (nombre, tipo, base64) => apiRequest('/compras/archivo', { method: 'POST', body: { nombre, tipo, base64 } }),
     // FILE-01: pide una URL fresca para un documento guardado (las firmadas caducan)
