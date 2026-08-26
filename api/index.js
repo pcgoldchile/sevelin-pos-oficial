@@ -1505,8 +1505,14 @@ app.post('/api/ventas', auth(), async (req, res) => {
     // En una venta mixta el método de cabecera queda como "Mixto"
     if (pagosMixtos) cabecera.metodo_pago = 'Mixto';
 
-    const { data: venta, error } = await db.from('ventas').insert([cabecera]).select().single();
-    if (error) throw new Error(error.message);
+    const { data: venta, error } = await consultarConReintento(() => db.from('ventas').insert([cabecera]).select().single());
+    if (error) {
+      if (esErrorJwtTransitorio(error.message)) {
+        console.warn('[VENTAS] Supabase rechazó la llave por reloj/JWT tras reintentar:', error.message);
+        return enviarError(res, 503, 'La base de datos no respondió a tiempo. Intenta cobrar de nuevo en unos segundos.');
+      }
+      throw new Error(error.message);
+    }
 
     /* _fifo y _stockAtomico son marcas internas de este proceso: no
        existen como columna, así que se quitan antes de insertar o
@@ -2633,9 +2639,12 @@ app.get('/api/balance', auth(true), async (req, res) => {
 
   try {
     // --- Ventas cobradas del período ---
-    const { data: ventasRaw } = await db.from('ventas')
+    // consultarConReintento: si Supabase rechaza la llave por reloj/JWT
+    // (ver definición del helper), reintenta sola antes de devolver un
+    // balance vacío o a medio calcular.
+    const { data: ventasRaw } = await consultarConReintento(() => db.from('ventas')
       .select('id, fecha, total, costo_total, utilidad, comision_pos, metodo_pago, metodo_pago_final, pago_mixto, estado')
-      .gte('fecha', desde).lte('fecha', hasta).eq('estado', 'PAGADA');
+      .gte('fecha', desde).lte('fecha', hasta).eq('estado', 'PAGADA'));
 
     const ventas = ventasRaw || [];
     const ids = ventas.map(v => v.id);
@@ -2703,6 +2712,16 @@ app.get('/api/balance', auth(true), async (req, res) => {
       porClasificacion[k] = (porClasificacion[k] || 0) + num(g.costo_total);
     });
 
+    /* La compra de mercadería (grupo INVENTARIO) no es un gasto de
+       utilidad neta: es un activo que ya se descuenta como costoVendido
+       cuando el producto se vende (vía FIFO). Contarlo también acá
+       duplicaba el costo y hacía ver pérdidas al reponer stock aunque
+       el negocio estuviera sano. Sí se mantiene en totalGastos (para
+       flujoLiquido, que es caja real, y para el desglose por grupo). */
+    const gastosParaUtilidadNeta = gastos
+      .filter(g => (grupoDe[g.clasificacion] || 'OPERATIVO') !== 'INVENTARIO')
+      .reduce((a, g) => a + num(g.costo_total), 0);
+
     // --- Aportes de capital ---
     const { data: inyRaw } = await db.from('inyecciones_capital')
       .select('*').gte('fecha', desde).lte('fecha', hasta);
@@ -2717,11 +2736,12 @@ app.get('/api/balance', auth(true), async (req, res) => {
     const fijos = fijosRaw || [];
     const metaGastosFijos = fijos.reduce((a, f) => a + num(f.monto), 0);
 
-    /* Utilidad neta = margen bruto menos TODO lo que se gastó.
-       La comisión del POS ya está descontada dentro de utilidad_bruta?
+    /* Utilidad neta = margen bruto menos los gastos operativos/inversión
+       (sin contar INVENTARIO, ver más arriba) menos la comisión del POS.
+       La comisión ya está descontada dentro de utilidad_bruta?
        No: utilidad_bruta es ingresos - costo. La comisión es un gasto
        aparte, así que se resta acá para no perderla. */
-    const utilidadNeta = utilidadBruta - totalGastos - comisiones;
+    const utilidadNeta = utilidadBruta - gastosParaUtilidadNeta - comisiones;
 
     /* Caja física: solo lo que se puede contar en billetes.
        Los gastos se asumen pagados en efectivo porque `compras` no
@@ -2812,11 +2832,21 @@ app.get('/api/balance', auth(true), async (req, res) => {
    ============================================================ */
 
 // Devuelve el turno de caja abierto (o null). Lo usa el POS al arrancar.
+/* Este endpoint lo sondea el frontend cada 12s (js/caja.js) para saber si
+   hay caja abierta: un rechazo transitorio del JWT acá se traduciría en la
+   barra de caja "parpadeando" a cerrada en cada ciclo de sondeo, así que
+   lleva el mismo reintento que /api/ot. */
 app.get('/api/caja/activa', auth(), async (req, res) => {
-  const { data, error } = await db.from('cajas_diarias')
+  const { data, error } = await consultarConReintento(() => db.from('cajas_diarias')
     .select('*').eq('estado', 'abierta')
-    .order('fecha_apertura', { ascending: false }).limit(1).maybeSingle();
-  if (error) return enviarError(res, 500, error.message);
+    .order('fecha_apertura', { ascending: false }).limit(1).maybeSingle());
+  if (error) {
+    if (esErrorJwtTransitorio(error.message)) {
+      console.warn('[CAJA] Supabase rechazó la llave por reloj/JWT tras reintentar:', error.message);
+      return enviarError(res, 503, 'La base de datos no respondió a tiempo. Intenta de nuevo en unos segundos.');
+    }
+    return enviarError(res, 500, error.message);
+  }
   if (!data) return res.json({ activa: null });
 
   // Se adjuntan los movimientos del turno, para el resumen en el POS
@@ -2830,16 +2860,22 @@ app.post('/api/caja/abrir', auth(), async (req, res) => {
   const fondo = num(req.body?.fondo_inicial);
   if (fondo < 0) return enviarError(res, 400, 'El fondo inicial no puede ser negativo');
 
-  const { data: yaAbierta } = await db.from('cajas_diarias')
-    .select('id').eq('estado', 'abierta').limit(1).maybeSingle();
+  const { data: yaAbierta } = await consultarConReintento(() => db.from('cajas_diarias')
+    .select('id').eq('estado', 'abierta').limit(1).maybeSingle());
   if (yaAbierta) return enviarError(res, 400, 'Ya hay una caja abierta. Ciérrala antes de abrir otra.');
 
-  const { data, error } = await db.from('cajas_diarias').insert([{
+  const { data, error } = await consultarConReintento(() => db.from('cajas_diarias').insert([{
     fondo_inicial: fondo,
     estado: 'abierta',
     abierta_por: req.usuario?.rol || null
-  }]).select().single();
-  if (error) return enviarError(res, 500, error.message);
+  }]).select().single());
+  if (error) {
+    if (esErrorJwtTransitorio(error.message)) {
+      console.warn('[CAJA] Supabase rechazó la llave por reloj/JWT tras reintentar:', error.message);
+      return enviarError(res, 503, 'La base de datos no respondió a tiempo. Intenta de nuevo en unos segundos.');
+    }
+    return enviarError(res, 500, error.message);
+  }
   res.status(201).json(data);
 });
 
@@ -2869,8 +2905,8 @@ app.post('/api/caja/cerrar', auth(), async (req, res) => {
   const contado = num(req.body?.efectivo_contado);
   const notas = String(req.body?.notas_cierre || '').trim() || null;
 
-  const { data: caja } = await db.from('cajas_diarias')
-    .select('*').eq('estado', 'abierta').limit(1).maybeSingle();
+  const { data: caja } = await consultarConReintento(() => db.from('cajas_diarias')
+    .select('*').eq('estado', 'abierta').limit(1).maybeSingle());
   if (!caja) return enviarError(res, 400, 'No hay una caja abierta que cerrar');
 
   /* Efectivo esperado = fondo + ventas en efectivo del turno + ingresos
@@ -2893,7 +2929,7 @@ app.post('/api/caja/cerrar', auth(), async (req, res) => {
   const esperado = num(caja.fondo_inicial) + ventasEfectivo + ingresos - egresos;
   const diferencia = contado - esperado;
 
-  const { data, error } = await db.from('cajas_diarias').update({
+  const { data, error } = await consultarConReintento(() => db.from('cajas_diarias').update({
     estado: 'cerrada',
     fecha_cierre: new Date().toISOString(),
     efectivo_esperado: esperado,
@@ -2901,8 +2937,14 @@ app.post('/api/caja/cerrar', auth(), async (req, res) => {
     diferencia,
     notas_cierre: notas,
     cerrada_por: req.usuario?.rol || null
-  }).eq('id', caja.id).select().single();
-  if (error) return enviarError(res, 500, error.message);
+  }).eq('id', caja.id).select().single());
+  if (error) {
+    if (esErrorJwtTransitorio(error.message)) {
+      console.warn('[CAJA] Supabase rechazó la llave por reloj/JWT tras reintentar:', error.message);
+      return enviarError(res, 503, 'La base de datos no respondió a tiempo. Intenta de nuevo en unos segundos.');
+    }
+    return enviarError(res, 500, error.message);
+  }
 
   res.json({ ...data, detalle: { fondo_inicial: num(caja.fondo_inicial), ventasEfectivo, ingresos, egresos, esperado, contado, diferencia } });
 });
