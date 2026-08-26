@@ -48,12 +48,29 @@ document.addEventListener('DOMContentLoaded', () => {
     if (ev.detail?.vista === 'view-pos') verificarCaja();
   });
 
+  /* BUG CORREGIDO — el estado de caja no se reflejaba hasta hacer F5.
+     ------------------------------------------------------------
+     verificarCaja() solo se disparaba al cargar el script (antes de que
+     hubiera sesión) y al cambiar a la pestaña del POS. Si el POS ya era
+     la vista activa (el caso normal: es la vista por defecto), iniciar
+     sesión no volvía a disparar 'pos:vista-activa' porque la vista no
+     cambiaba — así que la barra quedaba con el estado (vacío) de antes
+     del login hasta refrescar la página a mano. Ahora se resincroniza
+     apenas el login (o la restauración de sesión) termina. */
+  document.addEventListener('pos:sesion-iniciada', () => verificarCaja());
+
+  /* Sondeo automático: si se abre/cierra la caja desde otro dispositivo
+     o sesión, esta pestaña lo refleja solo, sin esperar a que alguien
+     cambie de vista. verificarCaja() ya ignora la llamada sin sesión. */
+  setInterval(verificarCaja, 12000);
+
   // Cargar el estado al iniciar (el POS es la vista por defecto)
   verificarCaja();
 });
 
 /* Consulta al backend si hay un turno abierto y actualiza la barra. */
 async function verificarCaja() {
+  if (!tokenActual()) return;   // sin sesión todavía: nada que consultar
   try {
     const r = await API.balance.cajaActiva();
     cajaActivaActual = r?.activa || null;
