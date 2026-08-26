@@ -24,6 +24,8 @@ Si necesitas más profundidad que el snapshot, sigue con `README.md`.
 | **`README-DESPLIEGUE.md`** | Cómo desplegar (Vercel, Supabase, variables de entorno). | Al publicar o configurar el entorno. |
 | **`AUDITORIA-SEGURIDAD-SEVELIN-POS.md`** | Auditoría de seguridad y su estado. | Al tocar auth, permisos o datos sensibles. |
 | **`CHANGELOG-VNN.md`** | Qué cambió en cada versión, con detalle técnico. | Para saber cómo/por qué se hizo algo. |
+| **`README-ECOMMERCE-SEVELIN.md`** | Documento maestro del e-commerce (sevelin.cl): arquitectura completa, decisiones ya tomadas, plan de fases. Cubre TAMBIÉN el proyecto separado `sevelin-tienda`. | Antes de tocar cualquier fase del e-commerce (0-6). |
+| **`README-BUCKET-IMAGENES.md`** | Pasos para crear el bucket `productos-imagenes` en Supabase (fotos de producto). | Al configurar o revisar el pipeline de imágenes del e-commerce. |
 | **`archivo/`** | Documentos históricos (READMEs viejos, changelogs de fases cerradas). | Rara vez; solo para arqueología. |
 
 ---
@@ -56,3 +58,8 @@ con el código, el snapshot manda que lo actualices.
 4. `README-DESPLIEGUE.md` — solo si vas a desplegar.
 
 Con eso tienes todo el contexto para seguir construyendo sin romper nada.
+
+**Si vas a trabajar en el e-commerce (sevelin.cl / `sevelin-tienda`):** después del punto 1, lee
+`README-ECOMMERCE-SEVELIN.md` completo (documento maestro, cubre ambos repos) y la sección 8 (plan de
+fases) para ubicar en qué fase quedó. Si la fase toca `sevelin-tienda`, lee también el `SNAPSHOT.md`
+de ESE repo (`sevelin-tienda/docs/SNAPSHOT.md`), no solo el de `sevelin-pos-oficial`.
