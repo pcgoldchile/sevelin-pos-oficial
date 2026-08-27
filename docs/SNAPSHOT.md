@@ -3,8 +3,10 @@
 > Actualiza SOLO este archivo al cerrar una sesión. Para el detalle completo, ver `docs/README.md`.
 > Para saber qué otro documento leer según lo que necesites, ver `docs/README-DOCS.md`.
 
-**Fecha:** 26-08-2026 · **Versión activa:** v24 · **En producción:** https://sevelin-pos-oficial.vercel.app
-**Rama en curso:** `feature/fase-0-ecommerce` (v24 todavía no está en `main`).
+**Fecha:** 26-08-2026 · **Versión activa:** v25 · **En producción:** https://sevelin-pos-oficial.vercel.app
+**Rama en curso:** `main` (el contenido de v24 ya está en `main` pese a lo que dice la línea de
+arriba en versiones anteriores de este archivo — no se investigó por qué quedó desactualizado, solo
+se confirmó con `git status`/`git log` antes de tocar código en la sesión de v25).
 
 ---
 
@@ -111,6 +113,12 @@ Node/Express (`api/index.js`, serverless en Vercel) · JavaScript **vanilla** de
   el detalle completo y el orden seguro de despliegue. **Ojo:** `ajustarStock()` sigue sin ser atómico
   para repuestos internos y otros call-sites fuera de `POST /api/ventas` — no se tocó en esta fase (ver
   nota para la Fase 1 en el changelog).
+- **v25 (e-commerce Fase 3, una sola ruta):** `POST /api/interno/ajustar-stock` — la ruta que
+  quedó pendiente desde la nota de v24 de arriba ("cuando se construya... en la Fase 1"). Se
+  construyó recién ahora porque la Fase 1 de `sevelin-tienda` no la necesitó y la Fase 3 (checkout)
+  sí. Protegida con `authSync` (secreto compartido `SYNC_SECRET`, no JWT), reutiliza
+  `descontarStockNoLotes()` tal cual. Único cambio de esta versión — el resto de la Fase 3 vive en
+  `sevelin-tienda`. Ver `docs/CHANGELOG-V25.md`.
 
 ## Esquema SQL: última migración
 `sql/21-imagenes-web.sql` (e-commerce Fase 0, columnas de imagen/web en `productos` — **pendiente de
@@ -127,9 +135,11 @@ idempotentes, corren en orden. Aplicar en Supabase → SQL Editor.
   **Este bug es anterior y ajeno a la Fase 0 del e-commerce, pero sigue sin aplicarse.**
 
 ## Pendiente (backlog, no bloqueante)
-1. E-commerce: Fase 0 (cimientos, ver v24 arriba) hecha en rama, falta aplicar SQL/bucket y mergear a
-   `main`. Fases 1-6 (sitio público, checkout, pagos, envíos, panel de pedidos) sin empezar — ver
-   `README-ECOMMERCE-SEVELIN.md` sección 8.
+1. E-commerce: falta configurar `SYNC_SECRET` real en las variables de entorno de Vercel (mismo
+   valor que en `sevelin-tienda`) para que `POST /api/interno/ajustar-stock` (v25) funcione — hoy
+   rechaza todo por defecto sin esa variable. Falta aplicar `sql/21-imagenes-web.sql` y el bucket
+   `productos-imagenes` (Fase 0, ver v24 arriba). Fases 4-6 (envíos, panel de pedidos, QA) sin
+   empezar — ver `README-ECOMMERCE-SEVELIN.md` sección 8.
 2. (Opcional, grande) Migrar a Supabase Auth + RLS por rol. Partir `api/index.js` en routers.
 
 ## Trampas específicas ya descubiertas (no repetir)

@@ -12,6 +12,7 @@
      WORKER_PIN                0495
      CORS_ORIGINS              https://tu-pos.vercel.app,http://localhost:5500
      NEGOCIO_NOMBRE            Sevelin            (opcional)
+     SYNC_SECRET               cadena larga y aleatoria (compartida con sevelin-tienda)
    ============================================================ */
 
 const express = require('express');
@@ -31,7 +32,13 @@ const {
   ADMIN_PIN,
   WORKER_PIN,
   CORS_ORIGINS = '',
-  NEGOCIO_NOMBRE = 'Sevelin'
+  NEGOCIO_NOMBRE = 'Sevelin',
+  // Secreto compartido con sevelin-tienda (repo aparte, e-commerce Fase 1/3):
+  // protege /api/interno/ajustar-stock, llamado por el backend de la tienda
+  // tras confirmar un pago, NO por una persona logueada — por eso no usa
+  // JWT (ver authSync() más abajo). Mismo valor que SYNC_SECRET en las
+  // variables de entorno de sevelin-tienda.
+  SYNC_SECRET
 } = process.env;
 
 /* PRIORIDAD 8 — sin defaults de PIN.
@@ -57,6 +64,10 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 }
 if (!JWT_SECRET) {
   console.warn('[POS] Falta JWT_SECRET: define uno largo y aleatorio en producción.');
+}
+if (!SYNC_SECRET) {
+  console.warn('[POS] Falta SYNC_SECRET: /api/interno/ajustar-stock rechazará todas las ' +
+    'llamadas hasta configurarlo (mismo valor que en sevelin-tienda).');
 }
 
 // El cliente service_role omite RLS, por eso solo puede existir en el servidor.
@@ -337,6 +348,19 @@ function auth(requiereAdmin = false) {
     }
     next();
   };
+}
+
+/* Autenticación por secreto compartido (NO JWT): protege rutas llamadas por
+   otro backend (sevelin-tienda), no por una persona logueada — mismo
+   criterio que /api/sync/producto del lado tienda, que valida el header
+   x-sync-secret contra su propia copia de SYNC_SECRET. Sin SYNC_SECRET
+   configurado se rechaza todo por defecto, nunca se abre la ruta. */
+function authSync(req, res, next) {
+  if (!SYNC_SECRET) return enviarError(res, 401, 'Secreto de sincronización no configurado');
+  if (req.headers['x-sync-secret'] !== SYNC_SECRET) {
+    return enviarError(res, 401, 'Secreto de sincronización inválido');
+  }
+  next();
 }
 
 // Los trabajadores nunca reciben costos ni utilidades: se limpian en el servidor.
@@ -4159,6 +4183,31 @@ app.delete('/api/encargos/:id', auth(true), async (req, res) => {
   const { error } = await db.from('encargos').delete().eq('id', req.params.id);
   if (error) return enviarError(res, 500, error.message);
   res.json({ ok: true });
+});
+
+/* ---------- E-commerce (sevelin-tienda, repo aparte) ---------- */
+/* Fase 3 del e-commerce (ver README-ECOMMERCE-SEVELIN.md sección 5): el
+   backend de la tienda llama acá justo después de confirmar un pago real
+   con Flow (getStatus, nunca el body del webhook), para descontar el
+   stock vendido por ese canal. Reutiliza descontarStockNoLotes() tal cual
+   (línea ~1073): agrupa por producto_id y llama a la RPC atómica
+   descontar_stock_venta (sql/19-stock-atomico.sql), la misma que ya usa
+   POST /api/ventas — un producto sin stock suficiente lanza y no se
+   descuenta nada, en vez de dejar el stock a medias. */
+app.post('/api/interno/ajustar-stock', authSync, async (req, res) => {
+  const items = Array.isArray(req.body?.items) ? req.body.items : [];
+  if (items.length === 0) return enviarError(res, 400, 'Falta items');
+
+  try {
+    const descontados = await descontarStockNoLotes(items);
+    res.json({ ok: true, producto_ids_descontados: [...descontados] });
+  } catch (err) {
+    // STOCK_INSUFICIENTE u otro error de la RPC: se informa tal cual,
+    // sevelin-tienda decide qué hacer con el pedido ya pagado (queda
+    // logueado para revisión manual, no hay reconciliación automática
+    // en esta fase).
+    enviarError(res, 409, err.message);
+  }
 });
 
 /* ---------- 404 y errores ---------- */
