@@ -225,6 +225,13 @@ const API = {
     eliminar: (id) => apiRequest(`/encargos/${id}`, { method: 'DELETE' })
   },
 
+  // Panel "Pedidos Web" (Fase 5, e-commerce) — lee/actualiza pedidos_web de
+  // Supabase Web a través del backend del POS (dbWeb en api/index.js).
+  pedidosWeb: {
+    listar: (estado) => apiRequest('/pos/pedidos-web' + (estado ? `?estado=${encodeURIComponent(estado)}` : '')),
+    actualizar: (id, cambios) => apiRequest(`/pos/pedidos-web/${id}`, { method: 'PUT', body: cambios })
+  },
+
   ot: {
     listar: (estado, buscar) => {
       const q = new URLSearchParams();

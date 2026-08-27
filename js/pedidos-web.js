@@ -1,0 +1,191 @@
+/* ============================================================
+   PEDIDOS WEB — panel del POS para el e-commerce (Fase 5)
+   ------------------------------------------------------------
+   Lee/actualiza pedidos_web del proyecto Supabase WEB de
+   sevelin-tienda, a través de dbWeb en api/index.js (GET/PUT
+   /api/pos/pedidos-web). Es lectura + cambio de estado de
+   despacho — nunca toca CREADO/PAGADO/FALLIDO (los controla el
+   webhook de pago de la tienda, no un click de un trabajador).
+   Ver README-ECOMMERCE-SEVELIN.md sección 2.1.
+   ============================================================ */
+
+let pedidosWebList = [];
+let filtroEstadoPedidoWeb = '';
+let pedidoWebEditandoId = null;
+
+const elPedidosWebChips = document.getElementById('pedidosWebChips');
+const elPedidosWebTableBody = document.getElementById('pedidosWebTableBody');
+const elBtnRecargarPedidosWeb = document.getElementById('btnRecargarPedidosWeb');
+
+const elModalPedidoWeb = document.getElementById('modalPedidoWeb');
+const elPedidoWebNumero = document.getElementById('pedidoWebNumero');
+const elPedidoWebCliente = document.getElementById('pedidoWebCliente');
+const elPedidoWebDireccion = document.getElementById('pedidoWebDireccion');
+const elPedidoWebItems = document.getElementById('pedidoWebItems');
+const elPedidoWebTotales = document.getElementById('pedidoWebTotales');
+const elPedidoWebBoleta = document.getElementById('pedidoWebBoleta');
+const elPedidoWebBoletaLink = document.getElementById('pedidoWebBoletaLink');
+const elPedidoWebEstado = document.getElementById('pedidoWebEstado');
+const elPedidoWebTracking = document.getElementById('pedidoWebTracking');
+const elBtnCancelarPedidoWeb = document.getElementById('btnCancelarPedidoWeb');
+const elBtnGuardarPedidoWeb = document.getElementById('btnGuardarPedidoWeb');
+
+document.addEventListener('DOMContentLoaded', () => {
+  setupPedidosWebEventListeners();
+});
+
+// Se carga al entrar a la vista (mismo criterio que Servicio Técnico), no al
+// arrancar el POS: escucha el evento que ya dispara initNavegacion() en
+// config.js, sin tener que tocar ese archivo (mismo patrón que finanzas-gate.js).
+document.addEventListener('pos:vista-activa', (ev) => {
+  if (ev.detail?.vista === 'view-pedidos-web') cargarPedidosWeb();
+});
+
+function setupPedidosWebEventListeners() {
+  if (elBtnRecargarPedidosWeb) elBtnRecargarPedidosWeb.addEventListener('click', cargarPedidosWeb);
+  if (elBtnCancelarPedidoWeb) elBtnCancelarPedidoWeb.addEventListener('click', cerrarModalPedidoWeb);
+  if (elBtnGuardarPedidoWeb) elBtnGuardarPedidoWeb.addEventListener('click', guardarPedidoWeb);
+
+  if (elPedidosWebChips) {
+    elPedidosWebChips.querySelectorAll('.chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        filtroEstadoPedidoWeb = chip.dataset.estado || '';
+        elPedidosWebChips.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c === chip));
+        cargarPedidosWeb();
+      });
+    });
+  }
+}
+
+async function cargarPedidosWeb() {
+  if (!tokenActual()) return;
+
+  try {
+    pedidosWebList = await API.pedidosWeb.listar(filtroEstadoPedidoWeb);
+    renderPedidosWebTabla(pedidosWebList);
+  } catch (err) {
+    console.error('Error al cargar pedidos web:', err.message || err);
+    showToast(err.message || 'No se pudieron cargar los pedidos web', 'err');
+  }
+}
+
+const ETIQUETAS_ESTADO_PEDIDO_WEB = {
+  CREADO:     { txt: '🕓 Creado',       clase: 'badge-soft' },
+  PAGADO:     { txt: '💰 Por preparar', clase: 'badge-gold' },
+  PREPARANDO: { txt: '📋 Preparando',   clase: 'badge-blue' },
+  ENVIADO:    { txt: '🚚 Enviado',      clase: 'badge-blue' },
+  ENTREGADO:  { txt: '✅ Entregado',    clase: 'badge-green' },
+  CANCELADO:  { txt: '❌ Cancelado',    clase: 'badge-red' },
+  FALLIDO:    { txt: '⚠️ Pago fallido', clase: 'badge-red' }
+};
+
+function badgeEstadoPedidoWeb(estado) {
+  const info = ETIQUETAS_ESTADO_PEDIDO_WEB[estado] || { txt: estado, clase: 'badge-soft' };
+  return `<span class="badge ${info.clase}">${info.txt}</span>`;
+}
+
+function renderPedidosWebTabla(lista) {
+  if (!elPedidosWebTableBody) return;
+
+  if (!lista || lista.length === 0) {
+    elPedidosWebTableBody.innerHTML = '<tr class="empty-row"><td colspan="7">No hay pedidos para este filtro.</td></tr>';
+    return;
+  }
+
+  elPedidosWebTableBody.innerHTML = lista.map(p => {
+    // CREADO/FALLIDO: el pago todavía no se confirmó, nada que despachar
+    // (lo controla el webhook de pago de sevelin-tienda, no este panel).
+    const puedeDespachar = !['CREADO', 'FALLIDO'].includes(p.estado);
+    const accion = puedeDespachar
+      ? `<button class="btn btn-outline btn-sm" data-pedido-web="${p.id}">Gestionar</button>`
+      : '<span style="color:var(--text-muted);">—</span>';
+    const tracking = p.tracking_courier
+      ? `<br><small style="color:var(--text-muted);">${escHtml(p.tracking_courier)}</small>` : '';
+
+    return `<tr>
+      <td>${escHtml(p.numero_pedido)}</td>
+      <td>${tsAChile(p.creado_en)}</td>
+      <td>${escHtml(p.cliente_nombre || '—')}</td>
+      <td>${escHtml(p.metodo_envio || '—')}${tracking}</td>
+      <td class="num">${fmtCLP(p.total)}</td>
+      <td>${badgeEstadoPedidoWeb(p.estado)}</td>
+      <td style="text-align:right;">${accion}</td>
+    </tr>`;
+  }).join('');
+
+  elPedidosWebTableBody.querySelectorAll('[data-pedido-web]').forEach(btn => {
+    btn.addEventListener('click', () => abrirModalPedidoWeb(btn.dataset.pedidoWeb));
+  });
+}
+
+function abrirModalPedidoWeb(id) {
+  const pedido = pedidosWebList.find(p => String(p.id) === String(id));
+  if (!pedido) return;
+  pedidoWebEditandoId = pedido.id;
+
+  if (elPedidoWebNumero) elPedidoWebNumero.textContent = pedido.numero_pedido;
+  if (elPedidoWebCliente) {
+    elPedidoWebCliente.textContent =
+      `${pedido.cliente_nombre || 'Cliente'} · ${pedido.cliente_email || ''} · ${pedido.cliente_telefono || ''}`;
+  }
+
+  const d = pedido.direccion_envio || {};
+  if (elPedidoWebDireccion) {
+    elPedidoWebDireccion.textContent = d.calle
+      ? `${d.calle} ${d.numero || ''}, ${d.comuna || ''}${d.referencia ? ' — ' + d.referencia : ''}`
+      : 'Sin dirección registrada';
+  }
+
+  if (elPedidoWebItems) {
+    const items = Array.isArray(pedido.items) ? pedido.items : [];
+    elPedidoWebItems.innerHTML = items.map(it =>
+      `<li>${escHtml(it.nombre)} × ${it.cantidad} — ${fmtCLP(it.precio_web * it.cantidad)}</li>`
+    ).join('') || '<li>Sin ítems</li>';
+  }
+
+  if (elPedidoWebTotales) {
+    elPedidoWebTotales.textContent =
+      `Subtotal ${fmtCLP(pedido.subtotal)} · Envío ${fmtCLP(pedido.costo_envio)} · Total ${fmtCLP(pedido.total)}`;
+  }
+
+  if (elPedidoWebBoleta && elPedidoWebBoletaLink) {
+    if (pedido.url_boleta_sii) {
+      elPedidoWebBoletaLink.href = pedido.url_boleta_sii;
+      elPedidoWebBoleta.style.display = '';
+    } else {
+      elPedidoWebBoleta.style.display = 'none';
+    }
+  }
+
+  if (elPedidoWebEstado) {
+    elPedidoWebEstado.value = ['PREPARANDO', 'ENVIADO', 'ENTREGADO', 'CANCELADO'].includes(pedido.estado)
+      ? pedido.estado
+      : 'PREPARANDO';
+  }
+  if (elPedidoWebTracking) elPedidoWebTracking.value = pedido.tracking_courier || '';
+
+  elModalPedidoWeb?.classList.add('show');
+}
+
+function cerrarModalPedidoWeb() {
+  elModalPedidoWeb?.classList.remove('show');
+  pedidoWebEditandoId = null;
+}
+
+async function guardarPedidoWeb() {
+  if (!pedidoWebEditandoId) return;
+  const estado = elPedidoWebEstado?.value || 'PREPARANDO';
+  const tracking_courier = (elPedidoWebTracking?.value || '').trim();
+
+  if (elBtnGuardarPedidoWeb) elBtnGuardarPedidoWeb.disabled = true;
+  try {
+    await API.pedidosWeb.actualizar(pedidoWebEditandoId, { estado, tracking_courier });
+    showToast('Pedido actualizado', 'ok');
+    cerrarModalPedidoWeb();
+    await cargarPedidosWeb();
+  } catch (err) {
+    showToast(err.message || 'No se pudo actualizar el pedido', 'err');
+  } finally {
+    if (elBtnGuardarPedidoWeb) elBtnGuardarPedidoWeb.disabled = false;
+  }
+}

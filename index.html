@@ -98,6 +98,7 @@
         <button class="nav-btn admin-only" data-view="view-productos">📦 Productos</button>
         <button class="nav-btn admin-only" data-view="view-finanzas">📊 Finanzas</button>
         <button class="nav-btn" data-view="view-taller">🔧 Servicio Técnico</button>
+        <button class="nav-btn admin-only" data-view="view-pedidos-web">🌐 Pedidos Web</button>
       </nav>
       <button class="theme-toggle" id="btnTema" title="Cambiar tema" aria-label="Cambiar tema">🌙</button>
       <button class="btn btn-outline btn-sm" id="btnLogout" title="Cerrar sesión">🚪 Cerrar Sesión</button>
@@ -1375,7 +1376,57 @@
     <!-- ============================================================
          VISTA 7: REPUESTOS INTERNOS DE TALLER
          ============================================================ -->
-    
+
+
+    <!-- ============================================================
+         VISTA 8: PEDIDOS WEB (e-commerce, Fase 5)
+         ------------------------------------------------------------
+         Lee/actualiza pedidos_web directo desde Supabase Web (proyecto
+         aparte de sevelin-tienda) — ver README-ECOMMERCE-SEVELIN.md
+         sección 2.1. Es lectura + cambio de estado de despacho, no un
+         back-office nuevo: CREADO/PAGADO/FALLIDO no se tocan desde acá,
+         los controla el webhook de pago de la tienda.
+         ============================================================ -->
+    <section id="view-pedidos-web" class="view-section admin-only">
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h2>Pedidos Web</h2>
+            <p class="subtitle">Pedidos pagados desde la tienda online, por preparar y despachar.</p>
+          </div>
+          <div class="toolbar-group">
+            <div class="chip-group" id="pedidosWebChips">
+              <button class="chip active" data-estado="">Todos</button>
+              <button class="chip" data-estado="PAGADO">Por preparar</button>
+              <button class="chip" data-estado="PREPARANDO">Preparando</button>
+              <button class="chip" data-estado="ENVIADO">Enviados</button>
+              <button class="chip" data-estado="ENTREGADO">Entregados</button>
+              <button class="chip" data-estado="CANCELADO">Cancelados</button>
+            </div>
+            <button class="btn btn-outline btn-sm" id="btnRecargarPedidosWeb">🔄 Actualizar</button>
+          </div>
+        </div>
+
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Pedido</th>
+                <th>Fecha</th>
+                <th>Cliente</th>
+                <th>Envío</th>
+                <th class="num">Total</th>
+                <th>Estado</th>
+                <th style="text-align:right;">Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="pedidosWebTableBody">
+              <tr class="empty-row"><td colspan="7">Cargando pedidos...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
 
   </main>
 
@@ -2128,6 +2179,51 @@
       <div class="modal-foot">
         <button class="btn btn-ghost" id="btnCancelarEnvio" type="button">Cancelar</button>
         <button class="btn btn-primary" id="btnGuardarEnvio" type="button">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalPedidoWeb" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <h2>🌐 Pedido <span id="pedidoWebNumero">—</span></h2>
+      <p class="modal-hint" id="pedidoWebCliente">—</p>
+
+      <div class="field">
+        <label>Dirección de envío</label>
+        <p id="pedidoWebDireccion" style="margin:0;">—</p>
+      </div>
+
+      <div class="field">
+        <label>Ítems</label>
+        <ul id="pedidoWebItems" style="margin:0; padding-left:18px;"></ul>
+      </div>
+
+      <div class="field">
+        <label>Totales</label>
+        <p id="pedidoWebTotales" style="margin:0;">—</p>
+      </div>
+
+      <p id="pedidoWebBoleta" style="display:none;">
+        <a href="#" target="_blank" rel="noopener noreferrer" id="pedidoWebBoletaLink">Ver boleta</a>
+      </p>
+
+      <div class="field" style="margin-top:14px;">
+        <label for="pedidoWebEstado">Estado de despacho</label>
+        <select id="pedidoWebEstado">
+          <option value="PREPARANDO">📋 Preparando</option>
+          <option value="ENVIADO">🚚 Enviado</option>
+          <option value="ENTREGADO">✅ Entregado</option>
+          <option value="CANCELADO">❌ Cancelado</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="pedidoWebTracking">N° de seguimiento</label>
+        <input type="text" id="pedidoWebTracking" placeholder="Opcional" maxlength="60">
+      </div>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarPedidoWeb" type="button">Cancelar</button>
+        <button class="btn btn-primary" id="btnGuardarPedidoWeb" type="button">Guardar</button>
       </div>
     </div>
   </div>
@@ -3918,6 +4014,7 @@
   <script src="js/gastos-programados.js"></script>   <!-- gastos pendientes/cuotas: usa clasificacionesList de compras.js -->
   <script src="js/mermas.js"></script>
   <script src="js/encargos.js"></script>
+  <script src="js/pedidos-web.js"></script>
   <script src="js/repuestos.js"></script>
   <script src="js/ot.js"></script>
   <script src="js/pos.js"></script>

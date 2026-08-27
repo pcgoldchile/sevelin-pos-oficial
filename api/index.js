@@ -13,6 +13,8 @@
      CORS_ORIGINS              https://tu-pos.vercel.app,http://localhost:5500
      NEGOCIO_NOMBRE            Sevelin            (opcional)
      SYNC_SECRET               cadena larga y aleatoria (compartida con sevelin-tienda)
+     SUPABASE_WEB_URL              https://yyyy.supabase.co   (proyecto Supabase WEB, distinto)
+     SUPABASE_WEB_SERVICE_ROLE_KEY eyJhbGciOi...               (panel Pedidos Web, Fase 5)
    ============================================================ */
 
 const express = require('express');
@@ -38,7 +40,13 @@ const {
   // tras confirmar un pago, NO por una persona logueada — por eso no usa
   // JWT (ver authSync() más abajo). Mismo valor que SYNC_SECRET en las
   // variables de entorno de sevelin-tienda.
-  SYNC_SECRET
+  SYNC_SECRET,
+  // Proyecto Supabase WEB (distinto del de arriba) — el de sevelin-tienda.
+  // Solo se usa dentro del panel "Pedidos Web" (Fase 5, cliente `dbWeb` más
+  // abajo): nunca se mezcla con `db`, que sigue siendo el único cliente del
+  // Supabase propio del POS.
+  SUPABASE_WEB_URL,
+  SUPABASE_WEB_SERVICE_ROLE_KEY
 } = process.env;
 
 /* PRIORIDAD 8 — sin defaults de PIN.
@@ -69,9 +77,21 @@ if (!SYNC_SECRET) {
   console.warn('[POS] Falta SYNC_SECRET: /api/interno/ajustar-stock rechazará todas las ' +
     'llamadas hasta configurarlo (mismo valor que en sevelin-tienda).');
 }
+if (!SUPABASE_WEB_URL || !SUPABASE_WEB_SERVICE_ROLE_KEY) {
+  console.warn('[POS] Faltan SUPABASE_WEB_URL / SUPABASE_WEB_SERVICE_ROLE_KEY: el panel ' +
+    'Pedidos Web no podrá consultarse hasta configurarlas.');
+}
 
 // El cliente service_role omite RLS, por eso solo puede existir en el servidor.
 const db = createClient(SUPABASE_URL || 'http://localhost', SUPABASE_SERVICE_ROLE_KEY || 'sin-key', {
+  auth: { persistSession: false, autoRefreshToken: false }
+});
+
+// Segundo cliente Supabase — el proyecto Supabase WEB de sevelin-tienda, NO
+// el de arriba. Primera vez que el POS habla con un Supabase que no es el
+// suyo: se aísla en su propia constante (`dbWeb`) y solo se usa dentro de
+// las rutas /api/pos/pedidos-web (más abajo), nunca mezclado con `db`.
+const dbWeb = createClient(SUPABASE_WEB_URL || 'http://localhost', SUPABASE_WEB_SERVICE_ROLE_KEY || 'sin-key', {
   auth: { persistSession: false, autoRefreshToken: false }
 });
 
@@ -4208,6 +4228,54 @@ app.post('/api/interno/ajustar-stock', authSync, async (req, res) => {
     // en esta fase).
     enviarError(res, 409, err.message);
   }
+});
+
+/* Panel "Pedidos Web" (Fase 5, README sección 2.1): lectura + cambio de
+   estado de despacho de los pedidos que llegan de sevelin-tienda. Usa
+   `dbWeb` (Supabase Web), NUNCA `db` (Supabase del POS) — son proyectos
+   distintos. auth(true): el README lo pide explícito, es una vista de
+   administración, no logística general como /api/ventas/:id/envio. */
+const ESTADOS_DESPACHO_PEDIDO_WEB = ['PREPARANDO', 'ENVIADO', 'ENTREGADO', 'CANCELADO'];
+
+app.get('/api/pos/pedidos-web', auth(true), async (req, res) => {
+  let q = dbWeb.from('pedidos_web').select('*').order('creado_en', { ascending: false });
+  if (req.query.estado) q = q.eq('estado', String(req.query.estado));
+
+  const { data, error } = await q;
+  if (error) return enviarError(res, 500, error.message);
+  res.json(data || []);
+});
+
+app.put('/api/pos/pedidos-web/:id', auth(true), async (req, res) => {
+  const cambios = {};
+
+  if (req.body?.estado !== undefined) {
+    const estado = String(req.body.estado || '').trim().toUpperCase();
+    if (!ESTADOS_DESPACHO_PEDIDO_WEB.includes(estado)) {
+      return enviarError(res, 400, 'Estado inválido: solo PREPARANDO/ENVIADO/ENTREGADO/CANCELADO');
+    }
+    cambios.estado = estado;
+  }
+  if (req.body?.tracking_courier !== undefined) {
+    cambios.tracking_courier = String(req.body.tracking_courier || '').trim() || null;
+  }
+  if (Object.keys(cambios).length === 0) return enviarError(res, 400, 'Nada que actualizar');
+
+  // El pedido tiene que estar pagado (o más avanzado) para tener algo que
+  // despachar — CREADO/FALLIDO son estados del ciclo de pago, controlados
+  // por el mutex de POST /api/flow-webhook en sevelin-tienda, no por este
+  // panel.
+  const { data: actual, error: errorActual } = await dbWeb
+    .from('pedidos_web').select('estado').eq('id', req.params.id).single();
+  if (errorActual) return enviarError(res, 404, 'Pedido no encontrado');
+  if (['CREADO', 'FALLIDO'].includes(actual.estado)) {
+    return enviarError(res, 409, 'Este pedido todavía no tiene el pago confirmado');
+  }
+
+  const { data, error } = await dbWeb.from('pedidos_web')
+    .update(cambios).eq('id', req.params.id).select().single();
+  if (error) return enviarError(res, 500, error.message);
+  res.json(data);
 });
 
 /* ---------- 404 y errores ---------- */

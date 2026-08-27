@@ -3,7 +3,7 @@
 > Actualiza SOLO este archivo al cerrar una sesión. Para el detalle completo, ver `docs/README.md`.
 > Para saber qué otro documento leer según lo que necesites, ver `docs/README-DOCS.md`.
 
-**Fecha:** 26-08-2026 · **Versión activa:** v25 · **En producción:** https://sevelin-pos-oficial.vercel.app
+**Fecha:** 26-08-2026 · **Versión activa:** v27 · **En producción:** https://sevelin-pos-oficial.vercel.app
 **Rama en curso:** `main` (el contenido de v24 ya está en `main` pese a lo que dice la línea de
 arriba en versiones anteriores de este archivo — no se investigó por qué quedó desactualizado, solo
 se confirmó con `git status`/`git log` antes de tocar código en la sesión de v25).
@@ -119,6 +119,21 @@ Node/Express (`api/index.js`, serverless en Vercel) · JavaScript **vanilla** de
   sí. Protegida con `authSync` (secreto compartido `SYNC_SECRET`, no JWT), reutiliza
   `descontarStockNoLotes()` tal cual. Único cambio de esta versión — el resto de la Fase 3 vive en
   `sevelin-tienda`. Ver `docs/CHANGELOG-V25.md`.
+- **v27 (carga masiva del catálogo web):** `scripts/sincronizar-catalogo-web.js` — utilidad de una
+  sola vez que empuja todos los productos ya marcados `publicado_web=true` a `sevelin-tienda`,
+  reutilizando el mismo contrato del Database Webhook (`POST /api/sync/producto`). Resuelve el
+  "primera carga del catálogo" que quedaba pendiente desde la Fase 1 (el webhook solo cubre
+  cambios futuros). Nueva variable `TIENDA_SYNC_URL` en `.env.example`. No toca `api/index.js`.
+- **v26 (e-commerce Fase 5, panel "Pedidos Web"):** `GET`/`PUT /api/pos/pedidos-web` — primera vez
+  que el POS habla con un SEGUNDO Supabase (`dbWeb`, el proyecto Supabase Web de `sevelin-tienda`,
+  nunca mezclado con `db`). `GET` lista `pedidos_web` (filtro opcional `?estado=`); `PUT` solo
+  acepta transicionar a `PREPARANDO`/`ENVIADO`/`ENTREGADO`/`CANCELADO`, y rechaza pedidos que
+  sigan en `CREADO`/`FALLIDO` (nada que despachar sin pago confirmado — esos estados los controla
+  el webhook de Flow en `sevelin-tienda`, no este panel). Ambas rutas con `auth(true)`, tal como
+  pide el README maestro. Nueva sección `view-pedidos-web` en `index.html` + `js/pedidos-web.js`
+  (nuevo), siguiendo el patrón de navegación (`data-view`/`admin-only`) y el molde del modal de
+  envío de `js/historial.js` (badge de estado + modal con `<select>` + tracking). Ver
+  `docs/CHANGELOG-V26.md`.
 
 ## Esquema SQL: última migración
 `sql/21-imagenes-web.sql` (e-commerce Fase 0, columnas de imagen/web en `productos` — **pendiente de
@@ -135,18 +150,32 @@ idempotentes, corren en orden. Aplicar en Supabase → SQL Editor.
   **Este bug es anterior y ajeno a la Fase 0 del e-commerce, pero sigue sin aplicarse.**
 
 ## Pendiente (backlog, no bloqueante)
-1. E-commerce: falta configurar `SYNC_SECRET` real en las variables de entorno de Vercel (mismo
-   valor que en `sevelin-tienda`) para que `POST /api/interno/ajustar-stock` (v25) funcione — hoy
-   rechaza todo por defecto sin esa variable. Falta aplicar `sql/21-imagenes-web.sql` y el bucket
-   `productos-imagenes` (Fase 0, ver v24 arriba). Fases 4-6 (envíos, panel de pedidos, QA) sin
-   empezar — ver `README-ECOMMERCE-SEVELIN.md` sección 8.
-2. (Opcional, grande) Migrar a Supabase Auth + RLS por rol. Partir `api/index.js` en routers.
+1. E-commerce: falta configurar en Vercel `SYNC_SECRET` (mismo valor que en `sevelin-tienda`, para
+   `POST /api/interno/ajustar-stock`, v25) y `SUPABASE_WEB_URL`/`SUPABASE_WEB_SERVICE_ROLE_KEY`
+   (las credenciales del proyecto Supabase Web de la tienda, para el panel Pedidos Web, v26) — hoy
+   ambas rutas rechazan/fallan todo por defecto sin esas variables. Falta aplicar
+   `sql/21-imagenes-web.sql` y el bucket `productos-imagenes` (Fase 0, ver v24 arriba). Fase 4
+   (envíos) vive en `sevelin-tienda`, no en este repo. Fase 6 (QA end-to-end) sin empezar — ver
+   `README-ECOMMERCE-SEVELIN.md` sección 8.
+2. Sin Supabase Web real ni datos reales, el panel Pedidos Web (v26) solo se probó con un doble en
+   memoria (ver `docs/CHANGELOG-V26.md`) — falta verificarlo con pedidos reales en cuanto exista el
+   proyecto Supabase Web real (mismo bloqueante documentado desde la Fase 1 de `sevelin-tienda`).
+3. (Opcional, grande) Migrar a Supabase Auth + RLS por rol. Partir `api/index.js` en routers.
 
 ## Trampas específicas ya descubiertas (no repetir)
 - `confirmarEntrega` existía en `ot.js` y `pago.js` → las de venta ahora son `confirmarEntregaVenta`/
   `cancelarEntregaVenta`.
 - Modales de caja: Finanzas usa `modalAbrirCaja`/`modalCerrarCaja`; el POS usa `modalAperturaPos`/
   `modalCierrePos` (renombrados para no colisionar).
+- Al probar con jsdom concatenando `js/*.js` en un solo `window.eval(codigo)`: un `const API = {...}`
+  (o cualquier `const`/`let` de nivel superior) queda en el scope léxico DE ESE eval, no como
+  propiedad de `window` — un script de prueba que haga `window.eval(codigo)` y LUEGO intente leer
+  `window.API` desde fuera lo encuentra `undefined`. Hay que concatenar las aserciones de prueba
+  DENTRO del mismo string que se evalúa (o comunicarse hacia afuera con asignaciones planas tipo
+  `window.__resultado = x` sin `const`/`let`, que sí crean una propiedad real).
+- Segundo cliente Supabase en el mismo proceso (`dbWeb`, v26): nunca reutilizar el nombre `db` para
+  el segundo cliente ni mezclar sus queries — son dos proyectos distintos (POS vs. Web de la
+  tienda). Si se agrega un tercer Supabase alguna vez, seguir el mismo patrón de nombre explícito.
 - El POS descarta `codigo_barras` al guardar `venta_items`; por eso el buscador resuelve el barcode
   contra el catálogo (`productos`), no contra el ítem de venta.
 
