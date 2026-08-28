@@ -4,9 +4,24 @@
    puede sincronizar — ver POST /api/sync/producto en sevelin-tienda, exige
    sku no vacío).
 
+   v2: taxonomía más fina, inspirada en las categorías reales de
+   sevelin.cl (Tiendanube — Monitores/Accesorios/Componentes PC/
+   Computadores/Funda/Servicios Técnicos/Almacenamiento/Herramientas/
+   Hogar), pero NO copiada 1:1: "Accesorios" en Tiendanube es un cajón de
+   sastre igual de amplio que el "Accesorios de PC" de la v1 — acá se
+   separa en Periféricos / Audio / Cables y Adaptadores / Energía
+   Portátil / Accesorios Móviles, y se agrega "Hogar y Estilo de Vida"
+   para productos que NO son de PC (ej. el aro de luz LED de fotografía,
+   que la v1 dejó mal metido en "Accesorios de PC").
+
+   Re-ejecutable: reasigna categoria_id/categoria_web de TODOS los
+   productos con SKU (no solo los nuevos), y al final borra cualquier
+   categoría vieja que quedó sin productos (ej. "Accesorios de PC" de la
+   v1, ya reemplazada).
+
    NO sincroniza a la tienda por sí solo — después de correr esto, correr
    scripts/sincronizar-catalogo-web.js (ya existente, sin cambios) para
-   empujar los productos recién publicados.
+   empujar los cambios.
 
    Uso:  node scripts/clasificar-y-publicar-catalogo.js
    Requiere en .env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (los del POS).
@@ -31,45 +46,47 @@ cargarEnvLocal();
 
 const { createClient } = require('@supabase/supabase-js');
 
-// Taxonomía derivada del catálogo real (ver docs/CHANGELOG del POS) — no
-// inventada, cada palabra clave viene de nombres reales de productos.
-// "Accesorios de PC" es deliberadamente una categoría paraguas (confirmado
-// con el usuario): agrupa periféricos, cables, energía portátil y audio en
-// vez de fragmentarlos, porque la tienda hoy filtra por categoría plana sin
-// jerarquía visible al cliente.
 const CATEGORIAS = [
   'Monitores',
-  'Gabinetes',
-  'Fuentes de Poder',
-  'Refrigeración',
+  'Computadores',
+  'Componentes PC',
   'Almacenamiento',
-  'Placas Madre',
+  'Periféricos',
+  'Audio',
+  'Cables y Adaptadores',
+  'Energía Portátil',
+  'Accesorios Móviles',
+  'Hogar y Estilo de Vida',
+  'Herramientas',
   'Servicios Técnicos',
-  'Accesorios de PC',
 ];
 
-// Orden importa: el primer patrón que matchee gana. Todo lo que no matchee
-// nada cae en "Accesorios de PC" (catch-all, última entrada).
+// Orden importa: el primer patrón que matchee gana. Deliberadamente sin
+// catch-all a "Accesorios de PC" (ese era el problema de la v1) — lo que
+// no matchea nada cae en "Hogar y Estilo de Vida", que es el bucket
+// correcto para gadgets sueltos que no son ni de PC ni de celular.
 const REGLAS = [
   { categoria: 'Monitores', patron: /\bmonitor(es)?\b/i },
-  { categoria: 'Gabinetes', patron: /\bgabinete\b/i },
-  { categoria: 'Fuentes de Poder', patron: /\bfuente\s+de\s+poder\b|\b(atx|80\s*\+|80\s*plus)\b.*\bfuente\b|\bgp-p750bs\b/i },
-  { categoria: 'Refrigeración', patron: /\bcooler\b|\bdisipador\b/i },
-  { categoria: 'Almacenamiento', patron: /\bssd\b|\bpendrive\b|\bdatatraveler\b|\bhdd\b|\bcofre\b.*\b(hdd|ssd)\b|\bnv3\b|\bhsc408\b/i },
-  { categoria: 'Placas Madre', patron: /\bplaca\s+madre\b|\ba520m\b/i },
+  { categoria: 'Computadores', patron: /\b(pc|computador(a)?|notebook|laptop)\b.*\b(core i\d|ryzen|reacondicionado)\b|\boptiplex\b|\bprodesk\b/i },
+  { categoria: 'Componentes PC', patron: /\bgabinete\b|\bfuente\s+de\s+poder\b|\b80\s*(\+|plus)\b|\bcooler\b|\bdisipador\b|\bplaca\s+madre\b|\ba520m\b|\bgp-p750bs\b/i },
+  { categoria: 'Almacenamiento', patron: /\bssd\b|\bpendrive\b|\bdatatraveler\b|\bhdd\b|\bcofre\b|\bnv3\b|\bhsc408\b|\btarjeta de memoria\b|\bmicrosd\b/i },
+  { categoria: 'Periféricos', patron: /\bmouse\b|\bteclado\b|\bjoystick\b|\bcombo\b.*\b(teclado|mouse)\b|\bpresentador\b/i },
+  { categoria: 'Audio', patron: /\baudifono(s)?\b|\bparlante(s)?\b/i },
+  { categoria: 'Cables y Adaptadores', patron: /\bcable\b|\badaptador\b|\bhub\b|\bantena\b/i },
+  { categoria: 'Energía Portátil', patron: /\bpower\s*bank\b|\bbateria\s+(portatil|externa)\b|\bcargador\b/i },
+  { categoria: 'Accesorios Móviles', patron: /\bfunda\b|\bsoporte\s+celular\b|\btransmisor\s+fm\b/i },
+  { categoria: 'Herramientas', patron: /\bcautin\b|\bdestornillador(es)?\b|\bdados\s+mecanicos\b|\bkit\s+electrico\b/i },
   { categoria: 'Servicios Técnicos', patron: /^servicio\b|\bdiagnostico\b|\bformateo\b|\breprogramaci[oó]n\b|\bclonaci[oó]n\b|\bactualizaci[oó]n de bios\b|\bmantenimiento\b|\blimpieza (interna|basica)\b/i },
-  // Accesorios de PC: periféricos + cables/adaptadores + energía portátil + audio
-  { categoria: 'Accesorios de PC', patron: /\bmouse\b|\bteclado\b|\bjoystick\b|\bcombo\b|\bpresentador\b/i },
-  { categoria: 'Accesorios de PC', patron: /\bcable\b|\badaptador\b|\bhub\b|\bantena\b/i },
-  { categoria: 'Accesorios de PC', patron: /\bpower\s*bank\b|\bbateria\s+(portatil|externa)\b|\bcargador\b/i },
-  { categoria: 'Accesorios de PC', patron: /\baudifono(s)?\b|\bparlante(s)?\b/i },
 ];
 
 function clasificar(nombre) {
   for (const regla of REGLAS) {
     if (regla.patron.test(nombre)) return regla.categoria;
   }
-  return 'Accesorios de PC'; // catch-all final: pilas, funda, soporte celular, raqueta, etc.
+  // Catch-all real: gadgets que no son de PC ni de celular (pilas, balanza,
+  // aro de luz LED de fotografía, raqueta mata moscas, etc.) — mismo
+  // criterio que "Hogar" en sevelin.cl, no se fuerzan a un cajón de PC.
+  return 'Hogar y Estilo de Vida';
 }
 
 async function main() {
@@ -105,11 +122,13 @@ async function main() {
   console.log(`Productos sin SKU (quedan sin publicar): ${sinSku.length}\n`);
 
   const conteo = {};
+  const idsUsados = new Set();
   let actualizados = 0, errores = 0;
 
   for (const producto of conSku) {
     const categoria = clasificar(producto.nombre);
     conteo[categoria] = (conteo[categoria] || 0) + 1;
+    if (idPorNombre[categoria]) idsUsados.add(idPorNombre[categoria]);
 
     const { error: errUpdate } = await db.from('productos')
       .update({
@@ -138,6 +157,17 @@ async function main() {
   if (sinSku.length > 0) {
     console.log(`\nSin SKU (revisar en el POS antes de poder publicarlos):`);
     sinSku.forEach(p => console.log(`  - ${p.nombre}`));
+  }
+
+  // Limpieza: borra categorías que quedaron sin ningún producto en ESTA
+  // corrida (ej. "Accesorios de PC" de la v1, ya reemplazada). Los
+  // productos sin SKU (sinSku) no se tocan, así que su categoria_id viejo
+  // (si tenían) no cuenta como "en uso" — igual que antes, siguen sin
+  // publicar hasta que se les cargue SKU.
+  const huerfanas = categoriasDb.filter(c => !idsUsados.has(c.id) && !CATEGORIAS.includes(c.nombre));
+  for (const c of huerfanas) {
+    const { error: errDel } = await db.from('producto_categorias').delete().eq('id', c.id);
+    if (!errDel) console.log(`\n[limpieza] categoría vacía borrada: "${c.nombre}"`);
   }
 
   console.log('\nAhora corre: node scripts/sincronizar-catalogo-web.js');
