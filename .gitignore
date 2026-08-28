@@ -1,3 +1,7 @@
 node_modules/
 .env
 .env.local
+
+# Supabase CLI: estado local del `supabase link` (no es secreto, pero es
+# de esta máquina, no del repo).
+supabase/.temp/
