@@ -3,14 +3,17 @@
 > Actualiza SOLO este archivo al cerrar una sesión. Para el detalle completo, ver `docs/README.md`.
 > Para saber qué otro documento leer según lo que necesites, ver `docs/README-DOCS.md`.
 
-**Fecha:** 27-08-2026 · **Versión activa:** v28 (módulo "Página Web → Categorías" + umbral de stock
-por producto + backfill de imágenes 1:1, ver `docs/CHANGELOG-V28.md`) ·
-**Pendiente:** correr `sql/23-categorias-web-y-umbral-stock.sql` en este Supabase, y
-`sevelin-tienda/supabase/04-stock-umbral-web.sql` en el Supabase Web ANTES de guardar cualquier
-umbral desde el modal de producto. · **En producción:** https://sevelin-pos-oficial.vercel.app
-**Rama en curso:** `main` (el contenido de v24 ya está en `main` pese a lo que dice la línea de
-arriba en versiones anteriores de este archivo — no se investigó por qué quedó desactualizado, solo
-se confirmó con `git status`/`git log` antes de tocar código en la sesión de v25).
+**Fecha:** 28-08-2026 · **Versión activa:** v31 (catálogo real clasificado + fotos importadas de
+Tiendanube + reordenar fotos de producto) · **En producción:** https://sevelin-pos-oficial.vercel.app
+**Rama:** `main`.
+
+**Estado real (verificado en producción, no de memoria):** `sql/23` y `sql/24` (categorías +
+subcategorías + umbral de stock) **aplicados** vía Supabase CLI (`npx supabase db query --file ...
+--linked`, configurado esta sesión — ver "Automatización Supabase CLI" abajo). El bug crítico de
+`descontar_stock_venta` (columna ambigua) **verificado como corregido** en la base real (usa
+variable local, no la columna). 114 productos en el catálogo, 86 con SKU quedaron publicados y
+clasificados en 12 categorías, 75 con fotos reales. Módulo "Página Web" con sub-pestañas Pedidos
+Web / Categorías (con subcategorías) funcionando.
 
 ---
 
@@ -146,25 +149,54 @@ aplicar en Supabase**, y en la rama `feature/fase-0-ecommerce`, no en `main` tod
 pendiente de aplicar en Supabase**), 19 (stock atómico, con el bug), 18 (gastos programados). Todas
 idempotentes, corren en orden. Aplicar en Supabase → SQL Editor.
 
-## Bugs conocidos ACTIVOS
-- **Crítico, en producción hasta que se corra `sql/20-fix-descontar-stock-ambiguo.sql` en Supabase:**
-  toda venta con al menos un producto sin lotes falla al confirmarse ("column reference 'stock' is
-  ambiguous"). Ver v22 arriba. El fix ya está en el repo (`sql/20-fix-descontar-stock-ambiguo.sql`);
-  falta aplicarlo en la base real. `api/index.js` no necesitó cambios: el bug era solo de la función SQL.
-  **Este bug es anterior y ajeno a la Fase 0 del e-commerce, pero sigue sin aplicarse.**
+## Estado: qué está HECHO (v28-v31 — catálogo real, categorías, fotos)
+- **v28:** módulo "Página Web" reorganizado con sub-pestañas (Pedidos Web + Categorías nuevo),
+  `producto_categorias` (CRUD + reordenar), `stock_umbral_web` por producto, backfill de imágenes
+  1:1 (`scripts/procesar-imagenes-1-1.js`).
+- **v29:** `scripts/clasificar-y-publicar-catalogo.js` — clasifica los 114 productos reales por
+  palabras clave del nombre y publica los 86 con SKU. v1 usaba "Accesorios de PC" como cajón de
+  sastre; **v2 (misma sesión, corregido a pedido del usuario)** lo separó en categorías finas
+  (Periféricos/Audio/Cables y Adaptadores/Energía Portátil/Accesorios Móviles/Hogar y Estilo de
+  Vida), inspirado en las categorías reales de `sevelin.cl` (Tiendanube) sin copiarlas 1:1. El
+  script es re-ejecutable y borra categorías que quedan vacías.
+- **v30:** `scripts/importar-imagenes-tiendanube.js` — descarga fotos ya publicadas en `sevelin.cl`
+  (Tiendanube, propiedad del mismo negocio), las procesa con el mismo pipeline que el resto del
+  catálogo y las sube al Storage propio (nunca enlaza la URL externa directo). 75 de 86 productos
+  quedaron con fotos reales.
+- **v31:** reordenar fotos de producto (`PUT /api/productos/:id/imagen/orden`, flechas ◀▶ en el
+  modal) + etiqueta "Principal" en la primera foto (la que usa la tienda como imagen de catálogo).
+- Además, en esta misma sesión: pasada de pulido visual (motion) con criterio "Modo Operate" —
+  tokens de easing, toast/modal con curvas centralizadas, entrada escalonada en listas de
+  administración — ver commit `style: pasada de pulido visual`.
 
-## Pendiente (backlog, no bloqueante)
-1. E-commerce: falta configurar en Vercel `SYNC_SECRET` (mismo valor que en `sevelin-tienda`, para
-   `POST /api/interno/ajustar-stock`, v25) y `SUPABASE_WEB_URL`/`SUPABASE_WEB_SERVICE_ROLE_KEY`
-   (las credenciales del proyecto Supabase Web de la tienda, para el panel Pedidos Web, v26) — hoy
-   ambas rutas rechazan/fallan todo por defecto sin esas variables. Falta aplicar
-   `sql/21-imagenes-web.sql` y el bucket `productos-imagenes` (Fase 0, ver v24 arriba). Fase 4
-   (envíos) vive en `sevelin-tienda`, no en este repo. Fase 6 (QA end-to-end) sin empezar — ver
-   `README-ECOMMERCE-SEVELIN.md` sección 8.
-2. Sin Supabase Web real ni datos reales, el panel Pedidos Web (v26) solo se probó con un doble en
-   memoria (ver `docs/CHANGELOG-V26.md`) — falta verificarlo con pedidos reales en cuanto exista el
-   proyecto Supabase Web real (mismo bloqueante documentado desde la Fase 1 de `sevelin-tienda`).
-3. (Opcional, grande) Migrar a Supabase Auth + RLS por rol. Partir `api/index.js` en routers.
+## Automatización Supabase CLI (nuevo — usar de acá en adelante)
+La CLI de Supabase (`npx supabase`) está logueada y ambos proyectos vinculados (`supabase link`) —
+para correr una migración SQL nueva, ya no hace falta pegarla a mano en el SQL Editor:
+```bash
+npx supabase db query --file sql/NN-nombre.sql --linked
+```
+Esto usa la API de gestión de Supabase con el token de sesión de la CLI, **no** una `DATABASE_URL`
+guardada en ningún archivo (decisión explícita del usuario: nada de contraseñas maestras de
+Postgres en el repo). Si en una sesión nueva el comando falla con error de permisos, es porque el
+login de la CLI quedó en la cuenta equivocada — ver el fix aplicado esta sesión: correr
+`npx supabase logout` y volver a loguear pegando el link manualmente en el navegador correcto (no
+dejar que abra el navegador por defecto solo).
+
+## Bugs conocidos ACTIVOS
+Ninguno confirmado. El bug crítico histórico de `descontar_stock_venta` (columna ambigua, v22) se
+verificó esta sesión como **corregido** en la base real (`sql/20` sí se aplicó en algún momento —
+la función usa la variable local, no la columna ambigua).
+
+## Pendiente (real, verificado al 28-08-2026)
+1. **Confirmar en Vercel** que `SYNC_SECRET` y `SUPABASE_WEB_URL`/`SUPABASE_WEB_SERVICE_ROLE_KEY`
+   están configurados — hubo un episodio de "fetch failed" en el panel Pedidos Web por esto, se
+   dieron instrucciones para agregarlas pero no se reconfirmó que quedaran puestas en producción.
+2. **28 productos sin SKU** no se pudieron publicar ni clasificar (el sync a la tienda exige SKU) —
+   cargarles SKU desde el modal de producto cuando se pueda. Lista completa en el resumen del script
+   `clasificar-y-publicar-catalogo.js` (última corrida, ver terminal/changelog de la sesión).
+3. **10 productos con SKU sin foto** — no tenían coincidencia confiable contra `sevelin.cl`, subir
+   foto a mano.
+4. (Opcional, grande) Migrar a Supabase Auth + RLS por rol. Partir `api/index.js` en routers.
 
 ## Trampas específicas ya descubiertas (no repetir)
 - `confirmarEntrega` existía en `ot.js` y `pago.js` → las de venta ahora son `confirmarEntregaVenta`/

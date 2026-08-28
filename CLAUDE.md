@@ -70,8 +70,11 @@ inserte en el DOM pasa por `escHtml`** (regla de seguridad).
 
 ## Convenciones del proyecto
 
-- **SQL:** migraciones numeradas en `sql/` que corren EN ORDEN (01 … 18). Todas idempotentes. Nunca
+- **SQL:** migraciones numeradas en `sql/` que corren EN ORDEN (01 … 24+). Todas idempotentes. Nunca
   recrear la base desde cero: se perderían triggers, funciones y secuencias (numero_ot, FIFO).
+  **Aplicarlas con la Supabase CLI, no a mano en el SQL Editor:**
+  `npx supabase db query --file sql/NN-nombre.sql --linked` (la CLI ya está logueada y el repo
+  vinculado — sin `DATABASE_URL` guardada en ningún archivo, decisión explícita del usuario).
 - **Idioma:** todo en español (código, comentarios, mensajes al usuario, commits).
 - **Validaciones críticas** (precios, stock, montos) van SIEMPRE en el servidor, no solo en el front.
 - **Documentación:** al cerrar una tarea grande, escribe `docs/CHANGELOG-VNN.md` y actualiza
@@ -90,10 +93,13 @@ inserte en el DOM pasa por `escHtml`** (regla de seguridad).
 
 ---
 
-## Backlog (pendientes, ninguno bloqueante)
+## Backlog (pendientes, ninguno bloqueante — ver `docs/SNAPSHOT.md` para el detalle)
 
-1. **Conectar el e-commerce (sevelin.cl):** las columnas de despacho/comisión ya existen; falta el
-   sitio que cree ventas por la API con `origen_pago='pago_web'`.
+1. **E-commerce: YA conectado y en producción** (`sevelin-tienda`, repo aparte) — catálogo real
+   (114 productos, 86 publicados y categorizados, 75 con fotos), checkout, Flow (sandbox), panel
+   "Pedidos Web". Pendiente real: confirmar en Vercel que `SYNC_SECRET`/`SUPABASE_WEB_URL`/
+   `SUPABASE_WEB_SERVICE_ROLE_KEY` están configurados, cargar SKU a 28 productos que no lo tienen,
+   subir foto a 10 productos sin coincidencia en Tiendanube.
 2. **(Opcional, grande)** Migrar a Supabase Auth + RLS por rol; partir `api/index.js` en routers.
 
 > BIZ-02 atómico y la unificación de helpers de escape ya están hechos (v18 y v20, ver
