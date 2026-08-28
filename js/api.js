@@ -236,7 +236,7 @@ const API = {
   // distinto de repuestos.categorias (taller).
   productosCategorias: {
     listar: () => apiRequest('/productos/categorias'),
-    crear: (nombre) => apiRequest('/productos/categorias', { method: 'POST', body: { nombre } }),
+    crear: (nombre, parentId) => apiRequest('/productos/categorias', { method: 'POST', body: { nombre, parent_id: parentId || null } }),
     renombrar: (id, nombre) => apiRequest(`/productos/categorias/${id}`, { method: 'PUT', body: { nombre } }),
     mover: (id, direccion) => apiRequest(`/productos/categorias/${id}/mover`, { method: 'PUT', body: { direccion } }),
     eliminar: (id) => apiRequest(`/productos/categorias/${id}`, { method: 'DELETE' })

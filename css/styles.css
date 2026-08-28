@@ -1884,6 +1884,9 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
 .panel-finanzas { display: none; }
 .panel-finanzas.activo { display: block; }
 
+.panel-pagina-web { display: none; }
+.panel-pagina-web.activo { display: block; }
+
 /* ---------- Filtros de período ---------- */
 .filtros-rango {
     display: flex;

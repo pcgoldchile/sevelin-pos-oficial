@@ -787,8 +787,16 @@ async function poblarSelectCategoriaWeb(nombreSeleccionado) {
   if (!elProdCategoriaWeb) return;
   try {
     const categorias = await API.productosCategorias.listar();
-    elProdCategoriaWeb.innerHTML = '<option value="">Sin categoría</option>' +
-      categorias.map(c => `<option value="${escHtml(c.nombre)}" data-id="${c.id}">${escHtml(c.nombre)}</option>`).join('');
+    // Árbol de 2 niveles: cada categoría de nivel superior seguida de sus
+    // subcategorías indentadas — mismo orden que ya trae la API.
+    const raiz = categorias.filter(c => !c.parent_id);
+    const opcion = (c, indentado) =>
+      `<option value="${escHtml(c.nombre)}" data-id="${c.id}">${indentado ? '— ' : ''}${escHtml(c.nombre)}</option>`;
+    const html = raiz.map(c => {
+      const hijos = categorias.filter(h => String(h.parent_id) === String(c.id));
+      return opcion(c, false) + hijos.map(h => opcion(h, true)).join('');
+    }).join('');
+    elProdCategoriaWeb.innerHTML = '<option value="">Sin categoría</option>' + html;
     elProdCategoriaWeb.value = nombreSeleccionado || '';
   } catch (err) {
     console.error('Error al cargar categorías web:', err.message || err);

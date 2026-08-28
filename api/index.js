@@ -649,13 +649,26 @@ app.get('/api/productos/categorias', auth(), async (req, res) => {
 app.post('/api/productos/categorias', auth(true), async (req, res) => {
   const nombre = String(req.body?.nombre || '').trim();
   if (!nombre) return enviarError(res, 400, 'Escribe un nombre');
+  const parentId = req.body?.parent_id || null;
 
-  const { data: maxOrden } = await db.from('producto_categorias')
-    .select('orden').order('orden', { ascending: false }).limit(1).maybeSingle();
+  // Se limita a 2 niveles a propósito (categoría → subcategoría, sin
+  // nietos): más profundidad no aporta y complica el select del modal.
+  if (parentId) {
+    const { data: padre, error: errPadre } = await db.from('producto_categorias')
+      .select('id, parent_id').eq('id', parentId).maybeSingle();
+    if (errPadre || !padre) return enviarError(res, 404, 'No se encontró la categoría padre');
+    if (padre.parent_id) return enviarError(res, 400, 'No se pueden crear subcategorías de una subcategoría');
+  }
+
+  // El orden es por grupo de hermanos (mismo padre, o todos los de nivel
+  // superior si parentId es null) — no un contador global.
+  let query = db.from('producto_categorias').select('orden').order('orden', { ascending: false }).limit(1);
+  query = parentId ? query.eq('parent_id', parentId) : query.is('parent_id', null);
+  const { data: maxOrden } = await query.maybeSingle();
   const siguienteOrden = (maxOrden?.orden ?? -1) + 1;
 
   const { data, error } = await db.from('producto_categorias')
-    .insert([{ nombre, orden: siguienteOrden }]).select().single();
+    .insert([{ nombre, orden: siguienteOrden, parent_id: parentId }]).select().single();
   if (error) {
     const duplicado = /duplicate|unique/i.test(error.message);
     return enviarError(res, duplicado ? 409 : 500, duplicado ? 'Esa categoría ya existe' : error.message);
@@ -678,12 +691,22 @@ app.put('/api/productos/categorias/:id', auth(true), async (req, res) => {
 });
 
 // Sube/baja una categoría intercambiando su `orden` con la vecina —
-// más simple que un batch de reordenamiento para dos botones ▲▼.
+// más simple que un batch de reordenamiento para dos botones ▲▼. Solo
+// compite con sus HERMANOS (mismo parent_id): una subcategoría nunca se
+// reordena contra una categoría de nivel superior.
 app.put('/api/productos/categorias/:id/mover', auth(true), async (req, res) => {
   const direccion = req.body?.direccion === 'arriba' ? 'arriba' : 'abajo';
 
-  const { data: lista, error: errLista } = await db.from('producto_categorias')
+  const { data: actualFila, error: errActual } = await db.from('producto_categorias')
+    .select('id, parent_id').eq('id', req.params.id).maybeSingle();
+  if (errActual || !actualFila) return enviarError(res, 404, 'No se encontró esa categoría');
+
+  let queryHermanos = db.from('producto_categorias')
     .select('id, orden').order('orden', { ascending: true }).order('nombre', { ascending: true });
+  queryHermanos = actualFila.parent_id
+    ? queryHermanos.eq('parent_id', actualFila.parent_id)
+    : queryHermanos.is('parent_id', null);
+  const { data: lista, error: errLista } = await queryHermanos;
   if (errLista) return enviarError(res, 500, errLista.message);
 
   const idx = (lista || []).findIndex(c => String(c.id) === String(req.params.id));

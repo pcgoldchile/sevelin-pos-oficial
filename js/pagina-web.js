@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (b) mostrarPanelPaginaWeb(b.dataset.subtab);
     });
   }
-  if (elBtnNuevaCategoriaWeb) elBtnNuevaCategoriaWeb.addEventListener('click', agregarCategoriaWeb);
+  if (elBtnNuevaCategoriaWeb) elBtnNuevaCategoriaWeb.addEventListener('click', () => agregarCategoriaWeb());
   if (elNuevaCategoriaWebInput) {
     elNuevaCategoriaWebInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); agregarCategoriaWeb(); }
@@ -53,22 +53,33 @@ async function cargarCategoriasWeb() {
   }
 }
 
-function renderCategoriasWeb() {
-  if (!elListaCategoriasWeb) return;
+// Arma el árbol de 2 niveles (categoría → subcategorías) a partir de la
+// lista plana que devuelve la API — el orden de hermanos ya viene resuelto
+// del backend (orden, nombre), acá solo se agrupa por parent_id.
+function construirArbolCategoriasWeb() {
+  const raiz = categoriasWebList.filter(c => !c.parent_id);
+  const hijosPorPadre = {};
+  categoriasWebList.forEach(c => {
+    if (c.parent_id) (hijosPorPadre[c.parent_id] = hijosPorPadre[c.parent_id] || []).push(c);
+  });
+  return raiz.map(c => ({ ...c, hijos: hijosPorPadre[c.id] || [] }));
+}
 
-  if (!categoriasWebList || categoriasWebList.length === 0) {
-    elListaCategoriasWeb.innerHTML = '<p class="admin-cat-vacio">Aún no hay categorías registradas.</p>';
-    return;
-  }
-
-  elListaCategoriasWeb.innerHTML = categoriasWebList.map((c, i) => `
-    <div class="admin-cat-row" data-id="${c.id}">
+function filaCategoriaWebHtml(c, opciones, hermanos) {
+  const idx = hermanos.findIndex(h => h.id === c.id);
+  const esSubcategoria = !!c.parent_id;
+  return `
+    <div class="admin-cat-row" data-id="${c.id}" data-parent-id="${c.parent_id || ''}" style="${esSubcategoria ? 'margin-left:28px;' : ''}">
       <div class="cell-actions" style="margin-right:8px;">
-        <button class="btn btn-icon" data-mover="arriba" title="Subir" ${i === 0 ? 'disabled style="opacity:.35;cursor:not-allowed;"' : ''}>▲</button>
-        <button class="btn btn-icon" data-mover="abajo" title="Bajar" ${i === categoriasWebList.length - 1 ? 'disabled style="opacity:.35;cursor:not-allowed;"' : ''}>▼</button>
+        <button class="btn btn-icon" data-mover="arriba" title="Subir" ${idx === 0 ? 'disabled style="opacity:.35;cursor:not-allowed;"' : ''}>▲</button>
+        <button class="btn btn-icon" data-mover="abajo" title="Bajar" ${idx === hermanos.length - 1 ? 'disabled style="opacity:.35;cursor:not-allowed;"' : ''}>▼</button>
       </div>
-      <span class="admin-cat-nombre" data-nombre>${escHtml(c.nombre)}</span>
+      <span class="admin-cat-nombre" data-nombre>${esSubcategoria ? '↳ ' : ''}${escHtml(c.nombre)}</span>
       <div class="cell-actions">
+        ${opciones.conSubcategoria ? `
+        <button class="btn btn-icon" data-subcategoria title="Agregar subcategoría">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+        </button>` : ''}
         <button class="btn btn-icon btn-icon-edit" data-renombrar title="Renombrar">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
         </button>
@@ -77,10 +88,30 @@ function renderCategoriasWeb() {
         </button>
       </div>
     </div>
-  `).join('');
+  `;
+}
+
+function renderCategoriasWeb() {
+  if (!elListaCategoriasWeb) return;
+
+  if (!categoriasWebList || categoriasWebList.length === 0) {
+    elListaCategoriasWeb.innerHTML = '<p class="admin-cat-vacio">Aún no hay categorías registradas.</p>';
+    return;
+  }
+
+  const arbol = construirArbolCategoriasWeb();
+  const raiz = arbol; // hermanos de nivel superior
+  elListaCategoriasWeb.innerHTML = arbol.map(c => {
+    const propia = filaCategoriaWebHtml(c, { conSubcategoria: true }, raiz);
+    const hijos = c.hijos.map(h => filaCategoriaWebHtml(h, { conSubcategoria: false }, c.hijos)).join('');
+    return propia + hijos;
+  }).join('');
 
   elListaCategoriasWeb.querySelectorAll('[data-mover]').forEach(btn => {
     btn.addEventListener('click', () => moverCategoriaWeb(btn.closest('.admin-cat-row').dataset.id, btn.dataset.mover));
+  });
+  elListaCategoriasWeb.querySelectorAll('[data-subcategoria]').forEach(btn => {
+    btn.addEventListener('click', () => iniciarNuevaSubcategoriaWeb(btn.closest('.admin-cat-row')));
   });
   elListaCategoriasWeb.querySelectorAll('[data-renombrar]').forEach(btn => {
     btn.addEventListener('click', () => iniciarRenombreCategoriaWeb(btn.closest('.admin-cat-row')));
@@ -90,14 +121,56 @@ function renderCategoriasWeb() {
   });
 }
 
-async function agregarCategoriaWeb() {
-  const nombre = (elNuevaCategoriaWebInput?.value || '').trim();
-  if (!nombre) { showToast('Escribe un nombre', 'err'); elNuevaCategoriaWebInput?.focus(); return; }
+// Inserta una fila temporal con un input para escribir el nombre de la
+// nueva subcategoría, justo debajo de la categoría padre.
+function iniciarNuevaSubcategoriaWeb(filaPadre) {
+  if (!filaPadre) return;
+  const parentId = filaPadre.dataset.id;
+
+  const filaTemp = document.createElement('div');
+  filaTemp.className = 'admin-cat-row';
+  filaTemp.style.marginLeft = '28px';
+  filaTemp.innerHTML = `
+    <span class="admin-cat-nombre" style="flex:1;">
+      ↳ <input type="text" class="admin-cat-input-edit" placeholder="Nombre de la subcategoría">
+    </span>
+    <div class="cell-actions">
+      <button class="btn btn-icon btn-icon-view" data-guardar title="Guardar">✔</button>
+      <button class="btn btn-icon btn-icon-del" data-cancelar title="Cancelar">✖</button>
+    </div>
+  `;
+  filaPadre.insertAdjacentElement('afterend', filaTemp);
+
+  const input = filaTemp.querySelector('input');
+  input.focus();
+
+  const confirmar = () => agregarCategoriaWeb(input.value.trim(), parentId);
+  const cancelar = () => renderCategoriasWeb();
+
+  filaTemp.querySelector('[data-guardar]').addEventListener('click', confirmar);
+  filaTemp.querySelector('[data-cancelar]').addEventListener('click', cancelar);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); confirmar(); }
+    if (e.key === 'Escape') { e.preventDefault(); cancelar(); }
+  });
+}
+
+// Sin argumentos: crea una categoría de nivel superior desde el input
+// principal. Con (nombre, parentId): crea una subcategoría (ver
+// iniciarNuevaSubcategoriaWeb) — mismo endpoint, distinto origen del valor.
+async function agregarCategoriaWeb(nombre, parentId) {
+  const esSubcategoria = nombre !== undefined;
+  const nombreFinal = esSubcategoria ? nombre : (elNuevaCategoriaWebInput?.value || '').trim();
+  if (!nombreFinal) {
+    showToast('Escribe un nombre', 'err');
+    if (!esSubcategoria) elNuevaCategoriaWebInput?.focus();
+    return;
+  }
 
   try {
-    await API.productosCategorias.crear(nombre);
-    if (elNuevaCategoriaWebInput) elNuevaCategoriaWebInput.value = '';
-    showToast('Categoría agregada', 'ok');
+    await API.productosCategorias.crear(nombreFinal, parentId);
+    if (!esSubcategoria && elNuevaCategoriaWebInput) elNuevaCategoriaWebInput.value = '';
+    showToast(esSubcategoria ? 'Subcategoría agregada' : 'Categoría agregada', 'ok');
     await cargarCategoriasWeb();
   } catch (err) {
     console.error('Error al agregar categoría web:', err.message || err);
@@ -155,7 +228,11 @@ async function moverCategoriaWeb(id, direccion) {
 }
 
 async function eliminarCategoriaWeb(id) {
-  if (!confirm('¿Eliminar esta categoría? Los productos que la usaban quedan sin categoría.')) return;
+  const tieneHijos = categoriasWebList.some(c => String(c.parent_id) === String(id));
+  const aviso = tieneHijos
+    ? '¿Eliminar esta categoría? Sus subcategorías se eliminan con ella, y los productos que las usaban quedan sin categoría.'
+    : '¿Eliminar esta categoría? Los productos que la usaban quedan sin categoría.';
+  if (!confirm(aviso)) return;
   try {
     await API.productosCategorias.eliminar(id);
     showToast('Categoría eliminada', 'ok');
