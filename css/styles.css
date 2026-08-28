@@ -61,6 +61,14 @@
     --control-h: 44px;
     --control-h-sm: 36px;
     --speed: .18s;
+
+    /* Curvas de motion — un solo lugar para no repetir cubic-bezier() a mano.
+       ease-out: entra/sale de la pantalla. ease-in-out: se mueve DENTRO de la
+       pantalla. ease-drawer: overlays tipo sheet (modal). Nunca ease-in en UI
+       (retrasa justo el instante que el usuario está mirando). */
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+    --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 /* Tema claro: solo cambia tokens, ninguna regla estructural */
@@ -404,7 +412,7 @@ input[type="checkbox"] { width: auto; height: auto; accent-color: var(--blue); c
     background: var(--bg-800); border: 1px solid var(--border-strong); border-radius: var(--radius);
     max-width: 620px; width: 100%; max-height: 88vh; overflow-y: auto; padding: 26px;
     box-shadow: var(--shadow);
-    transform: translateY(16px) scale(.97); transition: transform .2s cubic-bezier(.2, .8, .3, 1);
+    transform: translateY(16px) scale(.97); transition: transform .2s var(--ease-drawer);
 }
 .modal-overlay.show .modal-box { transform: none; }
 .modal-box h2 { font-size: 21px; }
@@ -432,7 +440,7 @@ input[type="checkbox"] { width: auto; height: auto; accent-color: var(--blue); c
     position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
     background: var(--bg-800); color: var(--text-100); padding: 13px 22px; border-radius: var(--radius-pill);
     font-size: 13.5px; font-weight: 600; box-shadow: var(--shadow); opacity: 0;
-    transition: opacity .25s, transform .25s; z-index: 300; border: 1.5px solid var(--border-strong);
+    transition: opacity .25s var(--ease-out), transform .25s var(--ease-out); z-index: 300; border: 1.5px solid var(--border-strong);
     /* El aviso es informativo: nunca debe bloquear el botón que quedó debajo
        (en el teléfono tapaba justo la zona de acciones al pie de pantalla). */
     pointer-events: none;
@@ -836,8 +844,18 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
     background: var(--bg-900); border: 1px solid var(--border);
     border-radius: var(--radius-sm); padding: 8px 10px;
     transition: border-color var(--speed);
+    /* Misma entrada que .row-in de las tablas (rowFadeIn, línea ~400), con
+       un escalonado sutil — esta lista se abre para administrar, no se mira
+       cientos de veces al día, así que el stagger sí aporta acá. */
+    animation: rowFadeIn .24s var(--ease-out) both;
 }
 .admin-cat-row:hover { border-color: var(--border-strong); }
+.admin-cat-row:nth-child(1) { animation-delay: 0ms; }
+.admin-cat-row:nth-child(2) { animation-delay: 30ms; }
+.admin-cat-row:nth-child(3) { animation-delay: 60ms; }
+.admin-cat-row:nth-child(4) { animation-delay: 90ms; }
+.admin-cat-row:nth-child(5) { animation-delay: 120ms; }
+.admin-cat-row:nth-child(n+6) { animation-delay: 140ms; }
 .admin-cat-nombre { flex: 1; font-size: 13.5px; color: var(--text-100); font-weight: 600; }
 .admin-cat-nombre input {
     width: 100%; background: var(--bg-800); border: 1.5px solid var(--blue);
