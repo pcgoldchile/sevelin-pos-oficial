@@ -81,27 +81,44 @@
   </div>
 
   <!-- ============ CABECERA ============ -->
-  <header class="app-header">
-    <div class="logo">
+  <div class="app-shell">
+  <!-- ============================================================
+       SIDEBAR — navegación principal, reemplaza las pestañas horizontales
+       de arriba (inspirado en el panel de admin de Tiendanube). Mismos
+       botones/data-view/ids de siempre: js/config.js::initNavegacion() y
+       los `.click()` programáticos de auth.js/finanzas-gate.js/ot.js no
+       cambian, solo cambia dónde vive este <nav> en el layout.
+       ============================================================ -->
+  <aside class="app-sidebar">
+    <div class="sidebar-brand">
       <h1>SEVELIN <span>POS</span></h1>
-      <span id="userRoleBadge" class="badge badge-blue">Invitado</span>
-      <span id="syncBadge" class="sync-badge sync-pending">⏳ Conectando…</span>
     </div>
 
+    <nav class="nav-links">
+      <!-- Orden pedido por el negocio: POS · Productos · Finanzas · Servicio Técnico.
+           Es el orden real de uso en el mostrador (se vende, se revisa stock,
+           se cuadra caja, y el taller se atiende aparte). Solo cambia el orden
+           visual: los data-view y los ids de las secciones no se tocan. -->
+      <button class="nav-btn active" data-view="view-pos">🛒 POS</button>
+      <button class="nav-btn admin-only" data-view="view-productos">📦 Productos</button>
+      <button class="nav-btn admin-only" data-view="view-finanzas">📊 Finanzas</button>
+      <button class="nav-btn" data-view="view-taller">🔧 Servicio Técnico</button>
+      <button class="nav-btn admin-only" data-view="view-pagina-web">🌐 Página Web</button>
+    </nav>
+
+    <div class="sidebar-foot">
+      <span id="userRoleBadge" class="badge badge-blue">Invitado</span>
+      <div class="sidebar-foot-actions">
+        <button class="theme-toggle" id="btnTema" title="Cambiar tema" aria-label="Cambiar tema">🌙</button>
+        <button class="btn btn-outline btn-sm" id="btnLogout" title="Cerrar sesión">🚪 Cerrar Sesión</button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="app-shell-main">
+  <header class="app-header">
     <div class="header-right">
-      <nav class="nav-links">
-        <!-- Orden pedido por el negocio: POS · Productos · Finanzas · Servicio Técnico.
-             Es el orden real de uso en el mostrador (se vende, se revisa stock,
-             se cuadra caja, y el taller se atiende aparte). Solo cambia el orden
-             visual: los data-view y los ids de las secciones no se tocan. -->
-        <button class="nav-btn active" data-view="view-pos">🛒 POS</button>
-        <button class="nav-btn admin-only" data-view="view-productos">📦 Productos</button>
-        <button class="nav-btn admin-only" data-view="view-finanzas">📊 Finanzas</button>
-        <button class="nav-btn" data-view="view-taller">🔧 Servicio Técnico</button>
-        <button class="nav-btn admin-only" data-view="view-pagina-web">🌐 Página Web</button>
-      </nav>
-      <button class="theme-toggle" id="btnTema" title="Cambiar tema" aria-label="Cambiar tema">🌙</button>
-      <button class="btn btn-outline btn-sm" id="btnLogout" title="Cerrar sesión">🚪 Cerrar Sesión</button>
+      <span id="syncBadge" class="sync-badge sync-pending">⏳ Conectando…</span>
     </div>
   </header>
 
@@ -1362,6 +1379,251 @@
     </section>
 
     <!-- ============================================================
+         VISTA: EDITOR DE PRODUCTO (página completa, reemplaza el modal)
+         ------------------------------------------------------------
+         abrirModalProducto()/cerrarModalProducto() (js/productos.js) activan
+         y desactivan esta vista con el mismo mecanismo .view-section.active
+         que usa initNavegacion() (js/config.js) — por eso los 5 lugares que
+         llaman abrirModalProducto() en el resto del código (reportes.js,
+         tiendanube.js, el resto de productos.js) no necesitaron cambiar.
+         Fotos y Categoría son tarjetas independientes a propósito (antes
+         vivían juntas en un pop-up aparte, #modalFotosCategoria — eliminado).
+         ============================================================ -->
+    <section id="view-producto-editor" class="view-section admin-only">
+      <div class="editor-topbar">
+        <button type="button" class="btn btn-ghost btn-sm" id="btnVolverProductos">← Volver al catálogo</button>
+        <h2 id="productoFormTitle">Nuevo Producto</h2>
+        <div class="editor-topbar-acciones">
+          <!-- Exporta SOLO este producto. Se oculta al crear uno nuevo: no hay nada que exportar hasta que exista. -->
+          <button class="btn btn-outline btn-sm" id="btnExportarProducto">📤 Exportar</button>
+          <button class="btn btn-ghost" id="btnCancelarProducto">Cancelar</button>
+          <button class="btn btn-primary" id="btnGuardarProducto">Guardar Producto</button>
+        </div>
+      </div>
+      <p class="modal-hint">Las medidas y la descripción usan el mismo formato del CSV de Tiendanube.</p>
+      <input type="hidden" id="prodEditId">
+
+      <div class="editor-grid">
+        <!-- ---------- Información principal ---------- -->
+        <div class="card">
+          <div class="card-head"><div><h2>Información principal</h2></div></div>
+
+          <div class="grid grid-2">
+            <div class="field">
+              <label>SKU</label>
+              <!-- El escáner escribe en el campo; útil cuando el SKU viene
+                   impreso como código de barras en la etiqueta del proveedor. -->
+              <div class="input-scan">
+                <input type="text" id="prodSku" placeholder="Código interno">
+                <button class="btn btn-outline btn-scan" type="button" data-scan="prodSku" title="Escanear SKU con la cámara">📷</button>
+              </div>
+            </div>
+            <div class="field">
+              <label>Código de Barras</label>
+              <div class="input-scan">
+                <input type="text" id="prodBarcode" placeholder="Solo números (EAN / UPC)" inputmode="numeric" pattern="[0-9]*">
+                <button class="btn btn-outline btn-scan" type="button" data-scan="prodBarcode" title="Escanear código de barras con la cámara">📷</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="field" style="margin-top:12px;">
+            <label>Nombre del Producto *</label>
+            <input type="text" id="prodNombre" placeholder="Descripción corta del producto">
+          </div>
+
+          <div class="grid grid-3" style="margin-top:12px;">
+            <div class="field">
+              <label>Costo Unit.</label>
+              <input type="number" id="prodCosto" min="0" step="1">
+            </div>
+            <div class="field">
+              <label>Precio Unit.</label>
+              <input type="number" id="prodPrecio" min="0" step="1">
+            </div>
+            <div class="field">
+              <label>Stock</label>
+              <input type="number" id="prodStock" min="0" step="1">
+            </div>
+          </div>
+
+          <span class="section-label" style="margin-top:18px;">Control de stock</span>
+          <label class="check-item" id="itemProdStockIlimitado" style="margin-bottom:10px;">
+            <input type="checkbox" id="prodStockIlimitado">
+            <span>♾️ Stock ilimitado (para servicios o ítems sin inventario físico — no se descuenta al vender)</span>
+          </label>
+          <div class="grid grid-2" id="gridProdStockControl">
+            <div class="field">
+              <label>Alerta de bajo stock cuando queden</label>
+              <input type="number" id="prodStockMinimo" min="0" step="1" placeholder="3">
+            </div>
+            <div class="field">
+              <label class="field-ghost-label">Alerta</label>
+              <label class="sn-toggle">
+                <input type="checkbox" id="prodSinAlertaStock"> Desactivar alerta para este producto
+              </label>
+            </div>
+          </div>
+          <p class="modal-hint" id="prodStockActualizado">Última actualización de stock: —</p>
+
+          <!-- ============================================================
+               COSTOS POR LOTE (PEPS / FIFO)
+               Apagado por defecto. Solo el administrador lo enciende a mano,
+               producto por producto: ningún producto nuevo ni existente lo
+               activa solo.
+               ============================================================ -->
+          <span class="section-label" style="margin-top:18px;">Costos por lote (PEPS / FIFO)</span>
+          <label class="check-item" id="itemProdUsaLotes" style="margin-bottom:10px;">
+            <input type="checkbox" id="prodUsaLotes">
+            <span>📚 ¿Habilitar múltiples costos por lote? (el costo de cada venta sale de la capa más antigua)</span>
+          </label>
+
+          <div id="bloqueProdLotes" style="display:none;">
+            <p class="modal-hint" id="prodLotesAviso">
+              Con esta opción activa, el costo unitario de arriba deja de usarse en las ventas:
+              cada venta consume primero las unidades más antiguas y toma su costo real.
+            </p>
+
+            <div class="grid grid-4" style="margin-top:10px;">
+              <div class="field">
+                <label>Cantidad del lote</label>
+                <input type="number" id="prodLoteCantidad" min="1" step="1" placeholder="10">
+              </div>
+              <div class="field">
+                <label>Costo unitario</label>
+                <input type="number" id="prodLoteCosto" min="0" step="1" placeholder="2200">
+              </div>
+              <div class="field">
+                <label>Referencia (opcional)</label>
+                <input type="text" id="prodLoteReferencia" placeholder="N° factura / proveedor">
+              </div>
+              <div class="field">
+                <label class="field-ghost-label">&nbsp;</label>
+                <button class="btn btn-outline" id="btnAgregarLote" type="button">➕ Cargar lote</button>
+              </div>
+            </div>
+
+            <div id="prodLotesLista" class="lotes-lista">
+              <p class="modal-hint">Guarda el producto para poder cargarle lotes.</p>
+            </div>
+          </div>
+
+          <span class="section-label" style="margin-top:18px;">Medidas y envío (Tiendanube)</span>
+          <div class="grid grid-4">
+            <div class="field">
+              <label>Peso (kg)</label>
+              <input type="number" id="prodPeso" min="0" step="0.001">
+            </div>
+            <div class="field">
+              <label>Alto (cm)</label>
+              <input type="number" id="prodAlto" min="0" step="0.1">
+            </div>
+            <div class="field">
+              <label>Ancho (cm)</label>
+              <input type="number" id="prodAncho" min="0" step="0.1">
+            </div>
+            <div class="field">
+              <label>Profundidad (cm)</label>
+              <input type="number" id="prodProfundidad" min="0" step="0.1">
+            </div>
+          </div>
+
+          <div class="field" style="margin-top:12px;">
+            <label>Descripción</label>
+            <textarea id="prodDescripcion" rows="3" placeholder="Detalle largo del producto (opcional)"></textarea>
+          </div>
+
+          <div style="margin: 18px 0 0;">
+            <label class="sn-toggle" style="width:fit-content;">
+              <input type="checkbox" id="prodRequiereSN"> El producto requiere registrar S/N al vender
+            </label>
+            <label class="sn-toggle" style="width:fit-content; margin-top:10px;">
+              <input type="checkbox" id="prodEsRepuesto"> Es repuesto / insumo de taller
+            </label>
+          </div>
+        </div>
+
+        <!-- ---------- Columna lateral: Fotos, Categoría, Tienda web ---------- -->
+        <div class="editor-col-lateral">
+
+          <!-- ---------- Fotos (tarjeta independiente) ---------- -->
+          <div class="card">
+            <div class="card-head"><div><h2>Fotos</h2>
+              <p class="subtitle">Se procesan automáticamente a 1000×1000, fondo blanco. La primera es la foto principal del catálogo.</p>
+            </div></div>
+
+            <label class="dropzone-fotos" id="dropzoneFotos" for="prodFotoInput">
+              <span class="dropzone-fotos-icono">🖼️</span>
+              <span class="dropzone-fotos-texto">Arrastra y suelta, o hace click para elegir fotos</span>
+              <input type="file" id="prodFotoInput" accept="image/*" style="display:none;">
+            </label>
+            <canvas id="prodFotoCanvas" width="1000" height="1000" style="display:none;"></canvas>
+            <p class="modal-hint" id="prodFotoEstado"></p>
+            <div id="prodFotosGrid" style="display:flex; flex-wrap:wrap; gap:10px; margin-top:12px;"></div>
+          </div>
+
+          <!-- ---------- Categoría (tarjeta independiente) ---------- -->
+          <div class="card">
+            <div class="card-head"><div><h2>Categoría</h2>
+              <p class="subtitle">Mismo catálogo de "Página Web → Categorías" — crear una acá la deja disponible ahí también.</p>
+            </div></div>
+
+            <div class="field">
+              <label>Categoría</label>
+              <select id="popFotosCategoria">
+                <option value="">Sin categoría</option>
+              </select>
+            </div>
+            <div class="field" style="margin-top:10px;">
+              <label>Subcategoría</label>
+              <select id="popFotosSubcategoria" disabled>
+                <option value="">Sin subcategoría</option>
+              </select>
+            </div>
+
+            <div style="display:flex; gap:8px; margin-top:12px;">
+              <input type="text" id="popNuevaCategoriaInput" placeholder="Nueva categoría…" style="flex:1;">
+              <button type="button" class="btn btn-outline btn-sm" id="btnPopNuevaCategoria">+ Crear</button>
+            </div>
+            <div style="display:flex; gap:8px; margin-top:8px;">
+              <input type="text" id="popNuevaSubcategoriaInput" placeholder="Nueva subcategoría…" style="flex:1;" disabled>
+              <button type="button" class="btn btn-outline btn-sm" id="btnPopNuevaSubcategoria" disabled>+ Crear</button>
+            </div>
+            <!-- Estado interno: lo lee guardarProducto() igual que antes (value + data-id de la opción elegida). -->
+            <select id="prodCategoriaWeb" style="display:none">
+              <option value="">Sin categoría</option>
+            </select>
+          </div>
+
+          <!-- ---------- Tienda web ---------- -->
+          <div class="card">
+            <div class="card-head"><div><h2>Tienda web</h2></div></div>
+
+            <label class="check-item" id="itemProdPublicadoWeb" style="margin-bottom:12px;">
+              <input type="checkbox" id="prodPublicadoWeb">
+              <span>🌐 Publicar en la web (sevelin.cl)</span>
+            </label>
+
+            <div id="avisoPublicacionIncompleta" class="callout-warning" style="display:none;"></div>
+
+            <div class="field">
+              <label>Precio web (opcional)</label>
+              <input type="number" id="prodPrecioWeb" min="0" step="1" placeholder="Vacío = usa el precio normal">
+            </div>
+            <div class="field" style="margin-top:10px;">
+              <label>Umbral de stock mostrado en la web</label>
+              <input type="number" id="prodStockUmbralWeb" min="1" placeholder="Por defecto: más de 5 disponibles">
+            </div>
+            <div class="field" style="margin-top:10px;">
+              <label>Descripción web</label>
+              <textarea id="prodDescripcionWeb" rows="3" placeholder="Ficha que verá el cliente en la tienda (opcional; si queda vacía, no se muestra descripción)"></textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
          VISTA 5: COMPRAS Y GASTOS (solo admin)
          ============================================================ -->
     
@@ -1455,6 +1717,8 @@
     </section>
 
   </main>
+  </div><!-- /.app-shell-main -->
+  </div><!-- /.app-shell -->
 
   <!-- ============================================================
        MODAL: SELECTOR DE PAGO (venta nueva y cobro de pendientes)
@@ -2652,201 +2916,6 @@
     </div>
   </div>
 
-  <!-- MODAL: NUEVO / EDITAR PRODUCTO -->
-  <div id="modalProducto" class="modal-overlay">
-    <div class="modal-box modal-lg">
-      <h2 id="productoFormTitle">Nuevo Producto</h2>
-      <p class="modal-hint">Las medidas y la descripción usan el mismo formato del CSV de Tiendanube.</p>
-      <input type="hidden" id="prodEditId">
-
-      <div class="grid grid-2" style="margin-top:18px;">
-        <div class="field">
-          <label>SKU</label>
-          <!-- El escáner escribe en el campo; útil cuando el SKU viene
-               impreso como código de barras en la etiqueta del proveedor. -->
-          <div class="input-scan">
-            <input type="text" id="prodSku" placeholder="Código interno">
-            <button class="btn btn-outline btn-scan" type="button" data-scan="prodSku" title="Escanear SKU con la cámara">📷</button>
-          </div>
-        </div>
-        <div class="field">
-          <label>Código de Barras</label>
-          <div class="input-scan">
-            <input type="text" id="prodBarcode" placeholder="Solo números (EAN / UPC)" inputmode="numeric" pattern="[0-9]*">
-            <button class="btn btn-outline btn-scan" type="button" data-scan="prodBarcode" title="Escanear código de barras con la cámara">📷</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="field" style="margin-top:12px;">
-        <label>Nombre del Producto *</label>
-        <input type="text" id="prodNombre" placeholder="Descripción corta del producto">
-      </div>
-
-      <div class="grid grid-3" style="margin-top:12px;">
-        <div class="field">
-          <label>Costo Unit.</label>
-          <input type="number" id="prodCosto" min="0" step="1">
-        </div>
-        <div class="field">
-          <label>Precio Unit.</label>
-          <input type="number" id="prodPrecio" min="0" step="1">
-        </div>
-        <div class="field">
-          <label>Stock</label>
-          <input type="number" id="prodStock" min="0" step="1">
-        </div>
-      </div>
-
-      <span class="section-label" style="margin-top:18px;">Control de stock</span>
-      <label class="check-item" id="itemProdStockIlimitado" style="margin-bottom:10px;">
-        <input type="checkbox" id="prodStockIlimitado">
-        <span>♾️ Stock ilimitado (para servicios o ítems sin inventario físico — no se descuenta al vender)</span>
-      </label>
-      <div class="grid grid-2" id="gridProdStockControl">
-        <div class="field">
-          <label>Alerta de bajo stock cuando queden</label>
-          <input type="number" id="prodStockMinimo" min="0" step="1" placeholder="3">
-        </div>
-        <div class="field">
-          <label class="field-ghost-label">Alerta</label>
-          <label class="sn-toggle">
-            <input type="checkbox" id="prodSinAlertaStock"> Desactivar alerta para este producto
-          </label>
-        </div>
-      </div>
-      <p class="modal-hint" id="prodStockActualizado">Última actualización de stock: —</p>
-
-      <!-- ============================================================
-           COSTOS POR LOTE (PEPS / FIFO)
-           Apagado por defecto. Solo el administrador lo enciende a mano,
-           producto por producto: ningún producto nuevo ni existente lo
-           activa solo.
-           ============================================================ -->
-      <span class="section-label" style="margin-top:18px;">Costos por lote (PEPS / FIFO)</span>
-      <label class="check-item" id="itemProdUsaLotes" style="margin-bottom:10px;">
-        <input type="checkbox" id="prodUsaLotes">
-        <span>📚 ¿Habilitar múltiples costos por lote? (el costo de cada venta sale de la capa más antigua)</span>
-      </label>
-
-      <div id="bloqueProdLotes" style="display:none;">
-        <p class="modal-hint" id="prodLotesAviso">
-          Con esta opción activa, el costo unitario de arriba deja de usarse en las ventas:
-          cada venta consume primero las unidades más antiguas y toma su costo real.
-        </p>
-
-        <div class="grid grid-4" style="margin-top:10px;">
-          <div class="field">
-            <label>Cantidad del lote</label>
-            <input type="number" id="prodLoteCantidad" min="1" step="1" placeholder="10">
-          </div>
-          <div class="field">
-            <label>Costo unitario</label>
-            <input type="number" id="prodLoteCosto" min="0" step="1" placeholder="2200">
-          </div>
-          <div class="field">
-            <label>Referencia (opcional)</label>
-            <input type="text" id="prodLoteReferencia" placeholder="N° factura / proveedor">
-          </div>
-          <div class="field">
-            <label class="field-ghost-label">&nbsp;</label>
-            <button class="btn btn-outline" id="btnAgregarLote" type="button">➕ Cargar lote</button>
-          </div>
-        </div>
-
-        <div id="prodLotesLista" class="lotes-lista">
-          <p class="modal-hint">Guarda el producto para poder cargarle lotes.</p>
-        </div>
-      </div>
-
-      <span class="section-label" style="margin-top:18px;">Medidas y envío (Tiendanube)</span>
-      <div class="grid grid-4">
-        <div class="field">
-          <label>Peso (kg)</label>
-          <input type="number" id="prodPeso" min="0" step="0.001">
-        </div>
-        <div class="field">
-          <label>Alto (cm)</label>
-          <input type="number" id="prodAlto" min="0" step="0.1">
-        </div>
-        <div class="field">
-          <label>Ancho (cm)</label>
-          <input type="number" id="prodAncho" min="0" step="0.1">
-        </div>
-        <div class="field">
-          <label>Profundidad (cm)</label>
-          <input type="number" id="prodProfundidad" min="0" step="0.1">
-        </div>
-      </div>
-
-      <div class="field" style="margin-top:12px;">
-        <label>Descripción</label>
-        <textarea id="prodDescripcion" rows="3" placeholder="Detalle largo del producto (opcional)"></textarea>
-      </div>
-
-      <div style="margin: 18px 0 0;">
-        <label class="sn-toggle" style="width:fit-content;">
-          <input type="checkbox" id="prodRequiereSN"> El producto requiere registrar S/N al vender
-        </label>
-        <label class="sn-toggle" style="width:fit-content; margin-top:10px;">
-          <input type="checkbox" id="prodEsRepuesto"> Es repuesto / insumo de taller
-        </label>
-      </div>
-
-      <!-- ============================================================
-           TIENDA WEB (e-commerce Fase 0)
-           Administración enteramente desde el POS — ver
-           README-ECOMMERCE-SEVELIN.md sección 2.1. Las fotos solo se
-           pueden subir con el producto ya guardado (necesitan su id).
-           ============================================================ -->
-      <span class="section-label" style="margin-top:18px;">Tienda web</span>
-      <p class="modal-hint" id="prodWebSinGuardarAviso">Guarda el producto primero para poder agregarle fotos.</p>
-
-      <div class="field" id="campoProdFotos" style="margin-top:8px;">
-        <label>Fotos (se procesan automáticamente a 1000×1000, fondo blanco)</label>
-        <input type="file" id="prodFotoInput" accept="image/*">
-        <canvas id="prodFotoCanvas" width="1000" height="1000" style="display:none;"></canvas>
-        <p class="modal-hint" id="prodFotoEstado"></p>
-        <div id="prodFotosGrid" style="display:flex; flex-wrap:wrap; gap:10px; margin-top:8px;"></div>
-      </div>
-
-      <label class="check-item" id="itemProdPublicadoWeb" style="margin:12px 0;">
-        <input type="checkbox" id="prodPublicadoWeb">
-        <span>🌐 Publicar en la web (sevelin.cl)</span>
-      </label>
-
-      <div class="grid grid-2">
-        <div class="field">
-          <label>Precio web (opcional)</label>
-          <input type="number" id="prodPrecioWeb" min="0" step="1" placeholder="Vacío = usa el precio normal">
-        </div>
-        <div class="field">
-          <label>Categoría web</label>
-          <select id="prodCategoriaWeb">
-            <option value="">Sin categoría</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="field" style="margin-top:12px;">
-        <label>Umbral de stock mostrado en la web</label>
-        <input type="number" id="prodStockUmbralWeb" min="1" placeholder="Por defecto: más de 5 disponibles">
-      </div>
-
-      <div class="field" style="margin-top:12px;">
-        <label>Descripción web</label>
-        <textarea id="prodDescripcionWeb" rows="3" placeholder="Ficha que verá el cliente en la tienda (opcional; si queda vacía, no se muestra descripción)"></textarea>
-      </div>
-
-      <div class="modal-foot">
-        <!-- Exporta SOLO este producto. Se oculta al crear uno nuevo:
-             no hay nada que exportar hasta que exista. -->
-        <button class="btn btn-outline" id="btnExportarProducto" style="margin-right:auto;">📤 Exportar Producto</button>
-        <button class="btn btn-ghost" id="btnCancelarProducto">Cancelar</button>
-        <button class="btn btn-primary" id="btnGuardarProducto">Guardar Producto</button>
-      </div>
-    </div>
-  </div>
 
   <!-- ============================================================
        MODAL 1/3: ¿CÓMO QUIERES CARGAR EL PRODUCTO?

@@ -56,6 +56,11 @@
     --shadow: 0 18px 45px rgba(3, 8, 20, .45);
     --shadow-sm: 0 6px 18px rgba(3, 8, 20, .28);
     --ring: 0 0 0 3px rgba(59, 130, 246, .28);
+    /* Glow real (no solo un ring): borde iluminado + halo difuso, para CTAs
+       primarios, el nav-btn activo y tarjetas/dropzones en foco — el acento
+       "gamer/tech" que separa un elemento realmente activo de uno solo con hover. */
+    --glow: 0 0 0 1px rgba(59, 130, 246, .5), 0 0 24px rgba(59, 130, 246, .28);
+    --glow-strong: 0 0 0 1px rgba(59, 130, 246, .6), 0 0 40px rgba(59, 130, 246, .38);
 
     /* Alturas unificadas: todos los botones y campos calzan en la misma línea */
     --control-h: 44px;
@@ -102,7 +107,11 @@ body.theme-light {
 html { font-size: 17px; }
 
 body {
-    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+    /* Plus Jakarta Sans ya se cargaba (index.html, Google Fonts) pero solo se
+       usaba en un par de paneles sueltos — la fuente del sistema (Segoe UI) es
+       el patrón #1 que marca "hecho genérico" (ver .agents/skills/redesign-
+       existing-projects). Se promueve acá a fuente base de toda la app. */
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background:
         radial-gradient(1100px 600px at 15% -10%, rgba(59, 130, 246, .16), transparent 60%),
         radial-gradient(900px 500px at 100% 0%, rgba(251, 191, 36, .10), transparent 55%),
@@ -121,39 +130,55 @@ h2 { color: var(--text-100); font-weight: 700; letter-spacing: -.01em; }
 
 :focus-visible { outline: 2px solid var(--blue-light); outline-offset: 2px; }
 
-/* ========== 3. HEADER + NAV ========== */
-.app-header {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 16px; flex-wrap: wrap;
-    max-width: 1700px; margin: 0 auto 20px;
-    padding: 22px 24px 0;
-}
-.app-header .logo { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.app-header .logo h1 {
-    font-size: 30px; color: var(--text-100); font-weight: 800; letter-spacing: -.02em;
-}
-.app-header .logo h1 span { color: var(--gold); }
+/* ========== 3. SHELL, SIDEBAR + HEADER ========== */
+/* Layout de dos columnas: sidebar fija a la izquierda (navegación principal,
+   reemplaza las pestañas horizontales de arriba) + columna de contenido con
+   el header angosto (solo estado de conexión) y las vistas. En mobile
+   colapsa a una sola columna con la sidebar como barra superior scrolleable
+   (mismo patrón que ya usaban las pestañas antes de este cambio). */
+.app-shell { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
+.app-shell-main { min-width: 0; }
 
-.header-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.app-sidebar {
+    display: flex; flex-direction: column; gap: 22px;
+    padding: 22px 18px; position: sticky; top: 0; height: 100vh; overflow-y: auto;
+    background: var(--bg-800); border-right: 1px solid var(--border);
+}
+.sidebar-brand { display: flex; align-items: center; gap: 10px; padding: 0 6px; }
+.sidebar-brand h1 { font-size: 21px; color: var(--text-100); font-weight: 800; letter-spacing: -.02em; }
+.sidebar-brand h1 span { color: var(--gold); }
 
-.nav-links { display: flex; gap: 8px; flex-wrap: wrap; padding: 6px; border-radius: var(--radius);
-    background: var(--surface-soft); border: 1px solid var(--border); backdrop-filter: blur(6px); }
+.nav-links { display: flex; flex-direction: column; gap: 4px; }
 .nav-links .nav-btn {
     background: transparent; color: var(--text-muted); border: 1px solid transparent;
-    height: var(--control-h); padding: 0 20px; border-radius: var(--radius-sm);
+    height: var(--control-h); padding: 0 14px; border-radius: var(--radius-sm);
     font-size: 14.5px; font-weight: 600; font-family: inherit; cursor: pointer;
-    display: inline-flex; align-items: center; gap: 8px;
+    display: flex; align-items: center; gap: 10px; justify-content: flex-start; width: 100%;
     transition: background-color var(--speed), border-color var(--speed), color var(--speed), transform .1s;
 }
 .nav-links .nav-btn:hover:not(.active) {
     background: var(--surface-soft); border-color: var(--border); color: var(--text-100);
-    transform: translateY(-1px);
+    transform: translateX(2px);
 }
 .nav-links .nav-btn:active { transform: scale(.97); }
 .nav-links .nav-btn.active {
     background: linear-gradient(135deg, var(--blue) 0%, var(--blue-dark) 100%);
-    color: #fff; border-color: rgba(255, 255, 255, .25); box-shadow: var(--shadow-sm);
+    color: #fff; border-color: rgba(255, 255, 255, .25); box-shadow: var(--shadow-sm), var(--glow);
 }
+
+.sidebar-foot {
+    margin-top: auto; padding-top: 16px; border-top: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+}
+.sidebar-foot-actions { display: flex; align-items: center; gap: 8px; }
+
+.app-header {
+    display: flex; align-items: center; justify-content: flex-end;
+    gap: 16px; flex-wrap: wrap;
+    max-width: 1700px; margin: 0 auto 20px;
+    padding: 22px 24px 0;
+}
+.header-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 
 .sync-badge {
     font-size: 11.5px; padding: 0 14px; height: var(--control-h-sm); border-radius: var(--radius-pill);
@@ -204,6 +229,52 @@ h2 { color: var(--text-100); font-weight: 700; letter-spacing: -.01em; }
 
 .divider { height: 1px; background: var(--border); margin: 18px 0; border: none; }
 
+/* ---------- Editor de producto de página completa (#view-producto-editor) ----------
+   Reemplaza el modal de la sesión anterior: barra superior fija + dos
+   columnas (info principal ancha / fotos+categoría+tienda web angostas),
+   colapsa a una sola columna en pantallas angostas. */
+.editor-topbar {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+    background: var(--app-bg-2); padding: 14px 0; margin: 0 0 4px;
+    border-bottom: 1px solid var(--border);
+}
+.editor-topbar h2 { font-size: 18px; margin: 0; }
+.editor-topbar-acciones { display: flex; align-items: center; gap: 10px; }
+
+.editor-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 20px; margin-top: 18px; }
+.editor-col-lateral { display: flex; flex-direction: column; gap: 20px; }
+@media (max-width: 1080px) { .editor-grid { grid-template-columns: 1fr; } }
+
+/* Zona de arrastrar y soltar fotos — con estado visual real al arrastrar
+   (dragover), no solo un <input type="file"> desnudo. */
+.dropzone-fotos {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 8px; text-align: center; padding: 28px 16px; cursor: pointer;
+    border: 1.5px dashed var(--border-strong); border-radius: var(--radius);
+    background: var(--bg-900); color: var(--text-muted);
+    transition: border-color var(--speed) ease, background-color var(--speed) ease, box-shadow var(--speed) ease;
+}
+.dropzone-fotos:hover { border-color: var(--blue-light); color: var(--text-300); }
+.dropzone-fotos.dropzone-activa {
+    border-color: var(--blue); background: var(--tint-blue); color: var(--text-100); box-shadow: var(--glow);
+}
+.dropzone-fotos-icono { font-size: 26px; }
+.dropzone-fotos-texto { font-size: 13px; font-weight: 600; }
+
+/* Aviso no bloqueante: "publicado pero sin SKU/stock, no va a aparecer en la
+   tienda" — mismo lenguaje visual que .aviso-division (más abajo). */
+.callout-warning {
+    margin: 0 0 14px;
+    padding: 10px 13px;
+    border-radius: 10px;
+    background: rgba(245,158,11,.12);
+    border: 1px solid rgba(245,158,11,.38);
+    color: var(--gold);
+    font-size: .8rem;
+    line-height: 1.45;
+}
+
 .grid { display: grid; gap: 14px; }
 .grid-2 { grid-template-columns: repeat(2, 1fr); }
 .grid-3 { grid-template-columns: repeat(3, 1fr); }
@@ -225,6 +296,9 @@ input, select, textarea {
     font-size: 14.5px; font-family: inherit; width: 100%;
     transition: border-color var(--speed), box-shadow var(--speed), background-color var(--speed);
 }
+/* Cifras alineadas en columnas (precio, stock, costo) — sin esto los dígitos
+   angostos como "1" hacen bailar el ancho de una fila a otra. */
+input[type="number"] { font-variant-numeric: tabular-nums; }
 textarea { height: auto; padding: 12px 14px; }
 input::placeholder { color: var(--text-muted); opacity: .8; }
 input:hover, select:hover { border-color: var(--border-strong); }
@@ -256,6 +330,7 @@ input[type="checkbox"] { width: auto; height: auto; accent-color: var(--blue); c
 .btn:disabled { opacity: .55; cursor: not-allowed; transform: none; filter: none; }
 
 .btn-primary { background: linear-gradient(135deg, var(--blue) 0%, var(--blue-dark) 100%); color: #fff; }
+.btn-primary:hover:not(:disabled) { box-shadow: var(--glow); }
 .btn-green   { background: linear-gradient(135deg, var(--green) 0%, var(--green-dark) 100%); color: #fff; }
 .btn-red     { background: linear-gradient(135deg, var(--red) 0%, var(--red-dark) 100%); color: #fff; }
 .btn-gold    { background: linear-gradient(135deg, var(--gold) 0%, var(--gold-dark) 100%); color: #221703; }
@@ -486,8 +561,18 @@ input[type="checkbox"] { width: auto; height: auto; accent-color: var(--blue); c
 .pos-cart-total strong { font-size: 32px; color: var(--text-100); font-weight: 800; letter-spacing: -.02em; }
 
 @media (max-width: 760px) {
+    /* La sidebar deja de ser una columna fija y pasa a ser una barra
+       superior horizontal — mismo patrón que ya usaban las pestañas antes
+       de este cambio, solo que ahora vive dentro de .app-sidebar. */
+    .app-shell { grid-template-columns: 1fr; }
+    .app-sidebar {
+        position: static; height: auto; flex-direction: row; align-items: center;
+        overflow-x: auto; overflow-y: visible; gap: 14px; padding: 12px 14px;
+        border-right: none; border-bottom: 1px solid var(--border);
+    }
+    .sidebar-foot { margin-top: 0; padding-top: 0; border-top: none; }
     .nav-links {
-        width: 100%; flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start;
+        flex-direction: row; flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start;
         -webkit-overflow-scrolling: touch; scrollbar-width: none;
     }
     .nav-links::-webkit-scrollbar { display: none; }
@@ -508,6 +593,7 @@ body.role-trabajador .admin-only { display: none !important; }
 
 /* Sin sesión, la aplicación no se muestra en absoluto: el login es una
    pantalla completa y opaca, no una capa sobre el POS. */
+body:not(.role-admin):not(.role-trabajador) .app-sidebar,
 body:not(.role-admin):not(.role-trabajador) .app-header,
 body:not(.role-admin):not(.role-trabajador) .app-content {
     display: none !important;
@@ -1002,20 +1088,11 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
     html, body { overflow-x: hidden; }
 
     .app-header, .app-content { padding-left: 14px; padding-right: 14px; }
-    .app-header { flex-direction: column; align-items: stretch; gap: 12px; }
 
-    /* Sin min-width:0 los hijos del header no pueden encogerse por debajo de
-       su ancho de contenido: la barra de navegación (flex-wrap:nowrap, 7
-       botones) imponía ~994px y arrastraba al logo y al bloque derecho fuera
-       de la pantalla, quedando recortados por el overflow-x:hidden. */
-    .app-header > * { min-width: 0; max-width: 100%; }
-    .app-header .logo,
-    .header-right { width: 100%; min-width: 0; flex-wrap: wrap; }
-    .nav-links { width: 100%; min-width: 0; max-width: 100%; }
-
-    .app-header .logo { justify-content: center; text-align: center; }
-    .app-header .logo h1 { font-size: 24px; }
-    .header-right { justify-content: center; }
+    /* El logo y la navegación viven ahora en .app-sidebar (ver su propio
+       bloque @media más arriba) — acá solo queda el bloque de estado de
+       conexión, que ya cabe sin ajustes especiales. */
+    .header-right { justify-content: center; width: 100%; }
 
     .card { padding: 18px 16px; }
     .card-head { flex-direction: column; align-items: stretch; }
@@ -1100,7 +1177,7 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
 }
 
 @media (max-width: 480px) {
-    .app-header .logo h1 { font-size: 21px; }
+    .sidebar-brand h1 { font-size: 18px; }
     .kpi-grid { grid-template-columns: 1fr 1fr; }
     .pago-metodos { grid-template-columns: 1fr; }
     .modal-box { padding: 14px; }
@@ -1702,7 +1779,7 @@ h1, h2, h3, h4 { letter-spacing: -0.02em; }
 /* La cabecera general también se compacta, para que la barra de módulos
    no se coma la altura útil de la pantalla. */
 .app-header { padding-top: 12px; padding-bottom: 12px; }
-.app-header .logo h1 { font-size: 1.15rem; }
+.sidebar-brand h1 { font-size: 1.15rem; }
 .nav-btn { padding-top: 8px; padding-bottom: 8px; font-size: .82rem; }
 
 /* ============================================================
@@ -2743,6 +2820,9 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
 #modalPegarTiendanube,
 #modalRevisarTiendanube { z-index: 10000; }
 #modalProducto { z-index: 10005; }
+/* Pop-up de fotos+categoría, se abre DESDE #modalProducto (10005): mismo
+   criterio del bug 33 de arriba — tiene que ir por encima de quien lo abre. */
+#modalFotosCategoria { z-index: 10006; }
 #modalFormatoContador { z-index: 10027; }
 
 /* ============================================================

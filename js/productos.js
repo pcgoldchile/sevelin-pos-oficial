@@ -19,7 +19,9 @@ const ICO_ELIMINAR_PROD = `<svg viewBox="0 0 24 24" fill="none" stroke="currentC
 
 const elProductosTableBody = document.getElementById('productosTableBody');
 const elBuscarProductoTabla = document.getElementById('buscarProductoTabla');
-const elModalProducto = document.getElementById('modalProducto');
+const elViewProductoEditor = document.getElementById('view-producto-editor');
+const elViewProductos = document.getElementById('view-productos');
+const elBtnVolverProductos = document.getElementById('btnVolverProductos');
 const elProductoFormTitle = document.getElementById('productoFormTitle');
 const elProdEditId = document.getElementById('prodEditId');
 const elProdSku = document.getElementById('prodSku');
@@ -40,18 +42,34 @@ const elProdAlto = document.getElementById('prodAlto');
 const elProdAncho = document.getElementById('prodAncho');
 const elProdProfundidad = document.getElementById('prodProfundidad');
 const elProdDescripcion = document.getElementById('prodDescripcion');
-const elProdWebSinGuardarAviso = document.getElementById('prodWebSinGuardarAviso');
-const elCampoProdFotos = document.getElementById('campoProdFotos');
 const elProdFotoInput = document.getElementById('prodFotoInput');
 const elProdFotoCanvas = document.getElementById('prodFotoCanvas');
 const elProdFotoEstado = document.getElementById('prodFotoEstado');
 const elProdFotosGrid = document.getElementById('prodFotosGrid');
+const elDropzoneFotos = document.getElementById('dropzoneFotos');
+const elAvisoPublicacionIncompleta = document.getElementById('avisoPublicacionIncompleta');
 const elProdPublicadoWeb = document.getElementById('prodPublicadoWeb');
 const elProdPrecioWeb = document.getElementById('prodPrecioWeb');
 const elProdCategoriaWeb = document.getElementById('prodCategoriaWeb');
 const elProdStockUmbralWeb = document.getElementById('prodStockUmbralWeb');
 const elProdDescripcionWeb = document.getElementById('prodDescripcionWeb');
 let productoEnEdicionImagenUrls = [];
+// Fotos elegidas ANTES de que el producto tenga id (modo creación): quedan
+// acá como data URLs hasta que guardarProducto() cree el producto y recién
+// ahí se suban en este mismo orden — ver manejarSeleccionFotoProducto().
+let fotosNuevasStaged = [];
+// Cache de producto_categorias (misma tabla que "Página Web → Categorías",
+// js/pagina-web.js) para la tarjeta "Categoría" del editor — se refresca al
+// abrir el editor o al crear una categoría/subcategoría desde ahí. Los ids
+// "pop*" son legado de cuando esto vivía en un pop-up aparte (sesión
+// anterior) — la tarjeta ahora es parte fija de #view-producto-editor.
+let categoriasWebCache = [];
+const elPopFotosCategoria = document.getElementById('popFotosCategoria');
+const elPopFotosSubcategoria = document.getElementById('popFotosSubcategoria');
+const elPopNuevaCategoriaInput = document.getElementById('popNuevaCategoriaInput');
+const elBtnPopNuevaCategoria = document.getElementById('btnPopNuevaCategoria');
+const elPopNuevaSubcategoriaInput = document.getElementById('popNuevaSubcategoriaInput');
+const elBtnPopNuevaSubcategoria = document.getElementById('btnPopNuevaSubcategoria');
 const elBtnNuevoProducto = document.getElementById('btnNuevoProducto');
 const elBtnCancelarProducto = document.getElementById('btnCancelarProducto');
 const elBtnGuardarProducto = document.getElementById('btnGuardarProducto');
@@ -130,6 +148,7 @@ function setupProductosEventListeners() {
     else abrirModalProducto();
   });
   if (elBtnCancelarProducto) elBtnCancelarProducto.addEventListener('click', cerrarModalProducto);
+  if (elBtnVolverProductos) elBtnVolverProductos.addEventListener('click', cerrarModalProducto);
   if (elBtnGuardarProducto) elBtnGuardarProducto.addEventListener('click', guardarProducto);
   if (elBtnEliminarTodosProductos) elBtnEliminarTodosProductos.addEventListener('click', eliminarTodosLosProductos);
 
@@ -146,11 +165,37 @@ function setupProductosEventListeners() {
   if (elBtnExportarProductosCSV) elBtnExportarProductosCSV.addEventListener('click', () => exportarProductos('csv'));
   if (elBtnExportarProductosPDF) elBtnExportarProductosPDF.addEventListener('click', exportarProductosPDF);
 
-  if (elModalProducto) {
-    elModalProducto.addEventListener('click', (e) => { if (e.target === elModalProducto) cerrarModalProducto(); });
-  }
-
   if (elProdFotoInput) elProdFotoInput.addEventListener('change', manejarSeleccionFotoProducto);
+  configurarDropzoneFotos();
+
+  // Aviso "no va a aparecer en la tienda" (Tienda web) — se recalcula en
+  // vivo con cualquier campo que lo pueda cambiar.
+  [elProdPublicadoWeb, elProdSku, elProdStock, elProdStockIlimitado].forEach(el => {
+    if (el) el.addEventListener('input', evaluarAvisoPublicacion);
+    if (el) el.addEventListener('change', evaluarAvisoPublicacion);
+  });
+
+  // Categoría/subcategoría: ahora son parte fija de la tarjeta "Categoría"
+  // (antes había que confirmar con un botón "Aceptar" en el pop-up) — al
+  // elegir, se escribe directo en #prodCategoriaWeb (estado real que lee
+  // guardarProducto()).
+  if (elPopFotosCategoria) {
+    elPopFotosCategoria.addEventListener('change', () => {
+      poblarSubcategoriasEditor(elPopFotosCategoria.value, '');
+      aplicarSeleccionCategoria();
+    });
+  }
+  if (elPopFotosSubcategoria) {
+    elPopFotosSubcategoria.addEventListener('change', aplicarSeleccionCategoria);
+  }
+  if (elBtnPopNuevaCategoria) elBtnPopNuevaCategoria.addEventListener('click', crearCategoriaEditor);
+  if (elBtnPopNuevaSubcategoria) elBtnPopNuevaSubcategoria.addEventListener('click', crearSubcategoriaEditor);
+  if (elPopNuevaCategoriaInput) {
+    elPopNuevaCategoriaInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); crearCategoriaEditor(); } });
+  }
+  if (elPopNuevaSubcategoriaInput) {
+    elPopNuevaSubcategoriaInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); crearSubcategoriaEditor(); } });
+  }
 
   if (elBtnValorizacion) elBtnValorizacion.addEventListener('click', abrirValorizacion);
   if (elProdStockIlimitado) elProdStockIlimitado.addEventListener('change', aplicarStockIlimitadoProductoUI);
@@ -703,7 +748,7 @@ function aplicarStockIlimitadoProductoUI() {
 }
 
 function abrirModalProducto(producto = null) {
-  if (!elModalProducto) return;
+  if (!elViewProductoEditor) return;
   if (!esAdmin()) { showToast('Solo el administrador puede editar productos', 'err'); return; }
 
   if (producto) {
@@ -736,8 +781,9 @@ function abrirModalProducto(producto = null) {
     if (elProdPrecioWeb) elProdPrecioWeb.value = producto.precio_web ?? '';
     if (elProdStockUmbralWeb) elProdStockUmbralWeb.value = producto.stock_umbral_web ?? '';
     if (elProdDescripcionWeb) elProdDescripcionWeb.value = producto.descripcion_web || '';
-    poblarSelectCategoriaWeb(producto.categoria_web || '');
+    poblarSelectCategoriaWeb(producto.categoria_web || '').then(cargarCategoriasEditor);
     productoEnEdicionImagenUrls = Array.isArray(producto.imagen_urls) ? [...producto.imagen_urls] : [];
+    fotosNuevasStaged = [];
   } else {
     editingProductId = null;
     if (elProductoFormTitle) elProductoFormTitle.textContent = 'Nuevo Producto';
@@ -757,8 +803,9 @@ function abrirModalProducto(producto = null) {
     if (elProdPrecioWeb) elProdPrecioWeb.value = '';
     if (elProdStockUmbralWeb) elProdStockUmbralWeb.value = '';
     if (elProdDescripcionWeb) elProdDescripcionWeb.value = '';
-    poblarSelectCategoriaWeb('');
+    poblarSelectCategoriaWeb('').then(cargarCategoriasEditor);
     productoEnEdicionImagenUrls = [];
+    fotosNuevasStaged = [];
   }
 
   aplicarStockIlimitadoProductoUI();
@@ -767,15 +814,14 @@ function abrirModalProducto(producto = null) {
   // Solo se exporta lo que ya existe en la base
   if (elBtnExportarProducto) elBtnExportarProducto.style.display = producto ? '' : 'none';
 
-  // Las fotos necesitan un producto ya guardado (el endpoint cuelga de
-  // /api/productos/:id/imagen): sin id, se oculta el campo y se avisa.
-  if (elCampoProdFotos) elCampoProdFotos.style.display = producto ? '' : 'none';
-  if (elProdWebSinGuardarAviso) elProdWebSinGuardarAviso.style.display = producto ? 'none' : '';
   if (elProdFotoEstado) elProdFotoEstado.textContent = '';
   if (elProdFotoInput) elProdFotoInput.value = '';
+  evaluarAvisoPublicacion();
   renderFotosProducto();
 
-  elModalProducto.classList.add('show');
+  elViewProductos?.classList.remove('active');
+  elViewProductoEditor.classList.add('active');
+  window.scrollTo({ top: 0, behavior: 'instant' });
   setTimeout(() => elProdNombre?.focus(), 80);
 }
 
@@ -787,6 +833,7 @@ async function poblarSelectCategoriaWeb(nombreSeleccionado) {
   if (!elProdCategoriaWeb) return;
   try {
     const categorias = await API.productosCategorias.listar();
+    categoriasWebCache = categorias;
     // Árbol de 2 niveles: cada categoría de nivel superior seguida de sus
     // subcategorías indentadas — mismo orden que ya trae la API.
     const raiz = categorias.filter(c => !c.parent_id);
@@ -804,12 +851,39 @@ async function poblarSelectCategoriaWeb(nombreSeleccionado) {
 }
 
 function cerrarModalProducto() {
-  if (elModalProducto) elModalProducto.classList.remove('show');
+  elViewProductoEditor?.classList.remove('active');
+  elViewProductos?.classList.add('active');
   editingProductId = null;
   productoEnEdicionImagenUrls = [];
+  fotosNuevasStaged = [];
 }
 
 // ---------- Guardar (crear / actualizar) ----------
+/* Publicar sin SKU o con stock 0 falla en silencio: el receptor del webhook
+   de sevelin-tienda responde 200 { ok:false, motivo:'sin_sku' } sin insertar
+   nada (no es un error visible), y el catálogo público filtra siempre
+   stock_web > 0. Este aviso no bloquea el guardado, solo evita que el error
+   pase desapercibido — ver docs/SNAPSHOT.md o el changelog de esta sesión. */
+function evaluarAvisoPublicacion() {
+  if (!elAvisoPublicacionIncompleta) return;
+  const publicado = !!(elProdPublicadoWeb && elProdPublicadoWeb.checked);
+  const sinSku = !(elProdSku?.value || '').trim();
+  const ilimitado = !!(elProdStockIlimitado && elProdStockIlimitado.checked);
+  const sinStock = !ilimitado && (Number(elProdStock?.value) || 0) === 0;
+
+  if (!publicado || (!sinSku && !sinStock)) {
+    elAvisoPublicacionIncompleta.style.display = 'none';
+    return;
+  }
+
+  const motivos = [];
+  if (sinSku) motivos.push('sin SKU');
+  if (sinStock) motivos.push('con stock en 0');
+  elAvisoPublicacionIncompleta.textContent =
+    `⚠️ Este producto está ${motivos.join(' y ')}: no va a aparecer en sevelin.cl hasta que lo corrijas.`;
+  elAvisoPublicacionIncompleta.style.display = '';
+}
+
 async function guardarProducto() {
   const nombre = (elProdNombre?.value || '').trim();
   if (!nombre) { showToast('El nombre del producto es obligatorio', 'err'); return; }
@@ -846,10 +920,36 @@ async function guardarProducto() {
   if (elBtnGuardarProducto) elBtnGuardarProducto.disabled = true;
 
   try {
-    if (editingProductId) await API.productos.actualizar(editingProductId, payload);
-    else await API.productos.crear(payload);
+    let mensaje;
+    if (editingProductId) {
+      await API.productos.actualizar(editingProductId, payload);
+      mensaje = 'Producto actualizado';
+    } else {
+      const creado = await API.productos.crear(payload);
+      mensaje = 'Producto creado';
 
-    showToast(editingProductId ? 'Producto actualizado' : 'Producto creado', 'ok');
+      // Recién con el id real se pueden subir las fotos elegidas antes de
+      // guardar (ver manejarSeleccionFotoProducto) — se suben en el mismo
+      // orden en que quedaron en fotosNuevasStaged.
+      if (fotosNuevasStaged.length && creado?.id) {
+        const totalFotos = fotosNuevasStaged.length;
+        let subidas = 0;
+        for (const dataUrl of fotosNuevasStaged) {
+          try {
+            await API.productos.subirImagen(creado.id, dataUrl);
+            subidas++;
+          } catch (errFoto) {
+            console.error('Error al subir foto del producto nuevo:', errFoto.message || errFoto);
+          }
+        }
+        fotosNuevasStaged = [];
+        if (subidas < totalFotos) {
+          mensaje += ` (${subidas}/${totalFotos} fotos subidas — reintenta el resto editando el producto)`;
+        }
+      }
+    }
+
+    showToast(mensaje, 'ok');
     cerrarModalProducto();
     cargarProductos(true);
   } catch (err) {
@@ -881,41 +981,62 @@ const FOTO_CALIDAD_INICIAL = 0.85;
 const FOTO_CALIDAD_MINIMA = 0.5;
 const FOTO_OBJETIVO_BYTES = 150 * 1024;
 
+// Fuente activa de fotos: en edición son las ya subidas (API real); en
+// creación (sin id todavía) son las que están en memoria esperando a que
+// el producto se guarde — ver manejarSeleccionFotoProducto().
+function fotosActivas() {
+  return editingProductId ? productoEnEdicionImagenUrls : fotosNuevasStaged;
+}
+
 function renderFotosProducto() {
   if (!elProdFotosGrid) return;
-  if (!productoEnEdicionImagenUrls.length) {
+  const lista = fotosActivas();
+  if (!lista.length) {
     elProdFotosGrid.innerHTML = '<p class="modal-hint">Sin fotos todavía.</p>';
     return;
   }
   // La primera foto del arreglo es la que la tienda usa como foto principal
   // de catálogo (imagen_urls[0]) — de ahí la etiqueta y las flechas para
   // que el dueño elija el orden a mano, sin depender del orden de subida.
-  elProdFotosGrid.innerHTML = productoEnEdicionImagenUrls.map((url, i) => `
+  elProdFotosGrid.innerHTML = lista.map((url, i) => `
     <div style="position:relative; width:90px;">
       <div style="position:relative; width:90px; height:90px;">
         <img src="${escHtml(url)}" style="width:100%; height:100%; object-fit:cover; border-radius:8px; border:1px solid #d8dee9;">
-        <button type="button" class="btn-quitar-foto" data-url="${escHtml(url)}"
+        <button type="button" class="btn-quitar-foto" data-idx="${i}"
           style="position:absolute; top:-6px; right:-6px; width:22px; height:22px; border-radius:999px; border:none; background:#dc2626; color:#fff; cursor:pointer; line-height:1;">×</button>
         ${i === 0 ? '<span style="position:absolute; bottom:4px; left:4px; background:rgba(37,99,235,.9); color:#fff; font-size:10px; font-weight:700; padding:2px 6px; border-radius:999px;">Principal</span>' : ''}
       </div>
       <div style="display:flex; justify-content:center; gap:4px; margin-top:4px;">
-        <button type="button" class="btn-mover-foto" data-url="${escHtml(url)}" data-direccion="arriba" title="Mover antes"
+        <button type="button" class="btn-mover-foto" data-idx="${i}" data-direccion="arriba" title="Mover antes"
           ${i === 0 ? 'disabled style="opacity:.35;cursor:not-allowed;"' : ''}>◀</button>
-        <button type="button" class="btn-mover-foto" data-url="${escHtml(url)}" data-direccion="abajo" title="Mover después"
-          ${i === productoEnEdicionImagenUrls.length - 1 ? 'disabled style="opacity:.35;cursor:not-allowed;"' : ''}>▶</button>
+        <button type="button" class="btn-mover-foto" data-idx="${i}" data-direccion="abajo" title="Mover después"
+          ${i === lista.length - 1 ? 'disabled style="opacity:.35;cursor:not-allowed;"' : ''}>▶</button>
       </div>
     </div>`).join('');
 
   elProdFotosGrid.querySelectorAll('.btn-quitar-foto').forEach(btn => {
-    btn.addEventListener('click', () => quitarFotoProducto(btn.dataset.url));
+    btn.addEventListener('click', () => quitarFotoProducto(Number(btn.dataset.idx)));
   });
   elProdFotosGrid.querySelectorAll('.btn-mover-foto').forEach(btn => {
-    btn.addEventListener('click', () => moverFotoProducto(btn.dataset.url, btn.dataset.direccion));
+    btn.addEventListener('click', () => moverFotoProducto(Number(btn.dataset.idx), btn.dataset.direccion));
   });
 }
 
-async function moverFotoProducto(url, direccion) {
-  if (!editingProductId) return;
+async function moverFotoProducto(idx, direccion) {
+  const lista = fotosActivas();
+  const url = lista[idx];
+  if (!url) return;
+
+  // Modo creación: la foto todavía no existe en el servidor, se reordena
+  // el array local sin red.
+  if (!editingProductId) {
+    const destino = direccion === 'arriba' ? idx - 1 : idx + 1;
+    if (destino < 0 || destino >= lista.length) return;
+    [lista[idx], lista[destino]] = [lista[destino], lista[idx]];
+    renderFotosProducto();
+    return;
+  }
+
   try {
     const actualizado = await API.productos.moverImagen(editingProductId, url, direccion);
     productoEnEdicionImagenUrls = actualizado.imagen_urls || productoEnEdicionImagenUrls;
@@ -927,18 +1048,44 @@ async function moverFotoProducto(url, direccion) {
 }
 
 /* Lee el archivo elegido, lo dibuja centrado sobre un lienzo 1000x1000 con
-   fondo blanco (sin deformar ni recortar), lo exporta a webp bajando la
-   calidad hasta acercarse a ~150KB, y lo sube (el producto ya debe existir:
-   el endpoint cuelga de su id). */
-async function manejarSeleccionFotoProducto(event) {
+   fondo blanco (sin deformar ni recortar), y lo exporta a webp bajando la
+   calidad hasta acercarse a ~150KB. Con el producto ya guardado, se sube de
+   inmediato (endpoint cuelga de su id); sin guardar todavía, queda en
+   fotosNuevasStaged y se sube recién cuando guardarProducto() cree el
+   producto y tenga un id real. */
+function manejarSeleccionFotoProducto(event) {
   const archivo = event.target.files?.[0];
   event.target.value = ''; // permite elegir el mismo archivo dos veces seguidas
-  if (!archivo) return;
+  if (archivo) procesarArchivoFoto(archivo);
+}
 
-  if (!editingProductId) {
-    showToast('Guarda el producto antes de agregarle fotos', 'err');
-    return;
-  }
+/* Cablea la zona de arrastrar y soltar (#dropzoneFotos): mismo pipeline que
+   elegir un archivo a mano (procesarArchivoFoto), solo cambia el origen del
+   File. dragover/dragenter agregan .dropzone-activa (glow) mientras el
+   archivo está encima; dragleave/drop la quitan. */
+function configurarDropzoneFotos() {
+  if (!elDropzoneFotos) return;
+  const marcarActiva = (e) => { e.preventDefault(); elDropzoneFotos.classList.add('dropzone-activa'); };
+  const quitarActiva = (e) => { e.preventDefault(); elDropzoneFotos.classList.remove('dropzone-activa'); };
+
+  ['dragenter', 'dragover'].forEach(ev => elDropzoneFotos.addEventListener(ev, marcarActiva));
+  ['dragleave', 'dragend'].forEach(ev => elDropzoneFotos.addEventListener(ev, quitarActiva));
+  elDropzoneFotos.addEventListener('drop', (e) => {
+    quitarActiva(e);
+    const archivo = e.dataTransfer?.files?.[0];
+    if (archivo) procesarArchivoFoto(archivo);
+  });
+  // El <label for="prodFotoInput"> ya abre el selector de archivos al hacer
+  // click — no hace falta un listener de click aparte acá.
+}
+
+/* Lee el archivo elegido (por click o por arrastrar y soltar), lo dibuja
+   centrado sobre un lienzo 1000x1000 con fondo blanco (sin deformar ni
+   recortar), y lo exporta a webp bajando la calidad hasta acercarse a
+   ~150KB. Con el producto ya guardado, se sube de inmediato (endpoint
+   cuelga de su id); sin guardar todavía, queda en fotosNuevasStaged y se
+   sube recién cuando guardarProducto() cree el producto y tenga un id real. */
+async function procesarArchivoFoto(archivo) {
   if (!archivo.type.startsWith('image/')) {
     showToast('Elige un archivo de imagen', 'err');
     return;
@@ -950,6 +1097,14 @@ async function manejarSeleccionFotoProducto(event) {
     const bitmap = await cargarBitmapDeArchivo(archivo);
     const dataUrlWebp = await dibujarYComprimirFoto(bitmap);
 
+    if (!editingProductId) {
+      fotosNuevasStaged.push(dataUrlWebp);
+      renderFotosProducto();
+      if (elProdFotoEstado) elProdFotoEstado.textContent = 'Foto agregada (se sube al guardar el producto).';
+      showToast('Foto agregada', 'ok');
+      return;
+    }
+
     if (elProdFotoEstado) elProdFotoEstado.textContent = 'Subiendo...';
     const actualizado = await API.productos.subirImagen(editingProductId, dataUrlWebp);
     productoEnEdicionImagenUrls = actualizado.imagen_urls || productoEnEdicionImagenUrls;
@@ -957,9 +1112,9 @@ async function manejarSeleccionFotoProducto(event) {
     if (elProdFotoEstado) elProdFotoEstado.textContent = 'Foto subida.';
     showToast('Foto subida', 'ok');
   } catch (err) {
-    console.error('Error al subir la foto:', err.message || err);
+    console.error('Error al procesar la foto:', err.message || err);
     if (elProdFotoEstado) elProdFotoEstado.textContent = '';
-    showToast(err.message || 'No se pudo subir la foto', 'err');
+    showToast(err.message || 'No se pudo procesar la foto', 'err');
   }
 }
 
@@ -1012,9 +1167,19 @@ function blobADataUrl(blob) {
   });
 }
 
-async function quitarFotoProducto(url) {
-  if (!editingProductId || !url) return;
+async function quitarFotoProducto(idx) {
+  const lista = fotosActivas();
+  const url = lista[idx];
+  if (!url) return;
   if (!confirm('¿Quitar esta foto?')) return;
+
+  // Modo creación: solo vive en memoria, no hay nada que borrar en el servidor.
+  if (!editingProductId) {
+    fotosNuevasStaged.splice(idx, 1);
+    renderFotosProducto();
+    showToast('Foto quitada', 'ok');
+    return;
+  }
 
   try {
     const actualizado = await API.productos.quitarImagen(editingProductId, url);
@@ -1024,6 +1189,105 @@ async function quitarFotoProducto(url) {
   } catch (err) {
     console.error('Error al quitar la foto:', err.message || err);
     showToast(err.message || 'No se pudo quitar la foto', 'err');
+  }
+}
+
+// ---------- Tarjeta "Categoría": selects en cascada + creación inline ----------
+// Antes vivía en un pop-up aparte (#modalFotosCategoria, sesión anterior);
+// ahora es una tarjeta fija de #view-producto-editor y no hay paso
+// "Aceptar" — cada cambio en los selects escribe directo en
+// #prodCategoriaWeb (aplicarSeleccionCategoria), que es el estado real que
+// lee guardarProducto().
+
+// Carga producto_categorias (misma tabla que "Página Web → Categorías") y
+// arma los dos <select> en cascada, dejando preseleccionada la categoría o
+// subcategoría que ya traía #prodCategoriaWeb (estado compartido con
+// guardarProducto()).
+async function cargarCategoriasEditor() {
+  if (!elPopFotosCategoria) return;
+  try {
+    const categorias = await API.productosCategorias.listar();
+    categoriasWebCache = categorias;
+
+    const seleccionadaId = elProdCategoriaWeb?.selectedOptions[0]?.dataset.id || '';
+    const seleccionada = categorias.find(c => String(c.id) === String(seleccionadaId));
+    const categoriaPadreId = seleccionada ? (seleccionada.parent_id || seleccionada.id) : '';
+    const subcategoriaId = seleccionada?.parent_id ? seleccionada.id : '';
+
+    const raiz = categorias.filter(c => !c.parent_id);
+    elPopFotosCategoria.innerHTML = '<option value="">Sin categoría</option>' +
+      raiz.map(c => `<option value="${c.id}">${escHtml(c.nombre)}</option>`).join('');
+    elPopFotosCategoria.value = categoriaPadreId || '';
+
+    poblarSubcategoriasEditor(categoriaPadreId, subcategoriaId);
+  } catch (err) {
+    console.error('Error al cargar categorías:', err.message || err);
+    showToast(err.message || 'No se pudieron cargar las categorías', 'err');
+  }
+}
+
+function poblarSubcategoriasEditor(categoriaId, subcategoriaSeleccionadaId) {
+  if (!elPopFotosSubcategoria) return;
+  const hijos = categoriaId ? categoriasWebCache.filter(c => String(c.parent_id) === String(categoriaId)) : [];
+  elPopFotosSubcategoria.innerHTML = '<option value="">Sin subcategoría</option>' +
+    hijos.map(c => `<option value="${c.id}">${escHtml(c.nombre)}</option>`).join('');
+  elPopFotosSubcategoria.value = subcategoriaSeleccionadaId || '';
+
+  const habilitar = !!categoriaId;
+  elPopFotosSubcategoria.disabled = !habilitar;
+  if (elPopNuevaSubcategoriaInput) elPopNuevaSubcategoriaInput.disabled = !habilitar;
+  if (elBtnPopNuevaSubcategoria) elBtnPopNuevaSubcategoria.disabled = !habilitar;
+}
+
+async function crearCategoriaEditor() {
+  const nombre = (elPopNuevaCategoriaInput?.value || '').trim();
+  if (!nombre) { showToast('Escribe un nombre', 'err'); return; }
+  try {
+    const creada = await API.productosCategorias.crear(nombre, null);
+    if (elPopNuevaCategoriaInput) elPopNuevaCategoriaInput.value = '';
+    await cargarCategoriasEditor();
+    if (elPopFotosCategoria) elPopFotosCategoria.value = creada.id;
+    poblarSubcategoriasEditor(creada.id, '');
+    aplicarSeleccionCategoria();
+    showToast('Categoría creada', 'ok');
+  } catch (err) {
+    console.error('Error al crear categoría:', err.message || err);
+    showToast(err.message || 'No se pudo crear la categoría', 'err');
+  }
+}
+
+async function crearSubcategoriaEditor() {
+  const categoriaId = elPopFotosCategoria?.value;
+  if (!categoriaId) { showToast('Elige primero una categoría', 'err'); return; }
+  const nombre = (elPopNuevaSubcategoriaInput?.value || '').trim();
+  if (!nombre) { showToast('Escribe un nombre', 'err'); return; }
+  try {
+    const creada = await API.productosCategorias.crear(nombre, categoriaId);
+    if (elPopNuevaSubcategoriaInput) elPopNuevaSubcategoriaInput.value = '';
+    categoriasWebCache.push(creada);
+    poblarSubcategoriasEditor(categoriaId, creada.id);
+    aplicarSeleccionCategoria();
+    showToast('Subcategoría creada', 'ok');
+  } catch (err) {
+    console.error('Error al crear subcategoría:', err.message || err);
+    showToast(err.message || 'No se pudo crear la subcategoría', 'err');
+  }
+}
+
+// Escribe la categoría/subcategoría elegida en el <select> oculto
+// #prodCategoriaWeb — mismo estado que guardarProducto() ya leía desde
+// antes (value + data-id de la opción elegida), ahora actualizado en vivo
+// con cada cambio en vez de con un botón "Aceptar".
+function aplicarSeleccionCategoria() {
+  const subcategoriaId = elPopFotosSubcategoria?.value || '';
+  const categoriaId = elPopFotosCategoria?.value || '';
+  const idElegido = subcategoriaId || categoriaId;
+  const categoria = categoriasWebCache.find(c => String(c.id) === String(idElegido));
+
+  if (elProdCategoriaWeb) {
+    elProdCategoriaWeb.innerHTML = '<option value="">Sin categoría</option>' +
+      (categoria ? `<option value="${escHtml(categoria.nombre)}" data-id="${categoria.id}" selected>${escHtml(categoria.nombre)}</option>` : '');
+    elProdCategoriaWeb.value = categoria ? categoria.nombre : '';
   }
 }
 
