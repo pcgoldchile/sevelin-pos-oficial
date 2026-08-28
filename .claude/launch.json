@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "sevelin-pos-dev",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["api/index.js"],
+      "port": 3100
+    }
+  ]
+}

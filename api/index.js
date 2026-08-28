@@ -509,7 +509,11 @@ const CAMPOS_PRODUCTO = [
   // Controles de la tienda web (e-commerce Fase 0). imagen_urls NO va acá:
   // se administra aparte con POST /api/productos/:id/imagen (append/quitar
   // una foto a la vez), no reemplazando el arreglo completo en cada guardado.
-  'publicado_web', 'precio_web', 'descripcion_web', 'categoria_web'
+  'publicado_web', 'precio_web', 'descripcion_web', 'categoria_web',
+  // categoria_id (Fase "Página Web → Categorías"): FK interna del POS, no se
+  // sincroniza a la tienda (el trigger solo usa categoria_web). stock_umbral_web:
+  // NULL = usa el default de la tienda (+5); ver sql/23-categorias-web-y-umbral-stock.sql.
+  'categoria_id', 'stock_umbral_web'
 ];
 
 /* Normaliza el código de barras: SOLO dígitos.
@@ -578,6 +582,14 @@ function sanearProducto(body = {}) {
       p[k] = (!t || ['null', 'undefined'].includes(t.toLowerCase())) ? null : t;
     }
   });
+  if (p.categoria_id !== undefined) p.categoria_id = p.categoria_id || null;
+  // stock_umbral_web: NULL = usa el default de la tienda (+5). 0 o negativo
+  // no tiene sentido como umbral (ver check de la migración 23) — se guarda
+  // NULL en vez de dejar que la base rechace todo el guardado del producto.
+  if (p.stock_umbral_web !== undefined) {
+    const v = num(p.stock_umbral_web);
+    p.stock_umbral_web = v >= 1 ? Math.round(v) : null;
+  }
 
   return p;
 }
@@ -615,6 +627,85 @@ app.get('/api/productos', auth(), async (req, res) => {
   const { data, error } = await db.from('productos').select('*').order('nombre', { ascending: true });
   if (error) return enviarError(res, 500, error.message);
   res.json(limpiarLista(data, req.usuario.rol));
+});
+
+/* ============================================================
+   CATEGORÍAS DEL CATÁLOGO WEB (módulo "Página Web → Categorías")
+   ------------------------------------------------------------
+   Distinto de repuesto_categorias (taller): esta tabla agrupa productos
+   de la tienda online, con orden manual (los repuestos se ordenan
+   alfabético, sin ese concepto). El nombre elegido se sigue guardando en
+   productos.categoria_web (texto, ver CAMPOS_PRODUCTO) — categoria_id es
+   solo la fuente en el modal, no viaja a la tienda.
+   Ver: admin y trabajador (autocompletado del filtro) · Escribir: solo admin
+   ============================================================ */
+app.get('/api/productos/categorias', auth(), async (req, res) => {
+  const { data, error } = await db.from('producto_categorias')
+    .select('*').order('orden', { ascending: true }).order('nombre', { ascending: true });
+  if (error) return enviarError(res, 500, error.message);
+  res.json(data || []);
+});
+
+app.post('/api/productos/categorias', auth(true), async (req, res) => {
+  const nombre = String(req.body?.nombre || '').trim();
+  if (!nombre) return enviarError(res, 400, 'Escribe un nombre');
+
+  const { data: maxOrden } = await db.from('producto_categorias')
+    .select('orden').order('orden', { ascending: false }).limit(1).maybeSingle();
+  const siguienteOrden = (maxOrden?.orden ?? -1) + 1;
+
+  const { data, error } = await db.from('producto_categorias')
+    .insert([{ nombre, orden: siguienteOrden }]).select().single();
+  if (error) {
+    const duplicado = /duplicate|unique/i.test(error.message);
+    return enviarError(res, duplicado ? 409 : 500, duplicado ? 'Esa categoría ya existe' : error.message);
+  }
+  res.status(201).json(data);
+});
+
+app.put('/api/productos/categorias/:id', auth(true), async (req, res) => {
+  const nombre = String(req.body?.nombre || '').trim();
+  if (!nombre) return enviarError(res, 400, 'Escribe un nombre');
+
+  const { data, error } = await db.from('producto_categorias')
+    .update({ nombre }).eq('id', req.params.id).select().single();
+  if (error) {
+    const duplicado = /duplicate|unique/i.test(error.message);
+    if (/no rows/i.test(error.message)) return enviarError(res, 404, 'No se encontró esa categoría');
+    return enviarError(res, duplicado ? 409 : 500, duplicado ? 'Ya existe otra categoría con ese nombre' : error.message);
+  }
+  res.json(data);
+});
+
+// Sube/baja una categoría intercambiando su `orden` con la vecina —
+// más simple que un batch de reordenamiento para dos botones ▲▼.
+app.put('/api/productos/categorias/:id/mover', auth(true), async (req, res) => {
+  const direccion = req.body?.direccion === 'arriba' ? 'arriba' : 'abajo';
+
+  const { data: lista, error: errLista } = await db.from('producto_categorias')
+    .select('id, orden').order('orden', { ascending: true }).order('nombre', { ascending: true });
+  if (errLista) return enviarError(res, 500, errLista.message);
+
+  const idx = (lista || []).findIndex(c => String(c.id) === String(req.params.id));
+  if (idx === -1) return enviarError(res, 404, 'No se encontró esa categoría');
+
+  const idxVecino = direccion === 'arriba' ? idx - 1 : idx + 1;
+  if (idxVecino < 0 || idxVecino >= lista.length) return res.json({ ok: true }); // ya está en el extremo
+
+  const actual = lista[idx];
+  const vecino = lista[idxVecino];
+
+  const { error: err1 } = await db.from('producto_categorias').update({ orden: vecino.orden }).eq('id', actual.id);
+  const { error: err2 } = await db.from('producto_categorias').update({ orden: actual.orden }).eq('id', vecino.id);
+  if (err1 || err2) return enviarError(res, 500, (err1 || err2).message);
+
+  res.json({ ok: true });
+});
+
+app.delete('/api/productos/categorias/:id', auth(true), async (req, res) => {
+  const { error } = await db.from('producto_categorias').delete().eq('id', req.params.id);
+  if (error) return enviarError(res, 500, error.message);
+  res.json({ ok: true });
 });
 
 /* ============================================================

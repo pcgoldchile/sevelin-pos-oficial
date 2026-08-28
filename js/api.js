@@ -232,6 +232,16 @@ const API = {
     actualizar: (id, cambios) => apiRequest(`/pos/pedidos-web/${id}`, { method: 'PUT', body: cambios })
   },
 
+  // Categorías del catálogo web (módulo "Página Web → Categorías") —
+  // distinto de repuestos.categorias (taller).
+  productosCategorias: {
+    listar: () => apiRequest('/productos/categorias'),
+    crear: (nombre) => apiRequest('/productos/categorias', { method: 'POST', body: { nombre } }),
+    renombrar: (id, nombre) => apiRequest(`/productos/categorias/${id}`, { method: 'PUT', body: { nombre } }),
+    mover: (id, direccion) => apiRequest(`/productos/categorias/${id}/mover`, { method: 'PUT', body: { direccion } }),
+    eliminar: (id) => apiRequest(`/productos/categorias/${id}`, { method: 'DELETE' })
+  },
+
   ot: {
     listar: (estado, buscar) => {
       const q = new URLSearchParams();

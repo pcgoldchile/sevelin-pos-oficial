@@ -98,7 +98,7 @@
         <button class="nav-btn admin-only" data-view="view-productos">📦 Productos</button>
         <button class="nav-btn admin-only" data-view="view-finanzas">📊 Finanzas</button>
         <button class="nav-btn" data-view="view-taller">🔧 Servicio Técnico</button>
-        <button class="nav-btn admin-only" data-view="view-pedidos-web">🌐 Pedidos Web</button>
+        <button class="nav-btn admin-only" data-view="view-pagina-web">🌐 Página Web</button>
       </nav>
       <button class="theme-toggle" id="btnTema" title="Cambiar tema" aria-label="Cambiar tema">🌙</button>
       <button class="btn btn-outline btn-sm" id="btnLogout" title="Cerrar sesión">🚪 Cerrar Sesión</button>
@@ -1379,53 +1379,79 @@
 
 
     <!-- ============================================================
-         VISTA 8: PEDIDOS WEB (e-commerce, Fase 5)
+         VISTA 8: PÁGINA WEB (e-commerce, Fase 5 + módulo Categorías)
          ------------------------------------------------------------
-         Lee/actualiza pedidos_web directo desde Supabase Web (proyecto
-         aparte de sevelin-tienda) — ver README-ECOMMERCE-SEVELIN.md
-         sección 2.1. Es lectura + cambio de estado de despacho, no un
-         back-office nuevo: CREADO/PAGADO/FALLIDO no se tocan desde acá,
-         los controla el webhook de pago de la tienda.
+         Dos sub-pestañas: Pedidos Web (lee/actualiza pedidos_web directo
+         desde Supabase Web, proyecto aparte de sevelin-tienda — ver
+         README-ECOMMERCE-SEVELIN.md sección 2.1; es lectura + cambio de
+         estado de despacho, CREADO/PAGADO/FALLIDO los controla el webhook
+         de pago de la tienda, no un click acá) y Categorías (catálogo
+         propio del POS, producto_categorias — ver sql/23-categorias-web-y-umbral-stock.sql).
          ============================================================ -->
-    <section id="view-pedidos-web" class="view-section admin-only">
-      <div class="card">
-        <div class="card-head">
-          <div>
-            <h2>Pedidos Web</h2>
-            <p class="subtitle">Pedidos pagados desde la tienda online, por preparar y despachar.</p>
-          </div>
-          <div class="toolbar-group">
-            <div class="chip-group" id="pedidosWebChips">
-              <button class="chip active" data-estado="">Todos</button>
-              <button class="chip" data-estado="PAGADO">Por preparar</button>
-              <button class="chip" data-estado="PREPARANDO">Preparando</button>
-              <button class="chip" data-estado="ENVIADO">Enviados</button>
-              <button class="chip" data-estado="ENTREGADO">Entregados</button>
-              <button class="chip" data-estado="CANCELADO">Cancelados</button>
-            </div>
-            <button class="btn btn-outline btn-sm" id="btnRecargarPedidosWeb">🔄 Actualizar</button>
-          </div>
-        </div>
+    <section id="view-pagina-web" class="view-section admin-only">
 
-        <div class="table-wrapper">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Pedido</th>
-                <th>Fecha</th>
-                <th>Cliente</th>
-                <th>Envío</th>
-                <th class="num">Total</th>
-                <th>Estado</th>
-                <th style="text-align:right;">Acciones</th>
-              </tr>
-            </thead>
-            <tbody id="pedidosWebTableBody">
-              <tr class="empty-row"><td colspan="7">Cargando pedidos...</td></tr>
-            </tbody>
-          </table>
+      <nav class="subtabs" id="subtabsPaginaWeb">
+        <button class="subtab activo" data-subtab="pedidos">🌐 Pedidos Web</button>
+        <button class="subtab" data-subtab="categorias">🗂️ Categorías</button>
+      </nav>
+
+      <div class="panel-pagina-web activo" data-panel-pagina-web="pedidos">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Pedidos Web</h2>
+              <p class="subtitle">Pedidos pagados desde la tienda online, por preparar y despachar.</p>
+            </div>
+            <div class="toolbar-group">
+              <div class="chip-group" id="pedidosWebChips">
+                <button class="chip active" data-estado="">Todos</button>
+                <button class="chip" data-estado="PAGADO">Por preparar</button>
+                <button class="chip" data-estado="PREPARANDO">Preparando</button>
+                <button class="chip" data-estado="ENVIADO">Enviados</button>
+                <button class="chip" data-estado="ENTREGADO">Entregados</button>
+                <button class="chip" data-estado="CANCELADO">Cancelados</button>
+              </div>
+              <button class="btn btn-outline btn-sm" id="btnRecargarPedidosWeb">🔄 Actualizar</button>
+            </div>
+          </div>
+
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Pedido</th>
+                  <th>Fecha</th>
+                  <th>Cliente</th>
+                  <th>Envío</th>
+                  <th class="num">Total</th>
+                  <th>Estado</th>
+                  <th style="text-align:right;">Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="pedidosWebTableBody">
+                <tr class="empty-row"><td colspan="7">Cargando pedidos...</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
+
+      <div class="panel-pagina-web" data-panel-pagina-web="categorias">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Categorías del catálogo web</h2>
+              <p class="subtitle">Agrupan los productos en la tienda online. El orden acá es el orden en que aparecen los filtros en la tienda.</p>
+            </div>
+          </div>
+          <div class="admin-cat-lista" id="listaCategoriasWeb"></div>
+          <div class="admin-cat-nuevo" style="margin-top:12px;">
+            <input type="text" id="nuevaCategoriaWebInput" placeholder="Nueva categoría...">
+            <button class="btn btn-outline btn-sm" id="btnNuevaCategoriaWeb">➕ Agregar</button>
+          </div>
+        </div>
+      </div>
+
     </section>
 
   </main>
@@ -2796,8 +2822,15 @@
         </div>
         <div class="field">
           <label>Categoría web</label>
-          <input type="text" id="prodCategoriaWeb" placeholder="Cómo se agrupa en la tienda">
+          <select id="prodCategoriaWeb">
+            <option value="">Sin categoría</option>
+          </select>
         </div>
+      </div>
+
+      <div class="field" style="margin-top:12px;">
+        <label>Umbral de stock mostrado en la web</label>
+        <input type="number" id="prodStockUmbralWeb" min="1" placeholder="Por defecto: más de 5 disponibles">
       </div>
 
       <div class="field" style="margin-top:12px;">
@@ -4015,6 +4048,7 @@
   <script src="js/mermas.js"></script>
   <script src="js/encargos.js"></script>
   <script src="js/pedidos-web.js"></script>
+  <script src="js/pagina-web.js"></script>   <!-- después de pedidos-web.js: envuelve su vista en el subtab "pedidos" -->
   <script src="js/repuestos.js"></script>
   <script src="js/ot.js"></script>
   <script src="js/pos.js"></script>

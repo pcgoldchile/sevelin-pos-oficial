@@ -3,7 +3,11 @@
 > Actualiza SOLO este archivo al cerrar una sesión. Para el detalle completo, ver `docs/README.md`.
 > Para saber qué otro documento leer según lo que necesites, ver `docs/README-DOCS.md`.
 
-**Fecha:** 26-08-2026 · **Versión activa:** v27 · **En producción:** https://sevelin-pos-oficial.vercel.app
+**Fecha:** 27-08-2026 · **Versión activa:** v28 (módulo "Página Web → Categorías" + umbral de stock
+por producto + backfill de imágenes 1:1, ver `docs/CHANGELOG-V28.md`) ·
+**Pendiente:** correr `sql/23-categorias-web-y-umbral-stock.sql` en este Supabase, y
+`sevelin-tienda/supabase/04-stock-umbral-web.sql` en el Supabase Web ANTES de guardar cualquier
+umbral desde el modal de producto. · **En producción:** https://sevelin-pos-oficial.vercel.app
 **Rama en curso:** `main` (el contenido de v24 ya está en `main` pese a lo que dice la línea de
 arriba en versiones anteriores de este archivo — no se investigó por qué quedó desactualizado, solo
 se confirmó con `git status`/`git log` antes de tocar código en la sesión de v25).

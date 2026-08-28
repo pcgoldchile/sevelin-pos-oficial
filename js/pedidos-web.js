@@ -34,12 +34,10 @@ document.addEventListener('DOMContentLoaded', () => {
   setupPedidosWebEventListeners();
 });
 
-// Se carga al entrar a la vista (mismo criterio que Servicio Técnico), no al
-// arrancar el POS: escucha el evento que ya dispara initNavegacion() en
-// config.js, sin tener que tocar ese archivo (mismo patrón que finanzas-gate.js).
-document.addEventListener('pos:vista-activa', (ev) => {
-  if (ev.detail?.vista === 'view-pedidos-web') cargarPedidosWeb();
-});
+// La carga ya no se dispara por 'pos:vista-activa' directo: "Pedidos Web"
+// pasó a ser la primera sub-pestaña de "Página Web" (ver js/pagina-web.js,
+// mostrarPanelPaginaWeb('pedidos') llama cargarPedidosWeb() con el mismo
+// criterio de carga perezosa que usaba antes, solo que un nivel más adentro).
 
 function setupPedidosWebEventListeners() {
   if (elBtnRecargarPedidosWeb) elBtnRecargarPedidosWeb.addEventListener('click', cargarPedidosWeb);

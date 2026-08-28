@@ -49,6 +49,7 @@ const elProdFotosGrid = document.getElementById('prodFotosGrid');
 const elProdPublicadoWeb = document.getElementById('prodPublicadoWeb');
 const elProdPrecioWeb = document.getElementById('prodPrecioWeb');
 const elProdCategoriaWeb = document.getElementById('prodCategoriaWeb');
+const elProdStockUmbralWeb = document.getElementById('prodStockUmbralWeb');
 const elProdDescripcionWeb = document.getElementById('prodDescripcionWeb');
 let productoEnEdicionImagenUrls = [];
 const elBtnNuevoProducto = document.getElementById('btnNuevoProducto');
@@ -733,8 +734,9 @@ function abrirModalProducto(producto = null) {
     if (elProdDescripcion) elProdDescripcion.value = producto.descripcion || '';
     if (elProdPublicadoWeb) elProdPublicadoWeb.checked = !!producto.publicado_web;
     if (elProdPrecioWeb) elProdPrecioWeb.value = producto.precio_web ?? '';
-    if (elProdCategoriaWeb) elProdCategoriaWeb.value = producto.categoria_web || '';
+    if (elProdStockUmbralWeb) elProdStockUmbralWeb.value = producto.stock_umbral_web ?? '';
     if (elProdDescripcionWeb) elProdDescripcionWeb.value = producto.descripcion_web || '';
+    poblarSelectCategoriaWeb(producto.categoria_web || '');
     productoEnEdicionImagenUrls = Array.isArray(producto.imagen_urls) ? [...producto.imagen_urls] : [];
   } else {
     editingProductId = null;
@@ -753,8 +755,9 @@ function abrirModalProducto(producto = null) {
     if (elProdStockActualizado) elProdStockActualizado.textContent = 'Última actualización de stock: se registrará al guardar.';
     if (elProdPublicadoWeb) elProdPublicadoWeb.checked = false;
     if (elProdPrecioWeb) elProdPrecioWeb.value = '';
-    if (elProdCategoriaWeb) elProdCategoriaWeb.value = '';
+    if (elProdStockUmbralWeb) elProdStockUmbralWeb.value = '';
     if (elProdDescripcionWeb) elProdDescripcionWeb.value = '';
+    poblarSelectCategoriaWeb('');
     productoEnEdicionImagenUrls = [];
   }
 
@@ -774,6 +777,22 @@ function abrirModalProducto(producto = null) {
 
   elModalProducto.classList.add('show');
   setTimeout(() => elProdNombre?.focus(), 80);
+}
+
+// Puebla el <select> de categoría web desde producto_categorias (módulo
+// "Página Web → Categorías") y deja seleccionado el nombre que ya traía
+// el producto — si esa categoría fue borrada mientras tanto, simplemente
+// no queda ninguna opción marcada (el modal no inventa una categoría).
+async function poblarSelectCategoriaWeb(nombreSeleccionado) {
+  if (!elProdCategoriaWeb) return;
+  try {
+    const categorias = await API.productosCategorias.listar();
+    elProdCategoriaWeb.innerHTML = '<option value="">Sin categoría</option>' +
+      categorias.map(c => `<option value="${escHtml(c.nombre)}" data-id="${c.id}">${escHtml(c.nombre)}</option>`).join('');
+    elProdCategoriaWeb.value = nombreSeleccionado || '';
+  } catch (err) {
+    console.error('Error al cargar categorías web:', err.message || err);
+  }
 }
 
 function cerrarModalProducto() {
@@ -811,6 +830,8 @@ async function guardarProducto() {
     publicado_web: !!(elProdPublicadoWeb && elProdPublicadoWeb.checked),
     precio_web: elProdPrecioWeb?.value.trim() ? Number(elProdPrecioWeb.value) : null,
     categoria_web: elProdCategoriaWeb?.value.trim() || null,
+    categoria_id: elProdCategoriaWeb?.selectedOptions[0]?.dataset.id || null,
+    stock_umbral_web: elProdStockUmbralWeb?.value.trim() ? Number(elProdStockUmbralWeb.value) : null,
     descripcion_web: elProdDescripcionWeb?.value.trim() || null
   };
 

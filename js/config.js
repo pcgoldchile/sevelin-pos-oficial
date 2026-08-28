@@ -338,6 +338,12 @@ function initNavegacion() {
         if (typeof cargarEncargos === 'function') cargarEncargos();
         if (typeof cargarRepuestos === 'function') cargarRepuestos();
       }
+      /* Página Web (Pedidos Web + Categorías, sub-pestañas): mismo criterio
+         que Finanzas — se abre en la primera pestaña y esa función es la
+         que dispara su propia carga de datos. */
+      if (viewId === 'view-pagina-web' && typeof mostrarPanelPaginaWeb === 'function') {
+        mostrarPanelPaginaWeb('pedidos');
+      }
 
       // Aviso para los módulos que necesitan reaccionar (p. ej. foco del lector en POS)
       document.dispatchEvent(new CustomEvent('pos:vista-activa', { detail: { vista: viewId } }));
