@@ -887,16 +887,43 @@ function renderFotosProducto() {
     elProdFotosGrid.innerHTML = '<p class="modal-hint">Sin fotos todavía.</p>';
     return;
   }
-  elProdFotosGrid.innerHTML = productoEnEdicionImagenUrls.map(url => `
-    <div style="position:relative; width:90px; height:90px;">
-      <img src="${escHtml(url)}" style="width:100%; height:100%; object-fit:cover; border-radius:8px; border:1px solid #d8dee9;">
-      <button type="button" class="btn-quitar-foto" data-url="${escHtml(url)}"
-        style="position:absolute; top:-6px; right:-6px; width:22px; height:22px; border-radius:999px; border:none; background:#dc2626; color:#fff; cursor:pointer; line-height:1;">×</button>
+  // La primera foto del arreglo es la que la tienda usa como foto principal
+  // de catálogo (imagen_urls[0]) — de ahí la etiqueta y las flechas para
+  // que el dueño elija el orden a mano, sin depender del orden de subida.
+  elProdFotosGrid.innerHTML = productoEnEdicionImagenUrls.map((url, i) => `
+    <div style="position:relative; width:90px;">
+      <div style="position:relative; width:90px; height:90px;">
+        <img src="${escHtml(url)}" style="width:100%; height:100%; object-fit:cover; border-radius:8px; border:1px solid #d8dee9;">
+        <button type="button" class="btn-quitar-foto" data-url="${escHtml(url)}"
+          style="position:absolute; top:-6px; right:-6px; width:22px; height:22px; border-radius:999px; border:none; background:#dc2626; color:#fff; cursor:pointer; line-height:1;">×</button>
+        ${i === 0 ? '<span style="position:absolute; bottom:4px; left:4px; background:rgba(37,99,235,.9); color:#fff; font-size:10px; font-weight:700; padding:2px 6px; border-radius:999px;">Principal</span>' : ''}
+      </div>
+      <div style="display:flex; justify-content:center; gap:4px; margin-top:4px;">
+        <button type="button" class="btn-mover-foto" data-url="${escHtml(url)}" data-direccion="arriba" title="Mover antes"
+          ${i === 0 ? 'disabled style="opacity:.35;cursor:not-allowed;"' : ''}>◀</button>
+        <button type="button" class="btn-mover-foto" data-url="${escHtml(url)}" data-direccion="abajo" title="Mover después"
+          ${i === productoEnEdicionImagenUrls.length - 1 ? 'disabled style="opacity:.35;cursor:not-allowed;"' : ''}>▶</button>
+      </div>
     </div>`).join('');
 
   elProdFotosGrid.querySelectorAll('.btn-quitar-foto').forEach(btn => {
     btn.addEventListener('click', () => quitarFotoProducto(btn.dataset.url));
   });
+  elProdFotosGrid.querySelectorAll('.btn-mover-foto').forEach(btn => {
+    btn.addEventListener('click', () => moverFotoProducto(btn.dataset.url, btn.dataset.direccion));
+  });
+}
+
+async function moverFotoProducto(url, direccion) {
+  if (!editingProductId) return;
+  try {
+    const actualizado = await API.productos.moverImagen(editingProductId, url, direccion);
+    productoEnEdicionImagenUrls = actualizado.imagen_urls || productoEnEdicionImagenUrls;
+    renderFotosProducto();
+  } catch (err) {
+    console.error('Error al mover la foto:', err.message || err);
+    showToast(err.message || 'No se pudo mover la foto', 'err');
+  }
 }
 
 /* Lee el archivo elegido, lo dibuja centrado sobre un lienzo 1000x1000 con

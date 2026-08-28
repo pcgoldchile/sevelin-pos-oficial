@@ -1138,6 +1138,33 @@ app.post('/api/productos/:id/imagen', auth(true), async (req, res) => {
   }
 });
 
+// Sube/baja una foto intercambiando su posición con la vecina en
+// imagen_urls — la primera posición es la que usa la tienda como foto
+// principal de catálogo (ver tarjeta-producto.tsx, imagen_urls[0]).
+app.put('/api/productos/:id/imagen/orden', auth(true), async (req, res) => {
+  const url = String(req.body?.url || '').trim();
+  const direccion = req.body?.direccion === 'arriba' ? 'arriba' : 'abajo';
+  if (!url) return enviarError(res, 400, 'Falta la url de la imagen a mover');
+
+  const { data: producto } = await db.from('productos')
+    .select('id, imagen_urls').eq('id', req.params.id).maybeSingle();
+  if (!producto) return enviarError(res, 404, 'Producto no encontrado');
+
+  const lista = [...(producto.imagen_urls || [])];
+  const idx = lista.indexOf(url);
+  if (idx === -1) return enviarError(res, 404, 'Esa foto ya no está en el producto');
+
+  const idxVecino = direccion === 'arriba' ? idx - 1 : idx + 1;
+  if (idxVecino < 0 || idxVecino >= lista.length) return res.json({ id: producto.id, imagen_urls: lista }); // ya está en el extremo
+
+  [lista[idx], lista[idxVecino]] = [lista[idxVecino], lista[idx]];
+
+  const { data, error } = await db.from('productos')
+    .update({ imagen_urls: lista }).eq('id', req.params.id).select('id, imagen_urls').single();
+  if (error) return enviarError(res, 500, error.message);
+  res.json(data);
+});
+
 // Quita una foto ya subida: la borra del bucket y del arreglo del producto.
 app.delete('/api/productos/:id/imagen', auth(true), async (req, res) => {
   const url = String(req.body?.url || '').trim();

@@ -109,6 +109,8 @@ const API = {
       apiRequest(`/productos/${id}/imagen`, { method: 'POST', body: { imagen_base64: imagenBase64 } }),
     quitarImagen: (id, url) =>
       apiRequest(`/productos/${id}/imagen`, { method: 'DELETE', body: { url } }),
+    moverImagen: (id, url, direccion) =>
+      apiRequest(`/productos/${id}/imagen/orden`, { method: 'PUT', body: { url, direccion } }),
 
     // Diagnóstico de sección 0.6: cuántos productos no tienen peso/medidas
     // cargadas todavía (para dimensionar el trabajo antes de Shipit).
