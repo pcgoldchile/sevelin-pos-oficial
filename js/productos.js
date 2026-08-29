@@ -926,7 +926,12 @@ async function guardarProducto() {
     categoria_web: elProdCategoriaWeb?.value.trim() || null,
     categoria_id: elProdCategoriaWeb?.selectedOptions[0]?.dataset.id || null,
     stock_umbral_web: elProdStockUmbralWeb?.value.trim() ? Number(elProdStockUmbralWeb.value) : null,
-    descripcion_web: elProdDescripcionWeb?.value.trim() || null
+    // Si no se escribió una descripción específica para la web, se usa la
+    // misma descripción general — así no hay que escribir el mismo texto
+    // dos veces. El campo de la web sigue existiendo para cuando de verdad
+    // se necesite un texto distinto (más comercial, sin detalle técnico
+    // interno, etc.).
+    descripcion_web: elProdDescripcionWeb?.value.trim() || elProdDescripcion?.value.trim() || null
   };
 
   if (elBtnGuardarProducto) elBtnGuardarProducto.disabled = true;
