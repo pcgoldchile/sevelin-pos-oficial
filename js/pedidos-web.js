@@ -94,8 +94,16 @@ function renderPedidosWebTabla(lista) {
     // CREADO/FALLIDO: el pago todavía no se confirmó, nada que despachar
     // (lo controla el webhook de pago de sevelin-tienda, no este panel).
     const puedeDespachar = !['CREADO', 'FALLIDO'].includes(p.estado);
+    // Cancelar YA era posible desde "Gestionar" (el select ya tenía la
+    // opción) pero quedaba escondido a dos clics — este botón es el
+    // atajo directo que se pidió. Se esconde si ya está cancelado (nada
+    // que cancelar dos veces).
+    const puedeCancelar = puedeDespachar && p.estado !== 'CANCELADO';
     const accion = puedeDespachar
-      ? `<button class="btn btn-outline btn-sm" data-pedido-web="${p.id}">Gestionar</button>`
+      ? `<div class="cell-actions" style="justify-content:flex-end;">
+           <button class="btn btn-outline btn-sm" data-pedido-web="${p.id}">Gestionar</button>
+           ${puedeCancelar ? `<button class="btn btn-outline btn-sm" style="color:var(--red);border-color:rgba(239,68,68,.4);" data-cancelar-pedido-web="${p.id}">Cancelar</button>` : ''}
+         </div>`
       : '<span style="color:var(--text-muted);">—</span>';
     const tracking = p.tracking_courier
       ? `<br><small style="color:var(--text-muted);">${escHtml(p.tracking_courier)}</small>` : '';
@@ -114,6 +122,31 @@ function renderPedidosWebTabla(lista) {
   elPedidosWebTableBody.querySelectorAll('[data-pedido-web]').forEach(btn => {
     btn.addEventListener('click', () => abrirModalPedidoWeb(btn.dataset.pedidoWeb));
   });
+
+  elPedidosWebTableBody.querySelectorAll('[data-cancelar-pedido-web]').forEach(btn => {
+    btn.addEventListener('click', () => cancelarPedidoWebDirecto(btn.dataset.cancelarPedidoWeb));
+  });
+}
+
+/* Atajo de un clic desde la tabla — mismo cambio de estado que ya permitía
+   "Gestionar" (PUT /api/pos/pedidos-web/:id con estado: 'CANCELADO'), sin
+   pasar por el modal completo. A propósito NO toca el stock del POS: un
+   pedido puede cancelarse en distintos momentos (recién pagado, ya
+   preparándose, ya despachado) y solo el negocio sabe si en ese caso
+   corresponde reponer inventario o no — se ajusta a mano en Productos si
+   corresponde. */
+async function cancelarPedidoWebDirecto(id) {
+  const pedido = pedidosWebList.find(p => String(p.id) === String(id));
+  const numero = pedido?.numero_pedido || `#${id}`;
+  if (!confirm(`¿Cancelar el pedido ${numero}? Esta acción no revierte el pago ni ajusta el stock automáticamente.`)) return;
+
+  try {
+    await API.pedidosWeb.actualizar(id, { estado: 'CANCELADO' });
+    showToast(`Pedido ${numero} cancelado`, 'ok');
+    await cargarPedidosWeb();
+  } catch (err) {
+    showToast(err.message || 'No se pudo cancelar el pedido', 'err');
+  }
 }
 
 function abrirModalPedidoWeb(id) {
