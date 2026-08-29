@@ -32,11 +32,11 @@
     --text-300: #dbe3f0;
     --text-muted: #9fb0c9;
 
-    --blue: #3b82f6;
-    --blue-dark: #2563eb;
-    --blue-light: #7cb0ff;
-    --gold: #fbbf24;
-    --gold-dark: #d97706;
+    --blue: #00f0ff;
+    --blue-dark: #00a8c2;
+    --blue-light: #7df9ff;
+    --gold: #ff2ec4;
+    --gold-dark: #d4109c;
     --green: #22c55e;
     --green-dark: #16a34a;
     --red: #ef4444;
@@ -44,8 +44,8 @@
     --violet: #a78bfa;
 
     /* Tintes suaves para íconos y KPIs (arreglan el contraste del lápiz) */
-    --tint-blue: rgba(59, 130, 246, .16);
-    --tint-gold: rgba(251, 191, 36, .16);
+    --tint-blue: rgba(0, 240, 255, .16);
+    --tint-gold: rgba(255, 46, 196, .16);
     --tint-green: rgba(34, 197, 94, .16);
     --tint-red: rgba(239, 68, 68, .16);
     --tint-violet: rgba(167, 139, 250, .16);
@@ -55,12 +55,12 @@
     --radius-pill: 999px;
     --shadow: 0 18px 45px rgba(3, 8, 20, .45);
     --shadow-sm: 0 6px 18px rgba(3, 8, 20, .28);
-    --ring: 0 0 0 3px rgba(59, 130, 246, .28);
+    --ring: 0 0 0 3px rgba(0, 240, 255, .28);
     /* Glow real (no solo un ring): borde iluminado + halo difuso, para CTAs
        primarios, el nav-btn activo y tarjetas/dropzones en foco — el acento
        "gamer/tech" que separa un elemento realmente activo de uno solo con hover. */
-    --glow: 0 0 0 1px rgba(59, 130, 246, .5), 0 0 24px rgba(59, 130, 246, .28);
-    --glow-strong: 0 0 0 1px rgba(59, 130, 246, .6), 0 0 40px rgba(59, 130, 246, .38);
+    --glow: 0 0 0 1px rgba(0, 240, 255, .5), 0 0 24px rgba(0, 240, 255, .28);
+    --glow-strong: 0 0 0 1px rgba(0, 240, 255, .6), 0 0 40px rgba(0, 240, 255, .38);
 
     /* Alturas unificadas: todos los botones y campos calzan en la misma línea */
     --control-h: 44px;
@@ -93,9 +93,12 @@ body.theme-light {
     --text-300: #334155;
     --text-muted: #64748b;
 
-    --gold: #b45309;
-    --gold-dark: #92400e;
-    --blue-light: #1d4ed8;
+    /* Cian y magenta puros se lavan sobre blanco — acá se oscurecen para
+       mantener contraste legible, mismo criterio que ya usaba el tema claro
+       con el azul/dorado original. */
+    --gold: #a80f78;
+    --gold-dark: #7c0d63;
+    --blue-light: #0e7490;
 
     --shadow: 0 18px 45px rgba(15, 23, 42, .14);
     --shadow-sm: 0 4px 14px rgba(15, 23, 42, .08);
@@ -113,8 +116,8 @@ body {
        existing-projects). Se promueve acá a fuente base de toda la app. */
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background:
-        radial-gradient(1100px 600px at 15% -10%, rgba(59, 130, 246, .16), transparent 60%),
-        radial-gradient(900px 500px at 100% 0%, rgba(251, 191, 36, .10), transparent 55%),
+        radial-gradient(1100px 600px at 15% -10%, rgba(0, 240, 255, .16), transparent 60%),
+        radial-gradient(900px 500px at 100% 0%, rgba(255, 46, 196, .10), transparent 55%),
         linear-gradient(180deg, var(--app-bg-1) 0%, var(--app-bg-2) 55%);
     background-attachment: fixed;
     color: var(--text-300);
@@ -126,7 +129,7 @@ body {
 
 h2 { color: var(--text-100); font-weight: 700; letter-spacing: -.01em; }
 
-::selection { background: rgba(59, 130, 246, .35); color: #fff; }
+::selection { background: rgba(0, 240, 255, .35); color: #fff; }
 
 :focus-visible { outline: 2px solid var(--blue-light); outline-offset: 2px; }
 
@@ -186,7 +189,7 @@ h2 { color: var(--text-100); font-weight: 700; letter-spacing: -.01em; }
 }
 .sync-ok { background: var(--tint-green); color: var(--green); border: 1px solid rgba(34, 197, 94, .45); }
 .sync-bad { background: var(--tint-red); color: var(--red); border: 1px solid rgba(239, 68, 68, .45); }
-.sync-pending { background: var(--tint-gold); color: var(--gold); border: 1px solid rgba(251, 191, 36, .45); }
+.sync-pending { background: var(--tint-gold); color: var(--gold); border: 1px solid rgba(255, 46, 196, .45); }
 
 .theme-toggle {
     height: var(--control-h-sm); width: var(--control-h-sm); border-radius: var(--radius-pill);
@@ -350,12 +353,12 @@ input[type="checkbox"] { width: auto; height: auto; accent-color: var(--blue); c
 }
 .btn-icon svg { width: 17px; height: 17px; display: block; }
 .btn-icon:hover { background: var(--surface-soft); }
-.btn-icon-edit { color: var(--gold); border-color: rgba(251, 191, 36, .45); background: var(--tint-gold); }
-.btn-icon-edit:hover { background: rgba(251, 191, 36, .26); border-color: var(--gold); color: var(--gold); }
+.btn-icon-edit { color: var(--gold); border-color: rgba(255, 46, 196, .45); background: var(--tint-gold); }
+.btn-icon-edit:hover { background: rgba(255, 46, 196, .26); border-color: var(--gold); color: var(--gold); }
 .btn-icon-del { color: var(--red); border-color: rgba(239, 68, 68, .45); background: var(--tint-red); }
 .btn-icon-del:hover { background: rgba(239, 68, 68, .26); border-color: var(--red); }
-.btn-icon-view { color: var(--blue-light); border-color: rgba(59, 130, 246, .45); background: var(--tint-blue); }
-.btn-icon-view:hover { background: rgba(59, 130, 246, .26); border-color: var(--blue); }
+.btn-icon-view { color: var(--blue-light); border-color: rgba(0, 240, 255, .45); background: var(--tint-blue); }
+.btn-icon-view:hover { background: rgba(0, 240, 255, .26); border-color: var(--blue); }
 
 /* Barra de acciones: grupo izquierdo (neutro) y grupo derecho (destructivo) */
 .toolbar-bar {
@@ -601,14 +604,14 @@ body:not(.role-admin):not(.role-trabajador) .app-content {
 
 .modal-login-overlay {
     background:
-        radial-gradient(900px 520px at 50% -10%, rgba(59, 130, 246, .22), transparent 60%),
-        radial-gradient(700px 420px at 100% 100%, rgba(251, 191, 36, .14), transparent 55%),
+        radial-gradient(900px 520px at 50% -10%, rgba(0, 240, 255, .22), transparent 60%),
+        radial-gradient(700px 420px at 100% 100%, rgba(255, 46, 196, .14), transparent 55%),
         linear-gradient(180deg, #16233d 0%, #0b1220 100%);
     backdrop-filter: none;
 }
 body.theme-light .modal-login-overlay {
     background:
-        radial-gradient(900px 520px at 50% -10%, rgba(59, 130, 246, .16), transparent 60%),
+        radial-gradient(900px 520px at 50% -10%, rgba(0, 240, 255, .16), transparent 60%),
         linear-gradient(180deg, #eef3fb 0%, #dfe8f5 100%);
 }
 .modal-box.modal-login { max-width: 420px; text-align: center; padding: 34px 30px; }
@@ -690,7 +693,7 @@ body.theme-light .modal-login-overlay {
     border-color: var(--blue); background: var(--tint-blue); color: var(--text-100);
     box-shadow: var(--ring);
 }
-.metodo-pago.metodo-pendiente.active { border-color: var(--gold); background: var(--tint-gold); box-shadow: 0 0 0 3px rgba(251,191,36,.25); }
+.metodo-pago.metodo-pendiente.active { border-color: var(--gold); background: var(--tint-gold); box-shadow: 0 0 0 3px rgba(255, 46, 196,.25); }
 .metodo-icono { font-size: 20px; }
 
 .pago-efectivo { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); }
@@ -712,8 +715,8 @@ body.theme-light .modal-login-overlay {
 .kpi-clickable:focus-visible { outline: 2px solid var(--blue-light); outline-offset: 2px; }
 .kpi-card.activo { border-color: var(--red); box-shadow: 0 0 0 3px rgba(239, 68, 68, .22); }
 .kpi-card.sin-datos { opacity: .72; }
-.data-table tbody tr.fila-pendiente { background: rgba(251, 191, 36, .07); }
-.data-table tbody tr.fila-pendiente:hover { background: rgba(251, 191, 36, .13); }
+.data-table tbody tr.fila-pendiente { background: rgba(255, 46, 196, .07); }
+.data-table tbody tr.fila-pendiente:hover { background: rgba(255, 46, 196, .13); }
 
 /* ========== 12. COMPRAS: DOCUMENTOS ========== */
 .doc-slot {
@@ -805,8 +808,8 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
 .col-check { width: 42px; text-align: center; }
 .data-table td.col-check { text-align: center; }
 .data-table input[type="checkbox"] { width: 17px; height: 17px; cursor: pointer; }
-.data-table tbody tr.fila-marcada { background: rgba(59, 130, 246, .12); }
-.data-table tbody tr.fila-marcada:hover { background: rgba(59, 130, 246, .18); }
+.data-table tbody tr.fila-marcada { background: rgba(0, 240, 255, .12); }
+.data-table tbody tr.fila-marcada:hover { background: rgba(0, 240, 255, .18); }
 
 .barra-seleccion {
     position: fixed; left: 50%; bottom: 24px; z-index: 250;
@@ -897,7 +900,7 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
     width: auto; min-width: 108px;
 }
 .dte-select:hover { border-color: var(--blue-light); }
-.dte-select.dte-boleta  { border-color: rgba(59,130,246,.5); color: var(--blue-light); }
+.dte-select.dte-boleta  { border-color: rgba(0, 240, 255,.5); color: var(--blue-light); }
 .dte-select.dte-factura { border-color: rgba(167,139,250,.5); color: var(--violet); }
 .dte-select.dte-sin     { border-color: var(--border); color: var(--text-muted); }
 
@@ -1017,7 +1020,7 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
 .escaner-marco::before {
     content: '';
     width: 78%; height: 42%;
-    border: 3px solid rgba(59,130,246,.9);
+    border: 3px solid rgba(0, 240, 255,.9);
     border-radius: 12px;
     box-shadow: 0 0 0 100vmax rgba(0,0,0,.35);
 }
@@ -1041,7 +1044,7 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
     cursor: pointer; text-align: center;
     transition: border-color .15s, background .15s;
 }
-.escaner-dropzone:hover { border-color: var(--blue); background: rgba(59,130,246,.06); }
+.escaner-dropzone:hover { border-color: var(--blue); background: rgba(0, 240, 255,.06); }
 .escaner-dropzone-ico { font-size: 34px; }
 
 .escaner-manual-campo { margin-top: 16px; }
@@ -1440,8 +1443,8 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
 .campo-pos::placeholder { color: #94a3b8; }
 .campo-pos:focus {
     outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 4px rgba(59,130,246,.22);
+    border-color: #00f0ff;
+    box-shadow: 0 0 0 4px rgba(0, 240, 255,.22);
 }
 .campo-pos:disabled { opacity: .5; cursor: not-allowed; }
 
@@ -1470,7 +1473,7 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
 }
 .dark .etiqueta-pos { color: #94a3b8; }
 .etiqueta-check { cursor: pointer; }
-.etiqueta-check:hover { color: #3b82f6; }
+.etiqueta-check:hover { color: #00f0ff; }
 
 .cabecera-pos {
     padding: 0.6rem 0.75rem;
@@ -1493,7 +1496,7 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
 }
 .dark #cartTableBody td { border-bottom-color: rgba(51,65,85,.6); color: #e2e8f0; }
 #cartTableBody tr:last-child td { border-bottom: none; }
-#cartTableBody tr:hover { background: rgba(59,130,246,.05); }
+#cartTableBody tr:hover { background: rgba(0, 240, 255,.05); }
 #cartTableBody td:nth-child(3),
 #cartTableBody td:nth-child(4) { text-align: right; }
 #cartTableBody td:last-child { text-align: right; }
@@ -1528,14 +1531,14 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
     transition: background .12s ease;
 }
 .dark .suggestion-item { color: #e2e8f0; }
-.suggestion-item:hover { background: rgba(59,130,246,.10); }
+.suggestion-item:hover { background: rgba(0, 240, 255,.10); }
 .suggestion-item span:last-of-type { font-size: .75rem; color: #64748b; white-space: nowrap; }
 .dark .suggestion-item span:last-of-type { color: #94a3b8; }
 
 /* Marca de la sugerencia elegida con ↑ / ↓ (js/atajos.js) */
 .suggestion-item.activa {
-    background: rgba(59,130,246,.16);
-    border-left-color: #3b82f6;
+    background: rgba(0, 240, 255,.16);
+    border-left-color: #00f0ff;
 }
 .suggestion-item::after {
     content: attr(data-atajo);
@@ -1584,7 +1587,7 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
 .pin-input:focus {
     outline: none;
     border-color: var(--blue);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, .22);
+    box-shadow: 0 0 0 3px rgba(0, 240, 255, .22);
 }
 body.theme-light .pin-input { background: #fff; color: #0f172a; }
 
@@ -1650,7 +1653,7 @@ kbd {
 }
 .pago-mixto-fila input { text-align: right; font-variant-numeric: tabular-nums; }
 .pago-mixto-fila select:focus, .pago-mixto-fila input:focus {
-    border-color: var(--blue); box-shadow: 0 0 0 3px rgba(59,130,246,.3); outline: none;
+    border-color: var(--blue); box-shadow: 0 0 0 3px rgba(0, 240, 255,.3); outline: none;
 }
 .pago-mixto-fila .btn-sm { height: 42px; white-space: nowrap; }
 .pago-mixto-acciones { margin-top: 10px; }
@@ -1755,7 +1758,7 @@ h1, h2, h3, h4 { letter-spacing: -0.02em; }
     transition: border-color .15s ease, background .15s ease;
     user-select: none;
 }
-.caja-check:hover { border-color: #3b82f6; }
+.caja-check:hover { border-color: #00f0ff; }
 .dark .caja-check { background: rgba(15,23,42,.6); border-color: #475569; color: #e2e8f0; }
 
 .cabecera-pos { padding: 0.5rem 0.65rem; font-size: 0.62rem; }
@@ -1898,8 +1901,8 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
    porque se navega sin mirar el mouse. */
 .dte-opcion.activa {
     border-color: var(--blue);
-    background: rgba(59,130,246,.14);
-    box-shadow: 0 0 0 3px rgba(59,130,246,.20);
+    background: rgba(0, 240, 255,.14);
+    box-shadow: 0 0 0 3px rgba(0, 240, 255,.20);
 }
 .dte-opcion-icono { font-size: 1.4rem; flex-shrink: 0; }
 .dte-opcion-texto { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
@@ -2284,8 +2287,8 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
     align-items: center;
     padding: 13px 16px;
     border-radius: 11px;
-    background: rgba(59,130,246,.10);
-    border: 1px solid rgba(59,130,246,.32);
+    background: rgba(0, 240, 255,.10);
+    border: 1px solid rgba(0, 240, 255,.32);
     margin-top: 14px;
 }
 .arqueo-esperado span { font-size: .8rem; color: var(--text-muted); }
@@ -2347,7 +2350,7 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
     vertical-align: middle;
 }
 .data-table tbody tr { transition: background .12s ease; }
-.data-table tbody tr:hover { background: rgba(59,130,246,.06); }
+.data-table tbody tr:hover { background: rgba(0, 240, 255,.06); }
 .data-table tbody tr:last-child td { border-bottom: none; }
 
 /* Los montos alineados por el punto decimal: sin esto las columnas de
@@ -2482,7 +2485,7 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
 }
 .field input:focus, .field select:focus, .field textarea:focus {
     border-color: var(--blue);
-    box-shadow: 0 0 0 3px rgba(59,130,246,.25);
+    box-shadow: 0 0 0 3px rgba(0, 240, 255,.25);
     outline: none;
 }
 
@@ -2589,7 +2592,7 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
     background: var(--bg-900); border: 1px solid var(--border);
     color: var(--text-100); text-align: right; font-size: .85rem; width: 100%;
 }
-.denom-cant:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(59,130,246,.25); outline: none; }
+.denom-cant:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(0, 240, 255,.25); outline: none; }
 .denom-sub { font-size: .8rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-muted); }
 
 /* ---------- Reposición ---------- */
@@ -2632,7 +2635,7 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
     flex-shrink: 0;
     transition: opacity .12s ease, border-color .12s ease, background .12s ease;
 }
-.btn-editar-atajo:hover { opacity: 1; border-color: var(--blue); background: rgba(59,130,246,.15); }
+.btn-editar-atajo:hover { opacity: 1; border-color: var(--blue); background: rgba(0, 240, 255,.15); }
 
 /* Los atajos fijos llevan un candado, para que se vea de una que no son
    editables sin tener que probarlos. */
@@ -2708,7 +2711,7 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
 #modalRanking { z-index: 10025; }
 
 .rank-clicable { cursor: pointer; border-radius: 8px; padding: 4px; margin: -4px; transition: background .12s ease; }
-.rank-clicable:hover { background: rgba(59,130,246,.10); }
+.rank-clicable:hover { background: rgba(0, 240, 255,.10); }
 .rank-nombre { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Metadatos bajo el nombre en la tabla de productos: reemplazan a las
@@ -2790,9 +2793,9 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
 }
 .periodo-btn:hover { border-color: var(--blue); }
 .periodo-btn.activo {
-    background: rgba(59,130,246,.16);
+    background: rgba(0, 240, 255,.16);
     border-color: var(--blue);
-    box-shadow: 0 0 0 3px rgba(59,130,246,.18);
+    box-shadow: 0 0 0 3px rgba(0, 240, 255,.18);
 }
 .periodo-ancho { grid-column: 1 / -1; }
 
@@ -2902,8 +2905,8 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
 }
 .pos-redim svg { width: 14px; height: 14px; }
 .pos-redim:hover,
-.pos-redim:focus-visible { opacity: 1; color: var(--blue); background: rgba(59,130,246,.14); outline: none; }
-.pos-redim.arrastrando { opacity: 1; color: var(--blue); background: rgba(59,130,246,.2); }
+.pos-redim:focus-visible { opacity: 1; color: var(--blue); background: rgba(0, 240, 255,.14); outline: none; }
+.pos-redim.arrastrando { opacity: 1; color: var(--blue); background: rgba(0, 240, 255,.2); }
 
 @media (min-width: 1024px) {
     .pos-redim { display: flex; }
@@ -2935,7 +2938,7 @@ body.pos-redimensionando { user-select: none; cursor: nwse-resize; }
     cursor: pointer;
     transition: color .15s ease, border-color .15s ease, background .15s ease;
 }
-.pos-redim-btn:hover { color: var(--blue); border-color: var(--blue); background: rgba(59,130,246,.1); }
+.pos-redim-btn:hover { color: var(--blue); border-color: var(--blue); background: rgba(0, 240, 255,.1); }
 
 /* ---------- Aprovechamiento del espacio dentro de las tarjetas ----------
    El detalle del carrito era el que más sufría: con min-height fijo de
@@ -3021,8 +3024,8 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
     margin: 4px 0 14px;
     padding: 9px 13px;
     border-radius: var(--radius-sm);
-    background: rgba(59, 130, 246, .1);
-    border: 1px solid rgba(59, 130, 246, .3);
+    background: rgba(0, 240, 255, .1);
+    border: 1px solid rgba(0, 240, 255, .3);
     font-size: 12.5px;
     color: var(--text-100);
 }
@@ -3036,8 +3039,8 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
     max-width: 260px;
     padding: 2px 7px;
     border-radius: var(--radius-pill);
-    background: rgba(59, 130, 246, .14);
-    border: 1px solid rgba(59, 130, 246, .3);
+    background: rgba(0, 240, 255, .14);
+    border: 1px solid rgba(0, 240, 255, .3);
     font-size: 10.5px;
     font-weight: 600;
     color: var(--text-100);
@@ -3077,7 +3080,7 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
     margin: 0 0 22px;
     padding: 16px 18px;
     border-radius: var(--radius);
-    background: linear-gradient(135deg, rgba(59,130,246,.08), rgba(34,197,94,.05));
+    background: linear-gradient(135deg, rgba(0, 240, 255,.08), rgba(34,197,94,.05));
     border: 1px solid var(--border);
 }
 
@@ -3154,8 +3157,8 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
     color: var(--green);
 }
 .cobertura-warn {
-    background: rgba(251,191,36,.12);
-    border-color: rgba(251,191,36,.4);
+    background: rgba(255, 46, 196,.12);
+    border-color: rgba(255, 46, 196,.4);
     color: var(--gold);
 }
 .cobertura-crit {
@@ -3188,7 +3191,7 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
 
 .saldo-monto-sm { font-size: 1.2rem; }
 
-.saldo-resguardo { background: linear-gradient(135deg, rgba(251,191,36,.10), rgba(251,191,36,.03)); border-color: rgba(251,191,36,.30); }
+.saldo-resguardo { background: linear-gradient(135deg, rgba(255, 46, 196,.10), rgba(255, 46, 196,.03)); border-color: rgba(255, 46, 196,.30); }
 
 .saldo-mini-btn {
     margin-top: 8px;
@@ -3327,10 +3330,10 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
     padding: 10px 12px;
     margin: 2px 0;
     border-radius: var(--radius-sm);
-    background: rgba(59, 130, 246, .08);
-    border: 1px solid rgba(59, 130, 246, .28);
+    background: rgba(0, 240, 255, .08);
+    border: 1px solid rgba(0, 240, 255, .28);
 }
-.barra-fila-destacada .barra-cabecera b { color: var(--blue-light, #7cb0ff); }
+.barra-fila-destacada .barra-cabecera b { color: var(--blue-light, #7df9ff); }
 
 /* ============================================================
    28. BARRA Y MODALES DE CAJA (punto 4)
@@ -3376,7 +3379,7 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
 }
 .mov-tipo-btn.activo {
     border-color: var(--blue);
-    background: rgba(59,130,246,.12);
+    background: rgba(0, 240, 255,.12);
     color: var(--text-100);
 }
 
@@ -3393,7 +3396,7 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
 }
 .arqueo-diferencia.hidden { display: none; }
 .arqueo-diferencia.cuadre-ok    { background: rgba(34,197,94,.12);  border-color: rgba(34,197,94,.35);  color: var(--green); }
-.arqueo-diferencia.cuadre-sobra { background: rgba(59,130,246,.12); border-color: rgba(59,130,246,.35); color: var(--blue-light,#7cb0ff); }
+.arqueo-diferencia.cuadre-sobra { background: rgba(0, 240, 255,.12); border-color: rgba(0, 240, 255,.35); color: var(--blue-light,#7df9ff); }
 .arqueo-diferencia.cuadre-falta { background: rgba(239,68,68,.12);  border-color: rgba(239,68,68,.35);  color: var(--red); }
 
 /* Botón de cobrar bloqueado cuando no hay caja abierta (punto 4) */
@@ -3508,6 +3511,6 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
 }
 .hist-sug-item:last-child { border-bottom: none; }
 .hist-sug-item:hover { background: var(--surface-soft); }
-.hist-sug-orden { font-weight: 700; color: var(--blue-light, #7cb0ff); min-width: 56px; }
+.hist-sug-orden { font-weight: 700; color: var(--blue-light, #7df9ff); min-width: 56px; }
 .hist-sug-fh { flex: 1; color: var(--text-muted); font-size: 13px; }
 .hist-sug-total { font-weight: 700; font-variant-numeric: tabular-nums; }
