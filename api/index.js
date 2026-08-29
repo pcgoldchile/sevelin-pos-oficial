@@ -46,7 +46,12 @@ const {
   // abajo): nunca se mezcla con `db`, que sigue siendo el único cliente del
   // Supabase propio del POS.
   SUPABASE_WEB_URL,
-  SUPABASE_WEB_SERVICE_ROLE_KEY
+  SUPABASE_WEB_SERVICE_ROLE_KEY,
+  // Notificación de cancelación al cliente (correo) — el POS NO tiene la
+  // API key de Resend ni el template del correo, así que le pide a la
+  // tienda que lo mande ella (POST /api/pos/notificar-cancelacion, mismo
+  // SYNC_SECRET de siempre). Ver PUT /api/pos/pedidos-web/:id más abajo.
+  TIENDA_NOTIFICAR_CANCELACION_URL
 } = process.env;
 
 /* PRIORIDAD 8 — sin defaults de PIN.
@@ -4465,7 +4470,28 @@ app.put('/api/pos/pedidos-web/:id', auth(true), async (req, res) => {
     }
   }
 
-  res.json({ ...data, stock_repuesto: stockRepuesto });
+  /* Correo de cancelación al cliente — mejor esfuerzo, igual que la
+     reposición de stock de arriba: si Resend o la tienda no responden, el
+     pedido queda cancelado igual (es la acción principal). El POS no
+     tiene la API key de Resend ni el template del correo, así que le pide
+     a sevelin-tienda que lo mande ella (ver POST /api/pos/notificar-
+     cancelacion, mismo SYNC_SECRET de siempre). */
+  let correoEnviado = false;
+  if (cambios.estado === 'CANCELADO' && TIENDA_NOTIFICAR_CANCELACION_URL && SYNC_SECRET && data?.numero_pedido) {
+    try {
+      const resp = await fetch(TIENDA_NOTIFICAR_CANCELACION_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-sync-secret': SYNC_SECRET },
+        body: JSON.stringify({ numero_pedido: data.numero_pedido })
+      });
+      const cuerpo = await resp.json().catch(() => ({}));
+      correoEnviado = !!cuerpo.enviado;
+    } catch (err) {
+      console.error('[Pedidos Web] No se pudo notificar la cancelación al cliente:', req.params.id, ':', err.message);
+    }
+  }
+
+  res.json({ ...data, stock_repuesto: stockRepuesto, correo_enviado: correoEnviado });
 });
 
 /* ---------- 404 y errores ---------- */

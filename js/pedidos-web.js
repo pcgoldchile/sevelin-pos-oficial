@@ -175,14 +175,13 @@ async function confirmarCancelarPedidoWeb() {
   try {
     const resultado = await API.pedidosWeb.actualizar(id, { estado: 'CANCELADO', reponer_stock: reponerStock });
     cerrarModalCancelarPedidoWeb();
-    showToast(
-      reponerStock
-        ? (resultado?.stock_repuesto
-            ? `Pedido ${numero} cancelado y stock repuesto`
-            : `Pedido ${numero} cancelado — no se pudo reponer el stock, revísalo en Productos`)
-        : `Pedido ${numero} cancelado`,
-      resultado?.stock_repuesto === false && reponerStock ? 'err' : 'ok'
-    );
+
+    const partes = [`Pedido ${numero} cancelado`];
+    if (reponerStock) partes.push(resultado?.stock_repuesto ? 'stock repuesto' : 'no se pudo reponer el stock (revísalo en Productos)');
+    partes.push(resultado?.correo_enviado ? 'cliente notificado por correo' : 'no se pudo avisar al cliente por correo');
+    const huboFalla = (reponerStock && !resultado?.stock_repuesto) || !resultado?.correo_enviado;
+
+    showToast(partes.join(' — '), huboFalla ? 'err' : 'ok');
     await cargarPedidosWeb();
   } catch (err) {
     showToast(err.message || 'No se pudo cancelar el pedido', 'err');
