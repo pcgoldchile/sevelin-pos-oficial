@@ -3,17 +3,26 @@
 > Actualiza SOLO este archivo al cerrar una sesión. Para el detalle completo, ver `docs/README.md`.
 > Para saber qué otro documento leer según lo que necesites, ver `docs/README-DOCS.md`.
 
-**Fecha:** 28-08-2026 · **Versión activa:** v31 (catálogo real clasificado + fotos importadas de
-Tiendanube + reordenar fotos de producto) · **En producción:** https://sevelin-pos-oficial.vercel.app
-**Rama:** `main`.
+**Fecha:** 29-08-2026 · **Versión activa:** v39 (rediseño gamer, correcciones de UX/seguridad,
+notificación de cancelación por correo — ver "v32-v39" abajo) · **En producción:**
+https://sevelin-pos-oficial.vercel.app · **Rama:** `main`.
 
-**Estado real (verificado en producción, no de memoria):** `sql/23` y `sql/24` (categorías +
-subcategorías + umbral de stock) **aplicados** vía Supabase CLI (`npx supabase db query --file ...
---linked`, configurado esta sesión — ver "Automatización Supabase CLI" abajo). El bug crítico de
-`descontar_stock_venta` (columna ambigua) **verificado como corregido** en la base real (usa
-variable local, no la columna). 114 productos en el catálogo, 86 con SKU quedaron publicados y
-clasificados en 12 categorías, 75 con fotos reales. Módulo "Página Web" con sub-pestañas Pedidos
-Web / Categorías (con subcategorías) funcionando.
+**Estado real (verificado en producción, no de memoria):** `sql/23` a `sql/26` (categorías +
+subcategorías + umbral de stock + `es_servicio` en `venta_items`) **aplicados** vía Supabase CLI. El
+bug crítico de `descontar_stock_venta` (columna ambigua) **verificado como corregido**. 114
+productos en el catálogo, 86 con SKU publicados y clasificados en 12 categorías, 75 con fotos
+reales. **Rediseño visual completo a paleta gamer cian/magenta** (Fase 1, coherente con
+`sevelin-tienda`) — incluyó corregir un bug de build que llevaba tiempo activo sin que nadie lo
+notara: `css/tailwind-input.css` tenía CSS ya compilado adentro en vez de las directivas
+`@tailwind`, así que `npm run css` no recompilaba nada de verdad desde hacía un tiempo (ver v32).
+**Editor de Descripción con texto enriquecido** (Quill: negrita, listas, links). **Separación
+productos/servicios** por ítem de venta, visible en Balance. **Fotos de producto** en la tabla, en
+"Ingresar producto" y en el Carrito. **Fix de seguridad real**: el PIN de Finanzas no cubría los
+sub-ítems nuevos del sidebar (cualquiera entraba a Gastos Fijos sin PIN) — corregido y verificado.
+Cierre de sesión automático a los 60s de inactividad, en toda la app. **Cancelar pedidos web** con
+reposición de stock opcional y **correo de cancelación al cliente** (vía `sevelin-tienda` + Resend
+— cuenta creada, pero sin dominio verificado: los correos a clientes reales fallan en silencio
+hasta verificar un dominio en Resend, ver "Pendiente" #1).
 
 ---
 
@@ -169,6 +178,61 @@ idempotentes, corren en orden. Aplicar en Supabase → SQL Editor.
   tokens de easing, toast/modal con curvas centralizadas, entrada escalonada en listas de
   administración — ver commit `style: pasada de pulido visual`.
 
+## Estado: qué está HECHO (v32-v39 — rediseño gamer, UX, seguridad, notificaciones — 29-08-2026)
+- **v32 (fix crítico de build + Fase 1 gamer):** `css/tailwind-input.css` tenía el CSS YA COMPILADO
+  adentro en vez de las directivas `@tailwind base/components/utilities` — probablemente un `-i`/`-o`
+  invertido en algún commit viejo. Efecto real: `npm run css` llevaba tiempo sin recompilar nada de
+  verdad, sin importar qué clases nuevas se agregaran. Restaurado el archivo de entrada correcto y
+  recompilado desde cero. Con el pipeline funcionando: acento de marca azul/dorado → cian/magenta
+  (`--blue`→`#00f0ff`, `--gold`→`#ff2ec4`), coherente con `sevelin-tienda`. Verde/rojo/violeta
+  (semánticos: éxito, error, OT) sin tocar a propósito.
+- **v33 (fix):** costo y precio unitario del producto nacían con el valor literal `"0"` puesto (no
+  un placeholder) — pegar un monto con el cursor al final de ese "0" daba `039990` en vez de
+  `39990`. Ahora nacen vacíos (`placeholder="0"`) y seleccionan su contenido al enfocar (mismo
+  idioma que ya usaban `elPagoMontoRecibido`/`elItemCantidad`).
+- **v34:** "Descripción" y "Descripción web" eran dos campos separados — se unifican en uno solo
+  (se manda a las dos columnas del backend). El campo pasa de `<textarea>` plano a un editor de
+  texto enriquecido (Quill, CDN — única dependencia externa no vendorizada del proyecto, sin
+  alternativa vanilla razonable): negrita, cursiva, listas, links. Texto más chico que el resto del
+  formulario a propósito (para editar viendo más líneas), el tamaño publicado lo define
+  `sevelin-tienda`, no esto. La tienda sanitiza el HTML antes de renderizarlo (`isomorphic-dompurify`,
+  whitelist mínima: exactamente los tags del editor).
+- **v35:** checkbox "Es un servicio" al agregar cualquier ítem al carrito (venga del catálogo o
+  escrito a mano) — `venta_items.es_servicio` (`sql/26`). `GET /api/balance` agrega
+  `ventasProductos`/`ventasServicios` (suma de `subtotal` agrupada, ventas PAGADAS del período).
+  Tarjeta nueva en Balance ("Ventas: productos vs. servicios"), mismo patrón visual que "Ingresos
+  por medio de pago".
+- **v36:** miniatura de foto de producto (`miniaturaProducto()` en `config.js`, con cuadro 📦 si no
+  hay foto) en la tabla de Productos (reemplaza la columna "Capas (PEPS)", que casi no se usaba ahí
+  y sigue disponible en el modal del producto), en "Ingresar producto" y en el Carrito de venta.
+  Fix: Edge (y algunos Chromium con guardado de contraseñas) inyecta su propio ícono de
+  mostrar/ocultar sobre CUALQUIER `type="password"` — se veía superpuesto con el 👁️ propio del PIN,
+  tanto en el login como en el gate de Finanzas. `::-ms-reveal`/`::-ms-clear` en `display:none`.
+- **v37 (fix de seguridad + UX):** el sidebar ganó sub-ítems siempre visibles bajo Finanzas/Servicio
+  Técnico/Página Web (atajo directo a cada sub-pestaña, sin acordeón) — pero el interceptor del PIN
+  de Finanzas (`finanzas-gate.js`) solo escuchaba clicks en el `.nav-btn` padre, así que esos
+  sub-ítems nuevos (ej. "Gastos Fijos") entraban a Finanzas **sin pedir el PIN**, con la sesión de
+  cualquiera. Corregido: interceptor delegado en `.nav-links` que cubre cualquier elemento con
+  `data-view="view-finanzas"`, guarda cuál disparó el gate y reenvía el click a ESE elemento tras el
+  PIN correcto (antes siempre volvía a la sub-pestaña por defecto). Además: tabla de Productos y
+  Carrito con letra más grande (`.tabla-grande`, selector doble por una pelea de especificidad con
+  un bloque CSS posterior), login más grande, "POS" pasa de magenta a cian (color característico de
+  marca consistente), Valorización de Inventario con un ámbar propio (`--valor`, ya no comparte el
+  magenta con los íconos de editar), Balance se refresca solo a "Hoy" al entrar (antes mostraba lo
+  último cargado hasta apretar "Hoy" a mano), y cierre de sesión automático a los 60s de
+  inactividad en TODA la app (`js/inactividad-global.js`, nuevo — distinto del timer de Finanzas,
+  que solo expulsa al POS sin cerrar sesión).
+- **v38:** botón "Cancelar" de un clic en Pedidos Web (ya era posible por dentro de "Gestionar",
+  quedaba escondido). Mini-modal con checkbox "el producto sigue en la tienda" — si se marca,
+  `PUT /api/pos/pedidos-web/:id` con `reponer_stock:true` repone stock (`ajustarStock(items, +1)`,
+  misma función que ya usa el resto del POS, con signo opuesto); si no se marca, no se toca — el
+  servidor nunca lo decide solo, un pedido puede cancelarse recién pagado o ya despachado y son
+  casos opuestos para el inventario.
+- **v39:** al cancelar, el POS le pide a `sevelin-tienda` que le mande el correo de cancelación al
+  cliente (`POST /api/pos/notificar-cancelacion`, nueva variable `TIENDA_NOTIFICAR_CANCELACION_URL`,
+  mismo `SYNC_SECRET` de siempre — el POS no tiene la API key de Resend ni la plantilla del correo).
+  Mejor esfuerzo: si falla, el pedido queda cancelado igual y el toast avisa que no se pudo notificar.
+
 ## Automatización Supabase CLI (nuevo — usar de acá en adelante)
 La CLI de Supabase (`npx supabase`) está logueada y ambos proyectos vinculados (`supabase link`) —
 para correr una migración SQL nueva, ya no hace falta pegarla a mano en el SQL Editor:
@@ -187,16 +251,26 @@ Ninguno confirmado. El bug crítico histórico de `descontar_stock_venta` (colum
 verificó esta sesión como **corregido** en la base real (`sql/20` sí se aplicó en algún momento —
 la función usa la variable local, no la columna ambigua).
 
-## Pendiente (real, verificado al 28-08-2026)
-1. **Confirmar en Vercel** que `SYNC_SECRET` y `SUPABASE_WEB_URL`/`SUPABASE_WEB_SERVICE_ROLE_KEY`
-   están configurados — hubo un episodio de "fetch failed" en el panel Pedidos Web por esto, se
-   dieron instrucciones para agregarlas pero no se reconfirmó que quedaran puestas en producción.
-2. **28 productos sin SKU** no se pudieron publicar ni clasificar (el sync a la tienda exige SKU) —
-   cargarles SKU desde el modal de producto cuando se pueda. Lista completa en el resumen del script
-   `clasificar-y-publicar-catalogo.js` (última corrida, ver terminal/changelog de la sesión).
-3. **10 productos con SKU sin foto** — no tenían coincidencia confiable contra `sevelin.cl`, subir
+## Pendiente (real, verificado al 29-08-2026)
+1. **Verificar un dominio propio en Resend** (dashboard.resend.com, cuenta creada con
+   `sevelin.contacto@gmail.com`) — mientras se use el dominio de prueba (`onboarding@resend.dev`),
+   los correos de confirmación/cancelación a clientes reales **fallan en silencio** (ese dominio
+   solo entrega a la cuenta que creó la API key). Agregar 2-3 registros DNS donde esté administrado
+   `sevelin.cl` — no requiere mover el dominio ni tocar que hoy apunte a Tiendanube.
+2. **Decisión sobre WhatsApp**: para notificar por WhatsApp (además del correo) hace falta pasar
+   por la verificación de Meta Business Manager (API oficial) — no hay atajo gratis y rápido, y las
+   automatizaciones "no oficiales" (WhatsApp Web controlado por script) violan los términos de
+   servicio y arriesgan que baneen el número del negocio. Sin decisión tomada todavía.
+3. **`SUPABASE_WEB_URL`/`SUPABASE_WEB_SERVICE_ROLE_KEY` en Vercel**: el usuario confirmó haberlas
+   agregado el 29-08-2026 (después de un episodio real de "fetch failed" en Pedidos Web) — pendiente
+   real: confirmar que el panel efectivamente funciona en producción tras el redeploy.
+4. **28 productos sin SKU**: YA NO están bloqueados para sincronizar (`sevelin-tienda` genera un
+   slug de respaldo desde el nombre + id cuando no hay SKU, ver su propio SNAPSHOT.md). Sigue
+   pendiente clasificarlos/marcarlos `publicado_web=true` desde el modal de producto si se quiere
+   que aparezcan en la tienda — ya no es un bloqueo técnico, es curación de catálogo.
+5. **10 productos con SKU sin foto** — no tenían coincidencia confiable contra `sevelin.cl`, subir
    foto a mano.
-4. (Opcional, grande) Migrar a Supabase Auth + RLS por rol. Partir `api/index.js` en routers.
+6. (Opcional, grande) Migrar a Supabase Auth + RLS por rol. Partir `api/index.js` en routers.
 
 ## Trampas específicas ya descubiertas (no repetir)
 - `confirmarEntrega` existía en `ot.js` y `pago.js` → las de venta ahora son `confirmarEntregaVenta`/
@@ -214,6 +288,19 @@ la función usa la variable local, no la columna ambigua).
   tienda). Si se agrega un tercer Supabase alguna vez, seguir el mismo patrón de nombre explícito.
 - El POS descarta `codigo_barras` al guardar `venta_items`; por eso el buscador resuelve el barcode
   contra el catálogo (`productos`), no contra el ítem de venta.
+- **`css/tailwind-input.css` DEBE tener solo las 3 directivas `@tailwind` — nunca CSS compilado.**
+  Si `npm run css` deja de reflejar clases nuevas sin ningún error visible, lo primero a revisar es
+  `head -c 200 css/tailwind-input.css`: si empieza con `*,:after,:before{...}` (CSS ya compilado) en
+  vez de `@tailwind base;`, alguien corrió la CLI con `-i`/`-o` invertidos en algún momento — se
+  arregla restaurando las 3 directivas desde cualquier commit viejo (`git show <hash>:css/tailwind-
+  input.css`) y recompilando. Pasó una vez (v32) y no dio ningún error, solo clases "fantasma" que
+  nunca aparecían.
+- **Cualquier atajo NUEVO de navegación a una vista protegida por PIN (Finanzas) tiene que pasar por
+  el interceptor delegado de `finanzas-gate.js`** (`.nav-links` en captura, cualquier elemento con
+  `data-view="view-finanzas"`) — NO alcanza con que la vista tenga la clase `admin-only` sola, eso
+  solo oculta el botón para el rol trabajador, no pide el PIN. Pasó real: los `.nav-subitem` nuevos
+  del sidebar (v37) tenían su propio listener en `config.js` que abría Finanzas directo, saltándose
+  el PIN por completo, porque el interceptor de esa época solo escuchaba el `.nav-btn` padre.
 
 ---
 
