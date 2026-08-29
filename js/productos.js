@@ -59,7 +59,6 @@ const elProdPublicadoWeb = document.getElementById('prodPublicadoWeb');
 const elProdPrecioWeb = document.getElementById('prodPrecioWeb');
 const elProdCategoriaWeb = document.getElementById('prodCategoriaWeb');
 const elProdStockUmbralWeb = document.getElementById('prodStockUmbralWeb');
-const elProdDescripcionWeb = document.getElementById('prodDescripcionWeb');
 let productoEnEdicionImagenUrls = [];
 // Fotos elegidas ANTES de que el producto tenga id (modo creación): quedan
 // acá como data URLs hasta que guardarProducto() cree el producto y recién
@@ -119,6 +118,8 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function setupProductosEventListeners() {
+  initEditorDescripcion();
+
   /* El código de barras solo acepta dígitos mientras se escribe. Se
      filtra en el `input` y no solo al guardar, para que el usuario vea
      de inmediato que ese campo es numérico. El escáner sigue
@@ -754,6 +755,41 @@ function aplicarStockIlimitadoProductoUI() {
   if (elGridProdStockControl) elGridProdStockControl.style.display = ilimitado ? 'none' : '';
 }
 
+// ---------- Editor de Descripción (Quill, texto enriquecido) ----------
+// #prodDescripcion (textarea oculto, ver index.html) sigue siendo la
+// fuente que lee guardarProducto() con su .value de siempre — Quill solo
+// se mantiene sincronizado con él, así el resto del código no necesita
+// saber que existe un editor rico detrás.
+let editorDescripcion = null;
+
+function initEditorDescripcion() {
+  if (editorDescripcion || typeof Quill === 'undefined') return;
+  const contenedor = document.getElementById('prodDescripcionEditor');
+  if (!contenedor) return;
+  editorDescripcion = new Quill(contenedor, {
+    theme: 'snow',
+    placeholder: 'Detalle largo del producto (opcional) — se usa en la tienda web',
+    modules: { toolbar: [['bold', 'italic'], [{ list: 'ordered' }, { list: 'bullet' }], ['link'], ['clean']] }
+  });
+  editorDescripcion.on('text-change', () => {
+    if (!elProdDescripcion) return;
+    // Un editor "visualmente vacío" igual guarda '<p><br></p>' — sin este
+    // chequeo, cada producto nuevo terminaría con una descripción "vacía"
+    // que en realidad no lo está.
+    elProdDescripcion.value = editorDescripcion.getText().trim() ? editorDescripcion.root.innerHTML : '';
+  });
+}
+
+// Único punto de escritura del editor — abrirModalProducto() (cargar un
+// producto existente o limpiar el formulario) pasa siempre por acá en vez
+// de tocar el textarea oculto directo, para que Quill y el textarea nunca
+// queden desincronizados.
+function establecerDescripcion(html) {
+  initEditorDescripcion();
+  if (editorDescripcion) editorDescripcion.root.innerHTML = html || '<p><br></p>';
+  if (elProdDescripcion) elProdDescripcion.value = html || '';
+}
+
 function abrirModalProducto(producto = null) {
   if (!elViewProductoEditor) return;
   if (!esAdmin()) { showToast('Solo el administrador puede editar productos', 'err'); return; }
@@ -783,11 +819,12 @@ function abrirModalProducto(producto = null) {
     if (elProdAlto) elProdAlto.value = producto.alto_cm || 0;
     if (elProdAncho) elProdAncho.value = producto.ancho_cm || 0;
     if (elProdProfundidad) elProdProfundidad.value = producto.profundidad_cm || 0;
-    if (elProdDescripcion) elProdDescripcion.value = producto.descripcion || '';
+    // Una sola descripción: si el producto viene de antes de este cambio y
+    // solo tenía escrita la "web", se usa esa como punto de partida.
+    establecerDescripcion(producto.descripcion || producto.descripcion_web || '');
     if (elProdPublicadoWeb) elProdPublicadoWeb.checked = !!producto.publicado_web;
     if (elProdPrecioWeb) elProdPrecioWeb.value = producto.precio_web ?? '';
     if (elProdStockUmbralWeb) elProdStockUmbralWeb.value = producto.stock_umbral_web ?? '';
-    if (elProdDescripcionWeb) elProdDescripcionWeb.value = producto.descripcion_web || '';
     // Si el producto tiene subcategoría, hay que reseleccionar ESA opción
     // en el <select> (no la categoría padre) — si no, cada vez que se
     // reabre el editor de un producto subcategorizado, se pierde la
@@ -799,7 +836,8 @@ function abrirModalProducto(producto = null) {
     editingProductId = null;
     if (elProductoFormTitle) elProductoFormTitle.textContent = 'Nuevo Producto';
     if (elProdEditId) elProdEditId.value = '';
-    [elProdSku, elProdBarcode, elProdNombre, elProdDescripcion].forEach(el => { if (el) el.value = ''; });
+    [elProdSku, elProdBarcode, elProdNombre].forEach(el => { if (el) el.value = ''; });
+    establecerDescripcion('');
     // Costo y precio quedan VACÍOS (con placeholder "0") — no "0" puesto de
     // verdad, para que pegar o escribir un monto lo reemplace en vez de
     // pegarse junto al "0" (ver el listener de foco más arriba). El resto
@@ -818,7 +856,6 @@ function abrirModalProducto(producto = null) {
     if (elProdPublicadoWeb) elProdPublicadoWeb.checked = false;
     if (elProdPrecioWeb) elProdPrecioWeb.value = '';
     if (elProdStockUmbralWeb) elProdStockUmbralWeb.value = '';
-    if (elProdDescripcionWeb) elProdDescripcionWeb.value = '';
     poblarSelectCategoriaWeb('').then(cargarCategoriasEditor);
     productoEnEdicionImagenUrls = [];
     fotosNuevasStaged = [];
@@ -959,12 +996,10 @@ async function guardarProducto() {
     categoria_id,
     subcategoria_web,
     stock_umbral_web: elProdStockUmbralWeb?.value.trim() ? Number(elProdStockUmbralWeb.value) : null,
-    // Si no se escribió una descripción específica para la web, se usa la
-    // misma descripción general — así no hay que escribir el mismo texto
-    // dos veces. El campo de la web sigue existiendo para cuando de verdad
-    // se necesite un texto distinto (más comercial, sin detalle técnico
-    // interno, etc.).
-    descripcion_web: elProdDescripcionWeb?.value.trim() || elProdDescripcion?.value.trim() || null
+    // Una sola descripción para todo (ya no hay campo aparte para la web):
+    // se manda el mismo HTML también a descripcion_web, la columna que
+    // lee sevelin-tienda al sincronizar (ver POST /api/sync/producto).
+    descripcion_web: elProdDescripcion?.value.trim() || null
   };
 
   if (elBtnGuardarProducto) elBtnGuardarProducto.disabled = true;

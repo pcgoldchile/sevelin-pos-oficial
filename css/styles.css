@@ -1647,6 +1647,46 @@ body.theme-light .pin-input { background: #fff; color: #0f172a; }
 
 .pin-nota { margin-top: 8px; font-size: 13px; color: var(--text-muted); }
 
+/* ---------- Editor de Descripción (Quill) ----------
+   El tema "snow" de Quill viene pensado para fondo blanco — se
+   sobreescriben sus variables de color para que combine con el resto del
+   formulario (mismos tokens --bg-900/--border/--text-100 de siempre) en
+   vez de quedar como una caja blanca pegada dentro de un panel oscuro.
+   El texto queda MÁS CHICO que el resto del formulario a propósito (pedido
+   explícito): es para editar cómodo, viendo más líneas a la vez — el
+   tamaño con el que se publica en la tienda web es independiente, lo
+   define el CSS de sevelin.cl, no esto. */
+.editor-descripcion .ql-toolbar.ql-snow {
+    background: var(--bg-900, #0f172a); border: 1.5px solid var(--border-strong);
+    border-bottom: none; border-radius: 1rem 1rem 0 0; padding: 6px 8px;
+}
+.editor-descripcion .ql-container.ql-snow {
+    background: var(--bg-900, #0f172a); border: 1.5px solid var(--border-strong);
+    border-radius: 0 0 1rem 1rem; font-family: inherit;
+}
+.editor-descripcion .ql-editor {
+    min-height: 110px; max-height: 260px; overflow-y: auto;
+    font-size: 12.5px; line-height: 1.5; color: var(--text-100);
+}
+.editor-descripcion .ql-editor.ql-blank::before { color: var(--text-muted); font-style: normal; font-size: 12.5px; }
+.editor-descripcion .ql-snow .ql-stroke { stroke: var(--text-muted); }
+.editor-descripcion .ql-snow .ql-fill { fill: var(--text-muted); }
+.editor-descripcion .ql-snow .ql-picker { color: var(--text-muted); }
+.editor-descripcion .ql-snow.ql-toolbar button:hover,
+.editor-descripcion .ql-snow.ql-toolbar button.ql-active,
+.editor-descripcion .ql-snow .ql-picker-label:hover,
+.editor-descripcion .ql-snow .ql-picker-item:hover {
+    color: var(--blue);
+}
+.editor-descripcion .ql-snow.ql-toolbar button:hover .ql-stroke,
+.editor-descripcion .ql-snow.ql-toolbar button.ql-active .ql-stroke { stroke: var(--blue); }
+.editor-descripcion .ql-snow.ql-toolbar button:hover .ql-fill,
+.editor-descripcion .ql-snow.ql-toolbar button.ql-active .ql-fill { fill: var(--blue); }
+.editor-descripcion .ql-snow .ql-picker-options {
+    background: var(--bg-800, #1b2740); border-color: var(--border-strong) !important;
+}
+body.theme-light .editor-descripcion .ql-editor { color: #0f172a; }
+
 /* Oculta el input real del PIN sin sacarlo del formulario:
    auth.js lo sigue leyendo y el teclado físico sigue escribiendo. */
 .sr-only {

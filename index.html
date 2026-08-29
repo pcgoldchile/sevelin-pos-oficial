@@ -31,6 +31,18 @@
        al final. Mantener este orden es lo que hace que el resultado se
        vea idéntico a como se veía con el CDN. -->
   <link rel="stylesheet" href="css/tailwind.css">
+
+  <!-- Quill — editor de texto enriquecido para la Descripción del
+       producto (negrita, listas, links — igual a lo que ofrecía
+       Tiendanube). Es la ÚNICA dependencia de este proyecto que viene de
+       un CDN externo en vez de estar compilada/vendorizada local (a
+       diferencia de Tailwind, que se sacó del CDN a propósito por el
+       parpadeo sin estilos): no hay una alternativa vanilla razonable sin
+       reimplementar un editor WYSIWYG entero. Efecto real: sin internet,
+       el campo de Descripción no carga el editor (el resto del POS sigue
+       funcionando igual). -->
+  <link href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
 </head>
 <body>
 
@@ -1562,7 +1574,23 @@
 
           <div class="field" style="margin-top:12px;">
             <label>Descripción</label>
-            <textarea id="prodDescripcion" rows="3" placeholder="Detalle largo del producto (opcional)"></textarea>
+            <p class="subtitle" style="margin-bottom:6px;">Esta es la ÚNICA descripción del producto — se usa tal cual en la ficha de la tienda web (sevelin.cl) cuando el producto está publicado.</p>
+            <!-- Editor de texto enriquecido (Quill, ver <head>): negrita,
+                 cursiva, listas, links. #prodDescripcion pasa a ser un
+                 <textarea> OCULTO que guarda el HTML resultante — todo el
+                 resto del código (guardarProducto, abrirModalProducto) lo
+                 sigue leyendo/escribiendo por su .value de siempre, así
+                 que no hace falta tocar nada más que sepa de este campo.
+                 initEditorDescripcion() en productos.js mantiene ambos
+                 sincronizados. -->
+            <!-- Quill inserta su barra de herramientas como HERMANA del
+                 contenedor (dentro de este padre), no adentro de él — por
+                 eso el wrapper .editor-descripcion envuelve a los dos en
+                 vez de ir en el mismo div que #prodDescripcionEditor. -->
+            <div class="editor-descripcion">
+              <div id="prodDescripcionEditor"></div>
+            </div>
+            <textarea id="prodDescripcion" style="display:none"></textarea>
           </div>
 
           <div style="margin: 18px 0 0;">
@@ -1645,10 +1673,6 @@
             <div class="field" style="margin-top:10px;">
               <label>Umbral de stock mostrado en la web</label>
               <input type="number" id="prodStockUmbralWeb" min="1" placeholder="Por defecto: más de 5 disponibles">
-            </div>
-            <div class="field" style="margin-top:10px;">
-              <label>Descripción web (opcional)</label>
-              <textarea id="prodDescripcionWeb" rows="3" placeholder="Si la dejas vacía, se usa la misma Descripción de arriba. Escribe algo acá solo si quieres un texto distinto para la tienda."></textarea>
             </div>
           </div>
         </div>
