@@ -29,6 +29,13 @@ const elProdBarcode = document.getElementById('prodBarcode');
 const elProdNombre = document.getElementById('prodNombre');
 const elProdCosto = document.getElementById('prodCosto');
 const elProdPrecio = document.getElementById('prodPrecio');
+// Al enfocar, selecciona el contenido completo — así pegar o escribir un
+// monto nuevo lo REEMPLAZA en vez de insertarse junto al "0" que deja el
+// campo vacío (ver abrirModalProducto): sin esto, pegar "39990" con el
+// cursor al final del "0" da "039990". Mismo patrón que ya usa el resto
+// del POS para montos (elPagoMontoRecibido, elItemCantidad, etc.).
+elProdCosto?.addEventListener('focus', () => elProdCosto.select());
+elProdPrecio?.addEventListener('focus', () => elProdPrecio.select());
 const elProdStock = document.getElementById('prodStock');
 const elProdRequiereSN = document.getElementById('prodRequiereSN');
 const elProdEsRepuesto = document.getElementById('prodEsRepuesto');
@@ -758,8 +765,8 @@ function abrirModalProducto(producto = null) {
     if (elProdSku) elProdSku.value = producto.sku || '';
     if (elProdBarcode) elProdBarcode.value = producto.codigo_barras || '';
     if (elProdNombre) elProdNombre.value = producto.nombre || '';
-    if (elProdCosto) elProdCosto.value = producto.costo_unitario || 0;
-    if (elProdPrecio) elProdPrecio.value = producto.precio_unitario || 0;
+    if (elProdCosto) elProdCosto.value = producto.costo_unitario || '';
+    if (elProdPrecio) elProdPrecio.value = producto.precio_unitario || '';
     if (elProdStock) elProdStock.value = producto.stock || 0;
     if (elProdRequiereSN) elProdRequiereSN.checked = !!producto.requiere_sn;
     if (elProdEsRepuesto) elProdEsRepuesto.checked = !!producto.es_repuesto;
@@ -789,7 +796,12 @@ function abrirModalProducto(producto = null) {
     if (elProductoFormTitle) elProductoFormTitle.textContent = 'Nuevo Producto';
     if (elProdEditId) elProdEditId.value = '';
     [elProdSku, elProdBarcode, elProdNombre, elProdDescripcion].forEach(el => { if (el) el.value = ''; });
-    [elProdCosto, elProdPrecio, elProdStock, elProdPeso, elProdAlto, elProdAncho, elProdProfundidad]
+    // Costo y precio quedan VACÍOS (con placeholder "0") — no "0" puesto de
+    // verdad, para que pegar o escribir un monto lo reemplace en vez de
+    // pegarse junto al "0" (ver el listener de foco más arriba). El resto
+    // de los campos numéricos sigue igual, no era parte de lo reportado.
+    [elProdCosto, elProdPrecio].forEach(el => { if (el) el.value = ''; });
+    [elProdStock, elProdPeso, elProdAlto, elProdAncho, elProdProfundidad]
       .forEach(el => { if (el) el.value = 0; });
     if (elProdRequiereSN) elProdRequiereSN.checked = false;
     if (elProdEsRepuesto) elProdEsRepuesto.checked = false;
