@@ -30,6 +30,13 @@ const elPedidoWebTracking = document.getElementById('pedidoWebTracking');
 const elBtnCancelarPedidoWeb = document.getElementById('btnCancelarPedidoWeb');
 const elBtnGuardarPedidoWeb = document.getElementById('btnGuardarPedidoWeb');
 
+const elModalCancelarPedidoWeb = document.getElementById('modalCancelarPedidoWeb');
+const elCancelarPedidoWebTexto = document.getElementById('cancelarPedidoWebTexto');
+const elCancelarPedidoWebReponerStock = document.getElementById('cancelarPedidoWebReponerStock');
+const elBtnCancelarPedidoWebVolver = document.getElementById('btnCancelarPedidoWebVolver');
+const elBtnCancelarPedidoWebConfirmar = document.getElementById('btnCancelarPedidoWebConfirmar');
+let pedidoWebIdACancelar = null;
+
 document.addEventListener('DOMContentLoaded', () => {
   setupPedidosWebEventListeners();
 });
@@ -53,6 +60,14 @@ function setupPedidosWebEventListeners() {
       });
     });
   }
+
+  if (elBtnCancelarPedidoWebVolver) elBtnCancelarPedidoWebVolver.addEventListener('click', cerrarModalCancelarPedidoWeb);
+  if (elModalCancelarPedidoWeb) {
+    elModalCancelarPedidoWeb.addEventListener('click', (e) => {
+      if (e.target === elModalCancelarPedidoWeb) cerrarModalCancelarPedidoWeb();
+    });
+  }
+  if (elBtnCancelarPedidoWebConfirmar) elBtnCancelarPedidoWebConfirmar.addEventListener('click', confirmarCancelarPedidoWeb);
 }
 
 async function cargarPedidosWeb() {
@@ -130,22 +145,49 @@ function renderPedidosWebTabla(lista) {
 
 /* Atajo de un clic desde la tabla — mismo cambio de estado que ya permitía
    "Gestionar" (PUT /api/pos/pedidos-web/:id con estado: 'CANCELADO'), sin
-   pasar por el modal completo. A propósito NO toca el stock del POS: un
-   pedido puede cancelarse en distintos momentos (recién pagado, ya
-   preparándose, ya despachado) y solo el negocio sabe si en ese caso
-   corresponde reponer inventario o no — se ajusta a mano en Productos si
-   corresponde. */
-async function cancelarPedidoWebDirecto(id) {
+   pasar por el modal completo. Abre un mini-modal en vez de un confirm()
+   liso porque hay una decisión real que tomar: si el producto sigue en
+   la tienda (nunca se despachó), reponer el stock automáticamente; si ya
+   salió, no — el servidor nunca lo asume solo (ver PUT arriba). */
+function cancelarPedidoWebDirecto(id) {
+  const pedido = pedidosWebList.find(p => String(p.id) === String(id));
+  pedidoWebIdACancelar = id;
+  if (elCancelarPedidoWebTexto) {
+    elCancelarPedidoWebTexto.textContent = `¿Cancelar el pedido ${pedido?.numero_pedido || `#${id}`}? Esta acción no revierte el pago.`;
+  }
+  if (elCancelarPedidoWebReponerStock) elCancelarPedidoWebReponerStock.checked = false;
+  elModalCancelarPedidoWeb?.classList.add('show');
+}
+
+function cerrarModalCancelarPedidoWeb() {
+  elModalCancelarPedidoWeb?.classList.remove('show');
+  pedidoWebIdACancelar = null;
+}
+
+async function confirmarCancelarPedidoWeb() {
+  if (!pedidoWebIdACancelar) return;
+  const id = pedidoWebIdACancelar;
   const pedido = pedidosWebList.find(p => String(p.id) === String(id));
   const numero = pedido?.numero_pedido || `#${id}`;
-  if (!confirm(`¿Cancelar el pedido ${numero}? Esta acción no revierte el pago ni ajusta el stock automáticamente.`)) return;
+  const reponerStock = !!(elCancelarPedidoWebReponerStock && elCancelarPedidoWebReponerStock.checked);
 
+  if (elBtnCancelarPedidoWebConfirmar) elBtnCancelarPedidoWebConfirmar.disabled = true;
   try {
-    await API.pedidosWeb.actualizar(id, { estado: 'CANCELADO' });
-    showToast(`Pedido ${numero} cancelado`, 'ok');
+    const resultado = await API.pedidosWeb.actualizar(id, { estado: 'CANCELADO', reponer_stock: reponerStock });
+    cerrarModalCancelarPedidoWeb();
+    showToast(
+      reponerStock
+        ? (resultado?.stock_repuesto
+            ? `Pedido ${numero} cancelado y stock repuesto`
+            : `Pedido ${numero} cancelado — no se pudo reponer el stock, revísalo en Productos`)
+        : `Pedido ${numero} cancelado`,
+      resultado?.stock_repuesto === false && reponerStock ? 'err' : 'ok'
+    );
     await cargarPedidosWeb();
   } catch (err) {
     showToast(err.message || 'No se pudo cancelar el pedido', 'err');
+  } finally {
+    if (elBtnCancelarPedidoWebConfirmar) elBtnCancelarPedidoWebConfirmar.disabled = false;
   }
 }
 

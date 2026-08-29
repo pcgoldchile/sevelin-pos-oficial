@@ -4428,7 +4428,7 @@ app.put('/api/pos/pedidos-web/:id', auth(true), async (req, res) => {
   // por el mutex de POST /api/flow-webhook en sevelin-tienda, no por este
   // panel.
   const { data: actual, error: errorActual } = await dbWeb
-    .from('pedidos_web').select('estado').eq('id', req.params.id).single();
+    .from('pedidos_web').select('estado, items').eq('id', req.params.id).single();
   if (errorActual) return enviarError(res, 404, 'Pedido no encontrado');
   if (['CREADO', 'FALLIDO'].includes(actual.estado)) {
     return enviarError(res, 409, 'Este pedido todavía no tiene el pago confirmado');
@@ -4437,7 +4437,35 @@ app.put('/api/pos/pedidos-web/:id', auth(true), async (req, res) => {
   const { data, error } = await dbWeb.from('pedidos_web')
     .update(cambios).eq('id', req.params.id).select().single();
   if (error) return enviarError(res, 500, error.message);
-  res.json(data);
+
+  /* Reponer stock al cancelar es OPCIONAL y explícito (checkbox en el
+     modal de cancelación) — un pedido puede cancelarse recién pagado (el
+     producto nunca salió de la bodega) o ya despachado (el producto ya
+     salió, reponer stock ahí dejaría el inventario mostrando más de lo
+     que hay). El servidor nunca lo decide solo. items.producto_pos_id es
+     el id en la tabla `productos` de ESTE Supabase (POS) — el mismo dato
+     que sevelin-tienda ya manda mapeado como producto_id a
+     /api/interno/ajustar-stock cuando se DESCUENTA por una venta real;
+     acá se usa la misma función (ajustarStock) con signo +1 para
+     reponer. Si algo falla acá, el pedido queda cancelado igual — es la
+     acción principal — y se avisa en la respuesta para que el trabajador
+     lo ajuste a mano si hace falta. */
+  let stockRepuesto = false;
+  if (cambios.estado === 'CANCELADO' && req.body?.reponer_stock === true) {
+    const itemsPos = (actual.items || [])
+      .filter(it => it?.producto_pos_id)
+      .map(it => ({ producto_id: it.producto_pos_id, cantidad: it.cantidad }));
+    if (itemsPos.length) {
+      try {
+        await ajustarStock(itemsPos, 1);
+        stockRepuesto = true;
+      } catch (err) {
+        console.error('[Pedidos Web] No se pudo reponer stock al cancelar el pedido', req.params.id, ':', err.message);
+      }
+    }
+  }
+
+  res.json({ ...data, stock_repuesto: stockRepuesto });
 });
 
 /* ---------- 404 y errores ---------- */

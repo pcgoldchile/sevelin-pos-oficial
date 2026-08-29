@@ -2597,6 +2597,28 @@
     </div>
   </div>
 
+  <!-- Atajo de un clic para cancelar un pedido desde la fila (sin abrir
+       "Gestionar") — la pregunta del stock es la parte que de verdad
+       necesita una decisión humana: el servidor nunca lo asume solo. -->
+  <div id="modalCancelarPedidoWeb" class="modal-overlay">
+    <div class="modal-box modal-sm">
+      <h2>❌ Cancelar pedido</h2>
+      <p class="modal-hint" id="cancelarPedidoWebTexto">¿Cancelar este pedido?</p>
+
+      <div class="field" style="margin-top:16px;">
+        <label class="caja-check">
+          <input type="checkbox" id="cancelarPedidoWebReponerStock" class="w-4 h-4 accent-blue-600">
+          El producto sigue en la tienda (no se despachó) — repón el stock automáticamente
+        </label>
+      </div>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarPedidoWebVolver" type="button">Volver</button>
+        <button class="btn btn-red" id="btnCancelarPedidoWebConfirmar" type="button">Sí, cancelar pedido</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modalEntrega" class="modal-overlay">
     <div class="modal-box modal-sm">
       <h2>📦 Entrega del pedido</h2>
