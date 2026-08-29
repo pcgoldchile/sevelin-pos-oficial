@@ -788,7 +788,11 @@ function abrirModalProducto(producto = null) {
     if (elProdPrecioWeb) elProdPrecioWeb.value = producto.precio_web ?? '';
     if (elProdStockUmbralWeb) elProdStockUmbralWeb.value = producto.stock_umbral_web ?? '';
     if (elProdDescripcionWeb) elProdDescripcionWeb.value = producto.descripcion_web || '';
-    poblarSelectCategoriaWeb(producto.categoria_web || '').then(cargarCategoriasEditor);
+    // Si el producto tiene subcategoría, hay que reseleccionar ESA opción
+    // en el <select> (no la categoría padre) — si no, cada vez que se
+    // reabre el editor de un producto subcategorizado, se pierde la
+    // subcategoría al guardar de nuevo sin tocar el campo.
+    poblarSelectCategoriaWeb(producto.subcategoria_web || producto.categoria_web || '').then(cargarCategoriasEditor);
     productoEnEdicionImagenUrls = Array.isArray(producto.imagen_urls) ? [...producto.imagen_urls] : [];
     fotosNuevasStaged = [];
   } else {
@@ -896,9 +900,37 @@ function evaluarAvisoPublicacion() {
   elAvisoPublicacionIncompleta.style.display = '';
 }
 
+// El <select> de categoría web puede tener elegida una categoría de nivel
+// superior O una subcategoría (indentada con "— ", ver
+// poblarSelectCategoriaWeb). productos_web.categoria en la tienda es un
+// filtro PLANO de nivel superior nada más — si se guardara ahí el nombre
+// de la subcategoría tal cual, ese producto desaparecería del filtro de
+// categoría principal (mismo bug que tenía "Fuentes de poder" antes de
+// esta sesión, ver docs/SNAPSHOT.md). Por eso categoria_web SIEMPRE sube
+// hasta el ancestro de nivel superior, y subcategoria_web (columna nueva,
+// sql/25) guarda el nombre específico elegido, o null si ya era de nivel
+// superior.
+function resolverCategoriaWebYSubcategoria() {
+  const idElegido = elProdCategoriaWeb?.selectedOptions[0]?.dataset.id || null;
+  const elegida = idElegido ? categoriasWebCache.find(c => String(c.id) === String(idElegido)) : null;
+  if (!elegida) return { categoria_web: null, categoria_id: null, subcategoria_web: null };
+
+  if (!elegida.parent_id) {
+    return { categoria_web: elegida.nombre, categoria_id: elegida.id, subcategoria_web: null };
+  }
+  const padre = categoriasWebCache.find(c => String(c.id) === String(elegida.parent_id));
+  return {
+    categoria_web: padre ? padre.nombre : elegida.nombre,
+    categoria_id: elegida.id,
+    subcategoria_web: elegida.nombre
+  };
+}
+
 async function guardarProducto() {
   const nombre = (elProdNombre?.value || '').trim();
   if (!nombre) { showToast('El nombre del producto es obligatorio', 'err'); return; }
+
+  const { categoria_web, categoria_id, subcategoria_web } = resolverCategoriaWebYSubcategoria();
 
   const payload = {
     sku: elProdSku?.value.trim() || null,
@@ -923,8 +955,9 @@ async function guardarProducto() {
     // aparte, foto por foto, con API.productos.subirImagen/quitarImagen. ---
     publicado_web: !!(elProdPublicadoWeb && elProdPublicadoWeb.checked),
     precio_web: elProdPrecioWeb?.value.trim() ? Number(elProdPrecioWeb.value) : null,
-    categoria_web: elProdCategoriaWeb?.value.trim() || null,
-    categoria_id: elProdCategoriaWeb?.selectedOptions[0]?.dataset.id || null,
+    categoria_web,
+    categoria_id,
+    subcategoria_web,
     stock_umbral_web: elProdStockUmbralWeb?.value.trim() ? Number(elProdStockUmbralWeb.value) : null,
     // Si no se escribió una descripción específica para la web, se usa la
     // misma descripción general — así no hay que escribir el mismo texto
