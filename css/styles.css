@@ -499,6 +499,18 @@ input[type="checkbox"] { width: auto; height: auto; accent-color: var(--blue); c
 .data-table tbody tr:last-child td { border-bottom: none; }
 .data-table tbody tr { transition: background-color var(--speed) ease; }
 .data-table tbody tr:hover { background: var(--surface-soft); }
+
+/* Miniatura de producto (ver miniaturaProducto() en config.js) — usada en
+   la tabla de Productos, "Ingresar producto" y el Carrito de venta. */
+.miniatura-producto {
+    display: block; border-radius: .6rem; object-fit: cover;
+    border: 1px solid var(--border);
+    flex-shrink: 0;
+}
+.miniatura-vacia {
+    display: flex; align-items: center; justify-content: center;
+    background: var(--surface-soft); color: var(--text-muted);
+}
 .data-table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .data-table .strong { color: var(--text-100); font-weight: 700; }
 .cell-actions { display: flex; gap: 7px; justify-content: flex-end; }
@@ -1625,6 +1637,14 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
     box-shadow: 0 0 0 3px rgba(0, 240, 255, .22);
 }
 body.theme-light .pin-input { background: #fff; color: #0f172a; }
+
+/* Edge (::-ms-reveal) y algunos Chromium con autocompletado de
+   contraseñas inyectan su PROPIO ícono de "mostrar/ocultar" encima de
+   cualquier <input type="password">, en el mismo lugar donde ya está
+   .pin-ojo — se ven los dos superpuestos. Con esto queda solo el 👁️
+   propio, consistente entre navegadores. */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear { display: none; }
 
 /* Botón de ver / ocultar, dentro del campo */
 .pin-ojo {

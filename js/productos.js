@@ -596,6 +596,7 @@ function renderProductosTabla(items) {
     return `
     <tr class="row-in${marcada ? ' fila-marcada' : ''}">
       <td class="col-check"><input type="checkbox" data-sel="${p.id}" ${marcada ? 'checked' : ''}></td>
+      <td>${miniaturaProducto(p)}</td>
       <td>
         <!-- El nombre abre el editor directo: es lo que uno intenta
              tocar por instinto antes de buscar el lápiz de la derecha.
@@ -612,7 +613,6 @@ function renderProductosTabla(items) {
       <td class="admin-only">${fmtCLP(p.costo_unitario)}</td>
       <td>${fmtCLP(p.precio_unitario)}</td>
       <td>${badgeStock(p)}</td>
-      <td class="admin-only">${typeof celdaLotes === 'function' ? celdaLotes(p) : '—'}</td>
       <td>
         <div class="cell-actions">
           <button class="btn btn-icon btn-icon-view" data-etiqueta="${p.id}" title="Imprimir etiqueta de código de barras">${ICO_ETIQUETA_PROD}</button>

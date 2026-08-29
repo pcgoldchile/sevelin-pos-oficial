@@ -256,7 +256,14 @@
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-2.5 mt-4">
                   <div class="col-span-2">
                     <label for="itemNombre" class="etiqueta-pos">Producto *</label>
-                    <input type="text" id="itemNombre" placeholder="Nombre del producto" class="campo-pos">
+                    <div class="flex items-center gap-2">
+                      <!-- Solo aparece si el producto elegido del catálogo
+                           tiene foto — un ítem manual (fuera de catálogo)
+                           nunca la tiene, y no hay hueco vacío raro
+                           porque el input ocupa todo el ancho solo. -->
+                      <img id="itemFotoPreview" class="miniatura-producto" style="width:40px;height:40px;display:none;" alt="">
+                      <input type="text" id="itemNombre" placeholder="Nombre del producto" class="campo-pos" style="flex:1;">
+                    </div>
                   </div>
                   <div>
                     <label for="itemCantidad" class="etiqueta-pos">Cantidad *</label>
@@ -363,6 +370,7 @@
                     <table class="data-table w-full text-[13px]">
                       <thead>
                         <tr class="bg-slate-50 dark:bg-slate-900/60">
+                          <th class="cabecera-pos text-left"></th>
                           <th class="cabecera-pos text-left">Cant</th>
                           <th class="cabecera-pos text-left">Producto / S/N</th>
                           <th class="cabecera-pos text-right">P. Unit</th>
@@ -372,7 +380,7 @@
                       </thead>
                       <tbody id="cartTableBody">
                         <tr class="empty-row">
-                          <td colspan="5" class="px-4 py-10 text-center text-[13px] text-slate-400 dark:text-slate-500">
+                          <td colspan="6" class="px-4 py-10 text-center text-[13px] text-slate-400 dark:text-slate-500">
                             El carrito está vacío
                           </td>
                         </tr>
@@ -1418,11 +1426,11 @@
                      barras, medidas y fecha de stock siguen existiendo en el
                      producto: se ven y editan en su modal. -->
                 <th class="col-check"><input type="checkbox" id="checkTodosProductos" title="Seleccionar todo"></th>
+                <th>Foto</th>
                 <th>Nombre</th>
                 <th class="admin-only">Costo</th>
                 <th>Precio</th>
                 <th>Stock</th>
-                <th class="admin-only">Capas (PEPS)</th>
                 <th style="text-align:right;">Acciones</th>
               </tr>
             </thead>

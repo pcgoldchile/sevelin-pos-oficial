@@ -117,6 +117,20 @@ function fmtCLP(v) {
   return (negativo ? '-$' : '$') + s;
 }
 
+/* Miniatura de producto — helper compartido (Productos, Ingresar producto
+   y Carrito de venta la usan los tres, ver pos.js/productos.js). Sin foto,
+   muestra un cuadro con 📦 en vez de dejar un hueco vacío o romper el
+   layout de la fila. `tam` en px, 36 por defecto (tablas); se pasa uno
+   más grande donde haga falta más presencia visual. */
+function miniaturaProducto(p, tam) {
+  const url = Array.isArray(p?.imagen_urls) ? p.imagen_urls[0] : null;
+  const px = tam || 36;
+  if (!url) {
+    return `<div class="miniatura-producto miniatura-vacia" style="width:${px}px;height:${px}px;font-size:${Math.round(px * 0.5)}px;">📦</div>`;
+  }
+  return `<img src="${escHtml(url)}" alt="" class="miniatura-producto" style="width:${px}px;height:${px}px;" loading="lazy">`;
+}
+
 /* ------------------------------------------------------------
    BÚSQUEDA POR PALABRAS SUELTAS
    ------------------------------------------------------------

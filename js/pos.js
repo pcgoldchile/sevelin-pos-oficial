@@ -19,6 +19,16 @@ const elItemPrecio = document.getElementById('itemPrecio');
 const elCheckSN = document.getElementById('checkTieneSN');
 const elItemSN = document.getElementById('itemSN');
 const elCheckEsServicio = document.getElementById('checkEsServicio');
+const elItemFotoPreview = document.getElementById('itemFotoPreview');
+
+// Muestra/oculta la miniatura junto al nombre del producto en "Ingresar
+// producto" — compartido entre seleccionarProductoCatalogo() y
+// limpiarFormularioItem().
+function mostrarFotoItem(url) {
+  if (!elItemFotoPreview) return;
+  if (url) { elItemFotoPreview.src = url; elItemFotoPreview.style.display = ''; }
+  else { elItemFotoPreview.removeAttribute('src'); elItemFotoPreview.style.display = 'none'; }
+}
 const elUtilidadPreview = document.getElementById('utilidadPreview');
 const elBtnAgregarItem = document.getElementById('btnAgregarItem');
 const elPosFecha = document.getElementById('posFecha');
@@ -229,6 +239,7 @@ function seleccionarProductoCatalogo(producto, opciones = {}) {
   if (elItemCosto && esAdmin()) elItemCosto.value = producto.costo_unitario || 0;
   if (elItemPrecio) elItemPrecio.value = producto.precio_unitario || 0;
   if (elItemCantidad) elItemCantidad.value = 1;
+  mostrarFotoItem(Array.isArray(producto.imagen_urls) ? producto.imagen_urls[0] : null);
 
   if (elCheckSN) {
     elCheckSN.checked = !!producto.requiere_sn;
@@ -300,7 +311,12 @@ function agregarItemAlCarrito() {
     serial_number: numeroSerie || null,
     // Independiente de si el ítem viene del catálogo (productoSeleccionado)
     // o se escribió a mano — el backend lo guarda tal cual (normalizarItems).
-    es_servicio: esServicio
+    es_servicio: esServicio,
+    // Solo para pintar la miniatura en el carrito (ver renderCart) — el
+    // backend no tiene ni necesita esta columna; normalizarItems() arma su
+    // propio objeto explícito y la descarta sola, no hace falta excluirla
+    // a mano como _fifo/_stockAtomico.
+    imagen_url: productoSeleccionado ? (productoSeleccionado.imagen_urls?.[0] || null) : null
   });
 
   renderCart();
@@ -597,6 +613,7 @@ function limpiarFormularioItem() {
   if (elItemSN) elItemSN.value = '';
   alternarCampoSN(false);
   if (elCheckEsServicio) elCheckEsServicio.checked = false;
+  mostrarFotoItem(null);
   if (elBuscarProducto) elBuscarProducto.value = '';
   productoSeleccionado = null;
   actualizarUtilidadPreview();
@@ -606,10 +623,11 @@ function renderCart() {
   if (!elCartTableBody) return;
 
   if (cart.length === 0) {
-    elCartTableBody.innerHTML = '<tr class="empty-row"><td colspan="5">El carrito está vacío. Busca un producto o escribe uno manualmente.</td></tr>';
+    elCartTableBody.innerHTML = '<tr class="empty-row"><td colspan="6">El carrito está vacío. Busca un producto o escribe uno manualmente.</td></tr>';
   } else {
     elCartTableBody.innerHTML = cart.map((item, idx) => `
       <tr class="row-in">
+        <td>${miniaturaProducto({ imagen_urls: item.imagen_url ? [item.imagen_url] : [] }, 32)}</td>
         <td>${item.cantidad}</td>
         <td>${escHtml(item.nombre)}
           ${item.es_servicio ? '<br><small style="color:var(--valor);">🔧 Servicio</small>' : ''}
