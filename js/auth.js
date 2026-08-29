@@ -112,6 +112,11 @@ function aplicarRol(rol) {
     const btnPos = document.querySelector('.nav-btn[data-view="view-pos"]');
     if (btnPos) btnPos.click();
   }
+
+  // Arranca el timer de cierre por inactividad global (ver
+  // inactividad-global.js) — sin esto, no empezaba a contar hasta el
+  // primer mousemove/click después de loguearse.
+  document.dispatchEvent(new CustomEvent('pos:sesion-iniciada'));
 }
 
 function mostrarLogin() {

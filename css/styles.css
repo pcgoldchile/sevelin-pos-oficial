@@ -500,6 +500,21 @@ input[type="checkbox"] { width: auto; height: auto; accent-color: var(--blue); c
 .data-table tbody tr { transition: background-color var(--speed) ease; }
 .data-table tbody tr:hover { background: var(--surface-soft); }
 
+/* Pedido explícito: la tabla de Productos y el Carrito de venta se ven
+   "chicos" — más letra, más aire entre filas. Como clase aparte (no se
+   toca .data-table a secas) para no agrandar de rebote otras tablas del
+   POS (Historial, Compras, etc.) que nadie pidió tocar.
+   Selector DOBLE (.tabla-grande.data-table) a propósito: más abajo en
+   este mismo archivo hay un bloque posterior ("MEJORA VISUAL DE
+   HISTORIAL, PRODUCTOS Y GASTOS") que vuelve a fijar el tamaño de letra
+   de .data-table con la MISMA especificidad — por orden de cascada, esa
+   regla posterior ganaría y esto quedaría sin efecto. Con dos clases la
+   especificidad es mayor y gana sin depender de en qué orden queden los
+   bloques del archivo. */
+.tabla-grande.data-table { font-size: 15.5px; }
+.tabla-grande.data-table thead th { font-size: 12.5px; padding: 15px 16px; }
+.tabla-grande.data-table tbody td { padding: 16px; font-size: 15.5px; }
+
 /* Miniatura de producto (ver miniaturaProducto() en config.js) — usada en
    la tabla de Productos, "Ingresar producto" y el Carrito de venta. */
 .miniatura-producto {

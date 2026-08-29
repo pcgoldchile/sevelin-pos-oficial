@@ -596,7 +596,7 @@ function renderProductosTabla(items) {
     return `
     <tr class="row-in${marcada ? ' fila-marcada' : ''}">
       <td class="col-check"><input type="checkbox" data-sel="${p.id}" ${marcada ? 'checked' : ''}></td>
-      <td>${miniaturaProducto(p)}</td>
+      <td>${miniaturaProducto(p, 56)}</td>
       <td>
         <!-- El nombre abre el editor directo: es lo que uno intenta
              tocar por instinto antes de buscar el lápiz de la derecha.

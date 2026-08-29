@@ -627,7 +627,7 @@ function renderCart() {
   } else {
     elCartTableBody.innerHTML = cart.map((item, idx) => `
       <tr class="row-in">
-        <td>${miniaturaProducto({ imagen_urls: item.imagen_url ? [item.imagen_url] : [] }, 32)}</td>
+        <td>${miniaturaProducto({ imagen_urls: item.imagen_url ? [item.imagen_url] : [] }, 48)}</td>
         <td>${item.cantidad}</td>
         <td>${escHtml(item.nombre)}
           ${item.es_servicio ? '<br><small style="color:var(--valor);">🔧 Servicio</small>' : ''}
