@@ -101,9 +101,41 @@
            visual: los data-view y los ids de las secciones no se tocan. -->
       <button class="nav-btn active" data-view="view-pos">🛒 POS</button>
       <button class="nav-btn admin-only" data-view="view-productos">📦 Productos</button>
-      <button class="nav-btn admin-only" data-view="view-finanzas">📊 Finanzas</button>
-      <button class="nav-btn" data-view="view-taller">🔧 Servicio Técnico</button>
-      <button class="nav-btn admin-only" data-view="view-pagina-web">🌐 Página Web</button>
+
+      <!-- Sub-ítems SIEMPRE visibles debajo de cada padre (sin acordeón:
+           el pedido fue "que se desplieguen sin que yo los toque") — cada
+           uno es un atajo directo a esa sub-pestaña, sin pasar primero por
+           el padre. data-subtab reusa los mismos nombres que ya usaban las
+           pestañas horizontales de adentro (ver mostrarPanelFinanzas,
+           mostrarPanelPaginaWeb, y el equivalente de Servicio Técnico en
+           js/ot.js) — un solo lugar de verdad para el nombre de cada
+           sub-pestaña, no uno nuevo acá. -->
+      <div class="nav-group">
+        <button class="nav-btn admin-only" data-view="view-finanzas">📊 Finanzas</button>
+        <div class="nav-subitems admin-only">
+          <button class="nav-subitem" data-view="view-finanzas" data-subtab="ventas">Historial de Ventas</button>
+          <button class="nav-subitem" data-view="view-finanzas" data-subtab="balance">Balance</button>
+          <button class="nav-subitem" data-view="view-finanzas" data-subtab="gastos">Gastos</button>
+          <button class="nav-subitem" data-view="view-finanzas" data-subtab="fijos">Gastos Fijos</button>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-btn" data-view="view-taller">🔧 Servicio Técnico</button>
+        <div class="nav-subitems">
+          <button class="nav-subitem" data-view="view-taller" data-subtab="ot">Órdenes de Trabajo</button>
+          <button class="nav-subitem" data-view="view-taller" data-subtab="encargos">Abonos y Encargos</button>
+          <button class="nav-subitem" data-view="view-taller" data-subtab="repuestos">Repuestos Taller</button>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-btn admin-only" data-view="view-pagina-web">🌐 Página Web</button>
+        <div class="nav-subitems admin-only">
+          <button class="nav-subitem" data-view="view-pagina-web" data-subtab="pedidos">Pedidos Web</button>
+          <button class="nav-subitem" data-view="view-pagina-web" data-subtab="categorias">Categorías</button>
+        </div>
+      </div>
     </nav>
 
     <div class="sidebar-foot">

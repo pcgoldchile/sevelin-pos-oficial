@@ -296,57 +296,78 @@ async function verificarBackend() {
   }
 }
 
-/* ---------- Navegación entre vistas ---------- */
+/* ---------- Navegación entre vistas ----------
+   activarVista(viewId, subtab) es el único lugar que abre una vista del
+   menú principal — lo usan tanto los .nav-btn de siempre como los
+   .nav-subitem nuevos (atajos directos a una sub-pestaña, siempre
+   visibles en el sidebar en vez de un acordeón). `subtab`, si viene,
+   sobreescribe la sub-pestaña por defecto de cada vista (antes cada vista
+   solo sabía abrir SU primera sub-pestaña). */
+function activarVista(viewId, subtab) {
+  const targetView = document.getElementById(viewId);
+  if (!targetView) return;
+
+  // Un trabajador no puede abrir vistas marcadas como admin-only
+  if (targetView.classList.contains('admin-only') && !esAdmin()) {
+    showToast('Solo el administrador puede ver esta sección', 'err');
+    return;
+  }
+
+  document.querySelectorAll('.nav-links .nav-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.nav-subitem').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.view-section').forEach(v => v.classList.remove('active'));
+
+  document.querySelector(`.nav-links .nav-btn[data-view="${viewId}"]`)?.classList.add('active');
+  if (subtab) {
+    document.querySelector(`.nav-subitem[data-view="${viewId}"][data-subtab="${subtab}"]`)?.classList.add('active');
+  }
+  targetView.classList.add('active');
+
+  if (viewId === 'view-productos' && typeof cargarProductos === 'function') cargarProductos();
+
+  /* Historial y Gastos pasaron a ser sub-pestañas de Finanzas. La
+     pestaña por defecto ahora es Historial de Ventas (antes Balance):
+     es lo que más se consulta día a día. Se abre por su función de
+     panel para que cargue sus datos. */
+  if (viewId === 'view-finanzas') {
+    if (typeof mostrarPanelFinanzas === 'function') mostrarPanelFinanzas(subtab || 'ventas');
+    else if (typeof cargarHistorial === 'function') cargarHistorial();
+    // El widget de saldos vive arriba y se refresca siempre al entrar
+    if (typeof cargarSaldosCanales === 'function') cargarSaldosCanales();
+  }
+  if (viewId === 'view-taller' && typeof cargarOrdenes === 'function') cargarOrdenes();
+  /* Abonos y Repuestos pasaron a ser sub-pestañas de Servicio
+     Técnico, así que ya no llegan por aquí como vistas propias. Al
+     entrar al taller se cargan los tres módulos: son listados
+     livianos y evita que una sub-pestaña se vea vacía al abrirla. */
+  if (viewId === 'view-taller') {
+    if (typeof cargarEncargos === 'function') cargarEncargos();
+    if (typeof cargarRepuestos === 'function') cargarRepuestos();
+    if (subtab && typeof mostrarPanelTaller === 'function') mostrarPanelTaller(subtab);
+  }
+  /* Página Web (Pedidos Web + Categorías, sub-pestañas): mismo criterio
+     que Finanzas — se abre en la primera pestaña y esa función es la
+     que dispara su propia carga de datos. */
+  if (viewId === 'view-pagina-web' && typeof mostrarPanelPaginaWeb === 'function') {
+    mostrarPanelPaginaWeb(subtab || 'pedidos');
+  }
+
+  // Aviso para los módulos que necesitan reaccionar (p. ej. foco del lector en POS)
+  document.dispatchEvent(new CustomEvent('pos:vista-activa', { detail: { vista: viewId, subtab } }));
+}
+
 function initNavegacion() {
   document.querySelectorAll('.nav-links .nav-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.preventDefault();
-      const viewId = btn.getAttribute('data-view');
-      const targetView = document.getElementById(viewId);
-      if (!targetView) return;
+      activarVista(btn.getAttribute('data-view'));
+    });
+  });
 
-      // Un trabajador no puede abrir vistas marcadas como admin-only
-      if (targetView.classList.contains('admin-only') && !esAdmin()) {
-        showToast('Solo el administrador puede ver esta sección', 'err');
-        return;
-      }
-
-      document.querySelectorAll('.nav-links .nav-btn').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('.view-section').forEach(v => v.classList.remove('active'));
-
-      btn.classList.add('active');
-      targetView.classList.add('active');
-
-      if (viewId === 'view-productos' && typeof cargarProductos === 'function') cargarProductos();
-
-      /* Historial y Gastos pasaron a ser sub-pestañas de Finanzas. La
-         pestaña por defecto ahora es Historial de Ventas (antes Balance):
-         es lo que más se consulta día a día. Se abre por su función de
-         panel para que cargue sus datos. */
-      if (viewId === 'view-finanzas') {
-        if (typeof mostrarPanelFinanzas === 'function') mostrarPanelFinanzas('ventas');
-        else if (typeof cargarHistorial === 'function') cargarHistorial();
-        // El widget de saldos vive arriba y se refresca siempre al entrar
-        if (typeof cargarSaldosCanales === 'function') cargarSaldosCanales();
-      }
-      if (viewId === 'view-taller' && typeof cargarOrdenes === 'function') cargarOrdenes();
-      /* Abonos y Repuestos pasaron a ser sub-pestañas de Servicio
-         Técnico, así que ya no llegan por aquí como vistas propias. Al
-         entrar al taller se cargan los tres módulos: son listados
-         livianos y evita que una sub-pestaña se vea vacía al abrirla. */
-      if (viewId === 'view-taller') {
-        if (typeof cargarEncargos === 'function') cargarEncargos();
-        if (typeof cargarRepuestos === 'function') cargarRepuestos();
-      }
-      /* Página Web (Pedidos Web + Categorías, sub-pestañas): mismo criterio
-         que Finanzas — se abre en la primera pestaña y esa función es la
-         que dispara su propia carga de datos. */
-      if (viewId === 'view-pagina-web' && typeof mostrarPanelPaginaWeb === 'function') {
-        mostrarPanelPaginaWeb('pedidos');
-      }
-
-      // Aviso para los módulos que necesitan reaccionar (p. ej. foco del lector en POS)
-      document.dispatchEvent(new CustomEvent('pos:vista-activa', { detail: { vista: viewId } }));
+  document.querySelectorAll('.nav-subitem').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      activarVista(btn.getAttribute('data-view'), btn.getAttribute('data-subtab'));
     });
   });
 }
