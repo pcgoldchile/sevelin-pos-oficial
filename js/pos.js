@@ -18,6 +18,7 @@ const elItemCosto = document.getElementById('itemCosto');
 const elItemPrecio = document.getElementById('itemPrecio');
 const elCheckSN = document.getElementById('checkTieneSN');
 const elItemSN = document.getElementById('itemSN');
+const elCheckEsServicio = document.getElementById('checkEsServicio');
 const elUtilidadPreview = document.getElementById('utilidadPreview');
 const elBtnAgregarItem = document.getElementById('btnAgregarItem');
 const elPosFecha = document.getElementById('posFecha');
@@ -281,6 +282,7 @@ function agregarItemAlCarrito() {
   const precio = Number(elItemPrecio?.value) || 0;
   const tieneSN = !!(elCheckSN && elCheckSN.checked);
   const numeroSerie = tieneSN ? (elItemSN?.value || '').trim() : '';
+  const esServicio = !!(elCheckEsServicio && elCheckEsServicio.checked);
 
   if (!nombre) { showToast('Ingresa el nombre del producto', 'err'); return; }
   if (cantidad <= 0) { showToast('La cantidad debe ser mayor a 0', 'err'); return; }
@@ -295,7 +297,10 @@ function agregarItemAlCarrito() {
     costo_unitario: costo,
     precio_unitario: precio,
     subtotal: precio * cantidad,
-    serial_number: numeroSerie || null
+    serial_number: numeroSerie || null,
+    // Independiente de si el ítem viene del catálogo (productoSeleccionado)
+    // o se escribió a mano — el backend lo guarda tal cual (normalizarItems).
+    es_servicio: esServicio
   });
 
   renderCart();
@@ -591,6 +596,7 @@ function limpiarFormularioItem() {
   if (elCheckSN) elCheckSN.checked = false;
   if (elItemSN) elItemSN.value = '';
   alternarCampoSN(false);
+  if (elCheckEsServicio) elCheckEsServicio.checked = false;
   if (elBuscarProducto) elBuscarProducto.value = '';
   productoSeleccionado = null;
   actualizarUtilidadPreview();
@@ -606,6 +612,7 @@ function renderCart() {
       <tr class="row-in">
         <td>${item.cantidad}</td>
         <td>${escHtml(item.nombre)}
+          ${item.es_servicio ? '<br><small style="color:var(--valor);">🔧 Servicio</small>' : ''}
           ${item.serial_number ? '<br><small style="color:var(--text-muted);">S/N: ' + escHtml(item.serial_number) + '</small>' : ''}</td>
         <td>${fmtCLP(item.precio_unitario)}</td>
         <td>${fmtCLP(item.subtotal)}</td>

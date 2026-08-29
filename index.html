@@ -275,6 +275,14 @@
                       <input type="checkbox" id="checkTieneSN" class="w-4 h-4 accent-blue-600"> Tiene S/N
                     </label>
                   </div>
+                  <div class="flex items-end">
+                    <!-- Independiente de si el ítem está en el catálogo o
+                         se escribió a mano — separa en Finanzas cuánto se
+                         vendió en productos vs. en servicios. -->
+                    <label for="checkEsServicio" class="caja-check" title="Para separar en Finanzas cuánto se vendió en productos vs. en servicios">
+                      <input type="checkbox" id="checkEsServicio" class="w-4 h-4 accent-blue-600"> Es un servicio
+                    </label>
+                  </div>
                 </div>
 
                 <!-- Aparece solo al marcar "Tiene S/N" (lo maneja pos.js) -->
@@ -1012,6 +1020,13 @@
             <div class="card">
               <div class="card-title">Ingresos por medio de pago</div>
               <div id="balanceMedios" class="barras"></div>
+            </div>
+            <div class="card">
+              <!-- "Es un servicio" se marca por ítem al agregarlo al
+                   carrito (ver "Ingresar producto" en POS) — independiente
+                   de si el ítem está en el catálogo o se escribió a mano. -->
+              <div class="card-title">Ventas: productos vs. servicios</div>
+              <div id="balanceTipoVenta" class="barras"></div>
             </div>
             <div class="card">
               <div class="card-title">Gastos por categoría</div>

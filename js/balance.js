@@ -232,9 +232,39 @@ function pintarBalance(b) {
 
   pintarArqueo(b);
   pintarMedios(b.porMedio);
+  pintarTipoVenta(b.ventasProductos, b.ventasServicios);
   pintarGrupos(b.porGrupo, b.porClasificacion, b.totalGastos);
   pintarEquilibrio(b);
   pintarInyecciones(b.inyecciones);
+}
+
+// Mismo patrón visual que pintarMedios() — cuánto de lo vendido en el
+// período fue "producto" vs. "servicio" (marca por ítem, ver
+// checkEsServicio en pos.js). Sin ventas todavía, o si nunca se marcó
+// nada como servicio, se ve como 100% productos: no hay nada raro en eso.
+function pintarTipoVenta(ventasProductos, ventasServicios) {
+  const caja = document.getElementById('balanceTipoVenta');
+  if (!caja) return;
+
+  const total = num(ventasProductos) + num(ventasServicios);
+  if (total <= 0) { caja.innerHTML = '<p class="vacio-nota">Sin ventas en el período</p>'; return; }
+
+  const filas = [
+    ['📦 Productos', num(ventasProductos)],
+    ['🔧 Servicios', num(ventasServicios)]
+  ];
+
+  caja.innerHTML = filas.map(([etiqueta, monto]) => {
+    const pct = total > 0 ? (monto / total) * 100 : 0;
+    return `
+      <div class="barra-fila">
+        <div class="barra-cabecera">
+          <span>${etiqueta}</span>
+          <b>${fmtCLP(monto)} <small>${pct.toFixed(0)}%</small></b>
+        </div>
+        <div class="barra-pista"><div class="barra-relleno" style="width:${pct}%"></div></div>
+      </div>`;
+  }).join('');
 }
 
 function pintarMedios(porMedio) {

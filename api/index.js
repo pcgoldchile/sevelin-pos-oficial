@@ -1355,6 +1355,10 @@ async function normalizarItems(items, rolSolicitante) {
       ot_repuesto_id: it.ot_repuesto_id || null,
       sku: it.sku || null,
       nombre: String(it.nombre || 'Producto').trim(),
+      // Marca libre del vendedor, independiente de si el ítem está en el
+      // catálogo o se escribió a mano — separa en Finanzas cuánto se
+      // vendió en productos vs. en servicios (ver migración 26).
+      es_servicio: !!it.es_servicio,
       cantidad,
       costo_unitario: costo,
       precio_unitario: precio,
@@ -2964,6 +2968,21 @@ app.get('/api/balance', auth(true), async (req, res) => {
       pagos = data || [];
     }
 
+    /* Productos vs. servicios: se agrega a nivel de ítem (venta_items),
+       no de venta — una misma venta puede mezclar los dos. es_servicio
+       lo marca el vendedor en el POS al agregar cada ítem, con o sin
+       catálogo de por medio (ver migración 26). */
+    let ventasProductos = 0;
+    let ventasServicios = 0;
+    if (ids.length) {
+      const { data: itemsRaw } = await db.from('venta_items')
+        .select('subtotal, es_servicio').in('venta_id', ids);
+      (itemsRaw || []).forEach(it => {
+        if (it.es_servicio) ventasServicios += num(it.subtotal);
+        else ventasProductos += num(it.subtotal);
+      });
+    }
+
     const ingresos = ventas.reduce((a, v) => a + num(v.total), 0);
     const costoVendido = ventas.reduce((a, v) => a + num(v.costo_total), 0);
     const comisiones = ventas.reduce((a, v) => a + num(v.comision_pos), 0);
@@ -3082,6 +3101,8 @@ app.get('/api/balance', auth(true), async (req, res) => {
       margenNeto: ingresos > 0 ? (utilidadNeta / ingresos) * 100 : 0,
       cantidadVentas: ventas.length,
       ticketPromedio: ventas.length ? ingresos / ventas.length : 0,
+      ventasProductos,
+      ventasServicios,
       porMedio,
       porGrupo,
       porClasificacion,
