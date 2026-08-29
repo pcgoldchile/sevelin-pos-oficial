@@ -61,17 +61,32 @@ function desactivarVigilanciaFinanzas() {
   finanzasTimerInactividad = null;
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  const btnFinanzas = document.querySelector('.nav-links .nav-btn[data-view="view-finanzas"]');
-  if (!btnFinanzas) return;
+// Elemento que disparó el gate — puede ser el .nav-btn "Finanzas" o
+// cualquiera de sus .nav-subitem (Historial/Balance/Gastos/Gastos Fijos,
+// ver el sidebar con submódulos siempre visibles). Se reenvía el clic a
+// ESE elemento tras un PIN correcto, no siempre al padre, para que entrar
+// por "Gastos Fijos" te deje en Gastos Fijos y no en la sub-pestaña por
+// defecto.
+let finanzasOrigenClick = null;
 
-  /* Intercepta en captura (true): corre ANTES del listener de navegación
-     de config.js. Si no hay acceso vigente, corta aquí mismo. */
-  btnFinanzas.addEventListener('click', (e) => {
+document.addEventListener('DOMContentLoaded', () => {
+  const navLinks = document.querySelector('.nav-links');
+  if (!navLinks) return;
+
+  /* Delegado en .nav-links, en captura (true): corre ANTES del listener
+     de navegación de config.js, y cubre tanto el .nav-btn "Finanzas" como
+     CUALQUIERA de sus .nav-subitem con un solo listener — antes solo
+     escuchaba el .nav-btn del padre, así que los atajos directos del
+     sidebar (p. ej. Gastos Fijos) entraban a Finanzas SIN pedir el PIN,
+     con la sesión de cualquiera (admin o no). */
+  navLinks.addEventListener('click', (e) => {
+    const origen = e.target.closest('[data-view="view-finanzas"]');
+    if (!origen) return;
     if (finanzasAccesoVigente()) return;             // PIN reciente o dentro de la ventana de gracia
     if (!esAdmin()) return;                          // el trabajador lo bloquea config.js
     e.preventDefault();
     e.stopPropagation();
+    finanzasOrigenClick = origen;
     abrirGateFinanzas();
   }, true);
 
@@ -122,6 +137,7 @@ function cerrarGateFinanzas() {
   document.getElementById('modalGateFinanzas')?.classList.remove('show');
   const input = document.getElementById('gatePin');
   if (input) input.value = '';
+  finanzasOrigenClick = null;
 }
 
 async function intentarEntrarFinanzas() {
@@ -133,12 +149,17 @@ async function intentarEntrarFinanzas() {
 
   if (btn) btn.disabled = true;
   try {
+    // Se guarda ANTES de cerrarGateFinanzas(), que limpia finanzasOrigenClick.
+    const destino = finanzasOrigenClick || document.querySelector('.nav-links .nav-btn[data-view="view-finanzas"]');
     await API.balance.verificarPin(pin);          // 200 solo si el PIN es correcto
     finanzasUltimaActividad = Date.now();
     cerrarGateFinanzas();
-    /* Se reenvía el clic al botón: ahora hay acceso vigente, así que el
-       interceptor lo deja pasar y config.js hace la navegación. */
-    document.querySelector('.nav-links .nav-btn[data-view="view-finanzas"]')?.click();
+    /* Se reenvía el clic al elemento que lo disparó (el .nav-btn
+       "Finanzas" o el .nav-subitem puntual): ahora hay acceso vigente,
+       así que el interceptor lo deja pasar y config.js hace la
+       navegación — a la sub-pestaña que se pidió, no siempre a la de por
+       defecto. */
+    destino?.click();
   } catch (e) {
     if (err) {
       err.textContent = e.message && /incorrecto|intentos/i.test(e.message)
