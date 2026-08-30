@@ -3,9 +3,9 @@
 > Actualiza SOLO este archivo al cerrar una sesión. Para el detalle completo, ver `docs/README.md`.
 > Para saber qué otro documento leer según lo que necesites, ver `docs/README-DOCS.md`.
 
-**Fecha:** 29-08-2026 · **Versión activa:** v39 (rediseño gamer, correcciones de UX/seguridad,
-notificación de cancelación por correo — ver "v32-v39" abajo) · **En producción:**
-https://sevelin-pos-oficial.vercel.app · **Rama:** `main`.
+**Fecha:** 29-08-2026 · **Versión activa:** v40 (submódulo **Utilidades**: contabilidad por capas,
+IVA crédito fiscal con remanente, proyección de caja por escenarios y borrado contable por período —
+ver "v40" abajo) · **En producción:** https://sevelin-pos-oficial.vercel.app · **Rama:** `main`.
 
 **Estado real (verificado en producción, no de memoria):** `sql/23` a `sql/26` (categorías +
 subcategorías + umbral de stock + `es_servicio` en `venta_items`) **aplicados** vía Supabase CLI. El
@@ -152,11 +152,11 @@ Node/Express (`api/index.js`, serverless en Vercel) · JavaScript **vanilla** de
   `docs/CHANGELOG-V26.md`.
 
 ## Esquema SQL: última migración
-`sql/21-imagenes-web.sql` (e-commerce Fase 0, columnas de imagen/web en `productos` — **pendiente de
-aplicar en Supabase**, y en la rama `feature/fase-0-ecommerce`, no en `main` todavía). Antes:
-`sql/20-fix-descontar-stock-ambiguo.sql` (fix de `descontar_stock_venta`, ver v22 — **también
-pendiente de aplicar en Supabase**), 19 (stock atómico, con el bug), 18 (gastos programados). Todas
-idempotentes, corren en orden. Aplicar en Supabase → SQL Editor.
+`sql/27-utilidades-iva-credito.sql` (v40 — `compras.tiene_factura` / `compras.iva_credito` y la
+tabla `iva_ajustes`), **aplicada y verificada en la base real**. Antes: `sql/26` (`es_servicio` en
+`venta_items`), 25/24/23 (subcategorías y umbral de stock web), 22 (trigger de sync a la tienda),
+21 (imágenes web), 20 (fix de `descontar_stock_venta`). Todas idempotentes y corren en orden.
+**Aplicarlas con la CLI** (ver la sección de abajo), no a mano en el SQL Editor.
 
 ## Estado: qué está HECHO (v28-v31 — catálogo real, categorías, fotos)
 - **v28:** módulo "Página Web" reorganizado con sub-pestañas (Pedidos Web + Categorías nuevo),
@@ -233,6 +233,42 @@ idempotentes, corren en orden. Aplicar en Supabase → SQL Editor.
   mismo `SYNC_SECRET` de siempre — el POS no tiene la API key de Resend ni la plantilla del correo).
   Mejor esfuerzo: si falla, el pedido queda cancelado igual y el toast avisa que no se pudo notificar.
 
+## Estado: qué está HECHO (v40 — submódulo Utilidades, IVA crédito, proyección — 29-08-2026)
+> Detalle completo en `docs/CHANGELOG-V40.md`. Migración `sql/27-utilidades-iva-credito.sql`
+> **ya aplicada** en la base real.
+- **Finanzas → 💎 Utilidades** (`js/utilidades.js`, nuevo): responde "cuánto gané", que NO es lo
+  mismo que "cómo está la caja" (eso sigue siendo Balance). Períodos Hoy / Ayer / Esta semana /
+  Este mes / Mes anterior / personalizado, y tres casillas para descontar **comisiones**, **IVA** y
+  **gastos**. El informe llega del servidor con todas las capas por separado, así que marcar y
+  desmarcar recalcula al instante sin volver a consultar. `utilidadNeta` de `/api/balance` **no
+  cambió de significado** a propósito, para no romper los KPI existentes.
+- **IVA neto de verdad (débito − crédito fiscal):** `compras` ganó `tiene_factura` e `iva_credito`
+  (en pesos, no derivado: no toda factura trae 19% exacto). El **remanente** de crédito fiscal se
+  reconstruye mes a mes al estilo F29 y **no se guarda** — se recalcula del histórico, más ajustes
+  manuales con motivo obligatorio (`iva_ajustes`), pensados para cargar el remanente anterior al
+  sistema. Recordar: los precios son BRUTOS, el IVA contenido es `total − total/1,19`, **nunca**
+  `total × 0,19`.
+- **El IVA de las ventas SIN DTE se registra como utilidad** (decisión del dueño), y se expone
+  siempre como cifra aparte con la advertencia de que es una vista de gestión, no una declaración:
+  ante el SII una venta sin documento igualmente genera débito fiscal. También se agregó el desglose
+  de IVA (informativo) a `/api/balance`.
+- **Gastos fijos sin doble conteo:** un gasto fijo pagado ya se guarda como compra normal, así que
+  hay UNA casilla "Gastos" y el desglose fijos/variables **reparte** ese total en vez de sumarlo.
+  La compra de mercadería (INVENTARIO) se informa pero no se descuenta: ya está en el costo FIFO.
+- **Proyección de flujo de caja por escenarios** (`GET /api/finanzas/proyeccion`): usa la serie
+  DIARIA real con los días cerrados contando como $0, y **percentiles** en vez de promedios (un día
+  excepcional no debe inflar la proyección). Cada escenario cruza **dos percentiles opuestos** —
+  conservador = ventas p25 contra gastos p75; excelente al revés — porque ser conservador es esperar
+  poco ingreso Y bastante gasto. Cada tarjeta cierra con "podrías gastar hasta" = saldo + proyección
+  − resguardo.
+- **Borrado contable por período** (`DELETE /api/finanzas/balance`): ventas / gastos / aportes /
+  arqueos-ajustes-traspasos, a elección. Exige PIN de admin verificado en el servidor, rango de
+  fechas obligatorio (no hay "borrar todo" sin fechas) y escribir "BORRAR" en la interfaz. Las
+  ventas se borran reponiendo el stock (`revertirEfectosDeVentas`).
+- **Exportación**: Excel de 4 hojas (Resumen con notas metodológicas, Ventas, Gastos, IVA mes a mes,
+  con formato de peso chileno) y PDF de 2 páginas con la cascada, los desgloses y las notas. Ojo:
+  SheetJS community no permite colores en Excel — ahí el diseño es estructura y formato numérico.
+
 ## Automatización Supabase CLI (nuevo — usar de acá en adelante)
 La CLI de Supabase (`npx supabase`) está logueada y ambos proyectos vinculados (`supabase link`) —
 para correr una migración SQL nueva, ya no hace falta pegarla a mano en el SQL Editor:
@@ -295,6 +331,15 @@ la función usa la variable local, no la columna ambigua).
   arregla restaurando las 3 directivas desde cualquier commit viejo (`git show <hash>:css/tailwind-
   input.css`) y recompilando. Pasó una vez (v32) y no dio ningún error, solo clases "fantasma" que
   nunca aparecían.
+- **`ajustes_saldo` NO tiene columna `fecha`, solo `creado_en`** (ver `sql/16`), a diferencia de
+  `arqueos` y `traspasos` que sí tienen `fecha`. Filtrar `ajustes_saldo` por `fecha` devuelve un
+  error de Postgres, no cero filas — cualquier consulta por rango sobre esas tres tablas tiene que
+  declarar la columna correcta por tabla (ver el borrado por período en v40).
+- **El resguardo de caja es `config_finanzas.resguardo_caja`**, no `resguardo_minimo`, y la fila de
+  configuración es siempre `id = 1`.
+- **Los precios del sistema son BRUTOS (IVA incluido).** El IVA contenido es `total − total/1,19`;
+  calcularlo como `total × 0,19` da de más (~18% de más) y es el error clásico. Vale para ventas y
+  para el crédito fiscal de las compras.
 - **Cualquier atajo NUEVO de navegación a una vista protegida por PIN (Finanzas) tiene que pasar por
   el interceptor delegado de `finanzas-gate.js`** (`.nav-links` en captura, cualquier elemento con
   `data-view="view-finanzas"`) — NO alcanza con que la vista tenga la clase `admin-only` sola, eso

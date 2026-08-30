@@ -3624,3 +3624,192 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
 .hist-sug-orden { font-weight: 700; color: var(--blue-light, #7df9ff); min-width: 56px; }
 .hist-sug-fh { flex: 1; color: var(--text-muted); font-size: 13px; }
 .hist-sug-total { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* ============================================================
+   UTILIDADES (Finanzas → Utilidades) · js/utilidades.js
+   ------------------------------------------------------------
+   Tres bloques: la cascada del estado de resultados, las líneas de
+   detalle (IVA y gastos) y las tarjetas de escenarios del flujo de
+   caja. Reutiliza los tokens de color de la marca: cian para lo
+   informativo, magenta para el resultado, ámbar para las advertencias.
+   ============================================================ */
+
+/* ---------- Casillas de qué descontar ---------- */
+.util-casillas {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 18px;
+    padding: 12px 2px 2px;
+    border-top: 1px solid var(--border);
+    margin-top: 12px;
+}
+.util-casilla {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--text-300);
+    user-select: none;
+}
+.util-casilla:hover { color: var(--text-100); }
+.util-casilla small { color: var(--text-muted); font-weight: 400; }
+
+/* ---------- Cascada del estado de resultados ---------- */
+.util-cascada { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
+
+.util-fila {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 11px 14px;
+    border-radius: 8px;
+    background: var(--surface-soft);
+}
+.util-fila-texto { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.util-fila-etiqueta { font-weight: 600; color: var(--text-100); }
+.util-fila-texto small { color: var(--text-muted); font-size: 12px; }
+.util-fila-monto {
+    font-variant-numeric: tabular-nums;
+    font-size: 15px;
+    white-space: nowrap;
+}
+.util-monto-resta { color: var(--red); }
+
+/* Los subtotales cortan visualmente la lista: son los puntos donde el
+   ojo tiene que detenerse sin leer todo. */
+.util-fila-subtotal {
+    background: var(--tint-blue);
+    border-left: 3px solid var(--blue);
+}
+.util-fila-subtotal .util-fila-etiqueta,
+.util-fila-subtotal .util-fila-monto { color: var(--blue-light); font-size: 16px; }
+
+.util-fila-total {
+    background: var(--tint-gold);
+    border-left: 3px solid var(--gold);
+    margin-top: 6px;
+    padding: 15px 14px;
+}
+.util-fila-total .util-fila-etiqueta { font-size: 15px; letter-spacing: .3px; }
+.util-fila-total .util-fila-monto { font-size: 22px; font-weight: 800; color: var(--gold); }
+
+/* Una capa NO descontada se ve atenuada y con el monto tachado: está
+   informada pero no aplicada, y eso tiene que notarse de un vistazo. */
+.util-fila-ignorada { opacity: .55; }
+.util-tachado { text-decoration: line-through; color: var(--text-muted); font-weight: 500; }
+
+/* ---------- Líneas de detalle (IVA, gastos) ---------- */
+.util-lineas { display: flex; flex-direction: column; gap: 1px; margin-top: 10px; }
+.util-linea {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 10px 12px;
+    border-radius: 7px;
+    background: var(--surface-soft);
+}
+.util-linea > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.util-linea span { color: var(--text-300); font-size: 14px; }
+.util-linea small { color: var(--text-muted); font-size: 11.5px; }
+.util-linea b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.util-linea-fuerte { background: var(--tint-blue); }
+.util-linea-fuerte span, .util-linea-fuerte b { color: var(--blue-light); font-weight: 700; }
+
+/* Ámbar: cifras que hay que mirar con criterio, no errores */
+.util-linea-aviso { background: rgba(255, 209, 102, .12); }
+.util-linea-aviso b { color: var(--valor); }
+
+/* ---------- Historial de ajustes de IVA ---------- */
+.util-ajustes-lista { display: flex; flex-direction: column; gap: 6px; max-height: 190px; overflow-y: auto; }
+.util-ajuste-fila {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 9px 12px;
+    border-radius: 7px;
+    background: var(--surface-soft);
+}
+.util-ajuste-fila > div { display: flex; align-items: baseline; gap: 10px; }
+.util-ajuste-fila small { color: var(--text-muted); font-size: 11.5px; }
+.util-ajuste-motivo { color: var(--text-300) !important; }
+.texto-rojo { color: var(--red); }
+.texto-verde { color: var(--green); }
+
+/* ---------- Campos en línea de la calculadora ---------- */
+.util-campo-inline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-300);
+    font-size: 13.5px;
+}
+
+/* ---------- Escenarios de flujo de caja ---------- */
+.proy-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 14px;
+    margin-top: 14px;
+}
+.proy-card {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding: 16px;
+    border-radius: 12px;
+    background: var(--bg-800);
+    border: 1px solid var(--border);
+    border-top: 3px solid var(--border-strong);
+}
+/* Verde/cian/magenta: de "el piso seguro" a "no planifiques con esto" */
+.proy-card.esc-conservador { border-top-color: var(--green); }
+.proy-card.esc-probable    { border-top-color: var(--blue); }
+.proy-card.esc-excelente   { border-top-color: var(--gold); }
+
+.proy-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.proy-nombre { font-weight: 700; color: var(--text-100); font-size: 15px; }
+.proy-card-head small { color: var(--text-muted); font-size: 11px; }
+.proy-desc { color: var(--text-muted); font-size: 12px; line-height: 1.45; margin: 0 0 4px; }
+
+.proy-linea {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--text-300);
+}
+.proy-linea b { font-variant-numeric: tabular-nums; }
+.proy-linea-fuerte { padding-top: 7px; border-top: 1px solid var(--border); }
+.proy-linea-total {
+    padding-top: 7px;
+    border-top: 1px solid var(--border);
+    font-weight: 700;
+    color: var(--text-100);
+}
+.proy-linea-total b { font-size: 17px; color: var(--blue-light); }
+.proy-nota { color: var(--text-muted); font-size: 10.5px; line-height: 1.4; }
+
+/* ---------- Zona de riesgo (borrado por período) ---------- */
+.util-zona-riesgo {
+    border: 1px solid rgba(239, 68, 68, .45);
+    background: linear-gradient(180deg, rgba(239, 68, 68, .07), transparent);
+}
+.util-borrar-tipos { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+
+/* ---------- KPI destacado / negativo ---------- */
+.kpi-card.kpi-destacado {
+    border-color: var(--gold);
+    background: linear-gradient(180deg, var(--tint-gold), transparent);
+}
+.kpi-valor.kpi-negativo { color: var(--red); }
+
+@media (max-width: 640px) {
+    .util-fila { flex-wrap: wrap; gap: 6px; }
+    .util-casillas { gap: 12px; }
+}

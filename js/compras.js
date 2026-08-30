@@ -101,8 +101,34 @@ function setDefaultDatesCompras() {
   if (elComprasHasta) elComprasHasta.value = todayISO();
 }
 
+/* Muestra los campos de IVA solo si el gasto tiene factura: sin factura
+   no hay crédito fiscal que declarar, y dejar el campo visible invita a
+   llenarlo igual. */
+function alternarIvaCompra() {
+  const marcado = !!document.getElementById('compraTieneFactura')?.checked;
+  document.getElementById('compraIvaWrap')?.classList.toggle('hidden', !marcado);
+  if (!marcado) {
+    const inp = document.getElementById('compraIvaCredito');
+    if (inp) inp.value = '';
+  }
+}
+
+/* Rellena el IVA con el 19% CONTENIDO en el monto (total − total/1,19),
+   no con total × 0,19: los montos del sistema ya vienen con IVA incluido
+   y multiplicar por 0,19 da de más. Es un atajo para el caso normal —
+   el campo se puede corregir a mano si la factura trae otra cifra. */
+function calcularIvaCompraDesdeTotal() {
+  const total = Number(document.getElementById('compraCosto')?.value) || 0;
+  if (total <= 0) { showToast('Ingresa primero el costo total del gasto', 'err'); return; }
+
+  const inp = document.getElementById('compraIvaCredito');
+  if (inp) inp.value = Math.round(total - total / 1.19);
+}
+
 function setupComprasEventListeners() {
   if (elBtnFiltrarCompras) elBtnFiltrarCompras.addEventListener('click', cargarCompras);
+  document.getElementById('compraTieneFactura')?.addEventListener('change', alternarIvaCompra);
+  document.getElementById('btnCalcularIvaCompra')?.addEventListener('click', calcularIvaCompraDesdeTotal);
   if (elComprasBuscar) elComprasBuscar.addEventListener('input', () => renderComprasTabla(comprasList));
   if (elComprasClasificacionFiltro) elComprasClasificacionFiltro.addEventListener('change', cargarCompras);
 
@@ -463,6 +489,12 @@ function abrirModalCompra(compra = null, campoFoco = null) {
     if (elCompraMetodoPago) elCompraMetodoPago.value = compra.metodo_pago || 'Efectivo';
     if (elCompraUrlDocumento) elCompraUrlDocumento.value = compra.url_documento || '';
     if (elCompraUrlComprobante) elCompraUrlComprobante.value = compra.url_comprobante || '';
+    // Crédito fiscal IVA (migración 27)
+    const chkFactura = document.getElementById('compraTieneFactura');
+    const inpIva = document.getElementById('compraIvaCredito');
+    if (chkFactura) chkFactura.checked = !!compra.tiene_factura;
+    if (inpIva) inpIva.value = num(compra.iva_credito) || '';
+    alternarIvaCompra();
   } else {
     editandoCompraId = null;
     if (elCompraFormTitle) elCompraFormTitle.textContent = 'Registrar Compra';
@@ -472,6 +504,12 @@ function abrirModalCompra(compra = null, campoFoco = null) {
     [elCompraProveedor, elCompraCosto, elCompraDescripcion, elCompraUrlDocumento, elCompraUrlComprobante]
       .forEach(el => { if (el) el.value = ''; });
     if (elCompraClasificacion && elCompraClasificacion.options.length) elCompraClasificacion.selectedIndex = 0;
+    // Un gasto nuevo parte sin factura: el caso más común en el mostrador
+    const chkFactura = document.getElementById('compraTieneFactura');
+    const inpIva = document.getElementById('compraIvaCredito');
+    if (chkFactura) chkFactura.checked = false;
+    if (inpIva) inpIva.value = '';
+    alternarIvaCompra();
   }
 
   actualizarEstadoArchivo('url_documento');
@@ -567,8 +605,20 @@ async function guardarCompra() {
     // Banco de origen (solo si no es efectivo); el backend lo ignora si lo es
     banco: document.getElementById('compraBanco')?.value.trim() || null,
     url_documento: elCompraUrlDocumento?.value.trim() || null,
-    url_comprobante: elCompraUrlComprobante?.value.trim() || null
+    url_comprobante: elCompraUrlComprobante?.value.trim() || null,
+    /* Crédito fiscal IVA (migración 27). Sin factura marcada viaja en 0:
+       el servidor lo fuerza igual, pero mandarlo coherente evita que el
+       campo quede con un valor viejo si el usuario desmarcó la casilla. */
+    tiene_factura: !!document.getElementById('compraTieneFactura')?.checked,
+    iva_credito: document.getElementById('compraTieneFactura')?.checked
+      ? (Number(document.getElementById('compraIvaCredito')?.value) || 0)
+      : 0
   };
+
+  if (payload.tiene_factura && payload.iva_credito > costo) {
+    showToast('El IVA de la factura no puede ser mayor que el monto total del gasto', 'err');
+    return;
+  }
 
   if (elBtnGuardarCompra) elBtnGuardarCompra.disabled = true;
 

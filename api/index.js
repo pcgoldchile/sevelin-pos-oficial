@@ -2249,8 +2249,26 @@ async function sanearCompra(body = {}) {
   const costo = num(body.costo_total);
   if (costo <= 0) return { error: 'El costo total debe ser mayor a 0' };
 
+  /* Crédito fiscal IVA (migración 27).
+     Se guarda en pesos y no se deriva del monto: no todo gasto con
+     factura trae 19% exacto (hay exentos, notas de crédito y montos ya
+     netos). Sin factura marcada, el crédito se fuerza a 0 para que no
+     quede un dato imposible ("crédito fiscal sin factura"). El tope
+     contra el costo total lo exige además un CHECK en la base, así que
+     se valida acá para devolver un mensaje claro en vez de un error
+     crudo de Postgres. */
+  const tieneFactura = body.tiene_factura === true || body.tiene_factura === 'true';
+  const ivaCredito = tieneFactura ? Math.round(num(body.iva_credito)) : 0;
+
+  if (ivaCredito < 0) return { error: 'El IVA de la factura no puede ser negativo' };
+  if (ivaCredito > costo) {
+    return { error: 'El IVA de la factura no puede ser mayor que el monto total del gasto' };
+  }
+
   return {
     datos: {
+      tiene_factura: tieneFactura,
+      iva_credito: ivaCredito,
       fecha: fechaHoraDeGasto(body.fecha, body.hora),
       proveedor: (body.proveedor || '').trim() || null,
       clasificacion,
@@ -2960,7 +2978,7 @@ app.get('/api/balance', auth(true), async (req, res) => {
     // (ver definición del helper), reintenta sola antes de devolver un
     // balance vacío o a medio calcular.
     const { data: ventasRaw } = await consultarConReintento(() => db.from('ventas')
-      .select('id, fecha, total, costo_total, utilidad, comision_pos, metodo_pago, metodo_pago_final, pago_mixto, estado')
+      .select('id, fecha, total, costo_total, utilidad, comision_pos, tipo_dte, metodo_pago, metodo_pago_final, pago_mixto, estado')
       .gte('fecha', desde).lte('fecha', hasta).eq('estado', 'PAGADA'));
 
     const ventas = ventasRaw || [];
@@ -3016,11 +3034,20 @@ app.get('/api/balance', auth(true), async (req, res) => {
 
     // --- Gastos del período ---
     const { data: gastosRaw } = await db.from('compras')
-      .select('id, fecha, clasificacion, costo_total, origen, metodo_pago')
+      .select('id, fecha, clasificacion, costo_total, origen, metodo_pago, tiene_factura, iva_credito')
       .gte('fecha', desde).lte('fecha', hasta + 'T23:59:59');
 
     const gastos = gastosRaw || [];
     const totalGastos = gastos.reduce((a, g) => a + num(g.costo_total), 0);
+
+    /* Desglose de IVA del período (misma función que usa el submódulo
+       Utilidades, para que las dos vistas no puedan discrepar).
+       Se informa, pero NO se descuenta de la utilidad neta de este
+       endpoint: el Balance sigue siendo la vista de caja de siempre y
+       cambiarle el significado a `utilidadNeta` rompería los KPI ya
+       existentes. El descuento del IVA se decide con casillas en
+       Finanzas → Utilidades. */
+    const ivaBalance = calcularIvaDePeriodo(ventas, gastos);
 
     /* Solo lo pagado en efectivo sale del cajón. Antes se asumía que
        TODOS los gastos eran en efectivo y la caja física quedaba baja
@@ -3108,6 +3135,11 @@ app.get('/api/balance', auth(true), async (req, res) => {
       ticketPromedio: ventas.length ? ingresos / ventas.length : 0,
       ventasProductos,
       ventasServicios,
+      /* IVA informativo: `ivaRetenidoSinDte` es el IVA de las ventas sin
+         DTE, que en este negocio se queda como utilidad. Va explícito
+         para que la cifra esté a la vista y no escondida dentro del
+         total. */
+      iva: ivaBalance,
       porMedio,
       porGrupo,
       porClasificacion,
@@ -3170,6 +3202,586 @@ app.get('/api/balance', auth(true), async (req, res) => {
    hay caja abierta: un rechazo transitorio del JWT acá se traduciría en la
    barra de caja "parpadeando" a cerrada en cada ciclo de sondeo, así que
    lleva el mismo reintento que /api/ot. */
+/* ============================================================
+   UTILIDADES · CONTABILIDAD DEL PERÍODO  (submódulo Finanzas → Utilidades)
+   ------------------------------------------------------------
+   Este bloque responde una sola pregunta: de lo que entró, ¿cuánto es
+   de verdad del negocio? Se calcula por capas, y CADA capa viaja al
+   frontend por separado para que las casillas (comisiones / IVA /
+   gastos) se puedan marcar y desmarcar sin volver a consultar nada.
+
+   LA REGLA DEL IVA EN ESTE NEGOCIO
+   Los precios del sistema son BRUTOS (IVA incluido), así que el neto de
+   una venta es total / 1,19 y el IVA es la diferencia. Calcularlo como
+   total × 0,19 da de más y es el error clásico.
+
+     · Ventas CON DTE (boleta/factura) → su IVA es débito fiscal: se le
+       debe al SII, no es utilidad.
+     · Ventas SIN DTE                  → su IVA se queda en el negocio y
+       se registra COMO UTILIDAD (decisión explícita del dueño). Se
+       expone siempre como cifra aparte para que quede a la vista, y el
+       informe lleva la advertencia de que es una vista de gestión, no
+       una declaración de impuestos.
+     · Compras CON FACTURA             → su IVA es crédito fiscal y
+       rebaja el débito (migración 27).
+
+   IVA a pagar del período = max(0, débito − crédito). Cuando el crédito
+   supera al débito no hay devolución: queda REMANENTE que rebaja el IVA
+   de los meses siguientes (ver calcularRemanenteIva).
+   ============================================================ */
+const IVA_TASA = 0.19;
+
+// IVA contenido en un monto bruto (con IVA incluido)
+function ivaContenidoEn(montoBruto) {
+  const bruto = num(montoBruto);
+  return bruto - bruto / (1 + IVA_TASA);
+}
+
+/* Débito, crédito y neto de IVA de un rango de fechas.
+   Recibe las ventas y los gastos ya consultados para no repetir viajes
+   a la base: lo llaman tanto /utilidades como /iva-remanente. */
+function calcularIvaDePeriodo(ventas, gastos) {
+  let ventasConDte = 0;
+  let ventasSinDte = 0;
+
+  (ventas || []).forEach(v => {
+    const conDte = v.tipo_dte === 'BOLETA' || v.tipo_dte === 'FACTURA';
+    if (conDte) ventasConDte += num(v.total);
+    else ventasSinDte += num(v.total);
+  });
+
+  const ivaDebito = ivaContenidoEn(ventasConDte);
+  // Retenido: el IVA de las ventas sin DTE, que acá cuenta como utilidad
+  const ivaRetenidoSinDte = ivaContenidoEn(ventasSinDte);
+
+  const ivaCredito = (gastos || [])
+    .filter(g => g.tiene_factura)
+    .reduce((a, g) => a + num(g.iva_credito), 0);
+
+  const ivaNeto = ivaDebito - ivaCredito;
+
+  return {
+    ventasConDte,
+    ventasSinDte,
+    ivaDebito,
+    ivaCredito,
+    ivaRetenidoSinDte,
+    ivaNeto,
+    // Lo que efectivamente se entera al SII por este período
+    ivaAPagar: Math.max(0, ivaNeto),
+    // Si el crédito superó al débito, el sobrante se arrastra
+    remanenteGenerado: Math.max(0, -ivaNeto)
+  };
+}
+
+/* Remanente de crédito fiscal acumulado, mes a mes, al estilo F29.
+   Se recorre desde el primer movimiento registrado hasta `hastaFecha`:
+     disponible = remanente anterior + crédito del mes + ajustes del mes
+     si débito > disponible → se paga la diferencia, remanente queda 0
+     si no                  → remanente = disponible − débito
+   No se guarda ningún saldo: se recalcula siempre, así que no puede
+   quedar desincronizado (mismo criterio que los saldos por canal). */
+async function calcularRemanenteIva(hastaFecha) {
+  const hasta = hastaFecha || fechaHoyChile();
+
+  const [{ data: ventasRaw }, { data: gastosRaw }, { data: ajustesRaw }] = await Promise.all([
+    db.from('ventas').select('fecha, total, tipo_dte').eq('estado', 'PAGADA').lte('fecha', hasta),
+    db.from('compras').select('fecha, tiene_factura, iva_credito').lte('fecha', hasta + 'T23:59:59'),
+    db.from('iva_ajustes').select('*').lte('fecha', hasta).order('fecha')
+  ]);
+
+  const mesDe = (f) => String(f || '').slice(0, 7);          // YYYY-MM
+  const meses = {};
+  const asegurar = (m) => (meses[m] = meses[m] || { mes: m, debito: 0, credito: 0, ajustes: 0 });
+
+  (ventasRaw || []).forEach(v => {
+    if (v.tipo_dte !== 'BOLETA' && v.tipo_dte !== 'FACTURA') return;
+    asegurar(mesDe(v.fecha)).debito += ivaContenidoEn(v.total);
+  });
+  (gastosRaw || []).forEach(g => {
+    if (!g.tiene_factura) return;
+    asegurar(mesDe(g.fecha)).credito += num(g.iva_credito);
+  });
+  (ajustesRaw || []).forEach(a => { asegurar(mesDe(a.fecha)).ajustes += num(a.monto); });
+
+  let remanente = 0;
+  const detalle = Object.keys(meses).sort().map(m => {
+    const f = meses[m];
+    const disponible = remanente + f.credito + f.ajustes;
+    const aPagar = Math.max(0, f.debito - disponible);
+    const remanenteFinal = Math.max(0, disponible - f.debito);
+    const fila = {
+      mes: m,
+      debito: f.debito,
+      credito: f.credito,
+      ajustes: f.ajustes,
+      remanenteInicial: remanente,
+      aPagar,
+      remanenteFinal
+    };
+    remanente = remanenteFinal;
+    return fila;
+  });
+
+  return { remanente, detalle, ajustes: ajustesRaw || [] };
+}
+
+/* Serie diaria completa de un rango: los días SIN movimiento entran
+   como 0. Es la diferencia entre "vendo $50.000 diarios" y "vendo
+   $50.000 los días que abro" — para proyectar caja, los días malos
+   pesan tanto como los buenos. */
+function construirSerieDiaria(desde, hasta, filas, campoFecha, campoMonto) {
+  const acumulado = {};
+  (filas || []).forEach(f => {
+    const dia = String(f[campoFecha] || '').slice(0, 10);
+    if (!dia) return;
+    acumulado[dia] = (acumulado[dia] || 0) + num(f[campoMonto]);
+  });
+
+  const serie = [];
+  const cursor = new Date(desde + 'T00:00:00Z');
+  const fin = new Date(hasta + 'T00:00:00Z');
+  // Tope de seguridad: 5 años de días, por si llega un rango absurdo
+  let guardia = 0;
+  while (cursor <= fin && guardia++ < 1830) {
+    const dia = cursor.toISOString().slice(0, 10);
+    serie.push({ dia, monto: acumulado[dia] || 0 });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return serie;
+}
+
+/* Percentil por interpolación lineal sobre una lista YA ordenada.
+   Se usa para los escenarios: el percentil resiste los días atípicos
+   mucho mejor que el promedio (una sola venta grande no infla la
+   proyección completa). */
+function percentilDe(ordenados, p) {
+  if (!ordenados.length) return 0;
+  if (ordenados.length === 1) return ordenados[0];
+  const pos = (ordenados.length - 1) * p;
+  const bajo = Math.floor(pos);
+  const alto = Math.ceil(pos);
+  if (bajo === alto) return ordenados[bajo];
+  return ordenados[bajo] + (ordenados[alto] - ordenados[bajo]) * (pos - bajo);
+}
+
+/* ------------------------------------------------------------
+   GET /api/finanzas/utilidades?desde=&hasta=
+   El informe completo, por capas. El frontend arma la utilidad final
+   según qué casillas estén marcadas — acá viajan TODAS las partidas
+   calculadas, más el detalle línea por línea para exportar.
+   ------------------------------------------------------------ */
+app.get('/api/finanzas/utilidades', auth(true), async (req, res) => {
+  const desde = (req.query?.desde || '').trim();
+  const hasta = (req.query?.hasta || '').trim();
+  if (!desde || !hasta) return enviarError(res, 400, 'Faltan las fechas del período (desde / hasta)');
+  if (desde > hasta) return enviarError(res, 400, 'La fecha inicial no puede ser posterior a la final');
+
+  try {
+    const { data: ventasRaw } = await consultarConReintento(() => db.from('ventas')
+      .select('id, fecha, numero_orden, cliente, total, costo_total, comision_pos, tipo_dte, metodo_pago, metodo_pago_final, estado')
+      .gte('fecha', desde).lte('fecha', hasta).eq('estado', 'PAGADA').order('fecha'));
+
+    const ventas = ventasRaw || [];
+
+    const { data: gastosRaw } = await db.from('compras')
+      .select('id, fecha, proveedor, clasificacion, descripcion, costo_total, metodo_pago, origen, gasto_fijo_id, tiene_factura, iva_credito')
+      .gte('fecha', desde).lte('fecha', hasta + 'T23:59:59').order('fecha');
+
+    const gastos = gastosRaw || [];
+
+    // --- Ventas ---
+    const ingresos = ventas.reduce((a, v) => a + num(v.total), 0);
+    const costoVendido = ventas.reduce((a, v) => a + num(v.costo_total), 0);
+    const comisiones = ventas.reduce((a, v) => a + num(v.comision_pos), 0);
+
+    /* UTILIDAD BRUTA = lo vendido menos lo que costó comprarlo.
+       No descuenta comisiones, IVA ni gastos: esas son las capas que el
+       usuario decide con las casillas. */
+    const utilidadBruta = ingresos - costoVendido;
+
+    // --- IVA ---
+    const iva = calcularIvaDePeriodo(ventas, gastos);
+
+    // --- Gastos, separando fijos de variables (sin doble conteo) ---
+    /* Un gasto fijo pagado se guarda como una compra normal con
+       gasto_fijo_id (ver /api/finanzas/gastos-fijos-mes). Por eso NO se
+       suma aparte: se separa en dos partidas EXCLUYENTES del mismo
+       total. Sumar la lista de gastos fijos encima del total de gastos
+       los contaría dos veces. */
+    const { data: clasifRaw } = await db.from('compra_clasificaciones').select('nombre, grupo');
+    const grupoDe = {};
+    (clasifRaw || []).forEach(c => { grupoDe[c.nombre] = c.grupo || 'OPERATIVO'; });
+
+    const esInventario = (g) => (grupoDe[g.clasificacion] || 'OPERATIVO') === 'INVENTARIO';
+
+    /* La compra de mercadería (INVENTARIO) no es gasto de utilidad: ya
+       se descuenta como costo de lo vendido cuando el producto se vende
+       (FIFO). Contarla otra vez haría ver pérdidas cada vez que se
+       repone stock. Se informa aparte, no se resta. */
+    const gastosOperativos = gastos.filter(g => !esInventario(g));
+    const comprasInventario = gastos.filter(esInventario)
+      .reduce((a, g) => a + num(g.costo_total), 0);
+
+    const gastosFijos = gastosOperativos.filter(g => g.gasto_fijo_id)
+      .reduce((a, g) => a + num(g.costo_total), 0);
+    const gastosVariables = gastosOperativos.filter(g => !g.gasto_fijo_id)
+      .reduce((a, g) => a + num(g.costo_total), 0);
+    const totalGastosOperativos = gastosFijos + gastosVariables;
+    const totalGastos = gastos.reduce((a, g) => a + num(g.costo_total), 0);
+
+    const porClasificacion = {};
+    gastosOperativos.forEach(g => {
+      const k = g.clasificacion || 'Sin clasificar';
+      porClasificacion[k] = (porClasificacion[k] || 0) + num(g.costo_total);
+    });
+
+    // --- Utilidad neta con TODAS las capas descontadas ---
+    const utilidadNetaTotal = utilidadBruta - comisiones - iva.ivaAPagar - totalGastosOperativos;
+
+    // Remanente acumulado al cierre del período (contexto para el informe)
+    const { remanente: remanenteIva } = await calcularRemanenteIva(hasta);
+
+    res.json({
+      periodo: { desde, hasta },
+      cantidadVentas: ventas.length,
+      ticketPromedio: ventas.length ? ingresos / ventas.length : 0,
+
+      // Capa 0 — bruto
+      ingresos,
+      costoVendido,
+      utilidadBruta,
+      margenBruto: ingresos > 0 ? (utilidadBruta / ingresos) * 100 : 0,
+
+      // Capas descontables (el frontend decide cuáles aplicar)
+      comisiones,
+      iva,
+      gastos: {
+        fijos: gastosFijos,
+        variables: gastosVariables,
+        operativos: totalGastosOperativos,
+        inventario: comprasInventario,
+        total: totalGastos,
+        porClasificacion
+      },
+
+      // Referencia: todo descontado
+      utilidadNetaTotal,
+      margenNetoTotal: ingresos > 0 ? (utilidadNetaTotal / ingresos) * 100 : 0,
+      remanenteIva,
+
+      // Detalle línea por línea, para las planillas exportadas
+      detalleVentas: ventas.map(v => ({
+        fecha: v.fecha,
+        numero_orden: v.numero_orden,
+        cliente: v.cliente,
+        tipo_dte: v.tipo_dte || 'SIN DTE',
+        metodo_pago: v.metodo_pago_final || v.metodo_pago,
+        total: num(v.total),
+        costo: num(v.costo_total),
+        utilidad: num(v.total) - num(v.costo_total),
+        comision: num(v.comision_pos),
+        iva: (v.tipo_dte === 'BOLETA' || v.tipo_dte === 'FACTURA') ? ivaContenidoEn(v.total) : 0,
+        ivaRetenido: (v.tipo_dte === 'BOLETA' || v.tipo_dte === 'FACTURA') ? 0 : ivaContenidoEn(v.total)
+      })),
+      detalleGastos: gastos.map(g => ({
+        fecha: g.fecha,
+        proveedor: g.proveedor,
+        clasificacion: g.clasificacion,
+        grupo: grupoDe[g.clasificacion] || 'OPERATIVO',
+        descripcion: g.descripcion,
+        metodo_pago: g.metodo_pago,
+        tipo: g.gasto_fijo_id ? 'FIJO' : 'VARIABLE',
+        costo_total: num(g.costo_total),
+        tiene_factura: !!g.tiene_factura,
+        iva_credito: num(g.iva_credito)
+      }))
+    });
+  } catch (e) {
+    enviarError(res, 500, e.message || 'No se pudieron calcular las utilidades');
+  }
+});
+
+/* Remanente de crédito fiscal + su historial de ajustes manuales */
+app.get('/api/finanzas/iva-remanente', auth(true), async (req, res) => {
+  try {
+    const hasta = (req.query?.hasta || '').trim() || fechaHoyChile();
+    res.json(await calcularRemanenteIva(hasta));
+  } catch (e) {
+    enviarError(res, 500, e.message || 'No se pudo calcular el remanente de IVA');
+  }
+});
+
+/* Ajuste manual del remanente de crédito fiscal.
+   Sirve para cargar el remanente que venía de antes del sistema y para
+   corregir diferencias contra el F29 real. Delta con motivo obligatorio,
+   nunca un saldo absoluto (mismo criterio que los ajustes de saldo). */
+app.post('/api/finanzas/iva-ajuste', auth(true), async (req, res) => {
+  const monto = num(req.body?.monto);
+  const motivo = String(req.body?.motivo || '').trim();
+
+  if (!monto) return enviarError(res, 400, 'El ajuste no puede ser $0');
+  if (motivo.length < 5) return enviarError(res, 400, 'Escribe el motivo del ajuste (mínimo 5 caracteres)');
+
+  try {
+    const { data, error } = await db.from('iva_ajustes').insert([{
+      fecha: (req.body?.fecha || '').trim() || fechaHoyChile(),
+      monto,
+      motivo,
+      usuario: req.usuario?.rol || 'admin'
+    }]).select().single();
+
+    if (error) return enviarError(res, 500, error.message);
+    res.status(201).json(data);
+  } catch (e) {
+    enviarError(res, 500, e.message || 'No se pudo guardar el ajuste de IVA');
+  }
+});
+
+app.delete('/api/finanzas/iva-ajuste/:id', auth(true), exigirPinAdmin, async (req, res) => {
+  const { error } = await db.from('iva_ajustes').delete().eq('id', req.params.id);
+  if (error) return enviarError(res, 500, error.message);
+  res.json({ ok: true });
+});
+
+/* ------------------------------------------------------------
+   GET /api/finanzas/proyeccion?dias=&historico=
+   Calculadora de flujo de caja por escenarios.
+
+   CÓMO SE PROYECTA (y por qué así)
+   Se toma la serie DIARIA real de los últimos `historico` días —con los
+   días cerrados o sin ventas contando como $0— y se sacan percentiles:
+
+     · Conservador (p25) → 1 de cada 4 días históricos fue peor que esto.
+       Es el escenario con el que conviene comprometer plata.
+     · Probable (p50, la mediana) → la mitad de los días fue mejor y la
+       mitad peor. Es el más realista, y no lo distorsiona una venta
+       excepcional como sí lo haría el promedio.
+     · Excelente (p75) → solo 1 de cada 4 días fue mejor.
+
+   Se usan percentiles y no el promedio a propósito: en un negocio con
+   ventas irregulares, un solo día extraordinario levanta el promedio y
+   hace proyectar plata que normalmente no llega.
+   ------------------------------------------------------------ */
+app.get('/api/finanzas/proyeccion', auth(true), async (req, res) => {
+  const dias = Math.min(365, Math.max(1, Math.round(num(req.query?.dias) || 30)));
+  const historico = Math.min(730, Math.max(14, Math.round(num(req.query?.historico) || 90)));
+
+  try {
+    const hasta = fechaHoyChile();
+    const inicio = new Date(hasta + 'T00:00:00Z');
+    inicio.setUTCDate(inicio.getUTCDate() - (historico - 1));
+    const desde = inicio.toISOString().slice(0, 10);
+
+    const [{ data: ventasRaw }, { data: gastosRaw }] = await Promise.all([
+      db.from('ventas').select('fecha, total, comision_pos')
+        .gte('fecha', desde).lte('fecha', hasta).eq('estado', 'PAGADA'),
+      db.from('compras').select('fecha, costo_total, metodo_pago, origen')
+        .gte('fecha', desde).lte('fecha', hasta + 'T23:59:59')
+    ]);
+
+    const ventas = ventasRaw || [];
+    // Las mermas no son dinero que salió del bolsillo: es stock perdido
+    const gastos = (gastosRaw || []).filter(g => g.origen !== 'MERMA');
+
+    const serieIngresos = construirSerieDiaria(desde, hasta, ventas, 'fecha', 'total');
+    const serieEgresos = construirSerieDiaria(desde, hasta, gastos, 'fecha', 'costo_total');
+
+    const egresosPorDia = {};
+    serieEgresos.forEach(d => { egresosPorDia[d.dia] = d.monto; });
+
+    // Neto diario = lo que entró menos lo que salió, ese mismo día
+    const serieNeta = serieIngresos.map(d => ({
+      dia: d.dia,
+      ingreso: d.monto,
+      egreso: egresosPorDia[d.dia] || 0,
+      neto: d.monto - (egresosPorDia[d.dia] || 0)
+    }));
+
+    const ordIngresos = serieIngresos.map(d => d.monto).sort((a, b) => a - b);
+    const ordEgresos = serieEgresos.map(d => d.monto).sort((a, b) => a - b);
+
+    const diasConVenta = serieIngresos.filter(d => d.monto > 0).length;
+    const totalIngresos = ordIngresos.reduce((a, b) => a + b, 0);
+    const totalEgresos = ordEgresos.reduce((a, b) => a + b, 0);
+
+    /* Un escenario combina DOS percentiles opuestos, no uno solo.
+       Ser conservador es esperar poco ingreso Y bastante gasto: usar el
+       p25 para los dos lados asumiría que también gastas poco, que es
+       justo lo contrario de conservador. Por eso el escenario malo toma
+       ingresos bajos (p25) contra gastos altos (p75), y el bueno al
+       revés. Así, además, la tarjeta cuadra: neto = ingreso − gasto,
+       en vez de venir de una tercera distribución que no suma con las
+       otras dos líneas que se muestran. */
+    const escenario = (nombre, pIngreso, pEgreso, descripcion) => {
+      const ingresoDiario = percentilDe(ordIngresos, pIngreso);
+      const egresoDiario = percentilDe(ordEgresos, pEgreso);
+      const netoDiario = ingresoDiario - egresoDiario;
+      return {
+        nombre,
+        percentil: Math.round(pIngreso * 100),
+        percentilGasto: Math.round(pEgreso * 100),
+        descripcion,
+        ingresoDiario,
+        egresoDiario,
+        netoDiario,
+        ingresoProyectado: ingresoDiario * dias,
+        egresoProyectado: egresoDiario * dias,
+        netoProyectado: netoDiario * dias
+      };
+    };
+
+    /* Resguardo mínimo de caja: el colchón que el dueño definió y que no
+       se debería tocar. La calculadora lo resta de lo proyectado para
+       responder "¿cuánto puedo gastar sin quedar en riesgo?".
+       La columna es `resguardo_caja` (no `resguardo_minimo`) y la fila
+       de configuración es siempre la id=1, igual que en /api/finanzas/saldos. */
+    let resguardo = 0;
+    try {
+      const { data: cfg } = await db.from('config_finanzas').select('*').eq('id', 1).maybeSingle();
+      resguardo = num(cfg?.resguardo_caja);
+    } catch (_) { resguardo = 0; }
+
+    res.json({
+      parametros: { dias, historico, desde, hasta },
+      historia: {
+        diasAnalizados: serieIngresos.length,
+        diasConVenta,
+        diasSinVenta: serieIngresos.length - diasConVenta,
+        totalIngresos,
+        totalEgresos,
+        promedioIngresoDiario: serieIngresos.length ? totalIngresos / serieIngresos.length : 0,
+        promedioEgresoDiario: serieIngresos.length ? totalEgresos / serieIngresos.length : 0,
+        mejorDia: ordIngresos.length ? ordIngresos[ordIngresos.length - 1] : 0,
+        peorDia: ordIngresos.length ? ordIngresos[0] : 0
+      },
+      escenarios: [
+        escenario('Conservador', 0.25, 0.75,
+          'Ingresos bajos y gastos altos a la vez: 1 de cada 4 días vendiste menos que esto y 1 de cada 4 gastaste más. Es el piso con el que conviene comprometer dinero.'),
+        escenario('Probable', 0.50, 0.50,
+          'La mitad de los días fue mejor y la mitad peor, tanto en ventas como en gastos. El escenario más realista.'),
+        escenario('Excelente', 0.75, 0.25,
+          'Ingresos altos y gastos bajos: solo 1 de cada 4 días fue mejor. No comprometas gastos contra este número.')
+      ],
+      resguardo,
+      serieNeta
+    });
+  } catch (e) {
+    enviarError(res, 500, e.message || 'No se pudo calcular la proyección');
+  }
+});
+
+/* ------------------------------------------------------------
+   DELETE /api/finanzas/balance?desde=&hasta=&incluir=ventas,gastos,...
+   Borrado contable por período. Operación destructiva y sin vuelta
+   atrás, por eso: rol admin + PIN + rango de fechas OBLIGATORIO (no
+   existe un "borrar todo" sin fechas por accidente) + lista explícita
+   de qué se borra.
+
+   Las ventas se borran con revertirEfectosDeVentas(), que devuelve el
+   stock igual que el borrado individual: si no, el inventario quedaría
+   descuadrado para siempre.
+   ------------------------------------------------------------ */
+app.delete('/api/finanzas/balance', auth(true), exigirPinAdmin, async (req, res) => {
+  const desde = String(req.query?.desde || req.body?.desde || '').trim();
+  const hasta = String(req.query?.hasta || req.body?.hasta || '').trim();
+
+  if (!desde || !hasta) return enviarError(res, 400, 'Indica el rango de fechas a borrar');
+  if (desde > hasta) return enviarError(res, 400, 'La fecha inicial no puede ser posterior a la final');
+
+  const pedido = String(req.query?.incluir || req.body?.incluir || '')
+    .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+
+  const VALIDOS = ['ventas', 'gastos', 'aportes', 'arqueos'];
+  const incluir = pedido.filter(p => VALIDOS.includes(p));
+  if (!incluir.length) {
+    return enviarError(res, 400, `Indica qué borrar: ${VALIDOS.join(', ')}`);
+  }
+
+  const hastaFin = hasta + 'T23:59:59';
+  const borrado = {};
+
+  try {
+    if (incluir.includes('ventas')) {
+      const { data: filas, error } = await db.from('ventas').select('id')
+        .gte('fecha', desde).lte('fecha', hasta);
+      if (error) throw new Error(error.message);
+
+      const ids = (filas || []).map(f => f.id);
+      if (ids.length) {
+        // Devuelve el stock antes de borrar: mismo camino que el borrado individual
+        await revertirEfectosDeVentas(ids);
+        const { error: errDel } = await db.from('ventas').delete().in('id', ids);
+        if (errDel) throw new Error(errDel.message);
+      }
+      borrado.ventas = ids.length;
+    }
+
+    if (incluir.includes('gastos')) {
+      const { data: filas, error } = await db.from('compras').select('id')
+        .gte('fecha', desde).lte('fecha', hastaFin);
+      if (error) throw new Error(error.message);
+
+      const ids = (filas || []).map(f => f.id);
+      if (ids.length) {
+        const { error: errDel } = await db.from('compras').delete().in('id', ids);
+        if (errDel) throw new Error(errDel.message);
+      }
+      borrado.gastos = ids.length;
+    }
+
+    if (incluir.includes('aportes')) {
+      const { data: filas, error } = await db.from('inyecciones_capital').select('id')
+        .gte('fecha', desde).lte('fecha', hasta);
+      if (error) throw new Error(error.message);
+
+      const ids = (filas || []).map(f => f.id);
+      if (ids.length) {
+        const { error: errDel } = await db.from('inyecciones_capital').delete().in('id', ids);
+        if (errDel) throw new Error(errDel.message);
+      }
+      borrado.aportes = ids.length;
+    }
+
+    if (incluir.includes('arqueos')) {
+      /* Arqueos, ajustes de saldo y traspasos: los tres afectan el saldo
+         por canal, así que se borran juntos o el saldo queda a medias.
+         OJO con la columna de fecha: `ajustes_saldo` no tiene `fecha`,
+         solo `creado_en` (ver sql/16) — filtrar por `fecha` ahí devuelve
+         error, no cero filas. Por eso cada tabla declara la suya. */
+      const TABLAS_SALDO = [
+        { tabla: 'arqueos', campo: 'fecha' },
+        { tabla: 'ajustes_saldo', campo: 'creado_en' },
+        { tabla: 'traspasos', campo: 'fecha' }
+      ];
+
+      let n = 0;
+      for (const { tabla, campo } of TABLAS_SALDO) {
+        try {
+          const { data: filas, error } = await db.from(tabla).select('id')
+            .gte(campo, desde).lte(campo, hastaFin);
+          if (error) throw new Error(error.message);
+
+          const ids = (filas || []).map(f => f.id);
+          if (ids.length) {
+            await db.from(tabla).delete().in('id', ids);
+            n += ids.length;
+          }
+        } catch (err) {
+          // Una tabla ausente en una instalación vieja no debe abortar el resto
+          console.warn(`[BALANCE] no se pudo borrar ${tabla}:`, err.message);
+        }
+      }
+      borrado.arqueos = n;
+    }
+
+    console.warn('[BALANCE] borrado por período', { desde, hasta, incluir, borrado });
+    res.json({ ok: true, periodo: { desde, hasta }, borrado });
+  } catch (e) {
+    enviarError(res, 500, e.message || 'No se pudo completar el borrado del período');
+  }
+});
+
 app.get('/api/caja/activa', auth(), async (req, res) => {
   const { data, error } = await consultarConReintento(() => db.from('cajas_diarias')
     .select('*').eq('estado', 'abierta')

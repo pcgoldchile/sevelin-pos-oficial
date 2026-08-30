@@ -127,6 +127,7 @@
         <div class="nav-subitems admin-only">
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="ventas">Historial de Ventas</button>
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="balance">Balance</button>
+          <button class="nav-subitem" data-view="view-finanzas" data-subtab="utilidades">Utilidades</button>
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="gastos">Gastos</button>
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="fijos">Gastos Fijos</button>
         </div>
@@ -857,9 +858,232 @@
       <nav class="subtabs" id="subtabsFinanzas">
         <button class="subtab activo" data-subtab="ventas">📜 Historial de Ventas</button>
         <button class="subtab" data-subtab="balance">📊 Balance</button>
+        <button class="subtab" data-subtab="utilidades">💎 Utilidades</button>
         <button class="subtab" data-subtab="gastos">📑 Gastos</button>
         <button class="subtab" data-subtab="fijos">🔁 Gastos Fijos</button>
       </nav>
+
+      <!-- ============================================================
+           UTILIDADES — de lo que entró, ¿cuánto es del negocio?
+           ------------------------------------------------------------
+           El Balance responde "cómo está la caja"; esto responde "cuánto
+           gané". Son preguntas distintas y por eso son pestañas
+           distintas: acá el IVA y las comisiones se descuentan, allá no.
+           Toda la lógica vive en js/utilidades.js.
+           ============================================================ -->
+      <div class="panel-finanzas" data-panel-finanzas="utilidades">
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Utilidades del negocio</h2>
+              <p class="subtitle" id="utilPeriodo">—</p>
+            </div>
+            <div class="toolbar-group">
+              <button class="btn btn-outline" id="btnUtilExcel"
+                      title="Descargar el informe completo en Excel">📊 Excel</button>
+              <button class="btn btn-outline" id="btnUtilPDF"
+                      title="Descargar el informe en PDF, listo para imprimir">📄 PDF</button>
+            </div>
+          </div>
+
+          <!-- Período: los rangos que pidió el negocio -->
+          <div class="filtros-rango">
+            <button class="btn btn-outline btn-sm" data-rango-util="hoy">Hoy</button>
+            <button class="btn btn-outline btn-sm" data-rango-util="ayer">Ayer</button>
+            <button class="btn btn-outline btn-sm" data-rango-util="semana">Esta semana</button>
+            <button class="btn btn-outline btn-sm activo" data-rango-util="mes">Este mes</button>
+            <button class="btn btn-outline btn-sm" data-rango-util="mes-anterior">Mes anterior</button>
+            <span class="filtro-sep"></span>
+            <input type="date" id="utilDesde" class="filtro-fecha">
+            <input type="date" id="utilHasta" class="filtro-fecha">
+            <button class="btn btn-outline btn-sm" id="btnUtilRangoPersonalizado">Aplicar</button>
+          </div>
+
+          <!-- Casillas: cada una descuenta una capa. No recargan nada,
+               el informe ya trae todas las partidas por separado. -->
+          <div class="util-casillas">
+            <span class="section-label" style="margin:0;">¿Qué quieres descontar?</span>
+            <label class="util-casilla">
+              <input type="checkbox" id="chkUtilComisiones" class="w-4 h-4 accent-blue-600" checked>
+              <span>Comisiones de tarjeta</span>
+            </label>
+            <label class="util-casilla">
+              <input type="checkbox" id="chkUtilIva" class="w-4 h-4 accent-blue-600" checked>
+              <span>IVA (19%)</span>
+            </label>
+            <label class="util-casilla">
+              <input type="checkbox" id="chkUtilGastos" class="w-4 h-4 accent-blue-600" checked>
+              <span>Gastos (fijos y variables)</span>
+            </label>
+          </div>
+        </div>
+
+        <div id="utilContenido">
+
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <span class="kpi-label">Vendido en el período</span>
+              <b class="kpi-valor" id="utilVentasMonto">$0</b>
+              <small class="kpi-detalle" id="utilVentasDetalle">—</small>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">Utilidad bruta</span>
+              <b class="kpi-valor" id="utilBrutaMonto">$0</b>
+              <small class="kpi-detalle" id="utilBrutaDetalle">—</small>
+            </div>
+            <div class="kpi-card kpi-destacado">
+              <span class="kpi-label">Utilidad del período</span>
+              <b class="kpi-valor" id="utilNetaMonto">$0</b>
+              <small class="kpi-detalle" id="utilNetaDetalle">—</small>
+            </div>
+          </div>
+
+          <!-- Cascada: de lo bruto a lo que queda, paso a paso -->
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h3>Estado de resultados</h3>
+                <p class="subtitle">De todo lo que entró, hasta lo que realmente queda</p>
+              </div>
+            </div>
+            <div class="util-cascada" id="utilCascada"></div>
+          </div>
+
+          <div class="grid grid-2">
+            <!-- IVA -->
+            <div class="card">
+              <div class="card-head">
+                <div>
+                  <h3>IVA</h3>
+                  <p class="subtitle">Débito de las ventas, crédito de las compras con factura</p>
+                </div>
+                <button class="btn btn-outline btn-sm" id="btnUtilAjustarIva"
+                        title="Corregir el remanente de crédito fiscal">✏️ Ajustar crédito</button>
+              </div>
+
+              <div class="util-lineas">
+                <div class="util-linea">
+                  <div><span>IVA débito fiscal</span><small id="utilIvaDebitoDetalle">—</small></div>
+                  <b id="utilIvaDebito">$0</b>
+                </div>
+                <div class="util-linea">
+                  <div><span>IVA crédito fiscal</span><small id="utilIvaCreditoDetalle">—</small></div>
+                  <b id="utilIvaCredito">$0</b>
+                </div>
+                <div class="util-linea util-linea-fuerte">
+                  <div><span>IVA a pagar al SII</span><small id="utilIvaPagarDetalle">—</small></div>
+                  <b id="utilIvaPagar">$0</b>
+                </div>
+                <div class="util-linea">
+                  <div><span>Remanente acumulado</span><small>Crédito fiscal disponible a la fecha</small></div>
+                  <b id="utilIvaRemanente">$0</b>
+                </div>
+                <div class="util-linea util-linea-aviso">
+                  <div>
+                    <span>IVA retenido como utilidad</span>
+                    <small id="utilIvaRetenidoDetalle">—</small>
+                  </div>
+                  <b id="utilIvaRetenido">$0</b>
+                </div>
+              </div>
+
+              <p class="modal-hint" style="margin-top:10px;">
+                ⚠️ El IVA de las ventas sin documento se registra como utilidad por decisión de la
+                administración. Es una vista de gestión, no una declaración de impuestos: ante el SII
+                una venta sin documento igualmente genera débito fiscal.
+              </p>
+            </div>
+
+            <!-- Gastos -->
+            <div class="card">
+              <div class="card-head">
+                <div>
+                  <h3>Gastos del período</h3>
+                  <p class="subtitle">Fijos y variables reparten el mismo total, no se suman dos veces</p>
+                </div>
+              </div>
+
+              <div class="util-lineas">
+                <div class="util-linea">
+                  <div><span>Gastos fijos pagados</span><small>Vinculados a tu lista de gastos fijos</small></div>
+                  <b id="utilGastosFijos">$0</b>
+                </div>
+                <div class="util-linea">
+                  <div><span>Gastos variables</span><small>El resto de los gastos operativos</small></div>
+                  <b id="utilGastosVariables">$0</b>
+                </div>
+                <div class="util-linea util-linea-fuerte">
+                  <div><span>Total operativo</span><small>Esto es lo que descuenta la casilla "Gastos"</small></div>
+                  <b id="utilGastosOperativos">$0</b>
+                </div>
+                <div class="util-linea util-linea-aviso">
+                  <div>
+                    <span>Compra de mercadería</span>
+                    <small>Inventario — NO se descuenta: ya está en el costo de lo vendido (FIFO)</small>
+                  </div>
+                  <b id="utilGastosInventario">$0</b>
+                </div>
+              </div>
+
+              <span class="section-label" style="margin-top:16px;">Por clasificación</span>
+              <div id="utilGastosClasificacion"></div>
+            </div>
+          </div>
+
+          <!-- ---------- CALCULADORA DE FLUJO DE CAJA ---------- -->
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h3>💹 Proyección de flujo de caja</h3>
+                <p class="subtitle">
+                  Cuánto entraría y cuánto podrías gastar, según lo que de verdad pasó antes
+                </p>
+              </div>
+            </div>
+
+            <div class="filtros-rango">
+              <label class="util-campo-inline">
+                Proyectar los próximos
+                <input type="number" id="proyDias" class="filtro-fecha" value="30" min="1" max="365" style="width:80px;">
+                días
+              </label>
+              <label class="util-campo-inline">
+                usando el historial de los últimos
+                <input type="number" id="proyHistorico" class="filtro-fecha" value="90" min="14" max="730" style="width:80px;">
+                días
+              </label>
+              <button class="btn btn-primary btn-sm" id="btnUtilProyectar">Calcular</button>
+            </div>
+
+            <div id="proyResultado" class="hidden">
+              <p class="subtitle" id="proyResumen" style="margin-top:12px;">—</p>
+              <p class="subtitle" id="proyPromedios">—</p>
+              <div class="proy-grid" id="proyEscenarios"></div>
+              <p class="modal-hint" style="margin-top:12px;">
+                Los escenarios usan <b>percentiles</b> de tus días reales (los días cerrados cuentan como $0),
+                no promedios: así una sola venta excepcional no te hace planificar con plata que normalmente
+                no llega. Comprométete siempre contra el escenario <b>conservador</b>.
+              </p>
+            </div>
+          </div>
+
+          <!-- ---------- ZONA DE RIESGO ---------- -->
+          <div class="card util-zona-riesgo">
+            <div class="card-head">
+              <div>
+                <h3>⚠️ Borrar balance de un período</h3>
+                <p class="subtitle">
+                  Elimina definitivamente ventas, gastos, aportes y arqueos del rango que elijas.
+                  No se puede deshacer.
+                </p>
+              </div>
+              <button class="btn btn-red" id="btnUtilBorrarPeriodo">🗑️ Borrar un período</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
 
       <!-- ---------- BALANCE ---------- -->
       <div class="panel-finanzas" data-panel-finanzas="balance">
@@ -3503,6 +3727,30 @@
         </div>
       </div>
 
+      <!-- Crédito fiscal IVA (migración 27).
+           Se pide el IVA en pesos y no se calcula solo: no todo gasto con
+           factura trae 19% exacto (exentos, notas de crédito, montos ya
+           netos). El botón "Calcular 19%" rellena el caso normal sin
+           quitar la posibilidad de corregirlo. -->
+      <div class="field" style="margin-top:14px;">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+          <input type="checkbox" id="compraTieneFactura" class="w-4 h-4 accent-blue-600">
+          Este gasto tiene <b>factura</b> y da derecho a crédito fiscal IVA
+        </label>
+      </div>
+
+      <div class="grid grid-2 hidden" id="compraIvaWrap">
+        <div class="field">
+          <label for="compraIvaCredito">IVA de la factura ($)</label>
+          <input type="number" id="compraIvaCredito" min="0" step="1" placeholder="0">
+        </div>
+        <div class="field" style="justify-content:flex-end;">
+          <button class="btn btn-outline btn-sm" id="btnCalcularIvaCompra" type="button"
+                  title="Calcular el 19% contenido en el monto total">🧮 Calcular 19% del total</button>
+          <p class="modal-hint">El monto ya incluye IVA: se calcula total − total / 1,19.</p>
+        </div>
+      </div>
+
       <span class="section-label" style="margin-top:20px;">Documentos</span>
       <div class="grid grid-2">
         <div class="doc-slot">
@@ -3528,6 +3776,109 @@
       <div class="modal-foot">
         <button class="btn btn-ghost" id="btnCancelarCompra">Cancelar</button>
         <button class="btn btn-primary" id="btnGuardarCompra">Guardar Gasto</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: AJUSTAR EL REMANENTE DE CRÉDITO FISCAL IVA
+       El remanente no se guarda en ninguna parte: se recalcula mes a mes
+       desde el histórico. Estos ajustes son DELTAS con motivo, y sirven
+       sobre todo para cargar el remanente que venía de antes del sistema
+       o para cuadrar contra el F29 real. -->
+  <div id="modalAjusteIva" class="modal-overlay">
+    <div class="modal-box" style="max-width: 560px;">
+      <h2>✏️ Ajustar crédito fiscal IVA</h2>
+      <p class="modal-hint">
+        El remanente se calcula solo a partir de tus ventas y compras. Usa este ajuste para cargar el
+        remanente que traías de antes, o para cuadrar contra tu F29 si hay diferencia.
+      </p>
+
+      <div class="util-linea util-linea-fuerte" style="margin-top:14px;">
+        <div><span>Remanente calculado hoy</span><small>Crédito fiscal disponible</small></div>
+        <b id="ajusteIvaActual">$0</b>
+      </div>
+
+      <div class="grid grid-2" style="margin-top:14px;">
+        <div class="field">
+          <label for="ajusteIvaMonto">Ajuste ($) *</label>
+          <input type="number" id="ajusteIvaMonto" step="1" placeholder="0">
+          <p class="modal-hint">Positivo suma remanente, negativo lo baja.</p>
+        </div>
+        <div class="field">
+          <label for="ajusteIvaFecha">Fecha del ajuste *</label>
+          <input type="date" id="ajusteIvaFecha">
+          <p class="modal-hint">Se aplica al mes de esta fecha.</p>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="ajusteIvaMotivo">Motivo *</label>
+        <input type="text" id="ajusteIvaMotivo"
+               placeholder="Ej: remanente arrastrado del F29 de julio 2026">
+      </div>
+
+      <span class="section-label" style="margin-top:16px;">Ajustes registrados</span>
+      <div id="ajusteIvaHistorial" class="util-ajustes-lista"></div>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarAjusteIva">Cancelar</button>
+        <button class="btn btn-primary" id="btnGuardarAjusteIva">Guardar ajuste</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: BORRAR BALANCE POR PERÍODO
+       Operación irreversible. La confirmación es escrita a propósito: un
+       "¿estás seguro?" se acepta por reflejo, escribir BORRAR obliga a
+       leer lo que se está haciendo. Además exige el PIN de admin, que lo
+       verifica el servidor. -->
+  <div id="modalBorrarPeriodo" class="modal-overlay">
+    <div class="modal-box" style="max-width: 560px;">
+      <h2>🗑️ Borrar balance de un período</h2>
+      <p class="modal-hint">
+        Se eliminarán <b>definitivamente</b> los registros del rango elegido. Esta acción no se puede
+        deshacer y no existe respaldo automático.
+      </p>
+
+      <div class="grid grid-2" style="margin-top:14px;">
+        <div class="field">
+          <label for="borrarDesde">Desde *</label>
+          <input type="date" id="borrarDesde">
+        </div>
+        <div class="field">
+          <label for="borrarHasta">Hasta *</label>
+          <input type="date" id="borrarHasta">
+        </div>
+      </div>
+
+      <span class="section-label" style="margin-top:10px;">¿Qué se borra?</span>
+      <div class="util-borrar-tipos">
+        <label class="util-casilla">
+          <input type="checkbox" data-borrar-tipo="ventas" class="w-4 h-4 accent-blue-600">
+          <span>Ventas <small>— repone el stock de los productos vendidos</small></span>
+        </label>
+        <label class="util-casilla">
+          <input type="checkbox" data-borrar-tipo="gastos" class="w-4 h-4 accent-blue-600">
+          <span>Gastos y compras <small>— incluye los gastos fijos ya pagados</small></span>
+        </label>
+        <label class="util-casilla">
+          <input type="checkbox" data-borrar-tipo="aportes" class="w-4 h-4 accent-blue-600">
+          <span>Aportes de capital</span>
+        </label>
+        <label class="util-casilla">
+          <input type="checkbox" data-borrar-tipo="arqueos" class="w-4 h-4 accent-blue-600">
+          <span>Arqueos, ajustes y traspasos <small>— afecta los saldos por canal</small></span>
+        </label>
+      </div>
+
+      <div class="field" style="margin-top:14px;">
+        <label for="borrarConfirmacion">Escribe <b>BORRAR</b> para confirmar *</label>
+        <input type="text" id="borrarConfirmacion" placeholder="BORRAR" autocomplete="off">
+      </div>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarBorrarPeriodo">Cancelar</button>
+        <button class="btn btn-red" id="btnConfirmarBorrarPeriodo">Borrar período</button>
       </div>
     </div>
   </div>
@@ -4228,6 +4579,7 @@
   <script src="js/atajos.js"></script>
   <script src="js/balance.js"></script>
   <script src="js/finanzas-ajustes.js"></script>   <!-- ajustes de saldo + checklist (req 3 y 4) -->
+  <script src="js/utilidades.js"></script>   <!-- después de balance.js: reutiliza cerrarModal y el panel de Finanzas -->
   <script src="js/finanzas-gate.js"></script>   <!-- después de balance/config: intercepta la navegación a Finanzas -->
   <script src="js/reportes.js"></script>
   <script src="js/print.js"></script>

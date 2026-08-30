@@ -280,6 +280,32 @@ const API = {
     historialAjustes: (canal) => apiRequest('/finanzas/ajustes-saldo' + (canal ? `?canal=${canal}` : '')),
     // req.4 — checklist de gastos fijos del mes (pagados vs pendientes)
     gastosFijosMes: () => apiRequest('/finanzas/gastos-fijos-mes'),
+
+    /* ---- Submódulo Utilidades (migración 27) ----
+       El informe llega con TODAS las capas por separado (comisiones,
+       IVA, gastos) para que las casillas se marquen sin volver a
+       consultar el servidor. */
+    utilidades: (desde, hasta) =>
+      apiRequest(`/finanzas/utilidades?desde=${encodeURIComponent(desde)}&hasta=${encodeURIComponent(hasta)}`),
+
+    // Remanente de crédito fiscal IVA (se recalcula, no se guarda)
+    ivaRemanente: (hasta) =>
+      apiRequest('/finanzas/iva-remanente' + (hasta ? `?hasta=${encodeURIComponent(hasta)}` : '')),
+    ivaAjustar: (datos) => apiRequest('/finanzas/iva-ajuste', { method: 'POST', body: datos }),
+    ivaEliminarAjuste: (id, pin) =>
+      apiRequest(`/finanzas/iva-ajuste/${id}`, { method: 'DELETE', body: { pin } }),
+
+    // Calculadora de flujo de caja por escenarios (percentiles históricos)
+    proyeccion: (dias, historico) =>
+      apiRequest(`/finanzas/proyeccion?dias=${Number(dias) || 30}&historico=${Number(historico) || 90}`),
+
+    /* Borrado contable por período. Destructivo: exige PIN de admin y un
+       rango de fechas explícito (no existe "borrar todo" sin fechas). */
+    borrarPeriodo: ({ desde, hasta, incluir, pin }) =>
+      apiRequest('/finanzas/balance', {
+        method: 'DELETE',
+        body: { desde, hasta, incluir: (incluir || []).join(','), pin }
+      }),
     // req.6 — todos los aportes de capital (sin filtro de período)
     todosLosAportes: () => apiRequest('/inyecciones'),
     // Caja diaria (migración 17)

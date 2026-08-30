@@ -97,6 +97,13 @@ function mostrarPanelFinanzas(nombre) {
   // los campos de fecha, no solo los datos. El resto de los rangos
   // (semana, mes, personalizado) se siguen pudiendo elegir después, normal.
   if (nombre === 'balance') aplicarRango('hoy');
+
+  /* Utilidades (js/utilidades.js): mismo criterio que Balance — al entrar
+     se recarga sola en vez de mostrar lo último que quedó en memoria. Se
+     abre en "Este mes", que es el período que se consulta a diario. */
+  if (nombre === 'utilidades' && typeof aplicarRangoUtilidades === 'function') {
+    aplicarRangoUtilidades('mes');
+  }
 }
 
 /* ============================================================
