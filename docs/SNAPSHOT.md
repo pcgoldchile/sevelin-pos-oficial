@@ -3,9 +3,10 @@
 > Actualiza SOLO este archivo al cerrar una sesión. Para el detalle completo, ver `docs/README.md`.
 > Para saber qué otro documento leer según lo que necesites, ver `docs/README-DOCS.md`.
 
-**Fecha:** 29-08-2026 · **Versión activa:** v40 (submódulo **Utilidades**: contabilidad por capas,
-IVA crédito fiscal con remanente, proyección de caja por escenarios y borrado contable por período —
-ver "v40" abajo) · **En producción:** https://sevelin-pos-oficial.vercel.app · **Rama:** `main`.
+**Fecha:** 30-08-2026 · **Versión activa:** v41 (**60 fichas de producto reescritas** con la plantilla
+comercial del usuario — título limpio, introducción, características, advertencias reales y pie fijo
+de envíos/contacto; ver "v41" abajo) · **En producción:** https://sevelin-pos-oficial.vercel.app ·
+**Rama:** `main`.
 
 **Estado real (verificado en producción, no de memoria):** `sql/23` a `sql/26` (categorías +
 subcategorías + umbral de stock + `es_servicio` en `venta_items`) **aplicados** vía Supabase CLI. El
@@ -268,6 +269,31 @@ tabla `iva_ajustes`), **aplicada y verificada en la base real**. Antes: `sql/26`
 - **Exportación**: Excel de 4 hojas (Resumen con notas metodológicas, Ventas, Gastos, IVA mes a mes,
   con formato de peso chileno) y PDF de 2 páginas con la cascada, los desgloses y las notas. Ojo:
   SheetJS community no permite colores en Excel — ahí el diseño es estructura y formato numérico.
+
+## Estado: qué está HECHO (v41 — 60 fichas de producto reescritas — 30-08-2026)
+> Detalle completo en `docs/CHANGELOG-V41.md`.
+- El usuario pidió que las descripciones (`productos.descripcion_web`) siguieran una plantilla fija:
+  título comercial + introducción + 8-12 características + advertencia opcional + pie fijo de envíos
+  (WhatsApp +56935750828, Instagram @sevelin.cl, garantía 6 meses, medios de pago, link a la tienda),
+  **solo para productos, los servicios quedan para otra sesión**.
+- **Alcance auditado, no asumido**: de 116 productos, 10 son servicios (categoría "Servicios
+  Técnicos") + **1 servicio mal clasificado bajo "Componentes PC"** (`id 91`, actualización de BIOS —
+  detectado por nombre, excluido igual, su categoría sigue sin corregir). De los 105 restantes: 5 ya
+  cumplían el formato, **40 no tenían ninguna descripción guardada** (quedaron pendientes por decisión
+  del usuario — el prompt prohíbe inventar specs), y **60 sí tenían descripción vieja reescribible con
+  información real**. Se actualizaron esos 60 (nombre limpio + descripción completa).
+- Las advertencias reales que estaban mezcladas como una viñeta más dentro de "Características" (ej.
+  "⚠️ Funciona solo de HDMI → VGA", "REACONDICIONADO" en un monitor) se movieron a su propia sección
+  "⚠️ Importante" — no se inventó ninguna advertencia nueva, solo se reubicaron las que ya existían.
+- Requirió un cambio de código en `sevelin-tienda` (`formatear-descripcion.ts`): el pie fijo usa
+  `**negrita**` y `[texto](url)`, que el formateador de texto plano de la tienda no interpretaba
+  todavía — ver `sevelin-tienda/docs/CHANGELOG-V18.md`.
+- Aplicado directo a Supabase (`service_role`) con un script de una sola vez, ya descartado. El
+  trigger de sincronización existente empujó el cambio a la tienda solo, sin tocarla — verificado
+  60/60 contra el pipeline real de renderizado antes de aplicar, y con una muestra en producción
+  después.
+- **Pendiente real**: los 40 productos sin descripción (esperando specs/fotos del usuario) y los
+  servicios (prompt aparte, otra sesión).
 
 ## Automatización Supabase CLI (nuevo — usar de acá en adelante)
 La CLI de Supabase (`npx supabase`) está logueada y ambos proyectos vinculados (`supabase link`) —
