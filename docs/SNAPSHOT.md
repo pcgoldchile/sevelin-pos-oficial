@@ -3,10 +3,10 @@
 > Actualiza SOLO este archivo al cerrar una sesión. Para el detalle completo, ver `docs/README.md`.
 > Para saber qué otro documento leer según lo que necesites, ver `docs/README-DOCS.md`.
 
-**Fecha:** 31-08-2026 · **Versión activa:** v43 (**panel "Más buscados"** — términos de búsqueda y
-productos más vistos en la tienda, agregados desde `eventos_web`; ver "v43" abajo; también v42:
-**etiqueta destacada de producto** — NOVEDAD/TENDENCIA/OFERTA IRRESISTIBLE, marcada desde el modal de
-producto y visible en la tabla del POS y en la tienda web) · **En producción:**
+**Fecha:** 31-08-2026 · **Versión activa:** v44 (**panel "Métricas"** — visitas totales, cuentas de
+cliente creadas, carritos compartidos/abandonados/convertidos; ver "v44" abajo; también v43: panel
+"Más buscados" — términos de búsqueda y productos más vistos en la tienda; v42: etiqueta destacada de
+producto — NOVEDAD/TENDENCIA/OFERTA IRRESISTIBLE) · **En producción:**
 https://sevelin-pos-oficial.vercel.app · **Rama:** `main`.
 
 **Estado real (verificado en producción, no de memoria):** `sql/23` a `sql/26` (categorías +
@@ -270,6 +270,20 @@ tabla `iva_ajustes`), **aplicada y verificada en la base real**. Antes: `sql/26`
 - **Exportación**: Excel de 4 hojas (Resumen con notas metodológicas, Ventas, Gastos, IVA mes a mes,
   con formato de peso chileno) y PDF de 2 páginas con la cascada, los desgloses y las notas. Ojo:
   SheetJS community no permite colores en Excel — ahí el diseño es estructura y formato numérico.
+
+## Estado: qué está HECHO (v44 — panel "Métricas" — 31-08-2026)
+> Detalle completo en `docs/CHANGELOG-V44.md`.
+- Nuevo subtab "📊 Métricas" dentro de "Página Web": 4 tarjetas KPI — visitas totales (+ últimos 30
+  días), cuentas de cliente creadas, carritos compartidos, carritos abandonados (+ cuántos terminaron
+  en compra).
+- `GET /api/pos/metricas` (nuevo) — 6 `count` en paralelo contra `dbWeb` (mismo cliente que Pedidos
+  Web y Más buscados): `eventos_web` (tipo `visita`), `carritos_web` (por `origen`/`numero_pedido`) y
+  `perfiles_clientes`. Todos son totales acumulados, no por período (salvo "últimos 30 días" de
+  visitas, que es contexto extra) — no se pueden reconstruir hacia atrás, arrancan a contar desde que
+  se activó cada tracking.
+- **"Visitas" depende de que `sevelin-tienda` esté desplegada** (mismo caso que etiquetas y más
+  buscados) — el contador vive en un componente cliente nuevo (`VisitTracker`) que no existía antes de
+  esta sesión.
 
 ## Estado: qué está HECHO (v43 — panel "Más buscados" — 31-08-2026)
 > Detalle completo en `docs/CHANGELOG-V43.md`.

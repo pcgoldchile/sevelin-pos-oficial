@@ -16,6 +16,7 @@ const elBtnNuevaCategoriaWeb = document.getElementById('btnNuevaCategoriaWeb');
 const elMasBuscadosDias = document.getElementById('masBuscadosDias');
 const elMasBuscadosTerminosBody = document.getElementById('masBuscadosTerminosBody');
 const elMasBuscadosProductosBody = document.getElementById('masBuscadosProductosBody');
+const elBtnRecargarMetricasWeb = document.getElementById('btnRecargarMetricasWeb');
 
 document.addEventListener('DOMContentLoaded', () => {
   if (elSubtabsPaginaWeb) {
@@ -31,6 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
   if (elMasBuscadosDias) elMasBuscadosDias.addEventListener('change', () => cargarMasBuscados());
+  if (elBtnRecargarMetricasWeb) elBtnRecargarMetricasWeb.addEventListener('click', () => cargarMetricasWeb());
 });
 
 function mostrarPanelPaginaWeb(nombre) {
@@ -44,6 +46,7 @@ function mostrarPanelPaginaWeb(nombre) {
   if (nombre === 'pedidos' && typeof cargarPedidosWeb === 'function') cargarPedidosWeb();
   if (nombre === 'categorias') cargarCategoriasWeb();
   if (nombre === 'mas-buscados') cargarMasBuscados();
+  if (nombre === 'metricas') cargarMetricasWeb();
 }
 
 /* ---------- Más buscados (términos de búsqueda y vistas de producto) ---------- */
@@ -285,4 +288,34 @@ async function eliminarCategoriaWeb(id) {
     console.error('Error al eliminar categoría web:', err.message || err);
     showToast(err.message || 'No se pudo eliminar', 'err');
   }
+}
+
+/* ---------- Métricas de la tienda online ---------- */
+
+async function cargarMetricasWeb() {
+  try {
+    const datos = await API.metricasWeb.obtener();
+    renderMetricasWeb(datos);
+  } catch (err) {
+    console.error('Error al cargar métricas web:', err.message || err);
+    showToast(err.message || 'No se pudieron cargar las métricas', 'err');
+  }
+}
+
+function renderMetricasWeb(datos) {
+  const elVisitasTotales = document.getElementById('kpiVisitasTotales');
+  const elVisitas30Dias = document.getElementById('kpiVisitas30Dias');
+  const elUsuarios = document.getElementById('kpiUsuariosRegistrados');
+  const elCompartidos = document.getElementById('kpiCarritosCompartidos');
+  const elAbandonados = document.getElementById('kpiCarritosAbandonados');
+  const elConvertidos = document.getElementById('kpiCarritosConvertidos');
+
+  const n = (v) => (v || 0).toLocaleString('es-CL');
+
+  if (elVisitasTotales) elVisitasTotales.textContent = n(datos?.total_visitas);
+  if (elVisitas30Dias) elVisitas30Dias.textContent = `Últimos 30 días: ${n(datos?.visitas_ultimos_30_dias)}`;
+  if (elUsuarios) elUsuarios.textContent = n(datos?.total_usuarios_registrados);
+  if (elCompartidos) elCompartidos.textContent = n(datos?.total_carritos_compartidos);
+  if (elAbandonados) elAbandonados.textContent = n(datos?.total_carritos_abandonados);
+  if (elConvertidos) elConvertidos.textContent = `Terminaron en compra: ${n(datos?.total_carritos_convertidos)}`;
 }

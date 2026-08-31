@@ -1969,6 +1969,7 @@
         <button class="subtab activo" data-subtab="pedidos">🌐 Pedidos Web</button>
         <button class="subtab" data-subtab="categorias">🗂️ Categorías</button>
         <button class="subtab" data-subtab="mas-buscados">🔍 Más buscados</button>
+        <button class="subtab" data-subtab="metricas">📊 Métricas</button>
       </nav>
 
       <div class="panel-pagina-web activo" data-panel-pagina-web="pedidos">
@@ -2068,6 +2069,46 @@
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div class="panel-pagina-web" data-panel-pagina-web="metricas">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Métricas de la tienda online</h2>
+              <p class="subtitle">Totales acumulados desde que se activó el registro (no se pueden reconstruir hacia atrás).</p>
+            </div>
+            <button class="btn btn-outline btn-sm" id="btnRecargarMetricasWeb">🔄 Actualizar</button>
+          </div>
+
+          <div class="kpi-grid">
+            <div class="kpi-card kpi-blue">
+              <div class="kpi-label">👁️ Visitas totales</div>
+              <div class="kpi-value" id="kpiVisitasTotales">0</div>
+              <div class="kpi-foot" id="kpiVisitas30Dias">Últimos 30 días: 0</div>
+            </div>
+            <div class="kpi-card kpi-green">
+              <div class="kpi-label">👥 Cuentas de cliente creadas</div>
+              <div class="kpi-value" id="kpiUsuariosRegistrados">0</div>
+              <div class="kpi-foot">Registro real en la tienda (no invitados)</div>
+            </div>
+            <div class="kpi-card kpi-gold">
+              <div class="kpi-label">🔗 Carritos compartidos</div>
+              <div class="kpi-value" id="kpiCarritosCompartidos">0</div>
+              <div class="kpi-foot">Links creados con "Compartir carrito"</div>
+            </div>
+            <div class="kpi-card kpi-red">
+              <div class="kpi-label">🛒 Carritos abandonados</div>
+              <div class="kpi-value" id="kpiCarritosAbandonados">0</div>
+              <div class="kpi-foot" id="kpiCarritosConvertidos">Terminaron en compra: 0</div>
+            </div>
+          </div>
+          <p class="subtitle" style="margin-top:14px;">
+            "Visitas" cuenta cada carga de página (no visitantes únicos). "Carritos abandonados" son
+            los que dejaron su correo en el checkout y no completaron el pago dentro de las 24 horas
+            en que el carrito sigue vigente.
+          </p>
         </div>
       </div>
 

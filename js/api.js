@@ -240,6 +240,12 @@ const API = {
     obtener: (dias) => apiRequest('/pos/mas-buscados' + (dias ? `?dias=${encodeURIComponent(dias)}` : ''))
   },
 
+  // Panel "Métricas" (Página Web → Métricas) — totales de visitas, carritos
+  // y cuentas de cliente, agregados de Supabase Web.
+  metricasWeb: {
+    obtener: () => apiRequest('/pos/metricas')
+  },
+
   // Categorías del catálogo web (módulo "Página Web → Categorías") —
   // distinto de repuestos.categorias (taller).
   productosCategorias: {

@@ -5172,6 +5172,56 @@ app.get('/api/pos/mas-buscados', auth(true), async (req, res) => {
   res.json({ dias, terminos_mas_buscados: terminosTop, productos_mas_vistos: productosTop });
 });
 
+/* Panel "Métricas" (Página Web → Métricas): totales generales del negocio
+   online — visitas, carritos compartidos/abandonados/convertidos, cuentas
+   de cliente creadas. Todo son `count` con `head:true` (PostgREST cuenta
+   sin traer filas) contra `dbWeb`, en paralelo. Números acumulados de
+   siempre (no por período) salvo "visitas últimos 30 días", que se agrega
+   como contexto — es lo que pidió el dueño ("total de...", no "en el
+   último mes"). */
+app.get('/api/pos/metricas', auth(true), async (req, res) => {
+  const hace30Dias = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  const contar = (tabla, filtro) => {
+    let q = dbWeb.from(tabla).select('*', { count: 'exact', head: true });
+    if (filtro) q = filtro(q);
+    return q;
+  };
+
+  try {
+    const [
+      totalVisitas,
+      visitas30Dias,
+      carritosCompartidos,
+      carritosAbandonados,
+      carritosConvertidos,
+      totalUsuarios,
+    ] = await Promise.all([
+      contar('eventos_web', q => q.eq('tipo', 'visita')),
+      contar('eventos_web', q => q.eq('tipo', 'visita').gte('creado_en', hace30Dias)),
+      contar('carritos_web', q => q.eq('origen', 'compartido')),
+      contar('carritos_web', q => q.eq('origen', 'checkout').is('numero_pedido', null)),
+      contar('carritos_web', q => q.eq('origen', 'checkout').not('numero_pedido', 'is', null)),
+      contar('perfiles_clientes'),
+    ]);
+
+    const primerError = [totalVisitas, visitas30Dias, carritosCompartidos, carritosAbandonados, carritosConvertidos, totalUsuarios]
+      .find(r => r.error);
+    if (primerError) return enviarError(res, 500, primerError.error.message);
+
+    res.json({
+      total_visitas: totalVisitas.count || 0,
+      visitas_ultimos_30_dias: visitas30Dias.count || 0,
+      total_carritos_compartidos: carritosCompartidos.count || 0,
+      total_carritos_abandonados: carritosAbandonados.count || 0,
+      total_carritos_convertidos: carritosConvertidos.count || 0,
+      total_usuarios_registrados: totalUsuarios.count || 0,
+    });
+  } catch (err) {
+    enviarError(res, 500, err.message);
+  }
+});
+
 /* ---------- 404 y errores ---------- */
 app.use('/api', (_req, res) => enviarError(res, 404, 'Endpoint no encontrado'));
 app.use((err, _req, res, _next) => {
