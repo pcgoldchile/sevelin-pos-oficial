@@ -3,11 +3,16 @@
 > Actualiza SOLO este archivo al cerrar una sesión. Para el detalle completo, ver `docs/README.md`.
 > Para saber qué otro documento leer según lo que necesites, ver `docs/README-DOCS.md`.
 
-**Fecha:** 01-09-2026 · **Versión activa:** v45 (**medidas y peso reales de 40 productos**, buscados
-por internet y cruzados contra 2+ fuentes cada uno — necesarios para que Chilexpress cotice el envío;
-ver "v45" abajo; también v44: panel "Métricas" — visitas totales, cuentas de cliente creadas, carritos
-compartidos/abandonados/convertidos; v43: panel "Más buscados"; v42: etiqueta destacada de producto —
-NOVEDAD/TENDENCIA/OFERTA IRRESISTIBLE) · **En producción:**
+**Fecha:** 31-08-2026 · **Versión activa:** v46 (**subcategorías del catálogo web revisadas por
+completo** — 16 subcategorías nuevas donde había un grupo real de 2+ productos del mismo tipo, y 5
+productos con la categoría equivocada corregidos [RAM/SSD/teclado que estaban en "Hogar y Estilo de
+Vida", un ventilador de gabinete en "Periféricos", un servicio de BIOS en "Componentes PC"] — trabajo
+hecho desde una sesión de `sevelin-tienda`, ver `sql/29-subcategorias-catalogo-web.sql` y
+`sevelin-tienda/docs/CHANGELOG-V32.md` para el detalle completo; también v45: **medidas y peso reales
+de 40 productos**, buscados por internet y cruzados contra 2+ fuentes cada uno — necesarios para que
+Chilexpress cotice el envío; v44: panel "Métricas" — visitas totales, cuentas de cliente creadas,
+carritos compartidos/abandonados/convertidos; v43: panel "Más buscados"; v42: etiqueta destacada de
+producto — NOVEDAD/TENDENCIA/OFERTA IRRESISTIBLE) · **En producción:**
 https://sevelin-pos-oficial.vercel.app · **Rama:** `main`.
 
 **Estado real (verificado en producción, no de memoria):** `sql/23` a `sql/26` (categorías +
