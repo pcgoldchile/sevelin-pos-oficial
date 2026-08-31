@@ -518,7 +518,9 @@ const CAMPOS_PRODUCTO = [
   // categoria_id (Fase "Página Web → Categorías"): FK interna del POS, no se
   // sincroniza a la tienda (el trigger solo usa categoria_web). stock_umbral_web:
   // NULL = usa el default de la tienda (+5); ver sql/23-categorias-web-y-umbral-stock.sql.
-  'categoria_id', 'stock_umbral_web'
+  'categoria_id', 'stock_umbral_web',
+  // NOVEDAD/TENDENCIA/OFERTA — ver sql/28-etiqueta-web.sql.
+  'etiqueta_web'
 ];
 
 /* Normaliza el código de barras: SOLO dígitos.
@@ -588,6 +590,12 @@ function sanearProducto(body = {}) {
     }
   });
   if (p.categoria_id !== undefined) p.categoria_id = p.categoria_id || null;
+  // Etiqueta destacada: solo una de las 3 opciones válidas o NULL — cualquier
+  // otra cosa (manipulación directa del payload) se descarta en vez de
+  // dejar que la base rechace todo el guardado por el check constraint.
+  if (p.etiqueta_web !== undefined) {
+    p.etiqueta_web = ['NOVEDAD', 'TENDENCIA', 'OFERTA'].includes(p.etiqueta_web) ? p.etiqueta_web : null;
+  }
   // stock_umbral_web: NULL = usa el default de la tienda (+5). 0 o negativo
   // no tiene sentido como umbral (ver check de la migración 23) — se guarda
   // NULL en vez de dejar que la base rechace todo el guardado del producto.

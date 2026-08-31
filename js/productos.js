@@ -17,6 +17,15 @@ const ICO_EDITAR_PROD = `<svg viewBox="0 0 24 24" fill="none" stroke="currentCol
 const ICO_ETIQUETA_PROD = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 12 22l-9-9V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.2"/></svg>`;
 const ICO_ELIMINAR_PROD = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>`;
 
+/* Etiqueta destacada (NOVEDAD/TENDENCIA/OFERTA) — se muestra igual en la
+   tabla del POS y en la tienda web (ver tarjeta-producto.tsx). */
+function etiquetaWebTexto(valor) {
+  if (valor === 'NOVEDAD') return '🆕 Novedad';
+  if (valor === 'TENDENCIA') return '🔥 Tendencia';
+  if (valor === 'OFERTA') return '⚡ Oferta irresistible';
+  return '';
+}
+
 const elProductosTableBody = document.getElementById('productosTableBody');
 const elBuscarProductoTabla = document.getElementById('buscarProductoTabla');
 const elViewProductoEditor = document.getElementById('view-producto-editor');
@@ -59,6 +68,7 @@ const elProdPublicadoWeb = document.getElementById('prodPublicadoWeb');
 const elProdPrecioWeb = document.getElementById('prodPrecioWeb');
 const elProdCategoriaWeb = document.getElementById('prodCategoriaWeb');
 const elProdStockUmbralWeb = document.getElementById('prodStockUmbralWeb');
+const elProdEtiquetaWeb = document.getElementById('prodEtiquetaWeb');
 let productoEnEdicionImagenUrls = [];
 // Fotos elegidas ANTES de que el producto tenga id (modo creación): quedan
 // acá como data URLs hasta que guardarProducto() cree el producto y recién
@@ -608,6 +618,7 @@ function renderProductosTabla(items) {
           ${p.sku ? `SKU ${escHtml(acortar(p.sku, 22))}` : ''}
           ${p.requiere_sn ? ' · <b>S/N</b>' : ''}
           ${p.es_repuesto ? ' · Repuesto' : ''}
+          ${etiquetaWebTexto(p.etiqueta_web) ? ` · ${etiquetaWebTexto(p.etiqueta_web)}` : ''}
         </small>
       </td>
       <td class="admin-only">${fmtCLP(p.costo_unitario)}</td>
@@ -825,6 +836,7 @@ function abrirModalProducto(producto = null) {
     if (elProdPublicadoWeb) elProdPublicadoWeb.checked = !!producto.publicado_web;
     if (elProdPrecioWeb) elProdPrecioWeb.value = producto.precio_web ?? '';
     if (elProdStockUmbralWeb) elProdStockUmbralWeb.value = producto.stock_umbral_web ?? '';
+    if (elProdEtiquetaWeb) elProdEtiquetaWeb.value = producto.etiqueta_web || '';
     // Si el producto tiene subcategoría, hay que reseleccionar ESA opción
     // en el <select> (no la categoría padre) — si no, cada vez que se
     // reabre el editor de un producto subcategorizado, se pierde la
@@ -856,6 +868,7 @@ function abrirModalProducto(producto = null) {
     if (elProdPublicadoWeb) elProdPublicadoWeb.checked = false;
     if (elProdPrecioWeb) elProdPrecioWeb.value = '';
     if (elProdStockUmbralWeb) elProdStockUmbralWeb.value = '';
+    if (elProdEtiquetaWeb) elProdEtiquetaWeb.value = '';
     poblarSelectCategoriaWeb('').then(cargarCategoriasEditor);
     productoEnEdicionImagenUrls = [];
     fotosNuevasStaged = [];
@@ -996,6 +1009,7 @@ async function guardarProducto() {
     categoria_id,
     subcategoria_web,
     stock_umbral_web: elProdStockUmbralWeb?.value.trim() ? Number(elProdStockUmbralWeb.value) : null,
+    etiqueta_web: elProdEtiquetaWeb?.value || null,
     // Una sola descripción para todo (ya no hay campo aparte para la web):
     // se manda el mismo HTML también a descripcion_web, la columna que
     // lee sevelin-tienda al sincronizar (ver POST /api/sync/producto).

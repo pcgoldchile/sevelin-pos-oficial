@@ -3,9 +3,9 @@
 > Actualiza SOLO este archivo al cerrar una sesión. Para el detalle completo, ver `docs/README.md`.
 > Para saber qué otro documento leer según lo que necesites, ver `docs/README-DOCS.md`.
 
-**Fecha:** 30-08-2026 · **Versión activa:** v41 (**60 fichas de producto reescritas** con la plantilla
-comercial del usuario — título limpio, introducción, características, advertencias reales y pie fijo
-de envíos/contacto; ver "v41" abajo) · **En producción:** https://sevelin-pos-oficial.vercel.app ·
+**Fecha:** 31-08-2026 · **Versión activa:** v42 (**etiqueta destacada de producto** — NOVEDAD/
+TENDENCIA/OFERTA IRRESISTIBLE, marcada desde el modal de producto y visible en la tabla del POS y en
+la tienda web; ver "v42" abajo) · **En producción:** https://sevelin-pos-oficial.vercel.app ·
 **Rama:** `main`.
 
 **Estado real (verificado en producción, no de memoria):** `sql/23` a `sql/26` (categorías +
@@ -269,6 +269,18 @@ tabla `iva_ajustes`), **aplicada y verificada en la base real**. Antes: `sql/26`
 - **Exportación**: Excel de 4 hojas (Resumen con notas metodológicas, Ventas, Gastos, IVA mes a mes,
   con formato de peso chileno) y PDF de 2 páginas con la cascada, los desgloses y las notas. Ojo:
   SheetJS community no permite colores en Excel — ahí el diseño es estructura y formato numérico.
+
+## Estado: qué está HECHO (v42 — etiqueta destacada de producto — 31-08-2026)
+> Detalle completo en `docs/CHANGELOG-V42.md`.
+- Nuevo campo `productos.etiqueta_web` (`sql/28-etiqueta-web.sql`, aplicada) — NULL o una de
+  `NOVEDAD`/`TENDENCIA`/`OFERTA`. Select nuevo en el modal de producto ("Tienda web" → Etiqueta
+  destacada), visible como texto corto en la fila de la tabla de productos (junto a SKU/S/N/Repuesto).
+- Sincroniza a `sevelin-tienda` por el mismo trigger de siempre (manda la fila completa) — la tienda
+  la muestra como badge en la tarjeta de producto y en la ficha (`productos_web.etiqueta_web`, ver
+  `sevelin-tienda/supabase/12-etiqueta-web.sql` y `docs/CHANGELOG-V21.md` de ese repo). **El mapeo del
+  lado tienda (`POST /api/sync/producto`) está en el código local pero no desplegado en Vercel
+  todavía** — hasta que se despliegue, marcar la etiqueta en el POS no la va a mostrar en la tienda
+  real (sí queda guardada en `productos.etiqueta_web`, se sincroniza sola en cuanto se despliegue).
 
 ## Estado: qué está HECHO (v41 — 60 fichas de producto reescritas — 30-08-2026)
 > Detalle completo en `docs/CHANGELOG-V41.md`.
