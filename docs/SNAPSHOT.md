@@ -3,10 +3,11 @@
 > Actualiza SOLO este archivo al cerrar una sesión. Para el detalle completo, ver `docs/README.md`.
 > Para saber qué otro documento leer según lo que necesites, ver `docs/README-DOCS.md`.
 
-**Fecha:** 31-08-2026 · **Versión activa:** v44 (**panel "Métricas"** — visitas totales, cuentas de
-cliente creadas, carritos compartidos/abandonados/convertidos; ver "v44" abajo; también v43: panel
-"Más buscados" — términos de búsqueda y productos más vistos en la tienda; v42: etiqueta destacada de
-producto — NOVEDAD/TENDENCIA/OFERTA IRRESISTIBLE) · **En producción:**
+**Fecha:** 01-09-2026 · **Versión activa:** v45 (**medidas y peso reales de 40 productos**, buscados
+por internet y cruzados contra 2+ fuentes cada uno — necesarios para que Chilexpress cotice el envío;
+ver "v45" abajo; también v44: panel "Métricas" — visitas totales, cuentas de cliente creadas, carritos
+compartidos/abandonados/convertidos; v43: panel "Más buscados"; v42: etiqueta destacada de producto —
+NOVEDAD/TENDENCIA/OFERTA IRRESISTIBLE) · **En producción:**
 https://sevelin-pos-oficial.vercel.app · **Rama:** `main`.
 
 **Estado real (verificado en producción, no de memoria):** `sql/23` a `sql/26` (categorías +
@@ -270,6 +271,16 @@ tabla `iva_ajustes`), **aplicada y verificada en la base real**. Antes: `sql/26`
 - **Exportación**: Excel de 4 hojas (Resumen con notas metodológicas, Ventas, Gastos, IVA mes a mes,
   con formato de peso chileno) y PDF de 2 páginas con la cascada, los desgloses y las notas. Ojo:
   SheetJS community no permite colores en Excel — ahí el diseño es estructura y formato numérico.
+
+## Estado: qué está HECHO (v45 — medidas reales de 40 productos — 01-09-2026)
+> Detalle completo en `docs/CHANGELOG-V45.md`.
+- De 81 productos publicados con foto, 49 tenían peso/dimensiones en 0 (bloqueaba la cotización de
+  Chilexpress). Se buscaron por internet y se cargaron las 40 que son productos físicos reales — 9
+  quedaron sin cargar a propósito porque son servicios técnicos (no tienen peso ni se despachan).
+- **Pendiente de decisión del dueño**: esos 9 servicios no deberían ofrecer courier como opción de
+  envío en absoluto (solo Retiro tendría sentido) — hoy no hay forma de marcar un producto del
+  catálogo como "servicio, no se despacha" (existe `es_servicio` en `venta_items`, la venta ya hecha,
+  pero no en `productos`). Resolverlo de raíz es un cambio mediano, no incluido en esta sesión.
 
 ## Estado: qué está HECHO (v44 — panel "Métricas" — 31-08-2026)
 > Detalle completo en `docs/CHANGELOG-V44.md`.
