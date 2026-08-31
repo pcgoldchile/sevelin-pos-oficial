@@ -369,7 +369,7 @@ Ninguno confirmado. El bug crítico histórico de `descontar_stock_venta` (colum
 verificó esta sesión como **corregido** en la base real (`sql/20` sí se aplicó en algún momento —
 la función usa la variable local, no la columna ambigua).
 
-## Pendiente (real, verificado al 29-08-2026)
+## Pendiente (real, verificado al 31-08-2026)
 1. **Verificar un dominio propio en Resend** (dashboard.resend.com, cuenta creada con
    `sevelin.contacto@gmail.com`) — mientras se use el dominio de prueba (`onboarding@resend.dev`),
    los correos de confirmación/cancelación a clientes reales **fallan en silencio** (ese dominio
@@ -379,9 +379,9 @@ la función usa la variable local, no la columna ambigua).
    por la verificación de Meta Business Manager (API oficial) — no hay atajo gratis y rápido, y las
    automatizaciones "no oficiales" (WhatsApp Web controlado por script) violan los términos de
    servicio y arriesgan que baneen el número del negocio. Sin decisión tomada todavía.
-3. **`SUPABASE_WEB_URL`/`SUPABASE_WEB_SERVICE_ROLE_KEY` en Vercel**: el usuario confirmó haberlas
-   agregado el 29-08-2026 (después de un episodio real de "fetch failed" en Pedidos Web) — pendiente
-   real: confirmar que el panel efectivamente funciona en producción tras el redeploy.
+3. ~~`SUPABASE_WEB_URL`/`SUPABASE_WEB_SERVICE_ROLE_KEY` en Vercel~~ — **RESUELTO Y CONFIRMADO
+   31-08-2026**: el catálogo, la sincronización POS→tienda y el trigger de subcategorías (v46) se
+   verificaron funcionando de punta a punta contra producción real esta sesión.
 4. **28 productos sin SKU**: YA NO están bloqueados para sincronizar (`sevelin-tienda` genera un
    slug de respaldo desde el nombre + id cuando no hay SKU, ver su propio SNAPSHOT.md). Sigue
    pendiente clasificarlos/marcarlos `publicado_web=true` desde el modal de producto si se quiere
@@ -389,6 +389,10 @@ la función usa la variable local, no la columna ambigua).
 5. **10 productos con SKU sin foto** — no tenían coincidencia confiable contra `sevelin.cl`, subir
    foto a mano.
 6. (Opcional, grande) Migrar a Supabase Auth + RLS por rol. Partir `api/index.js` en routers.
+7. **Revisión de subcategorías (v46) fue conservadora a propósito** — quedaron sin subcategoría
+   "Accesorios Móviles" (4), "Herramientas" (2), "Monitores" (12, salvo 1 cable mezclado ahí) y el
+   resto de "Hogar y Estilo de Vida" (5) por no tener un grupo homogéneo de 2+ productos claro. Si el
+   catálogo crece en esas categorías, vale la pena revisar de nuevo.
 
 ## Trampas específicas ya descubiertas (no repetir)
 - `confirmarEntrega` existía en `ot.js` y `pago.js` → las de venta ahora son `confirmarEntregaVenta`/
