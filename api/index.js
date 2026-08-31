@@ -5114,6 +5114,64 @@ app.put('/api/pos/pedidos-web/:id', auth(true), async (req, res) => {
   res.json({ ...data, stock_repuesto: stockRepuesto, correo_enviado: correoEnviado });
 });
 
+/* Panel "Más buscados" (Página Web → Más buscados): agrega los eventos que
+   la tienda registra en `eventos_web` (sevelin-tienda/src/lib/eventos-web.ts)
+   cada vez que alguien busca un término o abre una ficha de producto. Usa
+   `dbWeb` igual que Pedidos Web arriba — misma tabla, otro proyecto
+   Supabase. La agregación se hace acá en JS (no en SQL) porque el volumen
+   de una tienda chica no lo justifica y evita depender de una función RPC
+   nueva en Supabase Web. */
+app.get('/api/pos/mas-buscados', auth(true), async (req, res) => {
+  const dias = Math.min(365, Math.max(1, Number(req.query.dias) || 30));
+  const desde = new Date(Date.now() - dias * 24 * 60 * 60 * 1000).toISOString();
+
+  const { data: eventos, error } = await dbWeb
+    .from('eventos_web')
+    .select('tipo, termino, producto_pos_id')
+    .gte('creado_en', desde)
+    .limit(5000);
+  if (error) return enviarError(res, 500, error.message);
+
+  const conteoBusquedas = new Map(); // clave: término en minúsculas -> { termino (primera aparición), veces }
+  const conteoVistas = new Map(); // clave: producto_pos_id -> veces
+
+  (eventos || []).forEach(e => {
+    if (e.tipo === 'busqueda' && e.termino) {
+      const clave = e.termino.trim().toLowerCase();
+      if (!clave) return;
+      const actual = conteoBusquedas.get(clave);
+      if (actual) actual.veces++;
+      else conteoBusquedas.set(clave, { termino: e.termino.trim(), veces: 1 });
+    } else if (e.tipo === 'vista_producto' && e.producto_pos_id) {
+      conteoVistas.set(e.producto_pos_id, (conteoVistas.get(e.producto_pos_id) || 0) + 1);
+    }
+  });
+
+  const terminosTop = [...conteoBusquedas.values()].sort((a, b) => b.veces - a.veces).slice(0, 20);
+
+  const productosTopIds = [...conteoVistas.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20);
+  let productosTop = [];
+  if (productosTopIds.length) {
+    const { data: productosData } = await db
+      .from('productos')
+      .select('id, nombre, sku, precio_unitario, publicado_web')
+      .in('id', productosTopIds.map(([id]) => id));
+    const porId = new Map((productosData || []).map(p => [p.id, p]));
+    productosTop = productosTopIds.map(([id, veces]) => ({
+      producto_id: id,
+      veces,
+      // El producto puede haberse borrado desde que se vio — se avisa en
+      // vez de romper la lista.
+      nombre: porId.get(id)?.nombre || '(producto eliminado)',
+      sku: porId.get(id)?.sku || null,
+      precio_unitario: porId.get(id)?.precio_unitario ?? null,
+      publicado_web: !!porId.get(id)?.publicado_web,
+    }));
+  }
+
+  res.json({ dias, terminos_mas_buscados: terminosTop, productos_mas_vistos: productosTop });
+});
+
 /* ---------- 404 y errores ---------- */
 app.use('/api', (_req, res) => enviarError(res, 404, 'Endpoint no encontrado'));
 app.use((err, _req, res, _next) => {

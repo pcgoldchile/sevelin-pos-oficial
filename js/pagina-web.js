@@ -13,6 +13,9 @@ const elSubtabsPaginaWeb = document.getElementById('subtabsPaginaWeb');
 const elListaCategoriasWeb = document.getElementById('listaCategoriasWeb');
 const elNuevaCategoriaWebInput = document.getElementById('nuevaCategoriaWebInput');
 const elBtnNuevaCategoriaWeb = document.getElementById('btnNuevaCategoriaWeb');
+const elMasBuscadosDias = document.getElementById('masBuscadosDias');
+const elMasBuscadosTerminosBody = document.getElementById('masBuscadosTerminosBody');
+const elMasBuscadosProductosBody = document.getElementById('masBuscadosProductosBody');
 
 document.addEventListener('DOMContentLoaded', () => {
   if (elSubtabsPaginaWeb) {
@@ -27,6 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (e.key === 'Enter') { e.preventDefault(); agregarCategoriaWeb(); }
     });
   }
+  if (elMasBuscadosDias) elMasBuscadosDias.addEventListener('change', () => cargarMasBuscados());
 });
 
 function mostrarPanelPaginaWeb(nombre) {
@@ -39,6 +43,46 @@ function mostrarPanelPaginaWeb(nombre) {
 
   if (nombre === 'pedidos' && typeof cargarPedidosWeb === 'function') cargarPedidosWeb();
   if (nombre === 'categorias') cargarCategoriasWeb();
+  if (nombre === 'mas-buscados') cargarMasBuscados();
+}
+
+/* ---------- Más buscados (términos de búsqueda y vistas de producto) ---------- */
+
+async function cargarMasBuscados() {
+  const dias = elMasBuscadosDias?.value || 30;
+  if (elMasBuscadosTerminosBody) elMasBuscadosTerminosBody.innerHTML = '<tr class="empty-row"><td colspan="2">Cargando…</td></tr>';
+  if (elMasBuscadosProductosBody) elMasBuscadosProductosBody.innerHTML = '<tr class="empty-row"><td colspan="2">Cargando…</td></tr>';
+
+  try {
+    const datos = await API.masBuscados.obtener(dias);
+    renderMasBuscados(datos);
+  } catch (err) {
+    console.error('Error al cargar más buscados:', err.message || err);
+    const mensaje = `<tr class="empty-row"><td colspan="2">${escHtml(err.message || 'No se pudo cargar')}</td></tr>`;
+    if (elMasBuscadosTerminosBody) elMasBuscadosTerminosBody.innerHTML = mensaje;
+    if (elMasBuscadosProductosBody) elMasBuscadosProductosBody.innerHTML = mensaje;
+  }
+}
+
+function renderMasBuscados(datos) {
+  const terminos = datos?.terminos_mas_buscados || [];
+  const productos = datos?.productos_mas_vistos || [];
+
+  if (elMasBuscadosTerminosBody) {
+    elMasBuscadosTerminosBody.innerHTML = terminos.length
+      ? terminos.map(t => `<tr><td>${escHtml(t.termino)}</td><td class="num">${t.veces}</td></tr>`).join('')
+      : '<tr class="empty-row"><td colspan="2">Todavía no hay búsquedas registradas en este período.</td></tr>';
+  }
+
+  if (elMasBuscadosProductosBody) {
+    elMasBuscadosProductosBody.innerHTML = productos.length
+      ? productos.map(p => `
+        <tr>
+          <td>${escHtml(p.nombre)}${p.sku ? ` <small class="fila-meta">SKU ${escHtml(p.sku)}</small>` : ''}${!p.publicado_web ? ' <small class="fila-meta">(no publicado)</small>' : ''}</td>
+          <td class="num">${p.veces}</td>
+        </tr>`).join('')
+      : '<tr class="empty-row"><td colspan="2">Todavía no hay vistas registradas en este período.</td></tr>';
+  }
 }
 
 /* ---------- Categorías del catálogo web ---------- */

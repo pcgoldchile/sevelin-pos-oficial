@@ -234,6 +234,12 @@ const API = {
     actualizar: (id, cambios) => apiRequest(`/pos/pedidos-web/${id}`, { method: 'PUT', body: cambios })
   },
 
+  // Panel "Más buscados" (Página Web → Más buscados) — agrega eventos_web
+  // de Supabase Web (búsquedas y vistas de producto que registra la tienda).
+  masBuscados: {
+    obtener: (dias) => apiRequest('/pos/mas-buscados' + (dias ? `?dias=${encodeURIComponent(dias)}` : ''))
+  },
+
   // Categorías del catálogo web (módulo "Página Web → Categorías") —
   // distinto de repuestos.categorias (taller).
   productosCategorias: {

@@ -1968,6 +1968,7 @@
       <nav class="subtabs" id="subtabsPaginaWeb">
         <button class="subtab activo" data-subtab="pedidos">🌐 Pedidos Web</button>
         <button class="subtab" data-subtab="categorias">🗂️ Categorías</button>
+        <button class="subtab" data-subtab="mas-buscados">🔍 Más buscados</button>
       </nav>
 
       <div class="panel-pagina-web activo" data-panel-pagina-web="pedidos">
@@ -2023,6 +2024,49 @@
           <div class="admin-cat-nuevo" style="margin-top:12px;">
             <input type="text" id="nuevaCategoriaWebInput" placeholder="Nueva categoría...">
             <button class="btn btn-outline btn-sm" id="btnNuevaCategoriaWeb">➕ Agregar</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-pagina-web" data-panel-pagina-web="mas-buscados">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Más buscados</h2>
+              <p class="subtitle">Términos que la gente escribe en el buscador de la tienda, y fichas de producto más visitadas.</p>
+            </div>
+            <div class="toolbar-group">
+              <select id="masBuscadosDias">
+                <option value="7">Últimos 7 días</option>
+                <option value="30" selected>Últimos 30 días</option>
+                <option value="90">Últimos 90 días</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+            <div>
+              <h3 style="margin:0 0 8px;font-size:14px;">🔎 Términos más buscados</h3>
+              <div class="table-wrapper">
+                <table class="data-table">
+                  <thead><tr><th>Término</th><th class="num">Veces</th></tr></thead>
+                  <tbody id="masBuscadosTerminosBody">
+                    <tr class="empty-row"><td colspan="2">Cargando…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div>
+              <h3 style="margin:0 0 8px;font-size:14px;">👁️ Productos más vistos</h3>
+              <div class="table-wrapper">
+                <table class="data-table">
+                  <thead><tr><th>Producto</th><th class="num">Vistas</th></tr></thead>
+                  <tbody id="masBuscadosProductosBody">
+                    <tr class="empty-row"><td colspan="2">Cargando…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
       </div>

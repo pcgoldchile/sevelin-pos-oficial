@@ -3,10 +3,11 @@
 > Actualiza SOLO este archivo al cerrar una sesión. Para el detalle completo, ver `docs/README.md`.
 > Para saber qué otro documento leer según lo que necesites, ver `docs/README-DOCS.md`.
 
-**Fecha:** 31-08-2026 · **Versión activa:** v42 (**etiqueta destacada de producto** — NOVEDAD/
-TENDENCIA/OFERTA IRRESISTIBLE, marcada desde el modal de producto y visible en la tabla del POS y en
-la tienda web; ver "v42" abajo) · **En producción:** https://sevelin-pos-oficial.vercel.app ·
-**Rama:** `main`.
+**Fecha:** 31-08-2026 · **Versión activa:** v43 (**panel "Más buscados"** — términos de búsqueda y
+productos más vistos en la tienda, agregados desde `eventos_web`; ver "v43" abajo; también v42:
+**etiqueta destacada de producto** — NOVEDAD/TENDENCIA/OFERTA IRRESISTIBLE, marcada desde el modal de
+producto y visible en la tabla del POS y en la tienda web) · **En producción:**
+https://sevelin-pos-oficial.vercel.app · **Rama:** `main`.
 
 **Estado real (verificado en producción, no de memoria):** `sql/23` a `sql/26` (categorías +
 subcategorías + umbral de stock + `es_servicio` en `venta_items`) **aplicados** vía Supabase CLI. El
@@ -269,6 +270,19 @@ tabla `iva_ajustes`), **aplicada y verificada en la base real**. Antes: `sql/26`
 - **Exportación**: Excel de 4 hojas (Resumen con notas metodológicas, Ventas, Gastos, IVA mes a mes,
   con formato de peso chileno) y PDF de 2 páginas con la cascada, los desgloses y las notas. Ojo:
   SheetJS community no permite colores en Excel — ahí el diseño es estructura y formato numérico.
+
+## Estado: qué está HECHO (v43 — panel "Más buscados" — 31-08-2026)
+> Detalle completo en `docs/CHANGELOG-V43.md`.
+- Nuevo subtab "🔍 Más buscados" dentro de "Página Web": dos tablas, términos de búsqueda más
+  frecuentes y productos con más vistas de ficha, con selector de período (7/30/90 días).
+- `GET /api/pos/mas-buscados` (nuevo) lee `eventos_web` de Supabase Web con `dbWeb` (mismo cliente que
+  Pedidos Web) y agrega en JS (Map, sin RPC nueva) — el volumen de una tienda chica no justifica una
+  función SQL aparte. Los eventos los registra `sevelin-tienda` cada vez que alguien busca algo o abre
+  una ficha de producto (`src/lib/eventos-web.ts`, con `after()` de Next.js para no retrasar la
+  página).
+- **Igual que la etiqueta destacada (v42)**: el código de registro está en el repo de la tienda pero
+  no desplegado en Vercel todavía — hasta que se despliegue, el panel del POS va a mostrar "todavía no
+  hay búsquedas/vistas registradas".
 
 ## Estado: qué está HECHO (v42 — etiqueta destacada de producto — 31-08-2026)
 > Detalle completo en `docs/CHANGELOG-V42.md`.
