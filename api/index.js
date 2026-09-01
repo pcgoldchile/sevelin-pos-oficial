@@ -1158,15 +1158,35 @@ app.post('/api/productos/:id/imagen', auth(true), async (req, res) => {
 // imagen_urls — la primera posición es la que usa la tienda como foto
 // principal de catálogo (ver tarjeta-producto.tsx, imagen_urls[0]).
 app.put('/api/productos/:id/imagen/orden', auth(true), async (req, res) => {
-  const url = String(req.body?.url || '').trim();
-  const direccion = req.body?.direccion === 'arriba' ? 'arriba' : 'abajo';
-  if (!url) return enviarError(res, 400, 'Falta la url de la imagen a mover');
-
   const { data: producto } = await db.from('productos')
     .select('id, imagen_urls').eq('id', req.params.id).maybeSingle();
   if (!producto) return enviarError(res, 404, 'Producto no encontrado');
 
   const lista = [...(producto.imagen_urls || [])];
+
+  /* Reordenamiento libre (arrastrar y soltar en el modal): el cliente manda
+     el arreglo completo en el orden nuevo. Se valida que sea EXACTAMENTE el
+     mismo conjunto de fotos que ya tiene el producto — ni una foto de más
+     ni de menos — antes de guardarlo, para que un payload manipulado no
+     pueda inventar o borrar fotos por esta vía (esa parte sigue siendo
+     POST/DELETE /api/productos/:id/imagen). */
+  if (Array.isArray(req.body?.orden)) {
+    const ordenNuevo = req.body.orden.map(u => String(u || '').trim()).filter(Boolean);
+    const mismoConjunto = ordenNuevo.length === lista.length &&
+      [...ordenNuevo].sort().join('\n') === [...lista].sort().join('\n');
+    if (!mismoConjunto) return enviarError(res, 400, 'El nuevo orden no coincide con las fotos actuales del producto');
+
+    const { data, error } = await db.from('productos')
+      .update({ imagen_urls: ordenNuevo }).eq('id', req.params.id).select('id, imagen_urls').single();
+    if (error) return enviarError(res, 500, error.message);
+    return res.json(data);
+  }
+
+  // Un paso (flechas ◀▶): swap con el vecino inmediato.
+  const url = String(req.body?.url || '').trim();
+  const direccion = req.body?.direccion === 'arriba' ? 'arriba' : 'abajo';
+  if (!url) return enviarError(res, 400, 'Falta la url de la imagen a mover');
+
   const idx = lista.indexOf(url);
   if (idx === -1) return enviarError(res, 404, 'Esa foto ya no está en el producto');
 

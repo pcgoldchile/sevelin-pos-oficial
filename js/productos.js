@@ -1091,6 +1091,12 @@ function fotosActivas() {
   return editingProductId ? productoEnEdicionImagenUrls : fotosNuevasStaged;
 }
 
+// Índice de la foto que se está arrastrando (drag & drop del grid) — vive
+// fuera de renderFotosProducto() porque el grid se vuelve a pintar entero
+// en cada paso (dragstart/drop), y el índice tiene que sobrevivir a esos
+// repintados hasta soltar.
+let fotoArrastrandoIdx = null;
+
 function renderFotosProducto() {
   if (!elProdFotosGrid) return;
   const lista = fotosActivas();
@@ -1099,12 +1105,13 @@ function renderFotosProducto() {
     return;
   }
   // La primera foto del arreglo es la que la tienda usa como foto principal
-  // de catálogo (imagen_urls[0]) — de ahí la etiqueta y las flechas para
-  // que el dueño elija el orden a mano, sin depender del orden de subida.
+  // de catálogo (imagen_urls[0]) — de ahí la etiqueta y las flechas/el
+  // arrastre para que el dueño elija el orden a mano, sin depender del
+  // orden de subida.
   elProdFotosGrid.innerHTML = lista.map((url, i) => `
-    <div style="position:relative; width:90px;">
+    <div class="foto-producto-item" draggable="true" data-idx="${i}" title="Arrastra para reordenar" style="position:relative; width:90px;">
       <div style="position:relative; width:90px; height:90px;">
-        <img src="${escHtml(url)}" style="width:100%; height:100%; object-fit:cover; border-radius:8px; border:1px solid #d8dee9;">
+        <img src="${escHtml(url)}" style="width:100%; height:100%; object-fit:cover; border-radius:8px; border:1px solid #d8dee9; pointer-events:none;">
         <button type="button" class="btn-quitar-foto" data-idx="${i}"
           style="position:absolute; top:-6px; right:-6px; width:22px; height:22px; border-radius:999px; border:none; background:#dc2626; color:#fff; cursor:pointer; line-height:1;">×</button>
         ${i === 0 ? '<span style="position:absolute; bottom:4px; left:4px; background:rgba(37,99,235,.9); color:#fff; font-size:10px; font-weight:700; padding:2px 6px; border-radius:999px;">Principal</span>' : ''}
@@ -1123,6 +1130,73 @@ function renderFotosProducto() {
   elProdFotosGrid.querySelectorAll('.btn-mover-foto').forEach(btn => {
     btn.addEventListener('click', () => moverFotoProducto(Number(btn.dataset.idx), btn.dataset.direccion));
   });
+  configurarArrastreFotos();
+}
+
+/* Arrastrar y soltar para reordenar libremente (además de las flechas
+   ◀▶, que quedan para mover de a un paso con precisión/teclado). Nativo
+   del navegador (HTML5 Drag and Drop), sin librerías. */
+function configurarArrastreFotos() {
+  const items = elProdFotosGrid.querySelectorAll('.foto-producto-item');
+  items.forEach(item => {
+    item.addEventListener('dragstart', (e) => {
+      fotoArrastrandoIdx = Number(item.dataset.idx);
+      item.classList.add('foto-arrastrando');
+      e.dataTransfer.effectAllowed = 'move';
+      // Firefox exige setData con algún dato para permitir el drag.
+      e.dataTransfer.setData('text/plain', String(fotoArrastrandoIdx));
+    });
+    item.addEventListener('dragend', () => {
+      fotoArrastrandoIdx = null;
+      items.forEach(el => el.classList.remove('foto-arrastrando', 'foto-drop-objetivo'));
+    });
+    item.addEventListener('dragover', (e) => {
+      e.preventDefault(); // necesario para que 'drop' dispare
+      if (fotoArrastrandoIdx === null || Number(item.dataset.idx) === fotoArrastrandoIdx) return;
+      item.classList.add('foto-drop-objetivo');
+    });
+    item.addEventListener('dragleave', () => item.classList.remove('foto-drop-objetivo'));
+    item.addEventListener('drop', (e) => {
+      e.preventDefault();
+      item.classList.remove('foto-drop-objetivo');
+      const destinoIdx = Number(item.dataset.idx);
+      if (fotoArrastrandoIdx === null || destinoIdx === fotoArrastrandoIdx) return;
+      moverFotoADestino(fotoArrastrandoIdx, destinoIdx);
+    });
+  });
+}
+
+/* Reordenamiento libre (arrastre) a cualquier posición, a diferencia de
+   moverFotoProducto() (abajo) que solo intercambia con el vecino
+   inmediato. En modo edición se pinta optimista y se confirma con el
+   servidor (PUT .../imagen/orden con el arreglo completo, ver
+   sql/... y api/index.js) — si falla, se revierte. */
+async function moverFotoADestino(origenIdx, destinoIdx) {
+  const lista = fotosActivas();
+  if (origenIdx === destinoIdx || !lista[origenIdx]) return;
+  const nuevoOrden = [...lista];
+  const [movida] = nuevoOrden.splice(origenIdx, 1);
+  nuevoOrden.splice(destinoIdx, 0, movida);
+
+  if (!editingProductId) {
+    fotosNuevasStaged = nuevoOrden;
+    renderFotosProducto();
+    return;
+  }
+
+  const anterior = productoEnEdicionImagenUrls;
+  productoEnEdicionImagenUrls = nuevoOrden;
+  renderFotosProducto();
+  try {
+    const actualizado = await API.productos.reordenarImagenes(editingProductId, nuevoOrden);
+    productoEnEdicionImagenUrls = actualizado.imagen_urls || nuevoOrden;
+    renderFotosProducto();
+  } catch (err) {
+    console.error('Error al reordenar las fotos:', err.message || err);
+    showToast(err.message || 'No se pudo reordenar las fotos', 'err');
+    productoEnEdicionImagenUrls = anterior;
+    renderFotosProducto();
+  }
 }
 
 async function moverFotoProducto(idx, direccion) {
@@ -1150,22 +1224,22 @@ async function moverFotoProducto(idx, direccion) {
   }
 }
 
-/* Lee el archivo elegido, lo dibuja centrado sobre un lienzo 1000x1000 con
-   fondo blanco (sin deformar ni recortar), y lo exporta a webp bajando la
-   calidad hasta acercarse a ~150KB. Con el producto ya guardado, se sube de
-   inmediato (endpoint cuelga de su id); sin guardar todavía, queda en
-   fotosNuevasStaged y se sube recién cuando guardarProducto() cree el
-   producto y tenga un id real. */
+/* Lee los archivos elegidos, uno por uno, y los deja listos en el mismo
+   pipeline de siempre (dibujar sobre 1000x1000 + comprimir a webp). Con el
+   producto ya guardado, cada foto se sube de inmediato; sin guardar
+   todavía, quedan en fotosNuevasStaged y se suben recién cuando
+   guardarProducto() cree el producto y tenga un id real. */
 function manejarSeleccionFotoProducto(event) {
-  const archivo = event.target.files?.[0];
-  event.target.value = ''; // permite elegir el mismo archivo dos veces seguidas
-  if (archivo) procesarArchivoFoto(archivo);
+  const archivos = Array.from(event.target.files || []);
+  event.target.value = ''; // permite elegir los mismos archivos dos veces seguidas
+  if (archivos.length) procesarArchivosFoto(archivos);
 }
 
 /* Cablea la zona de arrastrar y soltar (#dropzoneFotos): mismo pipeline que
-   elegir un archivo a mano (procesarArchivoFoto), solo cambia el origen del
-   File. dragover/dragenter agregan .dropzone-activa (glow) mientras el
-   archivo está encima; dragleave/drop la quitan. */
+   elegir archivos a mano (procesarArchivosFoto), solo cambia el origen de
+   los File — admite soltar varias fotos a la vez, no solo una.
+   dragover/dragenter agregan .dropzone-activa (glow) mientras el archivo
+   está encima; dragleave/drop la quitan. */
 function configurarDropzoneFotos() {
   if (!elDropzoneFotos) return;
   const marcarActiva = (e) => { e.preventDefault(); elDropzoneFotos.classList.add('dropzone-activa'); };
@@ -1175,50 +1249,69 @@ function configurarDropzoneFotos() {
   ['dragleave', 'dragend'].forEach(ev => elDropzoneFotos.addEventListener(ev, quitarActiva));
   elDropzoneFotos.addEventListener('drop', (e) => {
     quitarActiva(e);
-    const archivo = e.dataTransfer?.files?.[0];
-    if (archivo) procesarArchivoFoto(archivo);
+    const archivos = Array.from(e.dataTransfer?.files || []);
+    if (archivos.length) procesarArchivosFoto(archivos);
   });
   // El <label for="prodFotoInput"> ya abre el selector de archivos al hacer
   // click — no hace falta un listener de click aparte acá.
 }
 
-/* Lee el archivo elegido (por click o por arrastrar y soltar), lo dibuja
-   centrado sobre un lienzo 1000x1000 con fondo blanco (sin deformar ni
-   recortar), y lo exporta a webp bajando la calidad hasta acercarse a
-   ~150KB. Con el producto ya guardado, se sube de inmediato (endpoint
-   cuelga de su id); sin guardar todavía, queda en fotosNuevasStaged y se
-   sube recién cuando guardarProducto() cree el producto y tenga un id real. */
-async function procesarArchivoFoto(archivo) {
-  if (!archivo.type.startsWith('image/')) {
-    showToast('Elige un archivo de imagen', 'err');
+/* Procesa una tanda de archivos (elegidos a mano o arrastrados) en orden,
+   uno detrás de otro — así el orden en que quedan las fotos coincide con
+   el orden en que se soltaron/eligieron, y no se satura la red subiendo
+   todas en paralelo. Los que no sean imagen se ignoran y se avisan aparte,
+   en vez de cortar el resto de la tanda. */
+async function procesarArchivosFoto(archivos) {
+  const validos = archivos.filter(a => a.type.startsWith('image/'));
+  const ignorados = archivos.length - validos.length;
+
+  if (!validos.length) {
+    showToast('Elige uno o más archivos de imagen', 'err');
     return;
   }
 
-  if (elProdFotoEstado) elProdFotoEstado.textContent = 'Procesando imagen...';
-
-  try {
-    const bitmap = await cargarBitmapDeArchivo(archivo);
-    const dataUrlWebp = await dibujarYComprimirFoto(bitmap);
-
-    if (!editingProductId) {
-      fotosNuevasStaged.push(dataUrlWebp);
-      renderFotosProducto();
-      if (elProdFotoEstado) elProdFotoEstado.textContent = 'Foto agregada (se sube al guardar el producto).';
-      showToast('Foto agregada', 'ok');
-      return;
+  let subidas = 0;
+  for (let i = 0; i < validos.length; i++) {
+    if (elProdFotoEstado) {
+      elProdFotoEstado.textContent = validos.length > 1
+        ? `Procesando foto ${i + 1} de ${validos.length}...`
+        : 'Procesando imagen...';
     }
-
-    if (elProdFotoEstado) elProdFotoEstado.textContent = 'Subiendo...';
-    const actualizado = await API.productos.subirImagen(editingProductId, dataUrlWebp);
-    productoEnEdicionImagenUrls = actualizado.imagen_urls || productoEnEdicionImagenUrls;
-    renderFotosProducto();
-    if (elProdFotoEstado) elProdFotoEstado.textContent = 'Foto subida.';
-    showToast('Foto subida', 'ok');
-  } catch (err) {
-    console.error('Error al procesar la foto:', err.message || err);
-    if (elProdFotoEstado) elProdFotoEstado.textContent = '';
-    showToast(err.message || 'No se pudo procesar la foto', 'err');
+    try {
+      await procesarUnaFoto(validos[i]);
+      subidas++;
+    } catch (err) {
+      console.error('Error al procesar una de las fotos:', err.message || err);
+      showToast(err.message || 'No se pudo procesar una de las fotos', 'err');
+    }
   }
+
+  if (elProdFotoEstado) {
+    elProdFotoEstado.textContent = subidas
+      ? (editingProductId ? `${subidas} foto(s) subida(s).` : `${subidas} foto(s) agregada(s) (se suben al guardar el producto).`)
+      : '';
+  }
+  if (subidas) showToast(subidas === 1 ? 'Foto agregada' : `${subidas} fotos agregadas`, 'ok');
+  if (ignorados > 0) showToast(`${ignorados} archivo(s) ignorado(s) por no ser imágenes`, 'err');
+}
+
+/* Lee UN archivo, lo dibuja centrado sobre un lienzo 1000x1000 con fondo
+   blanco (sin deformar ni recortar), y lo exporta a webp bajando la
+   calidad hasta acercarse a ~150KB — pieza reusada por procesarArchivosFoto
+   para cada archivo de la tanda. */
+async function procesarUnaFoto(archivo) {
+  const bitmap = await cargarBitmapDeArchivo(archivo);
+  const dataUrlWebp = await dibujarYComprimirFoto(bitmap);
+
+  if (!editingProductId) {
+    fotosNuevasStaged.push(dataUrlWebp);
+    renderFotosProducto();
+    return;
+  }
+
+  const actualizado = await API.productos.subirImagen(editingProductId, dataUrlWebp);
+  productoEnEdicionImagenUrls = actualizado.imagen_urls || productoEnEdicionImagenUrls;
+  renderFotosProducto();
 }
 
 function cargarBitmapDeArchivo(archivo) {

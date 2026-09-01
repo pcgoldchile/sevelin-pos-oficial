@@ -1861,8 +1861,8 @@
 
             <label class="dropzone-fotos" id="dropzoneFotos" for="prodFotoInput">
               <span class="dropzone-fotos-icono">🖼️</span>
-              <span class="dropzone-fotos-texto">Arrastra y suelta, o hace click para elegir fotos</span>
-              <input type="file" id="prodFotoInput" accept="image/*" style="display:none;">
+              <span class="dropzone-fotos-texto">Arrastra y suelta una o varias fotos, o hace click para elegirlas</span>
+              <input type="file" id="prodFotoInput" accept="image/*" multiple style="display:none;">
             </label>
             <canvas id="prodFotoCanvas" width="1000" height="1000" style="display:none;"></canvas>
             <p class="modal-hint" id="prodFotoEstado"></p>
@@ -1911,10 +1911,11 @@
               <span>🌐 Publicar en la web (sevelin.cl)</span>
             </label>
 
-            <label class="check-item" id="itemProdEsEncargo" style="margin-bottom:12px;">
+            <label class="check-item" id="itemProdEsEncargo" style="margin-bottom:4px;">
               <input type="checkbox" id="prodEsEncargo">
-              <span>📦 Es un producto de Pedidos por Encargo (sin stock propio, se pide al proveedor al confirmarse el pedido)</span>
+              <span>📦 Es un producto de Pedidos por Encargo</span>
             </label>
+            <p class="modal-hint" style="margin-bottom:12px;">Sin stock propio — se pide al proveedor recién al confirmarse el pedido.</p>
 
             <div id="avisoPublicacionIncompleta" class="callout-warning" style="display:none;"></div>
 

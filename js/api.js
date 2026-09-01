@@ -111,6 +111,9 @@ const API = {
       apiRequest(`/productos/${id}/imagen`, { method: 'DELETE', body: { url } }),
     moverImagen: (id, url, direccion) =>
       apiRequest(`/productos/${id}/imagen/orden`, { method: 'PUT', body: { url, direccion } }),
+    // Arrastrar y soltar: manda el arreglo completo en el orden nuevo.
+    reordenarImagenes: (id, orden) =>
+      apiRequest(`/productos/${id}/imagen/orden`, { method: 'PUT', body: { orden } }),
 
     // Diagnóstico de sección 0.6: cuántos productos no tienen peso/medidas
     // cargadas todavía (para dimensionar el trabajo antes de Shipit).

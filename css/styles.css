@@ -294,6 +294,13 @@ h2 { color: var(--text-100); font-weight: 700; letter-spacing: -.01em; }
 .dropzone-fotos-icono { font-size: 26px; }
 .dropzone-fotos-texto { font-size: 13px; font-weight: 600; }
 
+/* Miniaturas del modal de producto: arrastrar y soltar para reordenar
+   (además de las flechas ◀▶, que siguen ahí para mover de a un paso). */
+.foto-producto-item { cursor: grab; transition: opacity var(--speed) ease; }
+.foto-producto-item:active { cursor: grabbing; }
+.foto-producto-item.foto-arrastrando { opacity: .4; }
+.foto-producto-item.foto-drop-objetivo img { box-shadow: 0 0 0 3px var(--blue); }
+
 /* Aviso no bloqueante: "publicado pero sin SKU/stock, no va a aparecer en la
    tienda" — mismo lenguaje visual que .aviso-division (más abajo). */
 .callout-warning {
@@ -922,15 +929,18 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
    textos largos (ej. modal de "Imprimir Etiqueta"). */
 .check-list { display: flex; flex-direction: column; gap: 8px; }
 .check-item {
-    display: flex; align-items: center; gap: 10px; cursor: pointer;
+    display: flex; align-items: flex-start; gap: 10px; cursor: pointer;
     padding: 10px 14px; border-radius: var(--radius-sm);
     background: var(--bg-900); border: 1.5px solid var(--border);
     font-size: 14px; font-weight: 600; color: var(--text-300);
     transition: border-color var(--speed), background-color var(--speed);
 }
 .check-item:hover { border-color: var(--blue-light); }
-.check-item input[type="checkbox"] { width: 18px; height: 18px; flex: none; accent-color: var(--blue); }
-.check-item span { flex: 1; }
+/* align-items del padre es flex-start (no center) para que un texto largo
+   que ocupe 2+ líneas no empuje el checkbox al medio del párrafo — este
+   margin-top lo alinea de nuevo con la primera línea del texto. */
+.check-item input[type="checkbox"] { width: 18px; height: 18px; margin-top: 2px; flex: none; accent-color: var(--blue); }
+.check-item span { flex: 1; line-height: 1.35; }
 .check-item.disabled { opacity: .5; cursor: not-allowed; }
 
 /* ---------- Documento tributario (DTE) ---------- */
