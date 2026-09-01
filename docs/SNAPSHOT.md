@@ -3,16 +3,19 @@
 > Actualiza SOLO este archivo al cerrar una sesión. Para el detalle completo, ver `docs/README.md`.
 > Para saber qué otro documento leer según lo que necesites, ver `docs/README-DOCS.md`.
 
-**Fecha:** 31-08-2026 · **Versión activa:** v46 (**subcategorías del catálogo web revisadas por
-completo** — 16 subcategorías nuevas donde había un grupo real de 2+ productos del mismo tipo, y 5
-productos con la categoría equivocada corregidos [RAM/SSD/teclado que estaban en "Hogar y Estilo de
-Vida", un ventilador de gabinete en "Periféricos", un servicio de BIOS en "Componentes PC"] — trabajo
-hecho desde una sesión de `sevelin-tienda`, ver `sql/29-subcategorias-catalogo-web.sql` y
-`sevelin-tienda/docs/CHANGELOG-V32.md` para el detalle completo; también v45: **medidas y peso reales
-de 40 productos**, buscados por internet y cruzados contra 2+ fuentes cada uno — necesarios para que
-Chilexpress cotice el envío; v44: panel "Métricas" — visitas totales, cuentas de cliente creadas,
-carritos compartidos/abandonados/convertidos; v43: panel "Más buscados"; v42: etiqueta destacada de
-producto — NOVEDAD/TENDENCIA/OFERTA IRRESISTIBLE) · **En producción:**
+**Fecha:** 01-09-2026 · **Versión activa:** v48 (**módulo 🛡️ Garantías** — submódulos Productos y
+Servicios, buscador en vivo con debounce por N° de venta/OT, cliente, producto/SKU/S-N o equipo;
+productos ganan `condicion` [nuevo/reacondicionado] y `meses_garantia` editables en el modal
+[siempre parten en 6], con snapshot en `venta_items` al vender; las Órdenes de Trabajo fijan su
+`meses_garantia` recién al entregar el equipo — ver `sql/31-garantias.sql`, aplicada en producción;
+también v47: **módulo Pedidos por Encargo** (dropshipping/retiro en tienda) — checkbox
+`es_pedido_encargo` en el modal de producto, sincroniza a `sevelin-tienda` vía el trigger
+existente, panel "Pedidos Web" con filtro y badge para distinguirlos — ver `sql/30-pedidos-por-
+encargo.sql`; también un fix de diseño del modal de producto: la barra superior ("Editar
+Producto") pasó de un negro plano a vidrio esmerilado translúcido, las fotos ahora aceptan
+selección/arrastre MÚLTIPLE de una vez (antes una por una) y se pueden reordenar arrastrando con
+el mouse además de las flechas de siempre — nuevo endpoint que guarda el arreglo completo de fotos
+validando que sea el mismo conjunto) · **En producción:**
 https://sevelin-pos-oficial.vercel.app · **Rama:** `main`.
 
 **Estado real (verificado en producción, no de memoria):** `sql/23` a `sql/26` (categorías +
@@ -277,6 +280,61 @@ tabla `iva_ajustes`), **aplicada y verificada en la base real**. Antes: `sql/26`
   con formato de peso chileno) y PDF de 2 páginas con la cascada, los desgloses y las notas. Ojo:
   SheetJS community no permite colores en Excel — ahí el diseño es estructura y formato numérico.
 
+## Estado: qué está HECHO (v48 — módulo Garantías — 01-09-2026)
+> Detalle completo en `sql/31-garantias.sql`.
+- **🛡️ Garantías**, vista propia del sidebar (no admin-only — el trabajador también puede
+  consultarla), con dos sub-pestañas:
+  - **Productos**: busca en `venta_items` (join a `ventas`) por N° de venta (`numero_orden`, ojo:
+    es `integer`, no texto — el filtro usa `eq` cuando lo escrito es un número entero, `ilike` solo
+    contra `cliente`), nombre, SKU o N° de serie. Muestra condición, meses de garantía, fecha de
+    vencimiento (`sumarMeses`) y estado (Vigente/Vencida, comparado con `fechaHoyChile()`).
+  - **Servicios**: mismo criterio sobre `ordenes_trabajo` con `estado='ENTREGADO'` — busca por N°
+    de OT, cliente, categoría/modelo/S-N del equipo.
+- `productos` gana `condicion` (`nuevo`/`reacondicionado`, default `'nuevo'`) y `meses_garantia`
+  (default `6`, siempre) — tarjeta nueva "Condición y garantía" en el modal de crear/editar
+  producto, entre "Categoría" y "Tienda web".
+- `venta_items` gana el mismo par de columnas como **snapshot** al vender (`normalizarItems()` ya
+  consultaba `productos` para el costo — se aprovechó esa misma consulta): si el producto cambia de
+  condición o garantía después, las ventas ya hechas no se mueven.
+- `ordenes_trabajo.meses_garantia` se fija recién en `POST /api/ot/:id/entrega` (default 6,
+  editable en el modal de entrega) — es el momento real en que arranca la garantía del servicio.
+- Endpoints nuevos: `GET /api/garantias/productos` y `GET /api/garantias/servicios` (ambos con
+  `?q=` y `?estado=VIGENTE|VENCIDA`), calculan `vence_el`/`estado_garantia` siempre en el
+  servidor, reusando `fechaHoyChile()`/`sumarMeses()` ya existentes.
+- **Probado en vivo contra producción real**: guardar/recargar condición y meses de garantía en un
+  producto, y el buscador filtrando ventas reales por texto/número/estado — se encontró y corrigió
+  un bug real en el camino (el filtro `ilike` sobre `numero_orden` fallaba con 500 porque esa
+  columna es `integer`).
+- **No probado en vivo** (habría requerido una venta o entrega de OT real de verdad, con efectos
+  irreversibles en stock/caja — se evitó a propósito): el snapshot de garantía al crear una venta
+  nueva, y el flujo completo de entregar una OT con meses de garantía editado. El código sigue el
+  mismo patrón ya verificado en las otras partes (`node --check` limpio, sin colisiones).
+
+## Estado: qué está HECHO (v47 — módulo Pedidos por Encargo — 01-09-2026)
+- `productos.es_pedido_encargo` (default `false`) — checkbox "Es un producto de Pedidos por
+  Encargo" en el modal, entre "Categoría" y "Tienda web". Sincroniza a `sevelin-tienda` gratis vía
+  el trigger existente (`to_jsonb(NEW)`, sql/22), sin tocarlo.
+- Panel "Pedidos Web" (`js/pedidos-web.js`): filtro `?tipo=ENCARGO` + badge "📦 Encargo" en la
+  tabla, para distinguir los pedidos de Encargo de las ventas normales.
+- Ver `sevelin-tienda` v33 (su propio SNAPSHOT.md) para el lado de la tienda — sección
+  `/pedidos-por-encargo`, checkout que no mezcla ítems normales y de Encargo.
+
+## Estado: qué está HECHO (v46b — modal de producto: diseño y fotos múltiples — 01-09-2026)
+- **Barra superior del modal de producto** ("← Volver al catálogo" / "Guardar Producto"): tenía un
+  fondo `var(--app-bg-2)` sólido casi negro que cortaba feo contra el degradé del fondo apenas se
+  entraba a la pantalla — reemplazado por un token nuevo `--topbar-bg` translúcido +
+  `backdrop-filter: blur()`, mismo criterio "vidrio esmerilado" que ya usan los overlays de
+  modales. Ajustado en ambos temas (oscuro y claro).
+- **Fotos: selección/arrastre múltiple.** El input de archivo y el dropzone antes solo aceptaban
+  una foto a la vez — ahora aceptan varias de una sola vez, procesadas en orden con un indicador
+  "Procesando foto N de M...".
+- **Fotos: reordenar arrastrando.** Drag & drop nativo (HTML5) sobre las miniaturas, además de las
+  flechas ◀▶ que ya existían. Requirió extender `PUT /api/productos/:id/imagen/orden` para aceptar
+  el arreglo completo de fotos en el orden nuevo (antes solo intercambiaba con el vecino
+  inmediato), validando que sea exactamente el mismo conjunto de fotos que ya tiene el producto.
+  Probado en vivo contra un producto real con 4 fotos — el arrastre funcionó y quedó guardado en
+  la base; el producto se dejó en su orden original al terminar la prueba.
+
 ## Estado: qué está HECHO (v45 — medidas reales de 40 productos — 01-09-2026)
 > Detalle completo en `docs/CHANGELOG-V45.md`.
 - De 81 productos publicados con foto, 49 tenían peso/dimensiones en 0 (bloqueaba la cotización de
@@ -369,7 +427,22 @@ Ninguno confirmado. El bug crítico histórico de `descontar_stock_venta` (colum
 verificó esta sesión como **corregido** en la base real (`sql/20` sí se aplicó en algún momento —
 la función usa la variable local, no la columna ambigua).
 
-## Pendiente (real, verificado al 31-08-2026)
+## Pendiente (real, verificado al 01-09-2026)
+
+**Garantías / Pedidos por Encargo — lo más reciente, v47-v48:**
+0a. **El snapshot de garantía en una venta nueva y la entrega de una OT con meses de garantía
+    editado nunca se probaron en vivo** — se evitó a propósito porque son acciones de negocio
+    reales (mueven stock, caja, marcan un equipo como entregado). El código sigue el mismo patrón
+    ya verificado en otras partes (misma consulta que ya traía `costo_unitario`, mismo endpoint que
+    ya guardaba `fecha_entrega`), pero conviene hacer una venta/entrega de prueba real y confirmar
+    que `venta_items.meses_garantia`/`condicion` y `ordenes_trabajo.meses_garantia` quedan bien.
+0b. **`/pedidos-por-encargo` (tienda) nunca se probó con una compra real de punta a punta** — falta
+    marcar un producto real como `es_pedido_encargo=true` desde el modal y comprarlo de verdad.
+0c. **Clasificar productos existentes** como Nuevo/Reacondicionado y ajustar meses de garantía si
+    alguno debería tener más/menos de 6 — hoy todos los productos ya vendidos quedaron con
+    `condicion='nuevo'`/`meses_garantia=6` por el `DEFAULT` de la columna (backfill automático), no
+    porque se haya revisado cada uno.
+
 1. **Verificar un dominio propio en Resend** (dashboard.resend.com, cuenta creada con
    `sevelin.contacto@gmail.com`) — mientras se use el dominio de prueba (`onboarding@resend.dev`),
    los correos de confirmación/cancelación a clientes reales **fallan en silencio** (ese dominio
