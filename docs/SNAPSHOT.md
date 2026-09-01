@@ -3,7 +3,31 @@
 > Actualiza SOLO este archivo al cerrar una sesión. Para el detalle completo, ver `docs/README.md`.
 > Para saber qué otro documento leer según lo que necesites, ver `docs/README-DOCS.md`.
 
-**Fecha:** 01-09-2026 · **Versión activa:** v48 (**módulo 🛡️ Garantías** — submódulos Productos y
+**Fecha:** 01-09-2026 · **Versión activa:** v49 (**sesión de seguridad + catálogo** — auditoría SAST
+propia + contra-auditoría red-team, remediación de los hallazgos reales: freno de login ahora lee la
+IP real de `X-Forwarded-For` [antes spoofeable], throttle de intentos movido a Redis (Upstash,
+persistente entre instancias serverless, con respaldo en memoria si faltan las variables — **falta
+confirmar que están puestas en Vercel del POS, ver Pendiente**), comparación del secreto de sync con
+`timingSafeEqual`, helper único `patronIlike()` para escapar filtros PostgREST (reemplazó 2 copias),
+~102 respuestas de error saneadas (`enviarErrorBD`) para no filtrar mensajes crudos de Postgres al
+cliente. **Fix real de bug de datos**: `subcategoria_web` faltaba en `CAMPOS_PRODUCTO` — se guardaba
+la subcategoría en el modal pero el backend la descartaba en silencio; corregido y reverificado con un
+PUT de prueba antes de reasignar el catálogo. **Fix del editor de Descripción (Quill)**: pegar texto
+de Gemini con Markdown (`**negrita**`, links) quedaba sin convertir — el listener propio corría
+DESPUÉS del de Quill (bubble phase); movido a capture phase + `stopPropagation()` en el contenedor.
+**Catálogo**: 4 subcategorías nuevas creadas y 13 productos reasignados (ver
+`docs/CHANGELOG-V49.md` si existe, o el historial de chat), 2 productos recategorizados, 1 producto
+con descripción corrupta (Adaptador HDMI a VGA) reescrito, 44 productos con el pie fijo
+"Envíos/WhatsApp/Instagram/Garantía/Pago" duplicado limpiados en lote (ese pie ahora es un
+componente real en la tienda, `InfoEnvioProducto`, no texto que escribe la IA — el prompt de Gemini
+ya no debe pedirlo). Integración con Starken como SEGUNDA opción de courier (nunca reemplaza
+Chilexpress) armada en `sevelin-tienda`, verificada contra el ambiente QA real de Starken — en espera
+de credenciales de producción (correo enviado a Starken, respuesta pendiente). Fix del bug real donde
+el buscador de direcciones de la tienda solo mostraba sugerencias de Arica en cualquier región — se
+quitó la restricción geográfica dura, ahora es nacional. SEO real por producto agregado en la tienda
+(`generateMetadata`, JSON-LD `Product`) como base para conectar Google Ads/Merchant Center y Meta más
+adelante (cuentas creadas, faltan IDs — ver Pendiente). · **También v48**: **módulo 🛡️ Garantías** —
+submódulos Productos y
 Servicios, buscador en vivo con debounce por N° de venta/OT, cliente, producto/SKU/S-N o equipo;
 productos ganan `condicion` [nuevo/reacondicionado] y `meses_garantia` editables en el modal
 [siempre parten en 6], con snapshot en `venta_items` al vender; las Órdenes de Trabajo fijan su
@@ -429,7 +453,27 @@ la función usa la variable local, no la columna ambigua).
 
 ## Pendiente (real, verificado al 01-09-2026)
 
-**Garantías / Pedidos por Encargo — lo más reciente, v47-v48:**
+**Seguridad / catálogo / Starken / SEO — lo más reciente, v49 (fuera de código, del dueño):**
+0. **Confirmar `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` en Vercel del POS** (dashboard de
+   Vercel del proyecto `sevelin-pos-oficial` → Settings → Environment Variables). En `sevelin-tienda`
+   ya quedaron puestas esta sesión; en el POS nunca se confirmó — sin ellas el freno de login cae al
+   respaldo en memoria (funciona, pero no persiste entre instancias serverless).
+0b. **Tope de gasto en Google Cloud** (Geocoding/Distance Matrix/Places API) — revisar facturación y
+    considerar una alerta de presupuesto en `console.cloud.google.com/billing/budgets`. Se explicó
+    cómo hacerlo pero nunca se confirmó que quedó puesto.
+0c. **Starken**: revisar si ya se envió/respondió el correo de seguimiento a Belén Carreño
+    (`asistenciaplugin@starken.cl`) pidiendo credenciales de producción, cuenta corriente y URL base
+    productiva — sin eso, Starken sigue solo en QA en `sevelin-tienda`, no se puede activar en
+    producción como segunda opción de courier.
+0d. **Google Ads / Meta Ads** (opcional, no bloqueante): falta el ID+label de conversión de Google
+    Ads (Herramientas → Conversiones) y crear el Catálogo de Meta Commerce Manager + conseguir el
+    Pixel ID (Events Manager) — el SEO por producto (`generateMetadata`, JSON-LD) ya quedó listo como
+    base en `sevelin-tienda`, falta la parte de cuentas para conectarlo de verdad.
+0e. **Decisión pendiente: subcategorizar Monitores** (12 productos, salvo 1 cable mezclado ahí) —
+    se dejó explícitamente sin decidir el 01-09-2026, falta elegir un criterio (marca/tamaño/uso) si
+    se quiere partir esa categoría.
+
+**Garantías / Pedidos por Encargo — v47-v48:**
 0a. **El snapshot de garantía en una venta nueva y la entrega de una OT con meses de garantía
     editado nunca se probaron en vivo** — se evitó a propósito porque son acciones de negocio
     reales (mueven stock, caja, marcan un equipo como entregado). El código sigue el mismo patrón
@@ -462,10 +506,11 @@ la función usa la variable local, no la columna ambigua).
 5. **10 productos con SKU sin foto** — no tenían coincidencia confiable contra `sevelin.cl`, subir
    foto a mano.
 6. (Opcional, grande) Migrar a Supabase Auth + RLS por rol. Partir `api/index.js` en routers.
-7. **Revisión de subcategorías (v46) fue conservadora a propósito** — quedaron sin subcategoría
-   "Accesorios Móviles" (4), "Herramientas" (2), "Monitores" (12, salvo 1 cable mezclado ahí) y el
-   resto de "Hogar y Estilo de Vida" (5) por no tener un grupo homogéneo de 2+ productos claro. Si el
-   catálogo crece en esas categorías, vale la pena revisar de nuevo.
+7. ~~Revisión de subcategorías (v46) fue conservadora~~ — **PARCIALMENTE RESUELTO en v49**: se
+   crearon 4 subcategorías nuevas y se reasignaron 13 productos donde sí había un grupo homogéneo
+   2+. Queda sin resolver a propósito **Monitores** (12 productos, ver pendiente 0e arriba) por falta
+   de un criterio claro de división. Si el catálogo crece en Herramientas/Hogar y Estilo de Vida,
+   vale la pena revisar de nuevo.
 
 ## Trampas específicas ya descubiertas (no repetir)
 - `confirmarEntrega` existía en `ot.js` y `pago.js` → las de venta ahora son `confirmarEntregaVenta`/
