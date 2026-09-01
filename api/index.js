@@ -522,7 +522,9 @@ const CAMPOS_PRODUCTO = [
   // NULL = usa el default de la tienda (+5); ver sql/23-categorias-web-y-umbral-stock.sql.
   'categoria_id', 'stock_umbral_web',
   // NOVEDAD/TENDENCIA/OFERTA — ver sql/28-etiqueta-web.sql.
-  'etiqueta_web'
+  'etiqueta_web',
+  // Módulo Garantías — ver sql/31-garantias.sql.
+  'condicion', 'meses_garantia'
 ];
 
 /* Normaliza el código de barras: SOLO dígitos.
@@ -605,6 +607,19 @@ function sanearProducto(body = {}) {
   if (p.stock_umbral_web !== undefined) {
     const v = num(p.stock_umbral_web);
     p.stock_umbral_web = v >= 1 ? Math.round(v) : null;
+  }
+
+  // --- Módulo Garantías (ver sql/31-garantias.sql) ---
+  // Condición: solo una de las 2 opciones válidas, cualquier otra cosa cae
+  // a 'nuevo' en vez de dejar que la base rechace todo el guardado.
+  if (p.condicion !== undefined) {
+    p.condicion = ['nuevo', 'reacondicionado'].includes(p.condicion) ? p.condicion : 'nuevo';
+  }
+  // Meses de garantía: siempre parte en 6 (pedido explícito del dueño);
+  // negativo o inválido también cae a 6 en vez de rechazar el guardado.
+  if (p.meses_garantia !== undefined) {
+    const v = num(p.meses_garantia);
+    p.meses_garantia = v >= 0 ? Math.round(v) : 6;
   }
 
   return p;
@@ -1342,12 +1357,20 @@ async function normalizarItems(items, rolSolicitante) {
   const lista = Array.isArray(items) ? items : [];
   if (lista.length === 0) throw new Error('La venta no tiene productos');
 
-  // Para trabajadores el costo lo pone el catálogo, no el navegador
+  // Para trabajadores el costo lo pone el catálogo, no el navegador. De
+  // paso se trae condición/meses de garantía para dejarlos como snapshot
+  // en cada línea (módulo Garantías, ver sql/31-garantias.sql) — si el
+  // producto cambia de condición o de garantía después, las ventas ya
+  // hechas no se mueven, mismo criterio que el snapshot de nombre/sku.
   let costosCatalogo = {};
+  let garantiaCatalogo = {};
   const ids = [...new Set(lista.map(i => i.producto_id).filter(Boolean))];
   if (ids.length) {
-    const { data } = await db.from('productos').select('id, costo_unitario').in('id', ids);
-    (data || []).forEach(p => { costosCatalogo[p.id] = num(p.costo_unitario); });
+    const { data } = await db.from('productos').select('id, costo_unitario, condicion, meses_garantia').in('id', ids);
+    (data || []).forEach(p => {
+      costosCatalogo[p.id] = num(p.costo_unitario);
+      garantiaCatalogo[p.id] = { condicion: p.condicion || null, meses_garantia: p.meses_garantia ?? 6 };
+    });
   }
 
   const idsRepuesto = [...new Set(lista.map(i => i.repuesto_id).filter(Boolean))];
@@ -1382,6 +1405,7 @@ async function normalizarItems(items, rolSolicitante) {
       ? (costosCatalogo[it.producto_id] || 0)
       : (it.repuesto_id ? (costosRepuesto[it.repuesto_id] || 0) : 0);
     const costo = rolSolicitante === 'admin' ? costoCliente : (costoCatalogo || costoCliente);
+    const garantia = it.producto_id ? garantiaCatalogo[it.producto_id] : null;
 
     return {
       producto_id: it.producto_id || null,
@@ -1399,7 +1423,11 @@ async function normalizarItems(items, rolSolicitante) {
       costo_unitario: costo,
       precio_unitario: precio,
       subtotal: precio * cantidad,
-      serial_number: it.serial_number || null
+      serial_number: it.serial_number || null,
+      // Módulo Garantías: sin producto de catálogo (ítem escrito a mano)
+      // queda sin condición y con el default de 6 meses.
+      condicion: garantia?.condicion ?? null,
+      meses_garantia: garantia?.meses_garantia ?? 6
     };
   });
 }
@@ -4476,13 +4504,20 @@ app.post('/api/ot/:id/entrega', auth(), async (req, res) => {
   const firma = String(req.body?.retira_firma_base64 || '');
   if (firma.length > 400000) return enviarError(res, 413, 'La firma es demasiado pesada');
 
+  // Módulo Garantías (ver sql/31-garantias.sql): se fija recién acá, al
+  // entregar, porque es el punto de partida real de la garantía del
+  // servicio. Default 6 e inválido/negativo también caen a 6.
+  const mesesGarantiaCrudo = num(req.body?.meses_garantia);
+  const mesesGarantia = mesesGarantiaCrudo >= 0 ? Math.round(mesesGarantiaCrudo) : 6;
+
   const { data, error } = await db.from('ordenes_trabajo')
     .update({
       estado: 'ENTREGADO',
       fecha_entrega: new Date().toISOString(),
       retira_nombre: (req.body?.retira_nombre || '').trim() || null,
       retira_rut: (req.body?.retira_rut || '').trim() || null,
-      retira_firma_base64: firma || null
+      retira_firma_base64: firma || null,
+      meses_garantia: mesesGarantia
     })
     .eq('id', req.params.id)
     .select()
@@ -4520,6 +4555,137 @@ app.delete('/api/ot/:id', auth(true), async (req, res) => {
   const { error } = await db.from('ordenes_trabajo').delete().eq('id', req.params.id);
   if (error) return enviarError(res, 500, error.message);
   res.json({ ok: true });
+});
+
+/* ============================================================
+   MÓDULO GARANTÍAS
+   ------------------------------------------------------------
+   Buscar ventas de productos y órdenes de trabajo entregadas para
+   revisar el estado de su garantía. meses_garantia queda como snapshot
+   en cada venta_item (al vender) o se fija al entregar la OT — ver
+   sql/31-garantias.sql — así el cálculo acá nunca depende de si el
+   catálogo cambió después. vence_el/estado_garantia se calculan siempre
+   en el servidor (nunca en el navegador), con fechaHoyChile()/
+   sumarMeses() ya usados en otras partes del sistema.
+   ============================================================ */
+function calcularEstadoGarantia(fechaInicioISO, mesesGarantia) {
+  const fecha = String(fechaInicioISO || '').slice(0, 10);
+  if (!fecha) return { vence_el: null, estado_garantia: null };
+  const venceEl = sumarMeses(fecha, Number(mesesGarantia) || 0);
+  return { vence_el: venceEl, estado_garantia: venceEl >= fechaHoyChile() ? 'VIGENTE' : 'VENCIDA' };
+}
+
+app.get('/api/garantias/productos', auth(true), async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  const filtroEstado = String(req.query.estado || '').toUpperCase(); // VIGENTE | VENCIDA | ''
+
+  // Mismo patrón de 2 pasos que ya usa GET /api/ventas?producto= (busca
+  // primero los ids que calzan, filtra después) — acá se suma la
+  // búsqueda directa por número de orden / cliente de la venta.
+  let idsVenta = null;
+  if (q) {
+    const patron = `%${q.replace(/[%_,]/g, m => '\\' + m)}%`;
+    // numero_orden es INTEGER (no texto): ilike no aplica sobre ese tipo.
+    // Si lo escrito es un número entero se compara exacto; el texto
+    // libre solo puede calzar contra `cliente`.
+    const filtrosVenta = [`cliente.ilike.${patron}`];
+    const numeroBuscado = Number(q);
+    if (Number.isInteger(numeroBuscado) && numeroBuscado > 0) {
+      filtrosVenta.push(`numero_orden.eq.${numeroBuscado}`);
+    }
+    const { data: ventasDirectas, error: errVD } = await db.from('ventas')
+      .select('id').or(filtrosVenta.join(',')).limit(500);
+    if (errVD) return enviarError(res, 500, errVD.message);
+
+    const { data: items, error: errItems } = await db.from('venta_items')
+      .select('venta_id').eq('es_servicio', false)
+      .or(`nombre.ilike.${patron},sku.ilike.${patron},serial_number.ilike.${patron}`).limit(2000);
+    if (errItems) return enviarError(res, 500, errItems.message);
+
+    idsVenta = [...new Set([...(ventasDirectas || []).map(v => v.id), ...(items || []).map(i => i.venta_id)])];
+    if (idsVenta.length === 0) return res.json([]);
+  }
+
+  let itemsQuery = db.from('venta_items')
+    .select('id, venta_id, nombre, sku, serial_number, cantidad, condicion, meses_garantia')
+    .eq('es_servicio', false).order('venta_id', { ascending: false }).limit(500);
+  if (idsVenta) itemsQuery = itemsQuery.in('venta_id', idsVenta);
+
+  const { data: itemsData, error: errI } = await itemsQuery;
+  if (errI) return enviarError(res, 500, errI.message);
+
+  const ventaIds = [...new Set((itemsData || []).map(i => i.venta_id).filter(Boolean))];
+  const ventasPorId = {};
+  if (ventaIds.length) {
+    const { data: ventasData, error: errV } = await db.from('ventas')
+      .select('id, fecha, numero_orden, cliente, estado').in('id', ventaIds);
+    if (errV) return enviarError(res, 500, errV.message);
+    (ventasData || []).forEach(v => { ventasPorId[v.id] = v; });
+  }
+
+  let filas = (itemsData || [])
+    .map(it => {
+      const venta = ventasPorId[it.venta_id];
+      if (!venta) return null; // venta borrada/inaccesible: no se muestra huérfana
+      const { vence_el, estado_garantia } = calcularEstadoGarantia(venta.fecha, it.meses_garantia);
+      return {
+        venta_item_id: it.id,
+        venta_id: it.venta_id,
+        numero_orden: venta.numero_orden || null,
+        fecha_venta: venta.fecha || null,
+        cliente: venta.cliente || null,
+        nombre: it.nombre,
+        sku: it.sku,
+        serial_number: it.serial_number,
+        cantidad: it.cantidad,
+        condicion: it.condicion,
+        meses_garantia: it.meses_garantia,
+        vence_el,
+        estado_garantia
+      };
+    })
+    .filter(Boolean);
+
+  if (filtroEstado === 'VIGENTE' || filtroEstado === 'VENCIDA') {
+    filas = filas.filter(f => f.estado_garantia === filtroEstado);
+  }
+
+  filas.sort((a, b) => (b.fecha_venta || '').localeCompare(a.fecha_venta || '') || b.venta_id - a.venta_id);
+  res.json(filas.slice(0, 200));
+});
+
+app.get('/api/garantias/servicios', auth(true), async (req, res) => {
+  const q = String(req.query.q || '').trim().toLowerCase();
+  const filtroEstado = String(req.query.estado || '').toUpperCase();
+
+  // Solo las OT ENTREGADAS tienen garantía (la fecha de inicio es
+  // fecha_entrega) — una orden pendiente no tiene nada que mostrar acá.
+  const { data, error } = await db.from('ordenes_trabajo')
+    .select('id, numero_ot, cliente_nombre, dispositivo_categoria, dispositivo_modelo, dispositivo_sn, fecha_entrega, meses_garantia')
+    .eq('estado', 'ENTREGADO')
+    .order('fecha_entrega', { ascending: false })
+    .limit(500);
+  if (error) return enviarError(res, 500, error.message);
+
+  let filas = (data || []).map(o => {
+    const { vence_el, estado_garantia } = calcularEstadoGarantia(o.fecha_entrega, o.meses_garantia);
+    return { ...o, vence_el, estado_garantia };
+  });
+
+  if (q) {
+    filas = filas.filter(o =>
+      (o.numero_ot || '').toLowerCase().includes(q) ||
+      (o.cliente_nombre || '').toLowerCase().includes(q) ||
+      (o.dispositivo_modelo || '').toLowerCase().includes(q) ||
+      (o.dispositivo_categoria || '').toLowerCase().includes(q) ||
+      (o.dispositivo_sn || '').toLowerCase().includes(q)
+    );
+  }
+  if (filtroEstado === 'VIGENTE' || filtroEstado === 'VENCIDA') {
+    filas = filas.filter(f => f.estado_garantia === filtroEstado);
+  }
+
+  res.json(filas.slice(0, 200));
 });
 
 /* ============================================================

@@ -71,6 +71,7 @@ const elOtEntregaId = document.getElementById('otEntregaId');
 const elOtEntregaResumen = document.getElementById('otEntregaResumen');
 const elOtRetiraNombre = document.getElementById('otRetiraNombre');
 const elOtRetiraRut = document.getElementById('otRetiraRut');
+const elOtEntregaMesesGarantia = document.getElementById('otEntregaMesesGarantia');
 const elOtFirmaCanvas = document.getElementById('otFirmaCanvas');
 const elBtnLimpiarFirma = document.getElementById('btnLimpiarFirma');
 const elBtnCancelarOtEntrega = document.getElementById('btnCancelarOtEntrega');
@@ -660,6 +661,9 @@ function abrirModalEntrega(id) {
   }
   if (elOtRetiraNombre) elOtRetiraNombre.value = ot.cliente_nombre || '';
   if (elOtRetiraRut) elOtRetiraRut.value = ot.cliente_rut || '';
+  // La garantía del servicio siempre parte en 6 meses (pedido explícito
+  // del dueño), editable acá mismo antes de confirmar la entrega.
+  if (elOtEntregaMesesGarantia) elOtEntregaMesesGarantia.value = 6;
 
   limpiarFirma();
   if (elModalOtEntrega) elModalOtEntrega.classList.add('show');
@@ -680,6 +684,7 @@ async function confirmarEntrega() {
     await API.ot.entregar(id, {
       retira_nombre: elOtRetiraNombre?.value.trim() || null,
       retira_rut: elOtRetiraRut?.value.trim() || null,
+      meses_garantia: elOtEntregaMesesGarantia?.value.trim() ? Number(elOtEntregaMesesGarantia.value) : 6,
       retira_firma_base64: obtenerFirmaBase64()
     });
 

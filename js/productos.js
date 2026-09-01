@@ -66,6 +66,8 @@ const elDropzoneFotos = document.getElementById('dropzoneFotos');
 const elAvisoPublicacionIncompleta = document.getElementById('avisoPublicacionIncompleta');
 const elProdPublicadoWeb = document.getElementById('prodPublicadoWeb');
 const elProdEsEncargo = document.getElementById('prodEsEncargo');
+const elProdCondicion = document.getElementById('prodCondicion');
+const elProdMesesGarantia = document.getElementById('prodMesesGarantia');
 const elProdPrecioWeb = document.getElementById('prodPrecioWeb');
 const elProdCategoriaWeb = document.getElementById('prodCategoriaWeb');
 const elProdStockUmbralWeb = document.getElementById('prodStockUmbralWeb');
@@ -836,6 +838,8 @@ function abrirModalProducto(producto = null) {
     establecerDescripcion(producto.descripcion || producto.descripcion_web || '');
     if (elProdPublicadoWeb) elProdPublicadoWeb.checked = !!producto.publicado_web;
     if (elProdEsEncargo) elProdEsEncargo.checked = !!producto.es_pedido_encargo;
+    if (elProdCondicion) elProdCondicion.value = producto.condicion || 'nuevo';
+    if (elProdMesesGarantia) elProdMesesGarantia.value = producto.meses_garantia ?? 6;
     if (elProdPrecioWeb) elProdPrecioWeb.value = producto.precio_web ?? '';
     if (elProdStockUmbralWeb) elProdStockUmbralWeb.value = producto.stock_umbral_web ?? '';
     if (elProdEtiquetaWeb) elProdEtiquetaWeb.value = producto.etiqueta_web || '';
@@ -869,6 +873,10 @@ function abrirModalProducto(producto = null) {
     if (elProdStockActualizado) elProdStockActualizado.textContent = 'Última actualización de stock: se registrará al guardar.';
     if (elProdPublicadoWeb) elProdPublicadoWeb.checked = false;
     if (elProdEsEncargo) elProdEsEncargo.checked = false;
+    // Un producto nuevo siempre parte "Nuevo" y con 6 meses de garantía
+    // (pedido explícito del dueño) — editable después si hace falta.
+    if (elProdCondicion) elProdCondicion.value = 'nuevo';
+    if (elProdMesesGarantia) elProdMesesGarantia.value = 6;
     if (elProdPrecioWeb) elProdPrecioWeb.value = '';
     if (elProdStockUmbralWeb) elProdStockUmbralWeb.value = '';
     if (elProdEtiquetaWeb) elProdEtiquetaWeb.value = '';
@@ -1008,6 +1016,9 @@ async function guardarProducto() {
     // aparte, foto por foto, con API.productos.subirImagen/quitarImagen. ---
     publicado_web: !!(elProdPublicadoWeb && elProdPublicadoWeb.checked),
     es_pedido_encargo: !!(elProdEsEncargo && elProdEsEncargo.checked),
+    // --- Módulo Garantías (ver sql/31-garantias.sql) ---
+    condicion: elProdCondicion?.value || 'nuevo',
+    meses_garantia: elProdMesesGarantia?.value.trim() ? Number(elProdMesesGarantia.value) : 6,
     precio_web: elProdPrecioWeb?.value.trim() ? Number(elProdPrecioWeb.value) : null,
     categoria_web,
     categoria_id,

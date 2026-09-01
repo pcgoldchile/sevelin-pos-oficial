@@ -149,6 +149,14 @@
           <button class="nav-subitem" data-view="view-pagina-web" data-subtab="categorias">Categorías</button>
         </div>
       </div>
+
+      <div class="nav-group">
+        <button class="nav-btn" data-view="view-garantias">🛡️ Garantías</button>
+        <div class="nav-subitems">
+          <button class="nav-subitem" data-view="view-garantias" data-subtab="productos">Productos</button>
+          <button class="nav-subitem" data-view="view-garantias" data-subtab="servicios">Servicios</button>
+        </div>
+      </div>
     </nav>
 
     <div class="sidebar-foot">
@@ -1902,6 +1910,25 @@
             </select>
           </div>
 
+          <!-- ---------- Condición y garantía (módulo Garantías) ---------- -->
+          <div class="card">
+            <div class="card-head"><div><h2>Condición y garantía</h2>
+              <p class="subtitle">Nuevos y reacondicionados parten con 6 meses de garantía.</p>
+            </div></div>
+
+            <div class="field">
+              <label>Condición</label>
+              <select id="prodCondicion">
+                <option value="nuevo">Nuevo</option>
+                <option value="reacondicionado">Reacondicionado</option>
+              </select>
+            </div>
+            <div class="field" style="margin-top:10px;">
+              <label>Meses de garantía</label>
+              <input type="number" id="prodMesesGarantia" min="0" step="1" value="6">
+            </div>
+          </div>
+
           <!-- ---------- Tienda web ---------- -->
           <div class="card">
             <div class="card-head"><div><h2>Tienda web</h2></div></div>
@@ -2119,6 +2146,104 @@
             los que dejaron su correo en el checkout y no completaron el pago dentro de las 24 horas
             en que el carrito sigue vigente.
           </p>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ============================================================
+         GARANTÍAS — productos vendidos y órdenes de trabajo entregadas,
+         con su fecha de vencimiento. Ver sql/31-garantias.sql.
+         ============================================================ -->
+    <section id="view-garantias" class="view-section">
+
+      <nav class="subtabs" id="subtabsGarantias">
+        <button class="subtab activo" data-subtab="productos">📦 Productos</button>
+        <button class="subtab" data-subtab="servicios">🔧 Servicios</button>
+      </nav>
+
+      <div class="panel-garantias activo" data-panel-garantias="productos">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Garantías de productos</h2>
+              <p class="subtitle">Busca por N° de venta, cliente, producto, SKU o N° de serie.</p>
+            </div>
+            <div class="toolbar-group">
+              <div class="chip-group" id="garantiasProductosChips">
+                <button class="chip active" data-estado="">Todas</button>
+                <button class="chip" data-estado="VIGENTE">Vigentes</button>
+                <button class="chip" data-estado="VENCIDA">Vencidas</button>
+              </div>
+              <button class="btn btn-outline btn-sm" id="btnRecargarGarantiasProductos">🔄 Actualizar</button>
+            </div>
+          </div>
+
+          <div class="field" style="max-width:420px;">
+            <input type="text" id="garantiasProductosBuscar" placeholder="Buscar por venta, producto, SKU o N° de serie…">
+          </div>
+
+          <div class="table-wrapper" style="margin-top:14px;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>N° Venta</th>
+                  <th>Fecha</th>
+                  <th>Producto</th>
+                  <th>SKU / S-N</th>
+                  <th>Condición</th>
+                  <th>Garantía</th>
+                  <th>Vence el</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody id="garantiasProductosTableBody">
+                <tr class="empty-row"><td colspan="8">Cargando…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-garantias" data-panel-garantias="servicios">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Garantías de servicios</h2>
+              <p class="subtitle">Órdenes de trabajo ya entregadas — busca por N° de OT, cliente o equipo.</p>
+            </div>
+            <div class="toolbar-group">
+              <div class="chip-group" id="garantiasServiciosChips">
+                <button class="chip active" data-estado="">Todas</button>
+                <button class="chip" data-estado="VIGENTE">Vigentes</button>
+                <button class="chip" data-estado="VENCIDA">Vencidas</button>
+              </div>
+              <button class="btn btn-outline btn-sm" id="btnRecargarGarantiasServicios">🔄 Actualizar</button>
+            </div>
+          </div>
+
+          <div class="field" style="max-width:420px;">
+            <input type="text" id="garantiasServiciosBuscar" placeholder="Buscar por N° de OT, cliente o equipo…">
+          </div>
+
+          <div class="table-wrapper" style="margin-top:14px;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>N° OT</th>
+                  <th>Cliente</th>
+                  <th>Equipo</th>
+                  <th>Entregado el</th>
+                  <th>Garantía</th>
+                  <th>Vence el</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody id="garantiasServiciosTableBody">
+                <tr class="empty-row"><td colspan="7">Cargando…</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -4047,6 +4172,10 @@
           <label>RUT de quien retira</label>
           <input type="text" id="otRetiraRut" placeholder="Opcional">
         </div>
+        <div class="field">
+          <label>Meses de garantía</label>
+          <input type="number" id="otEntregaMesesGarantia" min="0" step="1" value="6">
+        </div>
       </div>
 
       <span class="section-label" style="margin-top:18px;">Firma de conformidad (opcional)</span>
@@ -4676,6 +4805,7 @@
   <script src="js/encargos.js"></script>
   <script src="js/pedidos-web.js"></script>
   <script src="js/pagina-web.js"></script>   <!-- después de pedidos-web.js: envuelve su vista en el subtab "pedidos" -->
+  <script src="js/garantias.js"></script>
   <script src="js/repuestos.js"></script>
   <script src="js/ot.js"></script>
   <script src="js/pos.js"></script>

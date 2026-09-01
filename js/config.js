@@ -365,6 +365,11 @@ function activarVista(viewId, subtab) {
   if (viewId === 'view-pagina-web' && typeof mostrarPanelPaginaWeb === 'function') {
     mostrarPanelPaginaWeb(subtab || 'pedidos');
   }
+  // Garantías (Productos + Servicios, sub-pestañas): mismo criterio que
+  // Página Web — la función del panel dispara su propia carga.
+  if (viewId === 'view-garantias' && typeof mostrarPanelGarantias === 'function') {
+    mostrarPanelGarantias(subtab || 'productos');
+  }
 
   // Aviso para los módulos que necesitan reaccionar (p. ej. foco del lector en POS)
   document.dispatchEvent(new CustomEvent('pos:vista-activa', { detail: { vista: viewId, subtab } }));

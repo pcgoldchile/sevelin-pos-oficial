@@ -243,6 +243,25 @@ const API = {
     actualizar: (id, cambios) => apiRequest(`/pos/pedidos-web/${id}`, { method: 'PUT', body: cambios })
   },
 
+  // Módulo Garantías: busca ventas de productos / OT entregadas y su
+  // estado de garantía (vigente/vencida) — ver sql/31-garantias.sql.
+  garantias: {
+    productos: (q, estado) => {
+      const params = new URLSearchParams();
+      if (q) params.set('q', q);
+      if (estado) params.set('estado', estado);
+      const qs = params.toString();
+      return apiRequest('/garantias/productos' + (qs ? `?${qs}` : ''));
+    },
+    servicios: (q, estado) => {
+      const params = new URLSearchParams();
+      if (q) params.set('q', q);
+      if (estado) params.set('estado', estado);
+      const qs = params.toString();
+      return apiRequest('/garantias/servicios' + (qs ? `?${qs}` : ''));
+    }
+  },
+
   // Panel "Más buscados" (Página Web → Más buscados) — agrega eventos_web
   // de Supabase Web (búsquedas y vistas de producto que registra la tienda).
   masBuscados: {
