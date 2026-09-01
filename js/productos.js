@@ -884,16 +884,31 @@ function initEditorDescripcion() {
     });
   }
 
-  editorDescripcion.root.addEventListener('paste', e => {
+  /* BUG REAL (encontrado probando en producción, no en jsdom): Quill tiene
+     su PROPIO listener de 'paste' en editorDescripcion.root (lo agrega él
+     solo al construirse) que procesa y pega el texto crudo — como el
+     nuestro se agregaba DESPUÉS sobre el mismo elemento, Quill alcanzaba a
+     insertar el Markdown sin convertir antes de que este código llegara a
+     hacer nada (preventDefault() acá no lo frena: el pegado de Quill es
+     manejado por su propio JS, no por el "pegar" nativo del navegador).
+
+     Se engancha en la FASE DE CAPTURA (el `true` final) sobre `contenedor`
+     (el div que envuelve a Quill, un ancestro de editorDescripcion.root) en
+     vez de sobre el editor mismo — así el evento pasa por acá ANTES de
+     llegar al listener de Quill, y stopPropagation() evita que el de Quill
+     se ejecute siquiera cuando este código decide manejar el pegado él
+     mismo. */
+  contenedor.addEventListener('paste', e => {
     if (!elToggleMarkdown || !elToggleMarkdown.checked) return; // pegado normal de Quill
     const texto = (e.clipboardData || window.clipboardData)?.getData('text/plain') || '';
     if (!texto.trim() || !pareceMarkdown(texto)) return; // no tiene pinta de Markdown, pegado normal
 
     e.preventDefault();
+    e.stopPropagation();
     const html = convertirMarkdownAHtml(texto);
     const rango = editorDescripcion.getSelection(true);
     editorDescripcion.clipboard.dangerouslyPasteHTML(rango.index, html, 'user');
-  });
+  }, true);
 }
 
 // Único punto de escritura del editor — abrirModalProducto() (cargar un
