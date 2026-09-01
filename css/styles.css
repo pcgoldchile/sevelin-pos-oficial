@@ -24,6 +24,10 @@
 
     --app-bg-1: #1d2b4d;
     --app-bg-2: #0d1526;
+    /* Franja "vidrio esmerilado" para barras sticky (ej. editor-topbar):
+       una versión translúcida de app-bg-2 + blur, en vez de un color
+       plano que corta feo contra el degradé del fondo. */
+    --topbar-bg: rgba(13, 21, 38, .72);
     --surface-soft: rgba(148, 163, 184, .10);
     --border: rgba(148, 163, 184, .30);
     --border-strong: rgba(148, 163, 184, .55);
@@ -92,6 +96,7 @@ body.theme-light {
 
     --app-bg-1: #f2f6fc;
     --app-bg-2: #e6edf7;
+    --topbar-bg: rgba(230, 237, 247, .72);
     --surface-soft: rgba(15, 23, 42, .04);
     --border: rgba(15, 23, 42, .14);
     --border-strong: rgba(15, 23, 42, .28);
@@ -268,7 +273,14 @@ h2 { color: var(--text-100); font-weight: 700; letter-spacing: -.01em; }
 .editor-topbar {
     position: sticky; top: 0; z-index: 5;
     display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
-    background: var(--app-bg-2); padding: 14px 0; margin: 0 0 4px;
+    /* Antes era un var(--app-bg-2) plano: un color sólido casi negro que
+       cortaba feo contra el degradé del fondo (var(--app-bg-1) arriba,
+       más claro) apenas se entraba a la pantalla. Vidrio esmerilado
+       translúcido en su lugar, mismo criterio que el overlay de los
+       modales (ver más abajo). */
+    background: var(--topbar-bg);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    padding: 14px 0; margin: 0 0 4px;
     border-bottom: 1px solid var(--border);
 }
 .editor-topbar h2 { font-size: 18px; margin: 0; }
