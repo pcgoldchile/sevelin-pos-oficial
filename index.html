@@ -1911,6 +1911,11 @@
               <span>🌐 Publicar en la web (sevelin.cl)</span>
             </label>
 
+            <label class="check-item" id="itemProdEsEncargo" style="margin-bottom:12px;">
+              <input type="checkbox" id="prodEsEncargo">
+              <span>📦 Es un producto de Pedidos por Encargo (sin stock propio, se pide al proveedor al confirmarse el pedido)</span>
+            </label>
+
             <div id="avisoPublicacionIncompleta" class="callout-warning" style="display:none;"></div>
 
             <div class="field">
@@ -1987,6 +1992,10 @@
                 <button class="chip" data-estado="ENVIADO">Enviados</button>
                 <button class="chip" data-estado="ENTREGADO">Entregados</button>
                 <button class="chip" data-estado="CANCELADO">Cancelados</button>
+              </div>
+              <div class="chip-group" id="pedidosWebTipoChips">
+                <button class="chip active" data-tipo="">Todos los tipos</button>
+                <button class="chip" data-tipo="ENCARGO">📦 Encargos</button>
               </div>
               <button class="btn btn-outline btn-sm" id="btnRecargarPedidosWeb">🔄 Actualizar</button>
             </div>

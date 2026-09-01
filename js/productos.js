@@ -65,6 +65,7 @@ const elProdFotosGrid = document.getElementById('prodFotosGrid');
 const elDropzoneFotos = document.getElementById('dropzoneFotos');
 const elAvisoPublicacionIncompleta = document.getElementById('avisoPublicacionIncompleta');
 const elProdPublicadoWeb = document.getElementById('prodPublicadoWeb');
+const elProdEsEncargo = document.getElementById('prodEsEncargo');
 const elProdPrecioWeb = document.getElementById('prodPrecioWeb');
 const elProdCategoriaWeb = document.getElementById('prodCategoriaWeb');
 const elProdStockUmbralWeb = document.getElementById('prodStockUmbralWeb');
@@ -834,6 +835,7 @@ function abrirModalProducto(producto = null) {
     // solo tenía escrita la "web", se usa esa como punto de partida.
     establecerDescripcion(producto.descripcion || producto.descripcion_web || '');
     if (elProdPublicadoWeb) elProdPublicadoWeb.checked = !!producto.publicado_web;
+    if (elProdEsEncargo) elProdEsEncargo.checked = !!producto.es_pedido_encargo;
     if (elProdPrecioWeb) elProdPrecioWeb.value = producto.precio_web ?? '';
     if (elProdStockUmbralWeb) elProdStockUmbralWeb.value = producto.stock_umbral_web ?? '';
     if (elProdEtiquetaWeb) elProdEtiquetaWeb.value = producto.etiqueta_web || '';
@@ -866,6 +868,7 @@ function abrirModalProducto(producto = null) {
     if (elProdStockIlimitado) elProdStockIlimitado.checked = false;
     if (elProdStockActualizado) elProdStockActualizado.textContent = 'Última actualización de stock: se registrará al guardar.';
     if (elProdPublicadoWeb) elProdPublicadoWeb.checked = false;
+    if (elProdEsEncargo) elProdEsEncargo.checked = false;
     if (elProdPrecioWeb) elProdPrecioWeb.value = '';
     if (elProdStockUmbralWeb) elProdStockUmbralWeb.value = '';
     if (elProdEtiquetaWeb) elProdEtiquetaWeb.value = '';
@@ -1004,6 +1007,7 @@ async function guardarProducto() {
     // --- Tienda web (e-commerce Fase 0). imagen_urls NO va acá: se sube
     // aparte, foto por foto, con API.productos.subirImagen/quitarImagen. ---
     publicado_web: !!(elProdPublicadoWeb && elProdPublicadoWeb.checked),
+    es_pedido_encargo: !!(elProdEsEncargo && elProdEsEncargo.checked),
     precio_web: elProdPrecioWeb?.value.trim() ? Number(elProdPrecioWeb.value) : null,
     categoria_web,
     categoria_id,

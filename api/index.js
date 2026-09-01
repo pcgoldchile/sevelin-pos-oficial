@@ -515,6 +515,8 @@ const CAMPOS_PRODUCTO = [
   // se administra aparte con POST /api/productos/:id/imagen (append/quitar
   // una foto a la vez), no reemplazando el arreglo completo en cada guardado.
   'publicado_web', 'precio_web', 'descripcion_web', 'categoria_web',
+  // Pedidos por Encargo (dropshipping/retiro en tienda) — ver sql/30-pedidos-por-encargo.sql.
+  'es_pedido_encargo',
   // categoria_id (Fase "Página Web → Categorías"): FK interna del POS, no se
   // sincroniza a la tienda (el trigger solo usa categoria_web). stock_umbral_web:
   // NULL = usa el default de la tienda (+5); ver sql/23-categorias-web-y-umbral-stock.sql.
@@ -577,6 +579,7 @@ function sanearProducto(body = {}) {
 
   // --- Controles de la tienda web ---
   if (body.publicado_web !== undefined) p.publicado_web = !!body.publicado_web;
+  if (body.es_pedido_encargo !== undefined) p.es_pedido_encargo = !!body.es_pedido_encargo;
   // precio_web vacío/0 = NULL a propósito: "usa el precio normal del POS"
   // (ver sql/21-imagenes-web.sql). Un 0 real congelaría el producto gratis.
   if (p.precio_web !== undefined) {
@@ -5027,6 +5030,9 @@ const ESTADOS_DESPACHO_PEDIDO_WEB = ['PREPARANDO', 'ENVIADO', 'ENTREGADO', 'CANC
 app.get('/api/pos/pedidos-web', auth(true), async (req, res) => {
   let q = dbWeb.from('pedidos_web').select('*').order('creado_en', { ascending: false });
   if (req.query.estado) q = q.eq('estado', String(req.query.estado));
+  // Filtro opcional por tipo de pedido — ver sql/30-pedidos-por-encargo.sql
+  // (POS) y supabase/18-pedidos-por-encargo.sql (tienda).
+  if (req.query.tipo) q = q.eq('tipo_pedido', String(req.query.tipo));
 
   const { data, error } = await q;
   if (error) return enviarError(res, 500, error.message);

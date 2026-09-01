@@ -11,9 +11,11 @@
 
 let pedidosWebList = [];
 let filtroEstadoPedidoWeb = '';
+let filtroTipoPedidoWeb = '';
 let pedidoWebEditandoId = null;
 
 const elPedidosWebChips = document.getElementById('pedidosWebChips');
+const elPedidosWebTipoChips = document.getElementById('pedidosWebTipoChips');
 const elPedidosWebTableBody = document.getElementById('pedidosWebTableBody');
 const elBtnRecargarPedidosWeb = document.getElementById('btnRecargarPedidosWeb');
 
@@ -61,6 +63,16 @@ function setupPedidosWebEventListeners() {
     });
   }
 
+  if (elPedidosWebTipoChips) {
+    elPedidosWebTipoChips.querySelectorAll('.chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        filtroTipoPedidoWeb = chip.dataset.tipo || '';
+        elPedidosWebTipoChips.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c === chip));
+        cargarPedidosWeb();
+      });
+    });
+  }
+
   if (elBtnCancelarPedidoWebVolver) elBtnCancelarPedidoWebVolver.addEventListener('click', cerrarModalCancelarPedidoWeb);
   if (elModalCancelarPedidoWeb) {
     elModalCancelarPedidoWeb.addEventListener('click', (e) => {
@@ -74,7 +86,7 @@ async function cargarPedidosWeb() {
   if (!tokenActual()) return;
 
   try {
-    pedidosWebList = await API.pedidosWeb.listar(filtroEstadoPedidoWeb);
+    pedidosWebList = await API.pedidosWeb.listar(filtroEstadoPedidoWeb, filtroTipoPedidoWeb);
     renderPedidosWebTabla(pedidosWebList);
   } catch (err) {
     console.error('Error al cargar pedidos web:', err.message || err);
@@ -122,9 +134,10 @@ function renderPedidosWebTabla(lista) {
       : '<span style="color:var(--text-muted);">—</span>';
     const tracking = p.tracking_courier
       ? `<br><small style="color:var(--text-muted);">${escHtml(p.tracking_courier)}</small>` : '';
+    const badgeEncargo = p.tipo_pedido === 'ENCARGO' ? ' <span class="badge badge-gold">📦 Encargo</span>' : '';
 
     return `<tr>
-      <td>${escHtml(p.numero_pedido)}</td>
+      <td>${escHtml(p.numero_pedido)}${badgeEncargo}</td>
       <td>${tsAChile(p.creado_en)}</td>
       <td>${escHtml(p.cliente_nombre || '—')}</td>
       <td>${escHtml(p.metodo_envio || '—')}${tracking}</td>

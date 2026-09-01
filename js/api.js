@@ -230,7 +230,13 @@ const API = {
   // Panel "Pedidos Web" (Fase 5, e-commerce) — lee/actualiza pedidos_web de
   // Supabase Web a través del backend del POS (dbWeb en api/index.js).
   pedidosWeb: {
-    listar: (estado) => apiRequest('/pos/pedidos-web' + (estado ? `?estado=${encodeURIComponent(estado)}` : '')),
+    listar: (estado, tipo) => {
+      const params = new URLSearchParams();
+      if (estado) params.set('estado', estado);
+      if (tipo) params.set('tipo', tipo);
+      const qs = params.toString();
+      return apiRequest('/pos/pedidos-web' + (qs ? `?${qs}` : ''));
+    },
     actualizar: (id, cambios) => apiRequest(`/pos/pedidos-web/${id}`, { method: 'PUT', body: cambios })
   },
 
