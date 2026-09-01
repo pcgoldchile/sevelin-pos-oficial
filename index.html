@@ -1838,6 +1838,19 @@
                  que no hace falta tocar nada más que sepa de este campo.
                  initEditorDescripcion() en productos.js mantiene ambos
                  sincronizados. -->
+            <!-- Al pegar texto con sintaxis Markdown (respuestas de Gemini/
+                 ChatGPT: **negrita**, ### títulos, - listas, [link](url))
+                 se convierte a HTML real ANTES de insertarlo en Quill — sin
+                 esto quedaba pegado tal cual, con los símbolos a la vista y
+                 los links duplicados (texto + URL entre paréntesis, ver
+                 convertirMarkdownAHtml() en productos.js). El toggle queda
+                 guardado en localStorage: se recuerda entre sesiones, y
+                 apagarlo vuelve al pegado normal de Quill (por si algún día
+                 se pega algo que ya trae HTML real, no Markdown). -->
+            <label class="toggle-markdown-pegado" style="display:flex; align-items:center; gap:6px; margin-bottom:6px; font-size:12.5px; color:var(--ink-2, #9aa4b2); cursor:pointer;">
+              <input type="checkbox" id="prodDescripcionMarkdownToggle" checked>
+              ✨ Convertir Markdown al pegar (Gemini, ChatGPT, etc.)
+            </label>
             <!-- Quill inserta su barra de herramientas como HERMANA del
                  contenedor (dentro de este padre), no adentro de él — por
                  eso el wrapper .editor-descripcion envuelve a los dos en

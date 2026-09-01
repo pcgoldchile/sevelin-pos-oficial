@@ -15,6 +15,8 @@
      SYNC_SECRET               cadena larga y aleatoria (compartida con sevelin-tienda)
      SUPABASE_WEB_URL              https://yyyy.supabase.co   (proyecto Supabase WEB, distinto)
      SUPABASE_WEB_SERVICE_ROLE_KEY eyJhbGciOi...               (panel Pedidos Web, Fase 5)
+     UPSTASH_REDIS_REST_URL        https://xxxx.upstash.io    (freno de login compartido — opcional
+     UPSTASH_REDIS_REST_TOKEN      AXXXAAIjcD...              pero recomendado, ver ipReal()/frenoLogin())
    ============================================================ */
 
 const express = require('express');
@@ -23,6 +25,7 @@ const helmet = require('helmet');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
+const { Redis } = require('@upstash/redis');
 
 const app = express();
 
@@ -72,11 +75,42 @@ if (ADMIN_PIN === '9067' || WORKER_PIN === '0495') {
 
 const TOKEN_TTL = '12h';
 
+/* Solo se considera "desarrollo" cuando se declara explícito (ver
+   .env.example: NODE_ENV=development). Cualquier otro valor —incluido
+   NODE_ENV vacío/indefinido, que es justo lo que pasaría en un deploy de
+   Vercel mal configurado— se trata como no-dev. */
+const ES_DESARROLLO = process.env.NODE_ENV === 'development';
+
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   console.warn('[POS] Faltan SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY.');
 }
+
+/* PRIORIDAD CRÍTICA — sin fallback de JWT_SECRET fuera de desarrollo.
+   ------------------------------------------------------------
+   ANTES, si JWT_SECRET faltaba, firmarToken()/auth() caían en el string
+   literal 'dev-secret-cambiar' (ver más abajo) y la API seguía funcionando
+   igual, solo con un console.warn. Ese string vive en el código fuente: en
+   cualquier entorno donde la variable se olvidara (un Preview Deployment
+   de Vercel, un proyecto clonado, un entorno nuevo mal configurado),
+   cualquiera podía forjar un JWT de admin válido sin ninguna credencial
+   (`jwt.sign({rol:'admin'}, 'dev-secret-cambiar')`) — bypass total de
+   autenticación. Ahora, fuera de desarrollo, faltar JWT_SECRET hace que el
+   módulo lance al cargarse: Vercel sirve 500 en cada invocación en vez de
+   aceptar tráfico con un secreto público. En desarrollo local se mantiene
+   el aviso y el fallback, para no bloquear a quien todavía no configuró
+   nada en su .env. */
 if (!JWT_SECRET) {
-  console.warn('[POS] Falta JWT_SECRET: define uno largo y aleatorio en producción.');
+  if (ES_DESARROLLO) {
+    console.warn('[POS] Falta JWT_SECRET: usando un secreto de desarrollo NO seguro ' +
+      '— definir uno real antes de desplegar.');
+  } else {
+    throw new Error(
+      '[POS] Falta JWT_SECRET en un entorno que no es de desarrollo (NODE_ENV=' +
+      JSON.stringify(process.env.NODE_ENV || '') + '). La API se detiene a propósito: ' +
+      'sin esta variable, cualquiera podría forjar un token de administrador válido. ' +
+      'Definí JWT_SECRET en Vercel → Settings → Environment Variables (ver .env.example).'
+    );
+  }
 }
 if (!SYNC_SECRET) {
   console.warn('[POS] Falta SYNC_SECRET: /api/interno/ajustar-stock rechazará todas las ' +
@@ -155,6 +189,41 @@ app.use(cors({
 const num = v => Number(v) || 0;
 const enviarError = (res, code, msg, extra) =>
   res.status(code).json({ error: msg, ...(extra || {}) });
+
+/* Responde un 500 genérico al cliente ante un error de Supabase/PostgREST,
+   sin reenviar `error.message` crudo — el detalle real (nombres de tabla,
+   columna, constraint, tipos) queda solo en el log del servidor (Vercel),
+   nunca en la respuesta HTTP. Reporte de Seguridad Consolidado B, hallazgo
+   #10: antes se devolvía `error.message` tal cual en ~100 sitios,
+   facilitando reconocimiento del esquema a quien sondeara los endpoints
+   con payloads inválidos.
+   Solo para errores de BASE DE DATOS (los `{ data, error } = await
+   db.from(...)` de Supabase) — un `catch(err)` que envuelve un `new
+   Error('mensaje en español para el usuario')` lanzado a propósito en la
+   lógica de negocio (ej. "Sin stock suficiente") NO pasa por acá, sigue
+   yendo directo: ese mensaje SÍ está pensado para mostrarse. */
+function enviarErrorBD(res, error, contexto) {
+  console.error(`[POS]${contexto ? ' ' + contexto + ':' : ''} error de base de datos —`, error?.message || error);
+  return enviarError(res, 500, 'Error interno al consultar la base de datos. Intenta de nuevo en unos segundos.');
+}
+
+/* Sanitiza texto libre para usarlo dentro de un filtro `.ilike.` de
+   PostgREST (Supabase), devuelto ya envuelto en comodines: `%texto%`.
+   ------------------------------------------------------------
+   PostgREST usa coma/paréntesis/punto como separadores estructurales
+   dentro de un `.or('col.ilike.valor,...')` — si el texto que escribe el
+   usuario los trae tal cual, puede romper o alterar el filtro compuesto.
+   Ya se escapaba esto en 2 sitios (búsqueda de ventas por producto,
+   búsqueda de garantías), cada uno con su propia copia del mismo
+   `.replace(...)` — Reporte de Seguridad Consolidado B, hallazgo #9:
+   centralizado acá para que cualquier búsqueda nueva lo reutilice en vez
+   de repetir (u olvidar) el escape a mano.
+   `%`/`_` son los comodines propios de ILIKE (se escapan para que un "%"
+   escrito por el usuario busque un "%" literal, no "cualquier cosa"); `,`
+   es el separador de condiciones dentro de `.or(...)`. */
+function patronIlike(texto) {
+  return `%${String(texto).replace(/[%_,]/g, m => '\\' + m)}%`;
+}
 
 /* PostgREST (la API REST de Supabase) puede rechazar la llave service_role
    con un error del tipo "JWT issued at future" — se vio justo después de
@@ -375,6 +444,26 @@ function auth(requiereAdmin = false) {
   };
 }
 
+/* Comparación de tiempo constante para secretos (SYNC_SECRET, PINs).
+   ------------------------------------------------------------
+   `a !== b` sobre strings compara carácter por carácter y corta apenas
+   encuentra el primer distinto — en teoría permite reconstruir el secreto
+   midiendo cuánto tarda cada intento (ataque de timing). crypto.timingSafeEqual
+   evita esto, pero exige que ambos Buffer tengan el MISMO largo (si no,
+   lanza) — por eso, cuando el largo difiere, se hace de todos modos una
+   comparación de tiempo constante contra un buffer del mismo largo que el
+   recibido (para no delatar la longitud correcta por la rapidez del
+   rechazo) y se retorna false. */
+function secretosIguales(recibido, esperado) {
+  const bufRecibido = Buffer.from(String(recibido ?? ''), 'utf8');
+  const bufEsperado = Buffer.from(String(esperado ?? ''), 'utf8');
+  if (bufRecibido.length !== bufEsperado.length) {
+    crypto.timingSafeEqual(bufRecibido, Buffer.alloc(bufRecibido.length));
+    return false;
+  }
+  return crypto.timingSafeEqual(bufRecibido, bufEsperado);
+}
+
 /* Autenticación por secreto compartido (NO JWT): protege rutas llamadas por
    otro backend (sevelin-tienda), no por una persona logueada — mismo
    criterio que /api/sync/producto del lado tienda, que valida el header
@@ -382,7 +471,7 @@ function auth(requiereAdmin = false) {
    configurado se rechaza todo por defecto, nunca se abre la ruta. */
 function authSync(req, res, next) {
   if (!SYNC_SECRET) return enviarError(res, 401, 'Secreto de sincronización no configurado');
-  if (req.headers['x-sync-secret'] !== SYNC_SECRET) {
+  if (!secretosIguales(req.headers['x-sync-secret'], SYNC_SECRET)) {
     return enviarError(res, 401, 'Secreto de sincronización inválido');
   }
   next();
@@ -397,13 +486,92 @@ function limpiarParaRol(fila, rol) {
 }
 const limpiarLista = (filas, rol) => (filas || []).map(f => limpiarParaRol(f, rol));
 
-/* Intentos de PIN fallidos por IP (memoria del proceso; en serverless es por
-   instancia, suficiente como freno básico ante fuerza bruta). */
-const intentos = new Map();
-function frenoLogin(req, res, next) {
-  const ip = req.headers['x-forwarded-for'] || req.ip || 'anon';
+/* IP real del cliente detrás del proxy de Vercel.
+   ------------------------------------------------------------
+   ANTES se usaba `req.headers['x-forwarded-for']` completo como clave del
+   freno de intentos — pero ese header lo puede escribir el cliente, y
+   Vercel no lo reemplaza: SOLO le agrega la IP real de la conexión al
+   final de la lista (`cliente-dice-lo-que-quiera, ip-real-de-vercel`). Un
+   atacante que mandara un valor distinto en cada request (trivial con
+   curl) generaba una clave de mapa distinta cada vez, así que el freno de
+   5 intentos/minuto nunca se acumulaba: bypass completo de fuerza bruta
+   contra ADMIN_PIN/WORKER_PIN (4 dígitos, 10.000 combinaciones).
+   Corregido: se toma el ÚLTIMO valor de la lista (el que agrega el propio
+   Vercel, no falsificable por quien hace la petición), nunca el primero. */
+function ipReal(req) {
+  const xff = req.headers['x-forwarded-for'];
+  if (typeof xff === 'string' && xff.trim()) {
+    const partes = xff.split(',').map(p => p.trim()).filter(Boolean);
+    if (partes.length) return partes[partes.length - 1];
+  }
+  // Sin X-Forwarded-For (ej. curl directo a localhost en desarrollo):
+  // la conexión TCP real, que tampoco se puede falsificar por header.
+  return req.socket?.remoteAddress || req.ip || 'anon';
+}
+
+/* Intentos de PIN fallidos por IP — respaldado por Upstash Redis cuando está
+   configurado.
+   ------------------------------------------------------------
+   ANTES vivía solo en un Map en memoria del proceso: en Vercel serverless
+   cada instancia fría parte de cero, así que un atacante con varias IPs
+   reales distintas (no una IP falsificada, ver ipReal() arriba, sino
+   varias de verdad) podía terminar repartiendo sus intentos entre
+   instancias distintas y nunca acumular el freno de 5/minuto de forma
+   confiable. Redis por HTTP (REST, Upstash) es compartido entre todas las
+   instancias, así que el conteo es el mismo sin importar cuál atienda la
+   petición.
+
+   Sin UPSTASH_REDIS_REST_URL/TOKEN configuradas, degrada al Map en memoria
+   de antes — mismo criterio de "degradar, no romper" que el resto del
+   proyecto: nunca debe bloquearse el login de un cajero real por un
+   servicio externo caído o sin configurar. Mismo motivo si Redis responde
+   con error en un momento puntual: se permite el intento en vez de dejar a
+   todo el mundo afuera. */
+const redisIntentos = (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
+  ? Redis.fromEnv()
+  : null;
+
+if (!redisIntentos) {
+  console.warn('[POS] Falta UPSTASH_REDIS_REST_URL/UPSTASH_REDIS_REST_TOKEN: el freno de intentos ' +
+    'de PIN queda en memoria del proceso (más débil en serverless — cada instancia fría parte de ' +
+    'cero). Configúralas para un freno compartido de verdad entre instancias.');
+}
+
+const intentosMemoria = new Map();
+const CLAVE_INTENTOS = ip => `sevelin-pos:intentos-pin:${ip}`;
+
+async function obtenerRegistroIntentos(ip) {
+  if (redisIntentos) {
+    try {
+      const reg = await redisIntentos.get(CLAVE_INTENTOS(ip));
+      if (reg && typeof reg === 'object') return reg;
+    } catch (err) {
+      console.error('[POS] Redis (freno de intentos) no respondió al leer, se permite el intento:', err.message);
+    }
+    return { n: 0, hasta: 0, ts: 0 };
+  }
+  return intentosMemoria.get(ip) || { n: 0, hasta: 0, ts: 0 };
+}
+
+async function guardarRegistroIntentos(ip, reg) {
+  if (redisIntentos) {
+    try {
+      // 15 min: cubre la ventana de reseteo de 10 min (ver frenoLogin) más
+      // margen — evita que la llave quede para siempre en Redis por un
+      // intento aislado que nunca se repite.
+      await redisIntentos.set(CLAVE_INTENTOS(ip), reg, { ex: 15 * 60 });
+      return;
+    } catch (err) {
+      console.error('[POS] Redis (freno de intentos) no respondió al guardar:', err.message);
+    }
+  }
+  intentosMemoria.set(ip, reg);
+}
+
+async function frenoLogin(req, res, next) {
+  const ip = ipReal(req);
   const ahora = Date.now();
-  const reg = intentos.get(ip) || { n: 0, hasta: 0 };
+  const reg = await obtenerRegistroIntentos(ip);
 
   if (reg.hasta > ahora) {
     return enviarError(res, 429, 'Demasiados intentos. Espera un minuto.');
@@ -412,7 +580,7 @@ function frenoLogin(req, res, next) {
 
   reg.ts = ahora;
   req._registroIntento = { ip, reg };
-  intentos.set(ip, reg);
+  await guardarRegistroIntentos(ip, reg);
   next();
 }
 
@@ -421,13 +589,13 @@ function frenoLogin(req, res, next) {
    Se valida SIEMPRE en el servidor: aunque alguien manipule el frontend o
    llame la API directamente, sin el PIN correcto la operación se rechaza.
    Reutiliza el mismo freno por IP que el login para evitar fuerza bruta. */
-function exigirPinAdmin(req, res, next) {
+async function exigirPinAdmin(req, res, next) {
   /* Se responde 403 (no 401) a propósito: un 401 hace que el frontend
      asuma "sesión expirada" y cierre la sesión del administrador. Aquí la
      sesión es válida; lo que falta es autorizar esta operación puntual. */
-  const ip = req.headers['x-forwarded-for'] || req.ip || 'anon';
+  const ip = ipReal(req);
   const ahora = Date.now();
-  const reg = intentos.get(ip) || { n: 0, hasta: 0 };
+  const reg = await obtenerRegistroIntentos(ip);
 
   if (reg.hasta > ahora) {
     return enviarError(res, 429, 'Demasiados intentos fallidos. Espera un minuto antes de reintentar.');
@@ -440,19 +608,19 @@ function exigirPinAdmin(req, res, next) {
     reg.n = (reg.n || 0) + 1;
     reg.ts = ahora;
     if (reg.n >= 5) { reg.hasta = ahora + 60 * 1000; reg.n = 0; }
-    intentos.set(ip, reg);
+    await guardarRegistroIntentos(ip, reg);
     return enviarError(res, 403, 'PIN de administrador incorrecto');
   }
 
   reg.n = 0;
-  intentos.set(ip, reg);
+  await guardarRegistroIntentos(ip, reg);
   next();
 }
 
 /* ============================================================
    SESIÓN
    ============================================================ */
-app.post('/api/login', frenoLogin, (req, res) => {
+app.post('/api/login', frenoLogin, async (req, res) => {
   const pin = String(req.body?.pin || '').trim();
   const { ip, reg } = req._registroIntento || {};
 
@@ -464,12 +632,12 @@ app.post('/api/login', frenoLogin, (req, res) => {
     if (reg) {
       reg.n += 1;
       if (reg.n >= 5) { reg.hasta = Date.now() + 60 * 1000; reg.n = 0; }
-      intentos.set(ip, reg);
+      await guardarRegistroIntentos(ip, reg);
     }
     return enviarError(res, 401, 'PIN incorrecto');
   }
 
-  if (reg) { reg.n = 0; intentos.set(ip, reg); }
+  if (reg) { reg.n = 0; await guardarRegistroIntentos(ip, reg); }
   res.json({ token: firmarToken(rol), rol, negocio: NEGOCIO_NOMBRE, expiraEn: TOKEN_TTL });
 });
 
@@ -630,7 +798,7 @@ function sanearProducto(body = {}) {
    tener que editarlos uno por uno. */
 app.post('/api/productos/limpiar-codigos', auth(true), exigirPinAdmin, async (req, res) => {
   const { data, error } = await db.from('productos').select('id, sku, codigo_barras');
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
 
   const cambios = [];
   (data || []).forEach(p => {
@@ -656,7 +824,7 @@ app.post('/api/productos/limpiar-codigos', auth(true), exigirPinAdmin, async (re
 
 app.get('/api/productos', auth(), async (req, res) => {
   const { data, error } = await db.from('productos').select('*').order('nombre', { ascending: true });
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json(limpiarLista(data, req.usuario.rol));
 });
 
@@ -673,7 +841,7 @@ app.get('/api/productos', auth(), async (req, res) => {
 app.get('/api/productos/categorias', auth(), async (req, res) => {
   const { data, error } = await db.from('producto_categorias')
     .select('*').order('orden', { ascending: true }).order('nombre', { ascending: true });
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json(data || []);
 });
 
@@ -738,7 +906,7 @@ app.put('/api/productos/categorias/:id/mover', auth(true), async (req, res) => {
     ? queryHermanos.eq('parent_id', actualFila.parent_id)
     : queryHermanos.is('parent_id', null);
   const { data: lista, error: errLista } = await queryHermanos;
-  if (errLista) return enviarError(res, 500, errLista.message);
+  if (errLista) return enviarErrorBD(res, errLista);
 
   const idx = (lista || []).findIndex(c => String(c.id) === String(req.params.id));
   if (idx === -1) return enviarError(res, 404, 'No se encontró esa categoría');
@@ -751,14 +919,14 @@ app.put('/api/productos/categorias/:id/mover', auth(true), async (req, res) => {
 
   const { error: err1 } = await db.from('producto_categorias').update({ orden: vecino.orden }).eq('id', actual.id);
   const { error: err2 } = await db.from('producto_categorias').update({ orden: actual.orden }).eq('id', vecino.id);
-  if (err1 || err2) return enviarError(res, 500, (err1 || err2).message);
+  if (err1 || err2) return enviarErrorBD(res, (err1 || err2));
 
   res.json({ ok: true });
 });
 
 app.delete('/api/productos/categorias/:id', auth(true), async (req, res) => {
   const { error } = await db.from('producto_categorias').delete().eq('id', req.params.id);
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json({ ok: true });
 });
 
@@ -834,7 +1002,7 @@ app.post('/api/productos', auth(true), async (req, res) => {
   if (dup) return enviarError(res, 409, errorDuplicado(dup), { duplicado: dup });
 
   const { data, error } = await db.from('productos').insert([producto]).select().single();
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.status(201).json(data);
 });
 
@@ -917,7 +1085,7 @@ app.post('/api/productos/bulk', auth(true), exigirPinAdmin, async (req, res) => 
 
   if (nuevos.length) {
     const { error } = await db.from('productos').insert(nuevos);
-    if (error) return enviarError(res, 500, error.message);
+    if (error) return enviarErrorBD(res, error);
     resultado.creados = nuevos.length;
   }
 
@@ -1000,7 +1168,7 @@ app.get('/api/productos/lotes-resumen', auth(true), async (req, res) => {
     .order('creado_en', { ascending: true })   // orden FIFO: la más antigua primero
     .limit(5000);
 
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
 
   const porProducto = {};
   (data || []).forEach(l => {
@@ -1018,7 +1186,7 @@ app.get('/api/productos/:id/lotes', auth(true), async (req, res) => {
     .order('creado_en', { ascending: true })
     .order('id', { ascending: true });
 
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json(data || []);
 });
 
@@ -1032,7 +1200,7 @@ app.get('/api/productos/auditoria-envio', auth(true), async (req, res) => {
   const { data, error } = await db.from('productos')
     .select('id, nombre, sku, peso_kg, alto_cm, ancho_cm, profundidad_cm')
     .eq('stock_ilimitado', false);
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
 
   const productos = data || [];
   const sinDatos = productos.filter(p =>
@@ -1075,7 +1243,7 @@ app.post('/api/productos/:id/lotes', auth(true), async (req, res) => {
     referencia: (req.body?.referencia || '').trim() || null
   }]).select().single();
 
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
 
   await db.from('productos')
     .update({ stock: num(producto.stock) + cantidad, stock_actualizado_en: new Date().toISOString() })
@@ -1093,7 +1261,7 @@ app.delete('/api/productos/:id/lotes/:loteId', auth(true), async (req, res) => {
   if (!lote) return enviarError(res, 404, 'Lote no encontrado');
 
   const { error } = await db.from('producto_lotes').delete().eq('id', lote.id);
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
 
   const { data: producto } = await db.from('productos').select('stock').eq('id', req.params.id).maybeSingle();
   if (producto) {
@@ -1117,7 +1285,7 @@ app.put('/api/productos/:id', auth(true), async (req, res) => {
   if (dup) return enviarError(res, 409, errorDuplicado(dup), { duplicado: dup });
 
   const { data, error } = await db.from('productos').update(producto).eq('id', req.params.id).select().single();
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json(data);
 });
 
@@ -1193,7 +1361,7 @@ app.put('/api/productos/:id/imagen/orden', auth(true), async (req, res) => {
 
     const { data, error } = await db.from('productos')
       .update({ imagen_urls: ordenNuevo }).eq('id', req.params.id).select('id, imagen_urls').single();
-    if (error) return enviarError(res, 500, error.message);
+    if (error) return enviarErrorBD(res, error);
     return res.json(data);
   }
 
@@ -1212,7 +1380,7 @@ app.put('/api/productos/:id/imagen/orden', auth(true), async (req, res) => {
 
   const { data, error } = await db.from('productos')
     .update({ imagen_urls: lista }).eq('id', req.params.id).select('id, imagen_urls').single();
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json(data);
 });
 
@@ -1239,7 +1407,7 @@ app.delete('/api/productos/:id/imagen', auth(true), async (req, res) => {
 
   const { data, error } = await db.from('productos')
     .update({ imagen_urls: imagenUrls }).eq('id', req.params.id).select('id, imagen_urls').single();
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json(data);
 });
 
@@ -1250,7 +1418,7 @@ app.post('/api/productos/eliminar-lote', auth(true), exigirPinAdmin, async (req,
   if (ids.length === 0) return enviarError(res, 400, 'No hay productos seleccionados');
 
   const { error } = await db.from('productos').delete().in('id', ids);
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json({ eliminadas: ids.length });
 });
 
@@ -1259,13 +1427,13 @@ app.post('/api/productos/eliminar-lote', auth(true), exigirPinAdmin, async (req,
    "/:id" para que no la capture esa ruta. */
 app.delete('/api/productos/todos', auth(true), exigirPinAdmin, async (req, res) => {
   const { error } = await db.from('productos').delete().gt('id', 0);
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json({ ok: true, alcance: 'todos' });
 });
 
 app.delete('/api/productos/:id', auth(true), async (req, res) => {
   const { error } = await db.from('productos').delete().eq('id', req.params.id);
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json({ ok: true });
 });
 
@@ -1734,9 +1902,7 @@ app.get('/api/ventas', auth(), async (req, res) => {
   let idsPorProducto = null;
   if (producto && String(producto).trim()) {
     const texto = String(producto).trim();
-    // Se escapan los comodines de PostgREST para que un "%" escrito por
-    // el usuario busque un "%" y no "todo"
-    const patron = `%${texto.replace(/[%_,]/g, m => '\\' + m)}%`;
+    const patron = patronIlike(texto);
 
     /* El barcode NO se guarda en venta_items (el POS lo descarta al vender),
        pero sí está en el catálogo. Si lo escrito calza con el código de
@@ -1760,7 +1926,7 @@ app.get('/api/ventas', auth(), async (req, res) => {
       .or(`nombre.ilike.${patron},sku.ilike.${patron},serial_number.ilike.${patron}${extraSku}${extraNombre}`)
       .limit(5000);
 
-    if (errItems) return enviarError(res, 500, errItems.message);
+    if (errItems) return enviarErrorBD(res, errItems);
 
     idsPorProducto = [...new Set((items || []).map(i => i.venta_id).filter(Boolean))];
     // Sin coincidencias se corta acá: consultar `ventas` con un IN vacío
@@ -1775,7 +1941,7 @@ app.get('/api/ventas', auth(), async (req, res) => {
   if (idsPorProducto) q = q.in('id', idsPorProducto);
 
   const { data, error } = await q.limit(limiteDe(req));
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json(limpiarLista(data, req.usuario.rol));
 });
 
@@ -1793,7 +1959,7 @@ app.get('/api/ventas/items/por-ventas', auth(), async (req, res) => {
     .select('id, venta_id, nombre, sku, serial_number, cantidad, precio_unitario')
     .in('venta_id', ids);
 
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json(data || []);
 });
 
@@ -1803,7 +1969,7 @@ app.get('/api/ventas/:id', auth(), async (req, res) => {
   if (error) return enviarError(res, 404, 'Venta no encontrada');
 
   const { data: items, error: errItems } = await db.from('venta_items').select('*').eq('venta_id', req.params.id).order('id');
-  if (errItems) return enviarError(res, 500, errItems.message);
+  if (errItems) return enviarErrorBD(res, errItems);
 
   res.json({
     ...limpiarParaRol(venta, req.usuario.rol),
@@ -2126,7 +2292,7 @@ app.delete('/api/ventas', auth(true), exigirPinAdmin, async (req, res) => {
   else return enviarError(res, 400, 'Indica un rango de fechas o todo=true');
 
   const { data: filas, error: errSel } = await qSelect;
-  if (errSel) return enviarError(res, 500, errSel.message);
+  if (errSel) return enviarErrorBD(res, errSel);
 
   const ids = (filas || []).map(f => f.id);
   if (ids.length === 0) return res.json({ ok: true, eliminadas: 0 });
@@ -2134,7 +2300,7 @@ app.delete('/api/ventas', auth(true), exigirPinAdmin, async (req, res) => {
   await revertirEfectosDeVentas(ids);
 
   const { error } = await db.from('ventas').delete().in('id', ids);
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json({ ok: true, eliminadas: ids.length });
 });
 
@@ -2142,7 +2308,7 @@ app.delete('/api/ventas/:id', auth(true), async (req, res) => {
   await revertirEfectosDeVentas([Number(req.params.id)]);
 
   const { error } = await db.from('ventas').delete().eq('id', req.params.id);
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json({ ok: true });
 });
 
@@ -2189,7 +2355,7 @@ app.post('/api/ventas/:id/pago', auth(), async (req, res) => {
     .select()
     .single();
 
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json(limpiarParaRol(data, req.usuario.rol));
 });
 
@@ -2211,7 +2377,7 @@ app.put('/api/ventas/:id/envio', auth(), async (req, res) => {
 
   const { data, error } = await db.from('ventas')
     .update(cambios).eq('id', req.params.id).select().single();
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json(limpiarParaRol(data, req.usuario.rol));
 });
 
@@ -2236,7 +2402,7 @@ app.post('/api/ventas/:id/dte', auth(true), async (req, res) => {
     .select()
     .single();
 
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
 
   /* Registro de auditoría (tabla auditoria_dte, migración 15). Solo-append.
      Si la tabla no existe todavía (backend nuevo, migración sin correr) el
@@ -2361,7 +2527,7 @@ app.get('/api/compras', auth(true), async (req, res) => {
   if (sin_comprobante === 'true') q = q.is('url_comprobante', null);
 
   const { data, error } = await q.limit(limiteDe(req));
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json(data || []);
 });
 
@@ -2382,7 +2548,7 @@ app.post('/api/compras', auth(true), async (req, res) => {
     if (errValidacion) return enviarError(res, 400, errValidacion);
 
     const { data, error } = await db.from('compras').insert([datos]).select().single();
-    if (error) return enviarError(res, 500, error.message);
+    if (error) return enviarErrorBD(res, error);
     res.status(201).json(data);
   } catch (err) {
     console.error('[COMPRAS] no se pudo guardar el gasto:', err.message);
@@ -2396,7 +2562,7 @@ app.put('/api/compras/:id', auth(true), async (req, res) => {
     if (errValidacion) return enviarError(res, 400, errValidacion);
 
     const { data, error } = await db.from('compras').update(datos).eq('id', req.params.id).select().single();
-    if (error) return enviarError(res, 500, error.message);
+    if (error) return enviarErrorBD(res, error);
     res.json(data);
   } catch (err) {
     console.error('[COMPRAS] no se pudo actualizar el gasto:', err.message);
@@ -2409,7 +2575,7 @@ app.post('/api/compras/eliminar-lote', auth(true), exigirPinAdmin, async (req, r
   if (ids.length === 0) return enviarError(res, 400, 'No hay compras seleccionadas');
 
   const { error } = await db.from('compras').delete().in('id', ids);
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json({ eliminadas: ids.length });
 });
 
@@ -2430,7 +2596,7 @@ app.delete('/api/compras/:id', auth(true), async (req, res) => {
     const { data: compra, error: errBuscar } = await db.from('compras')
       .select('costo_total, metodo_pago, clasificacion, descripcion')
       .eq('id', req.params.id).maybeSingle();
-    if (errBuscar) return enviarError(res, 500, errBuscar.message);
+    if (errBuscar) return enviarErrorBD(res, errBuscar);
     if (!compra) return enviarError(res, 404, 'El gasto no existe');
 
     const revertirDinero = req.body?.revertirDinero !== false;
@@ -2446,7 +2612,7 @@ app.delete('/api/compras/:id', auth(true), async (req, res) => {
           origen: canalOrigen, destino: canalDestino, monto: compra.costo_total,
           nota: `Reverso de gasto eliminado: ${descripcionGasto}`
         }]);
-        if (errTraspaso) return enviarError(res, 500, errTraspaso.message);
+        if (errTraspaso) return enviarErrorBD(res, errTraspaso);
       }
     } else {
       const { error: errAjuste } = await db.from('ajustes_saldo').insert([{
@@ -2457,11 +2623,11 @@ app.delete('/api/compras/:id', auth(true), async (req, res) => {
         motivo: `Eliminación de gasto sin reversar dinero: ${descripcionGasto}`,
         rol: req.usuario?.rol || null
       }]);
-      if (errAjuste) return enviarError(res, 500, errAjuste.message);
+      if (errAjuste) return enviarErrorBD(res, errAjuste);
     }
 
     const { error } = await db.from('compras').delete().eq('id', req.params.id);
-    if (error) return enviarError(res, 500, error.message);
+    if (error) return enviarErrorBD(res, error);
     res.json({ ok: true });
   } catch (err) {
     console.error('[COMPRAS] no se pudo eliminar el gasto:', err.message);
@@ -2483,7 +2649,7 @@ app.get('/api/gastos-programados', auth(true), async (req, res) => {
   const estado = String(req.query?.estado || 'pendiente').trim().toLowerCase();
   if (estado !== 'todos') q = q.eq('estado', estado);
   const { data, error } = await q.limit(limiteDe(req));
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json(data || []);
 });
 
@@ -2521,7 +2687,7 @@ app.post('/api/gastos-programados', auth(true), async (req, res) => {
   }
 
   const { data, error } = await db.from('gastos_programados').insert(filas).select();
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.status(201).json(data);
 });
 
@@ -2529,7 +2695,7 @@ app.post('/api/gastos-programados', auth(true), async (req, res) => {
 app.delete('/api/gastos-programados/:id', auth(true), async (req, res) => {
   const { data, error } = await db.from('gastos_programados')
     .update({ estado: 'cancelado' }).eq('id', req.params.id).eq('estado', 'pendiente').select().maybeSingle();
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   if (!data) return enviarError(res, 400, 'El gasto no existe o ya no está pendiente');
   res.json({ ok: true });
 });
@@ -2541,7 +2707,7 @@ app.post('/api/gastos-programados/procesar-vencidos', auth(true), async (req, re
   const hoy = fechaHoyChile();
   const { data: vencidos, error } = await db.from('gastos_programados')
     .select('*').eq('estado', 'pendiente').lte('fecha_vencimiento', hoy);
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
 
   let aplicados = 0;
   for (const g of (vencidos || [])) {
@@ -2593,7 +2759,7 @@ function esEfectivo(metodo) {
 
 app.get('/api/gastos-fijos', auth(true), async (req, res) => {
   const { data, error } = await db.from('gastos_fijos').select('*').order('dia_mes').order('nombre');
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json(data || []);
 });
 
@@ -2615,7 +2781,7 @@ app.post('/api/gastos-fijos', auth(true), async (req, res) => {
   if (!(g.monto > 0)) return enviarError(res, 400, 'El monto debe ser mayor a 0');
 
   const { data, error } = await db.from('gastos_fijos').insert([g]).select().single();
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.status(201).json(data);
 });
 
@@ -2624,13 +2790,13 @@ app.put('/api/gastos-fijos/:id', auth(true), async (req, res) => {
   g.actualizado_en = new Date().toISOString();
 
   const { data, error } = await db.from('gastos_fijos').update(g).eq('id', req.params.id).select().single();
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json(data);
 });
 
 app.delete('/api/gastos-fijos/:id', auth(true), async (req, res) => {
   const { error } = await db.from('gastos_fijos').delete().eq('id', req.params.id);
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json({ ok: true });
 });
 
@@ -2643,7 +2809,7 @@ app.get('/api/inyecciones', auth(true), async (req, res) => {
   if (hasta) q = q.lte('fecha', hasta);
 
   const { data, error } = await q;
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json(data || []);
 });
 
@@ -2660,13 +2826,13 @@ app.post('/api/inyecciones', auth(true), async (req, res) => {
   if (!(inyeccion.monto > 0)) return enviarError(res, 400, 'El monto del aporte debe ser mayor a 0');
 
   const { data, error } = await db.from('inyecciones_capital').insert([inyeccion]).select().single();
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.status(201).json(data);
 });
 
 app.delete('/api/inyecciones/:id', auth(true), exigirPinAdmin, async (req, res) => {
   const { error } = await db.from('inyecciones_capital').delete().eq('id', req.params.id);
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json({ ok: true });
 });
 
@@ -2786,7 +2952,7 @@ app.get('/api/reportes/reposicion', auth(true), async (req, res) => {
   const { data, error } = await db.from('productos')
     .select('*').eq('alerta_stock', true).eq('stock_ilimitado', false);
 
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
 
   const enAlerta = (data || [])
     .filter(p => num(p.stock) <= num(p.stock_minimo))
@@ -2949,7 +3115,7 @@ app.get('/api/arqueos', auth(true), async (req, res) => {
   if (hasta) q = q.lte('fecha', hasta);
 
   const { data, error } = await q.limit(60);
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json(data || []);
 });
 
@@ -2958,7 +3124,7 @@ app.get('/api/arqueos', auth(true), async (req, res) => {
 app.get('/api/arqueos/hoy', auth(true), async (req, res) => {
   const hoy = fechaHoyChile();
   const { data, error } = await db.from('arqueos').select('*').eq('fecha', hoy).maybeSingle();
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json(data || null);
 });
 
@@ -2978,13 +3144,13 @@ app.post('/api/arqueos/abrir', auth(true), async (req, res) => {
   if (existente) {
     const { data, error } = await db.from('arqueos')
       .update({ fondo_inicial: fondo }).eq('id', existente.id).select().single();
-    if (error) return enviarError(res, 500, error.message);
+    if (error) return enviarErrorBD(res, error);
     return res.json(data);
   }
 
   const { data, error } = await db.from('arqueos')
     .insert([{ fecha, fondo_inicial: fondo }]).select().single();
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.status(201).json(data);
 });
 
@@ -3017,7 +3183,7 @@ app.post('/api/arqueos/cerrar', auth(true), async (req, res) => {
     })
     .eq('id', arqueo.id).select().single();
 
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json(data);
 });
 
@@ -3590,7 +3756,7 @@ app.post('/api/finanzas/iva-ajuste', auth(true), async (req, res) => {
       usuario: req.usuario?.rol || 'admin'
     }]).select().single();
 
-    if (error) return enviarError(res, 500, error.message);
+    if (error) return enviarErrorBD(res, error);
     res.status(201).json(data);
   } catch (e) {
     enviarError(res, 500, e.message || 'No se pudo guardar el ajuste de IVA');
@@ -3599,7 +3765,7 @@ app.post('/api/finanzas/iva-ajuste', auth(true), async (req, res) => {
 
 app.delete('/api/finanzas/iva-ajuste/:id', auth(true), exigirPinAdmin, async (req, res) => {
   const { error } = await db.from('iva_ajustes').delete().eq('id', req.params.id);
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json({ ok: true });
 });
 
@@ -3850,7 +4016,7 @@ app.get('/api/caja/activa', auth(), async (req, res) => {
       console.warn('[CAJA] Supabase rechazó la llave por reloj/JWT tras reintentar:', error.message);
       return enviarError(res, 503, 'La base de datos no respondió a tiempo. Intenta de nuevo en unos segundos.');
     }
-    return enviarError(res, 500, error.message);
+    return enviarErrorBD(res, error);
   }
   if (!data) return res.json({ activa: null });
 
@@ -3879,7 +4045,7 @@ app.post('/api/caja/abrir', auth(), async (req, res) => {
       console.warn('[CAJA] Supabase rechazó la llave por reloj/JWT tras reintentar:', error.message);
       return enviarError(res, 503, 'La base de datos no respondió a tiempo. Intenta de nuevo en unos segundos.');
     }
-    return enviarError(res, 500, error.message);
+    return enviarErrorBD(res, error);
   }
   res.status(201).json(data);
 });
@@ -3901,7 +4067,7 @@ app.post('/api/caja/movimiento', auth(), async (req, res) => {
   const { data, error } = await db.from('caja_movimientos').insert([{
     caja_id: caja.id, tipo, monto, concepto
   }]).select().single();
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.status(201).json(data);
 });
 
@@ -3948,7 +4114,7 @@ app.post('/api/caja/cerrar', auth(), async (req, res) => {
       console.warn('[CAJA] Supabase rechazó la llave por reloj/JWT tras reintentar:', error.message);
       return enviarError(res, 503, 'La base de datos no respondió a tiempo. Intenta de nuevo en unos segundos.');
     }
-    return enviarError(res, 500, error.message);
+    return enviarErrorBD(res, error);
   }
 
   res.json({ ...data, detalle: { fondo_inicial: num(caja.fondo_inicial), ventasEfectivo, ingresos, egresos, esperado, contado, diferencia } });
@@ -4167,7 +4333,7 @@ app.post('/api/finanzas/ajuste-saldo', auth(true), async (req, res) => {
     rol: req.usuario?.rol || null
   }]).select().single();
 
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.status(201).json(data);
 });
 
@@ -4178,7 +4344,7 @@ app.get('/api/finanzas/ajustes-saldo', auth(true), async (req, res) => {
   if (canal === 'EFECTIVO' || canal === 'BANCO') q = q.eq('canal', canal);
 
   const { data, error } = await q.limit(limiteDe(req));
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json(data || []);
 });
 
@@ -4202,7 +4368,7 @@ app.post('/api/finanzas/traspaso', auth(true), async (req, res) => {
     nota: (req.body?.nota || '').trim() || null
   };
   const { data, error } = await db.from('traspasos').insert([fila]).select().single();
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.status(201).json(data);
 });
 
@@ -4211,13 +4377,13 @@ app.get('/api/finanzas/traspasos', auth(true), async (req, res) => {
   const { data, error } = await db.from('traspasos')
     .select('*').order('fecha', { ascending: false }).order('id', { ascending: false })
     .limit(limiteDe(req));
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json(data || []);
 });
 
 app.delete('/api/finanzas/traspaso/:id', auth(true), exigirPinAdmin, async (req, res) => {
   const { error } = await db.from('traspasos').delete().eq('id', req.params.id);
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json({ ok: true });
 });
 
@@ -4231,7 +4397,7 @@ app.put('/api/finanzas/config', auth(true), async (req, res) => {
   };
   const { data, error } = await db.from('config_finanzas')
     .upsert([fila], { onConflict: 'id' }).select().single();
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json(data);
 });
 
@@ -4242,7 +4408,7 @@ app.get('/api/compras/clasificaciones', auth(), async (req, res) => {
   if (incluir_inactivas !== 'true') q = q.eq('activo', true);
 
   const { data, error } = await q;
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
 
   // Cuántos gastos usa cada clasificación (para avisar antes de borrar)
   const { data: compras } = await db.from('compras').select('clasificacion');
@@ -4299,7 +4465,7 @@ app.put('/api/compras/clasificaciones/:id', auth(true), async (req, res) => {
   if (nombreAnterior !== nombre) {
     const { error: errCascada } = await db.from('compras')
       .update({ clasificacion: nombre }).eq('clasificacion', nombreAnterior);
-    if (errCascada) return enviarError(res, 500, errCascada.message);
+    if (errCascada) return enviarErrorBD(res, errCascada);
   }
 
   res.json(data);
@@ -4319,7 +4485,7 @@ app.delete('/api/compras/clasificaciones/:id', auth(true), async (req, res) => {
   if ((count || 0) > 0) {
     const { error } = await db.from('compra_clasificaciones')
       .update({ activo: false }).eq('id', req.params.id);
-    if (error) return enviarError(res, 500, error.message);
+    if (error) return enviarErrorBD(res, error);
     return res.json({
       ok: true, desactivada: true, usos: count,
       mensaje: `Tiene ${count} gasto(s) asociados: se desactivó en vez de eliminarse, para no alterar el historial.`
@@ -4327,7 +4493,7 @@ app.delete('/api/compras/clasificaciones/:id', auth(true), async (req, res) => {
   }
 
   const { error } = await db.from('compra_clasificaciones').delete().eq('id', req.params.id);
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json({ ok: true, desactivada: false });
 });
 
@@ -4449,7 +4615,7 @@ app.get('/api/ot', auth(), async (req, res) => {
       console.warn('[OT] Supabase rechazó la llave por reloj/JWT tras reintentar:', error.message);
       return enviarError(res, 503, 'La base de datos no respondió a tiempo. Intenta de nuevo en unos segundos.');
     }
-    return enviarError(res, 500, error.message);
+    return enviarErrorBD(res, error);
   }
 
   let filas = data || [];
@@ -4482,7 +4648,7 @@ app.post('/api/ot', auth(), async (req, res) => {
     .select()
     .single();
 
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.status(201).json(data);
 });
 
@@ -4491,7 +4657,7 @@ app.put('/api/ot/:id', auth(), async (req, res) => {
   if (errValidacion) return enviarError(res, 400, errValidacion);
 
   const { data, error } = await db.from('ordenes_trabajo').update(datos).eq('id', req.params.id).select().single();
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json(data);
 });
 
@@ -4523,7 +4689,7 @@ app.post('/api/ot/:id/entrega', auth(), async (req, res) => {
     .select()
     .single();
 
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
 
   /* ESTE es el momento en que el stock sale del inventario: al entregar.
      Se descuentan solo los repuestos/productos del catálogo que aún no se
@@ -4553,7 +4719,7 @@ app.post('/api/ot/:id/entrega', auth(), async (req, res) => {
 
 app.delete('/api/ot/:id', auth(true), async (req, res) => {
   const { error } = await db.from('ordenes_trabajo').delete().eq('id', req.params.id);
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json({ ok: true });
 });
 
@@ -4584,7 +4750,7 @@ app.get('/api/garantias/productos', auth(true), async (req, res) => {
   // búsqueda directa por número de orden / cliente de la venta.
   let idsVenta = null;
   if (q) {
-    const patron = `%${q.replace(/[%_,]/g, m => '\\' + m)}%`;
+    const patron = patronIlike(q);
     // numero_orden es INTEGER (no texto): ilike no aplica sobre ese tipo.
     // Si lo escrito es un número entero se compara exacto; el texto
     // libre solo puede calzar contra `cliente`.
@@ -4595,12 +4761,12 @@ app.get('/api/garantias/productos', auth(true), async (req, res) => {
     }
     const { data: ventasDirectas, error: errVD } = await db.from('ventas')
       .select('id').or(filtrosVenta.join(',')).limit(500);
-    if (errVD) return enviarError(res, 500, errVD.message);
+    if (errVD) return enviarErrorBD(res, errVD);
 
     const { data: items, error: errItems } = await db.from('venta_items')
       .select('venta_id').eq('es_servicio', false)
       .or(`nombre.ilike.${patron},sku.ilike.${patron},serial_number.ilike.${patron}`).limit(2000);
-    if (errItems) return enviarError(res, 500, errItems.message);
+    if (errItems) return enviarErrorBD(res, errItems);
 
     idsVenta = [...new Set([...(ventasDirectas || []).map(v => v.id), ...(items || []).map(i => i.venta_id)])];
     if (idsVenta.length === 0) return res.json([]);
@@ -4612,14 +4778,14 @@ app.get('/api/garantias/productos', auth(true), async (req, res) => {
   if (idsVenta) itemsQuery = itemsQuery.in('venta_id', idsVenta);
 
   const { data: itemsData, error: errI } = await itemsQuery;
-  if (errI) return enviarError(res, 500, errI.message);
+  if (errI) return enviarErrorBD(res, errI);
 
   const ventaIds = [...new Set((itemsData || []).map(i => i.venta_id).filter(Boolean))];
   const ventasPorId = {};
   if (ventaIds.length) {
     const { data: ventasData, error: errV } = await db.from('ventas')
       .select('id, fecha, numero_orden, cliente, estado').in('id', ventaIds);
-    if (errV) return enviarError(res, 500, errV.message);
+    if (errV) return enviarErrorBD(res, errV);
     (ventasData || []).forEach(v => { ventasPorId[v.id] = v; });
   }
 
@@ -4665,7 +4831,7 @@ app.get('/api/garantias/servicios', auth(true), async (req, res) => {
     .eq('estado', 'ENTREGADO')
     .order('fecha_entrega', { ascending: false })
     .limit(500);
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
 
   let filas = (data || []).map(o => {
     const { vence_el, estado_garantia } = calcularEstadoGarantia(o.fecha_entrega, o.meses_garantia);
@@ -4740,7 +4906,7 @@ app.get('/api/repuestos', auth(), async (req, res) => {
   if (categoria) q = q.eq('categoria', categoria);
 
   const { data, error } = await q;
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json(limpiarLista(data, req.usuario.rol));
 });
 
@@ -4764,7 +4930,7 @@ app.put('/api/repuestos/:id', auth(true), async (req, res) => {
   if (errValidacion) return enviarError(res, 400, errValidacion);
 
   const { data, error } = await db.from('repuestos').update(datos).eq('id', req.params.id).select().single();
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
 
   await asegurarAreaYCategoria(datos.area, datos.categoria);
   res.json(data);
@@ -4772,7 +4938,7 @@ app.put('/api/repuestos/:id', auth(true), async (req, res) => {
 
 app.delete('/api/repuestos/:id', auth(true), async (req, res) => {
   const { error } = await db.from('repuestos').delete().eq('id', req.params.id);
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json({ ok: true });
 });
 
@@ -4786,7 +4952,7 @@ function fabricarRutasCatalogoRepuesto(segmentoUrl, nombreTabla, columnaEnRepues
   // GET: lista con cuántos repuestos usan cada valor
   app.get(`/api/repuestos/${segmentoUrl}`, auth(), async (req, res) => {
     const { data: valores, error } = await db.from(nombreTabla).select('*').order('nombre');
-    if (error) return enviarError(res, 500, error.message);
+    if (error) return enviarErrorBD(res, error);
 
     const { data: repuestos } = await db.from('repuestos').select(columnaEnRepuestos);
     const conteo = {};
@@ -4830,7 +4996,7 @@ function fabricarRutasCatalogoRepuesto(segmentoUrl, nombreTabla, columnaEnRepues
 
     const { error: errCascada } = await db.from('repuestos')
       .update({ [columnaEnRepuestos]: nuevoNombre }).eq(columnaEnRepuestos, nombreAnterior);
-    if (errCascada) return enviarError(res, 500, errCascada.message);
+    if (errCascada) return enviarErrorBD(res, errCascada);
 
     res.json(data);
   });
@@ -4849,7 +5015,7 @@ function fabricarRutasCatalogoRepuesto(segmentoUrl, nombreTabla, columnaEnRepues
     }
 
     const { error } = await db.from(nombreTabla).delete().eq('id', req.params.id);
-    if (error) return enviarError(res, 500, error.message);
+    if (error) return enviarErrorBD(res, error);
     res.json({ ok: true });
   });
 }
@@ -4860,7 +5026,7 @@ fabricarRutasCatalogoRepuesto('categorias', 'repuesto_categorias', 'categoria');
 /* ---------- Repuestos y mano de obra asignados a una OT ---------- */
 app.get('/api/ot/:id/repuestos', auth(), async (req, res) => {
   const { data, error } = await db.from('ot_repuestos').select('*').eq('ot_id', req.params.id).order('id');
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json(limpiarLista(data, req.usuario.rol));
 });
 
@@ -4916,7 +5082,7 @@ app.post('/api/ot/:id/repuestos', auth(), async (req, res) => {
 app.delete('/api/ot/:otId/repuestos/:id', auth(), async (req, res) => {
   const { data: fila, error: errFila } = await db.from('ot_repuestos')
     .select('*').eq('id', req.params.id).eq('ot_id', req.params.otId).maybeSingle();
-  if (errFila) return enviarError(res, 500, errFila.message);
+  if (errFila) return enviarErrorBD(res, errFila);
   if (!fila) return enviarError(res, 404, 'No se encontró ese ítem en la orden');
 
   // Si la orden ya se entregó, su stock ya salió del inventario: se devuelve
@@ -4930,7 +5096,7 @@ app.delete('/api/ot/:otId/repuestos/:id', auth(), async (req, res) => {
   }
 
   const { error } = await db.from('ot_repuestos').delete().eq('id', req.params.id).eq('ot_id', req.params.otId);
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json({ ok: true, stock_devuelto: !!fila.stock_descontado });
 });
 
@@ -4951,7 +5117,7 @@ app.get('/api/mermas', auth(true), async (req, res) => {
   if (hasta) q = q.lte('creado_en', hasta + 'T23:59:59');
 
   const { data, error } = await q.limit(limiteDe(req));
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json(data || []);
 });
 
@@ -5075,7 +5241,7 @@ app.get('/api/encargos', auth(), async (req, res) => {
   if (estado) q = q.eq('estado', estado);
 
   const { data, error } = await q;
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json(data || []);
 });
 
@@ -5104,7 +5270,7 @@ app.post('/api/encargos', auth(), async (req, res) => {
   };
 
   const { data: encargo, error } = await db.from('encargos').insert([registro]).select().single();
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
 
   if (abonoInicial > 0) {
     await db.from('encargo_abonos').insert([{
@@ -5137,7 +5303,7 @@ app.put('/api/encargos/:id', auth(), async (req, res) => {
   };
 
   const { data, error } = await db.from('encargos').update(cambios).eq('id', req.params.id).select().single();
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json(data);
 });
 
@@ -5161,7 +5327,7 @@ app.post('/api/encargos/:id/abono', auth(), async (req, res) => {
     metodo_pago: req.body?.metodo_pago || 'Efectivo',
     nota: (req.body?.nota || '').trim() || null
   }]);
-  if (errAbono) return enviarError(res, 500, errAbono.message);
+  if (errAbono) return enviarErrorBD(res, errAbono);
 
   const { data, error } = await db.from('encargos').update({
     monto_abonado: abonado,
@@ -5169,7 +5335,7 @@ app.post('/api/encargos/:id/abono', auth(), async (req, res) => {
     estado: estadoEncargo(num(encargo.monto_total), abonado)
   }).eq('id', encargo.id).select().single();
 
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
 
   const { data: abonos } = await db.from('encargo_abonos').select('*').eq('encargo_id', encargo.id).order('id');
   res.json({ ...data, abonos: abonos || [], ultimo_abono: monto });
@@ -5177,7 +5343,7 @@ app.post('/api/encargos/:id/abono', auth(), async (req, res) => {
 
 app.delete('/api/encargos/:id', auth(true), async (req, res) => {
   const { error } = await db.from('encargos').delete().eq('id', req.params.id);
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json({ ok: true });
 });
 
@@ -5221,7 +5387,7 @@ app.get('/api/pos/pedidos-web', auth(true), async (req, res) => {
   if (req.query.tipo) q = q.eq('tipo_pedido', String(req.query.tipo));
 
   const { data, error } = await q;
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
   res.json(data || []);
 });
 
@@ -5253,7 +5419,7 @@ app.put('/api/pos/pedidos-web/:id', auth(true), async (req, res) => {
 
   const { data, error } = await dbWeb.from('pedidos_web')
     .update(cambios).eq('id', req.params.id).select().single();
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
 
   /* Reponer stock al cancelar es OPCIONAL y explícito (checkbox en el
      modal de cancelación) — un pedido puede cancelarse recién pagado (el
@@ -5322,7 +5488,7 @@ app.get('/api/pos/mas-buscados', auth(true), async (req, res) => {
     .select('tipo, termino, producto_pos_id')
     .gte('creado_en', desde)
     .limit(5000);
-  if (error) return enviarError(res, 500, error.message);
+  if (error) return enviarErrorBD(res, error);
 
   const conteoBusquedas = new Map(); // clave: término en minúsculas -> { termino (primera aparición), veces }
   const conteoVistas = new Map(); // clave: producto_pos_id -> veces
@@ -5399,7 +5565,7 @@ app.get('/api/pos/metricas', auth(true), async (req, res) => {
 
     const primerError = [totalVisitas, visitas30Dias, carritosCompartidos, carritosAbandonados, carritosConvertidos, totalUsuarios]
       .find(r => r.error);
-    if (primerError) return enviarError(res, 500, primerError.error.message);
+    if (primerError) return enviarErrorBD(res, primerError.error);
 
     res.json({
       total_visitas: totalVisitas.count || 0,
@@ -5410,7 +5576,7 @@ app.get('/api/pos/metricas', auth(true), async (req, res) => {
       total_usuarios_registrados: totalUsuarios.count || 0,
     });
   } catch (err) {
-    enviarError(res, 500, err.message);
+    enviarErrorBD(res, err);
   }
 });
 

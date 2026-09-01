@@ -776,6 +776,86 @@ function aplicarStockIlimitadoProductoUI() {
 // saber que existe un editor rico detrás.
 let editorDescripcion = null;
 
+/* Pegado de Markdown en el editor de Descripción.
+   ------------------------------------------------------------
+   Las respuestas de Gemini/ChatGPT copiadas con su botón "Copiar
+   respuesta" traen sintaxis Markdown como TEXTO PLANO (**negrita**,
+   ### título, - listas, [texto](url)) — Quill no la interpreta, así que
+   quedaba pegada tal cual: los símbolos a la vista, y un link como
+   "[www.sevelin.cl](http://www.sevelin.cl)" se veía con el dominio DOS
+   VECES (una como texto del link, otra dentro del paréntesis) porque
+   nunca se armaba el <a> real.
+
+   convertirMarkdownAHtml() la convierte a HTML real antes de insertarla —
+   solo lo que el editor y el sanitizador de la tienda soportan (negrita,
+   cursiva, listas, links, título de sección: ver la whitelist en
+   sevelin-tienda/src/lib/sanitizar-html.ts). Cualquier otra sintaxis de
+   Markdown (tablas, imágenes, código) se deja como texto plano a
+   propósito: mejor mostrarla tal cual que inventar un tag que el
+   sanitizador de la tienda va a borrar de todos modos. */
+
+// ¿El texto pegado TIENE pinta de traer sintaxis Markdown? Si no matchea
+// nada de esto, se deja el pegado normal de Quill sin tocarlo.
+function pareceMarkdown(texto) {
+  return /\*\*[^*]+\*\*/.test(texto) ||
+    /^ {0,3}#{1,6}\s+\S/m.test(texto) ||
+    /\[[^\]]+\]\(https?:\/\/[^)\s]+\)/.test(texto) ||
+    /^ {0,3}[-*]\s+\S/m.test(texto);
+}
+
+// Reemplazos DENTRO de una línea, sobre texto YA escapado (escHtml) —
+// solo arma las etiquetas, nunca lee HTML crudo del portapapeles.
+function markdownInlineAHtml(textoEscapado) {
+  return textoEscapado
+    // Links primero: un "*" adentro del texto de un link no debe
+    // interpretarse como negrita/cursiva antes de que el link se arme.
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>');
+}
+
+function convertirMarkdownAHtml(textoPlano) {
+  const lineas = textoPlano.replace(/\r\n/g, '\n').split('\n');
+  const bloques = [];
+  let itemsLista = null;
+
+  const cerrarLista = () => {
+    if (itemsLista) {
+      bloques.push(`<ul>${itemsLista.map(li => `<li>${li}</li>`).join('')}</ul>`);
+      itemsLista = null;
+    }
+  };
+
+  for (const lineaCruda of lineas) {
+    const linea = lineaCruda.trim();
+    if (!linea) { cerrarLista(); continue; }
+
+    const encabezado = linea.match(/^ {0,3}#{1,6}\s+(.*)$/);
+    if (encabezado) {
+      cerrarLista();
+      bloques.push(`<h3>${markdownInlineAHtml(escHtml(encabezado[1]))}</h3>`);
+      continue;
+    }
+
+    // Viñetas Markdown ("- "/"* ") y las listas de características que
+    // arma Gemini con ✅ / ☑️ / ✔️ como marcador — el resto de líneas con
+    // un emoji suelto adelante (🇨🇱, 📲, 💳...) se dejan como párrafo
+    // normal, no como viñeta, porque no vienen en una lista de verdad.
+    const viñeta = linea.match(/^ {0,3}(?:[-*]|✅|☑️|✔️)\s+(.*)$/);
+    if (viñeta) {
+      if (!itemsLista) itemsLista = [];
+      itemsLista.push(markdownInlineAHtml(escHtml(viñeta[1])));
+      continue;
+    }
+
+    cerrarLista();
+    bloques.push(`<p>${markdownInlineAHtml(escHtml(linea))}</p>`);
+  }
+  cerrarLista();
+
+  return bloques.join('');
+}
+
 function initEditorDescripcion() {
   if (editorDescripcion || typeof Quill === 'undefined') return;
   const contenedor = document.getElementById('prodDescripcionEditor');
@@ -791,6 +871,28 @@ function initEditorDescripcion() {
     // chequeo, cada producto nuevo terminaría con una descripción "vacía"
     // que en realidad no lo está.
     elProdDescripcion.value = editorDescripcion.getText().trim() ? editorDescripcion.root.innerHTML : '';
+  });
+
+  // Toggle "Convertir Markdown al pegar" — recordado en localStorage entre
+  // sesiones. Apagado, el pegado vuelve a ser el normal de Quill.
+  const elToggleMarkdown = document.getElementById('prodDescripcionMarkdownToggle');
+  if (elToggleMarkdown) {
+    const guardado = localStorage.getItem('prodDescripcionMarkdownToggle');
+    if (guardado !== null) elToggleMarkdown.checked = guardado === '1';
+    elToggleMarkdown.addEventListener('change', () => {
+      localStorage.setItem('prodDescripcionMarkdownToggle', elToggleMarkdown.checked ? '1' : '0');
+    });
+  }
+
+  editorDescripcion.root.addEventListener('paste', e => {
+    if (!elToggleMarkdown || !elToggleMarkdown.checked) return; // pegado normal de Quill
+    const texto = (e.clipboardData || window.clipboardData)?.getData('text/plain') || '';
+    if (!texto.trim() || !pareceMarkdown(texto)) return; // no tiene pinta de Markdown, pegado normal
+
+    e.preventDefault();
+    const html = convertirMarkdownAHtml(texto);
+    const rango = editorDescripcion.getSelection(true);
+    editorDescripcion.clipboard.dangerouslyPasteHTML(rango.index, html, 'user');
   });
 }
 

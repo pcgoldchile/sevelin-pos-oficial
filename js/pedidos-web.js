@@ -101,7 +101,13 @@ const ETIQUETAS_ESTADO_PEDIDO_WEB = {
   ENVIADO:    { txt: '🚚 Enviado',      clase: 'badge-blue' },
   ENTREGADO:  { txt: '✅ Entregado',    clase: 'badge-green' },
   CANCELADO:  { txt: '❌ Cancelado',    clase: 'badge-red' },
-  FALLIDO:    { txt: '⚠️ Pago fallido', clase: 'badge-red' }
+  FALLIDO:    { txt: '⚠️ Pago fallido', clase: 'badge-red' },
+  // Pago cobrado de verdad en Flow, pero sin stock para despachar (carrera
+  // entre dos checkouts casi simultáneos de la última unidad) — el sistema
+  // NUNCA reembolsa ni cancela solo, esto es la señal para revisarlo a
+  // mano (ver sevelin-tienda/src/app/api/flow-webhook/route.ts). Rojo a
+  // propósito, no naranja: requiere acción, no es un estado de flujo normal.
+  ERROR_STOCK_SIN_DESPACHO: { txt: '🚨 Pagado, sin stock — revisar', clase: 'badge-red' }
 };
 
 function badgeEstadoPedidoWeb(estado) {
