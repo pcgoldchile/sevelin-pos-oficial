@@ -682,7 +682,17 @@ const CAMPOS_PRODUCTO = [
   // Controles de la tienda web (e-commerce Fase 0). imagen_urls NO va acá:
   // se administra aparte con POST /api/productos/:id/imagen (append/quitar
   // una foto a la vez), no reemplazando el arreglo completo en cada guardado.
-  'publicado_web', 'precio_web', 'descripcion_web', 'categoria_web',
+  //
+  // BUG REAL corregido (01-09-2026, sesión de subcategorías): faltaba
+  // 'subcategoria_web' acá — el frontend siempre lo mandó (ver
+  // resolverCategoriaWebYSubcategoria() en js/productos.js), pero como no
+  // estaba en esta lista, sanearProducto() lo descartaba en silencio antes
+  // de llegar a la base. Los productos con subcategoría de antes de hoy
+  // (ej. "Mandos y Joystick") se cargaron una sola vez por un script SQL
+  // directo (v46), no por el flujo normal de "Editar Producto" — cualquier
+  // asignación de subcategoría hecha desde el modal nunca se guardó de
+  // verdad hasta este fix.
+  'publicado_web', 'precio_web', 'descripcion_web', 'categoria_web', 'subcategoria_web',
   // Pedidos por Encargo (dropshipping/retiro en tienda) — ver sql/30-pedidos-por-encargo.sql.
   'es_pedido_encargo',
   // categoria_id (Fase "Página Web → Categorías"): FK interna del POS, no se
@@ -756,7 +766,7 @@ function sanearProducto(body = {}) {
     const v = num(p.precio_web);
     p.precio_web = v > 0 ? v : null;
   }
-  ['descripcion_web', 'categoria_web'].forEach(k => {
+  ['descripcion_web', 'categoria_web', 'subcategoria_web'].forEach(k => {
     if (p[k] !== undefined) {
       const t = String(p[k]).trim();
       p[k] = (!t || ['null', 'undefined'].includes(t.toLowerCase())) ? null : t;
