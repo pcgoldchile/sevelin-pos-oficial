@@ -8,6 +8,10 @@
 
 let productsList = [];
 let editingProductId = null;
+// Estado real del producto que se está editando — el botón Archivar/
+// Desarchivar del editor (ver abrirModalProducto) lo lee para saber qué
+// mostrar, porque un producto archivado ya no vive en productsList.
+let productoEnEdicionArchivado = false;
 let productosSeleccionados = new Set();
 let productosVisibles = [];   // última lista renderizada (para "seleccionar todo")
 
@@ -102,6 +106,7 @@ const elBtnNuevoProducto = document.getElementById('btnNuevoProducto');
 const elBtnCancelarProducto = document.getElementById('btnCancelarProducto');
 const elBtnGuardarProducto = document.getElementById('btnGuardarProducto');
 const elBtnExportarProducto = document.getElementById('btnExportarProducto');
+const elBtnArchivarProducto = document.getElementById('btnArchivarProducto');
 const elModalFormatoExport = document.getElementById('modalFormatoExport');
 const elFormatoExportNombre = document.getElementById('formatoExportNombre');
 const elBtnExportProdJSON = document.getElementById('btnExportProdJSON');
@@ -157,6 +162,7 @@ function setupProductosEventListeners() {
 
   // Exportación individual desde el modal de producto
   if (elBtnExportarProducto) elBtnExportarProducto.addEventListener('click', abrirModalFormatoExport);
+  if (elBtnArchivarProducto) elBtnArchivarProducto.addEventListener('click', alternarArchivadoDesdeEditor);
   if (elBtnCancelarFormatoExport) elBtnCancelarFormatoExport.addEventListener('click', cerrarModalFormatoExport);
   if (elBtnExportProdJSON) elBtnExportProdJSON.addEventListener('click', () => exportarProductoIndividual('json'));
   if (elBtnExportProdCSV) elBtnExportProdCSV.addEventListener('click', () => exportarProductoIndividual('csv'));
@@ -1018,6 +1024,7 @@ function abrirModalProducto(producto = null) {
     poblarSelectCategoriaWeb(producto.subcategoria_web || producto.categoria_web || '').then(cargarCategoriasEditor);
     productoEnEdicionImagenUrls = Array.isArray(producto.imagen_urls) ? [...producto.imagen_urls] : [];
     fotosNuevasStaged = [];
+    productoEnEdicionArchivado = !!producto.archivado;
   } else {
     editingProductId = null;
     if (elProductoFormTitle) elProductoFormTitle.textContent = 'Nuevo Producto';
@@ -1051,6 +1058,7 @@ function abrirModalProducto(producto = null) {
     poblarSelectCategoriaWeb('').then(cargarCategoriasEditor);
     productoEnEdicionImagenUrls = [];
     fotosNuevasStaged = [];
+    productoEnEdicionArchivado = false;
   }
 
   aplicarStockIlimitadoProductoUI();
@@ -1058,6 +1066,15 @@ function abrirModalProducto(producto = null) {
 
   // Solo se exporta lo que ya existe en la base
   if (elBtnExportarProducto) elBtnExportarProducto.style.display = producto ? '' : 'none';
+  // Mismo criterio: archivar solo tiene sentido sobre un producto que ya
+  // existe. El texto cambia según su estado real (ver sql/32-archivar-productos.sql).
+  if (elBtnArchivarProducto) {
+    elBtnArchivarProducto.style.display = producto ? '' : 'none';
+    elBtnArchivarProducto.textContent = productoEnEdicionArchivado ? '📤 Desarchivar' : '📦 Archivar';
+    elBtnArchivarProducto.title = productoEnEdicionArchivado
+      ? 'Vuelve a aparecer en el POS, la venta y la tienda web'
+      : 'Lo retira del POS, la venta y la tienda web sin borrar su historial de ventas';
+  }
 
   if (elProdFotoEstado) elProdFotoEstado.textContent = '';
   if (elProdFotoInput) elProdFotoInput.value = '';
@@ -1720,6 +1737,42 @@ async function desarchivarProducto(id, fuente) {
   } catch (err) {
     console.error('Error al desarchivar producto:', err.message || err);
     showToast(err.message || 'No se pudo desarchivar el producto', 'err');
+  }
+}
+
+/* Mismo Archivar/Desarchivar de la tabla, pero disparado desde DENTRO del
+   editor (pedido del dueño: no encontraba la opción al editar un
+   producto, solo estaba en la fila de la tabla). Usa editingProductId +
+   el nombre actual del formulario (por si lo estaba editando) y, a
+   diferencia de las de la tabla, NO cierra el editor — se queda ahí,
+   solo cambia el botón de estado para poder revertirlo al toque si fue
+   un clic accidental. */
+async function alternarArchivadoDesdeEditor() {
+  if (!editingProductId) return;
+  const nuevoEstado = !productoEnEdicionArchivado;
+  const nombre = (elProdNombre?.value || '').trim() || 'este producto';
+
+  if (nuevoEstado && !confirm(`Archivar "${nombre}"? Deja de aparecer en el POS y en la tienda web, pero conserva su historial de ventas.`)) return;
+
+  try {
+    await API.productos.actualizar(editingProductId, { nombre, archivado: nuevoEstado });
+    productoEnEdicionArchivado = nuevoEstado;
+    if (elBtnArchivarProducto) {
+      elBtnArchivarProducto.textContent = nuevoEstado ? '📤 Desarchivar' : '📦 Archivar';
+      elBtnArchivarProducto.title = nuevoEstado
+        ? 'Vuelve a aparecer en el POS, la venta y la tienda web'
+        : 'Lo retira del POS, la venta y la tienda web sin borrar su historial de ventas';
+    }
+    // Si se archivó, publicado_web quedó en false en el servidor (ver
+    // sanearProducto) — se refleja también acá para que el editor no
+    // muestre un estado que ya no es real.
+    if (nuevoEstado && elProdPublicadoWeb) elProdPublicadoWeb.checked = false;
+    showToast(nuevoEstado ? 'Producto archivado' : 'Producto desarchivado — vuelve a aparecer en el POS', 'ok');
+    productosArchivadosCache = null;
+    cargarProductos(true);
+  } catch (err) {
+    console.error('Error al archivar/desarchivar producto:', err.message || err);
+    showToast(err.message || 'No se pudo cambiar el estado de archivado', 'err');
   }
 }
 

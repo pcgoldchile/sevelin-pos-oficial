@@ -1696,6 +1696,12 @@
         <div class="editor-topbar-acciones">
           <!-- Exporta SOLO este producto. Se oculta al crear uno nuevo: no hay nada que exportar hasta que exista. -->
           <button class="btn btn-outline btn-sm" id="btnExportarProducto">📤 Exportar</button>
+          <!-- Archivar/Desarchivar (retira del POS/venta/tienda sin borrar
+               su historial, ver sql/32-archivar-productos.sql) — mismo
+               criterio que Exportar: oculto al crear uno nuevo, no hay nada
+               que archivar hasta que exista. El texto/ícono cambia según
+               el estado real del producto (ver abrirModalProducto). -->
+          <button class="btn btn-outline btn-sm" id="btnArchivarProducto">📦 Archivar</button>
           <button class="btn btn-ghost" id="btnCancelarProducto">Cancelar</button>
           <button class="btn btn-primary" id="btnGuardarProducto">Guardar Producto</button>
         </div>
