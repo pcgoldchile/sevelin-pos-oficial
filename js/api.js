@@ -274,7 +274,11 @@ const API = {
   // Panel "Métricas" (Página Web → Métricas) — totales de visitas, carritos
   // y cuentas de cliente, agregados de Supabase Web.
   metricasWeb: {
-    obtener: () => apiRequest('/pos/metricas')
+    obtener: () => apiRequest('/pos/metricas'),
+    cuentas: () => apiRequest('/pos/metricas/cuentas'),
+    carritosCompartidos: () => apiRequest('/pos/metricas/carritos-compartidos'),
+    carritosAbandonados: () => apiRequest('/pos/metricas/carritos-abandonados'),
+    reenviarCorreoCarrito: (id) => apiRequest(`/pos/carritos/${id}/reenviar-correo`, { method: 'POST' }),
   },
 
   // Categorías del catálogo web (módulo "Página Web → Categorías") —

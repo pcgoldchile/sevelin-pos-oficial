@@ -54,8 +54,17 @@ const {
   // API key de Resend ni el template del correo, así que le pide a la
   // tienda que lo mande ella (POST /api/pos/notificar-cancelacion, mismo
   // SYNC_SECRET de siempre). Ver PUT /api/pos/pedidos-web/:id más abajo.
-  TIENDA_NOTIFICAR_CANCELACION_URL
+  TIENDA_NOTIFICAR_CANCELACION_URL,
+  // Mismo criterio: reenvío forzado del recordatorio de UN carrito
+  // abandonado puntual, desde el panel Métricas (POST /api/pos/reenviar-
+  // carrito en la tienda). Ver app.post('/api/pos/carritos/:id/reenviar-correo').
+  TIENDA_REENVIAR_CARRITO_URL
 } = process.env;
+
+// Dominio público de la tienda — mismo criterio que el resto del proyecto
+// (valor real por defecto, la env var solo lo sobreescribe). Se usa para
+// armar el link de "Carrito compartido" en el panel Métricas.
+const URL_TIENDA_PUBLICA = process.env.URL_TIENDA_PUBLICA || 'https://sevelin.cl';
 
 /* PRIORIDAD 8 — sin defaults de PIN.
    ------------------------------------------------------------
@@ -5578,6 +5587,12 @@ app.get('/api/pos/metricas', auth(true), async (req, res) => {
     return q;
   };
 
+  // "Activos ahora": sesiones con latido dentro de los últimos 90s (ver
+  // visitas_activas / src/components/visit-tracker.tsx en la tienda —
+  // manda un latido cada 25s, así que 90s tolera perder hasta 2 seguidos
+  // antes de dar a esa persona por desconectada).
+  const hace90Segundos = new Date(Date.now() - 90 * 1000).toISOString();
+
   try {
     const [
       totalVisitas,
@@ -5586,6 +5601,7 @@ app.get('/api/pos/metricas', auth(true), async (req, res) => {
       carritosAbandonados,
       carritosConvertidos,
       totalUsuarios,
+      visitantesActivos,
     ] = await Promise.all([
       contar('eventos_web', q => q.eq('tipo', 'visita')),
       contar('eventos_web', q => q.eq('tipo', 'visita').gte('creado_en', hace30Dias)),
@@ -5593,9 +5609,10 @@ app.get('/api/pos/metricas', auth(true), async (req, res) => {
       contar('carritos_web', q => q.eq('origen', 'checkout').is('numero_pedido', null)),
       contar('carritos_web', q => q.eq('origen', 'checkout').not('numero_pedido', 'is', null)),
       contar('perfiles_clientes'),
+      contar('visitas_activas', q => q.gte('ultima_actividad', hace90Segundos)),
     ]);
 
-    const primerError = [totalVisitas, visitas30Dias, carritosCompartidos, carritosAbandonados, carritosConvertidos, totalUsuarios]
+    const primerError = [totalVisitas, visitas30Dias, carritosCompartidos, carritosAbandonados, carritosConvertidos, totalUsuarios, visitantesActivos]
       .find(r => r.error);
     if (primerError) return enviarErrorBD(res, primerError.error);
 
@@ -5606,9 +5623,117 @@ app.get('/api/pos/metricas', auth(true), async (req, res) => {
       total_carritos_abandonados: carritosAbandonados.count || 0,
       total_carritos_convertidos: carritosConvertidos.count || 0,
       total_usuarios_registrados: totalUsuarios.count || 0,
+      visitantes_activos_ahora: visitantesActivos.count || 0,
     });
   } catch (err) {
     enviarErrorBD(res, err);
+  }
+});
+
+/* Resuelve los SKUs de un carrito contra el catálogo REAL del POS (mismo
+   proceso, `db`, no `dbWeb` — los SKUs son los mismos en ambos lados
+   porque la tienda los sincroniza desde acá) para mostrar nombre/precio
+   vigente en vez de lo que haya quedado "congelado" en el JSON del
+   carrito. Un SKU que ya no existe se omite, no rompe la fila entera. */
+async function resolverItemsCarrito(items) {
+  const skus = [...new Set((items || []).map(it => it?.sku).filter(Boolean))];
+  if (skus.length === 0) return [];
+  const { data: productos } = await db.from('productos').select('sku, nombre, precio_web, precio_unitario').in('sku', skus);
+  const porSku = new Map((productos || []).map(p => [p.sku, p]));
+  return (items || [])
+    .map(it => {
+      const p = porSku.get(it?.sku);
+      if (!p) return null;
+      return { sku: it.sku, cantidad: it.cantidad || 1, nombre: p.nombre, precio: p.precio_web ?? p.precio_unitario ?? 0 };
+    })
+    .filter(Boolean);
+}
+
+/* Detalle de "Cuentas de cliente creadas" (ver tarjeta del panel Métricas) —
+   quién se registró, con qué contacto y si tiene algo guardado en el
+   carrito de su cuenta ahora mismo. */
+app.get('/api/pos/metricas/cuentas', auth(true), async (req, res) => {
+  const { data, error } = await dbWeb.from('perfiles_clientes')
+    .select('id, nombre, apellido, telefono, creado_en, carrito')
+    .order('creado_en', { ascending: false });
+  if (error) return enviarErrorBD(res, error);
+
+  const conCarrito = await Promise.all((data || []).map(async (c) => ({
+    id: c.id,
+    nombre: [c.nombre, c.apellido].filter(Boolean).join(' ') || '(sin nombre)',
+    telefono: c.telefono || null,
+    creado_en: c.creado_en,
+    carrito_actual: await resolverItemsCarrito(c.carrito),
+  })));
+  res.json(conCarrito);
+});
+
+/* Detalle de "Carritos compartidos" — el link real (mismo formato que ya
+   arma /carrito de la tienda, ver carrito-compartido) para poder
+   reenviarlo si el dueño quiere, y qué llevaba adentro. */
+app.get('/api/pos/metricas/carritos-compartidos', auth(true), async (req, res) => {
+  const { data, error } = await dbWeb.from('carritos_web')
+    .select('id, token, items, creado_en')
+    .eq('origen', 'compartido')
+    .order('creado_en', { ascending: false })
+    .limit(200);
+  if (error) return enviarErrorBD(res, error);
+
+  const conItems = await Promise.all((data || []).map(async (c) => ({
+    id: c.id,
+    creado_en: c.creado_en,
+    link: c.token ? `${URL_TIENDA_PUBLICA}/carrito-compartido?t=${c.token}` : null,
+    items: await resolverItemsCarrito(c.items),
+  })));
+  res.json(conItems);
+});
+
+/* Detalle de "Carritos abandonados" — origen='checkout' sin numero_pedido
+   (dejó su correo pero no completó el pago). Trae también si ese correo
+   coincide con una cuenta registrada, para ofrecer su teléfono guardado en
+   el botón de WhatsApp del frontend (si no hay cuenta, el botón sale
+   igual pero con el número vacío para completarlo a mano — pedido
+   explícito del dueño). */
+app.get('/api/pos/metricas/carritos-abandonados', auth(true), async (req, res) => {
+  const { data, error } = await dbWeb.from('carritos_web')
+    .select('id, items, correo, creado_en, actualizado_en, recordatorio_enviado_en, expira_en')
+    .eq('origen', 'checkout')
+    .is('numero_pedido', null)
+    .order('actualizado_en', { ascending: false })
+    .limit(200);
+  if (error) return enviarErrorBD(res, error);
+
+  const conItems = await Promise.all((data || []).map(async (c) => ({
+    id: c.id,
+    correo: c.correo,
+    creado_en: c.creado_en,
+    actualizado_en: c.actualizado_en,
+    recordatorio_enviado_en: c.recordatorio_enviado_en,
+    expirado: c.expira_en ? new Date(c.expira_en) < new Date() : false,
+    items: await resolverItemsCarrito(c.items),
+  })));
+  res.json(conItems);
+});
+
+/* Reenvío forzado del correo de recordatorio de UN carrito abandonado
+   puntual (botón "Reenviar por correo" de la tabla) — el POS no tiene la
+   API key de Resend, así que le pide a la tienda que lo mande ella (mismo
+   patrón que la notificación de cancelación). */
+app.post('/api/pos/carritos/:id/reenviar-correo', auth(true), async (req, res) => {
+  if (!TIENDA_REENVIAR_CARRITO_URL || !SYNC_SECRET) {
+    return enviarError(res, 501, 'Falta configurar TIENDA_REENVIAR_CARRITO_URL en el servidor');
+  }
+  try {
+    const resp = await fetch(TIENDA_REENVIAR_CARRITO_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-sync-secret': SYNC_SECRET },
+      body: JSON.stringify({ carrito_id: req.params.id }),
+    });
+    const cuerpo = await resp.json().catch(() => ({}));
+    if (!resp.ok) return enviarError(res, resp.status, cuerpo.error || 'La tienda no pudo reenviar el correo');
+    res.json(cuerpo);
+  } catch (err) {
+    enviarError(res, 502, 'No se pudo contactar a la tienda para reenviar el correo');
   }
 });
 

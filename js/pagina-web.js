@@ -46,8 +46,16 @@ function mostrarPanelPaginaWeb(nombre) {
   if (nombre === 'pedidos' && typeof cargarPedidosWeb === 'function') cargarPedidosWeb();
   if (nombre === 'categorias') cargarCategoriasWeb();
   if (nombre === 'mas-buscados') cargarMasBuscados();
-  if (nombre === 'metricas') cargarMetricasWeb();
+  if (nombre === 'metricas') { cargarMetricasWeb(); iniciarRefrescoVisitantesActivos(); }
+  else { detenerRefrescoVisitantesActivos(); }
 }
+
+// Deja de refrescar "Visitando ahora" apenas se sale de la sección
+// Página Web por completo (no solo cambiando de sub-pestaña) — evita un
+// timer corriendo de fondo para siempre en una pantalla que ya no se ve.
+document.addEventListener('pos:vista-activa', (e) => {
+  if (e.detail?.vista !== 'view-pagina-web') detenerRefrescoVisitantesActivos();
+});
 
 /* ---------- Más buscados (términos de búsqueda y vistas de producto) ---------- */
 
@@ -309,6 +317,7 @@ function renderMetricasWeb(datos) {
   const elCompartidos = document.getElementById('kpiCarritosCompartidos');
   const elAbandonados = document.getElementById('kpiCarritosAbandonados');
   const elConvertidos = document.getElementById('kpiCarritosConvertidos');
+  const elActivos = document.getElementById('kpiVisitantesActivos');
 
   const n = (v) => (v || 0).toLocaleString('es-CL');
 
@@ -318,4 +327,231 @@ function renderMetricasWeb(datos) {
   if (elCompartidos) elCompartidos.textContent = n(datos?.total_carritos_compartidos);
   if (elAbandonados) elAbandonados.textContent = n(datos?.total_carritos_abandonados);
   if (elConvertidos) elConvertidos.textContent = `Terminaron en compra: ${n(datos?.total_carritos_convertidos)}`;
+  if (elActivos) elActivos.textContent = n(datos?.visitantes_activos_ahora);
+}
+
+/* ---------- "Visitando ahora": se refresca solo cada 20s ----------
+   Trae las métricas completas de nuevo (mismo endpoint liviano, un solo
+   COUNT por tabla) en vez de crear un endpoint aparte solo para un
+   número — la pestaña Métricas ya está pensada para pedirse seguido. */
+let intervaloVisitantesActivos = null;
+
+function iniciarRefrescoVisitantesActivos() {
+  detenerRefrescoVisitantesActivos();
+  intervaloVisitantesActivos = setInterval(cargarMetricasWeb, 20000);
+}
+
+function detenerRefrescoVisitantesActivos() {
+  if (intervaloVisitantesActivos) clearInterval(intervaloVisitantesActivos);
+  intervaloVisitantesActivos = null;
+}
+
+/* ---------- Detalle desplegable (Cuentas / Compartidos / Abandonados) ----------
+   Un solo <tbody> reutilizado (ver #panelDetalleMetricas en index.html):
+   cada tipo arma sus propias columnas y acciones por fila. */
+
+let detalleMetricasAbierto = null;   // 'cuentas' | 'compartidos' | 'abandonados' | null
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.kpi-clickable[data-drill]').forEach(card => {
+    card.addEventListener('click', () => abrirDetalleMetricas(card.dataset.drill));
+  });
+  document.getElementById('btnCerrarDetalleMetricas')?.addEventListener('click', cerrarDetalleMetricas);
+});
+
+function cerrarDetalleMetricas() {
+  detalleMetricasAbierto = null;
+  const panel = document.getElementById('panelDetalleMetricas');
+  if (panel) panel.style.display = 'none';
+}
+
+async function abrirDetalleMetricas(tipo) {
+  // Un segundo click sobre la misma tarjeta ya abierta la cierra, como un acordeón.
+  if (detalleMetricasAbierto === tipo) { cerrarDetalleMetricas(); return; }
+  detalleMetricasAbierto = tipo;
+
+  const panel = document.getElementById('panelDetalleMetricas');
+  const titulo = document.getElementById('tituloDetalleMetricas');
+  const thead = document.getElementById('theadDetalleMetricas');
+  const tbody = document.getElementById('tbodyDetalleMetricas');
+  if (!panel || !titulo || !thead || !tbody) return;
+
+  panel.style.display = '';
+  titulo.textContent = 'Cargando…';
+  thead.innerHTML = '';
+  tbody.innerHTML = '<tr class="empty-row"><td>Cargando…</td></tr>';
+
+  try {
+    if (tipo === 'cuentas') {
+      const datos = await API.metricasWeb.cuentas();
+      renderDetalleCuentas(datos, titulo, thead, tbody);
+    } else if (tipo === 'compartidos') {
+      const datos = await API.metricasWeb.carritosCompartidos();
+      renderDetalleCompartidos(datos, titulo, thead, tbody);
+    } else if (tipo === 'abandonados') {
+      const datos = await API.metricasWeb.carritosAbandonados();
+      renderDetalleAbandonados(datos, titulo, thead, tbody);
+    }
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  } catch (err) {
+    console.error('Error al cargar el detalle de métricas:', err.message || err);
+    tbody.innerHTML = `<tr class="empty-row"><td>${escHtml(err.message || 'No se pudo cargar el detalle')}</td></tr>`;
+  }
+}
+
+/* Resumen corto de los ítems de un carrito ("2× Mouse Gamer, 1× Teclado…")
+   para no imprimir un JSON crudo en la tabla. */
+function resumenItemsCarrito(items) {
+  if (!items || items.length === 0) return '(sin productos disponibles)';
+  return items.map(it => `${it.cantidad}× ${escHtml(it.nombre)}`).join(', ');
+}
+
+function renderDetalleCuentas(datos, titulo, thead, tbody) {
+  titulo.textContent = `👥 Cuentas de cliente (${datos.length})`;
+  thead.innerHTML = '<tr><th>Nombre</th><th>Teléfono</th><th>Creada</th><th>Carrito actual</th><th style="text-align:right;">WhatsApp</th></tr>';
+
+  if (datos.length === 0) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="5">Todavía no hay cuentas registradas.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = datos.map(c => `
+    <tr>
+      <td>${escHtml(c.nombre)}</td>
+      <td>${c.telefono ? escHtml(c.telefono) : '<span class="fila-meta">Sin teléfono</span>'}</td>
+      <td>${tsAChile(c.creado_en, false)}</td>
+      <td>${resumenItemsCarrito(c.carrito_actual)}</td>
+      <td style="text-align:right;">
+        ${c.carrito_actual?.length
+          ? `<button class="btn btn-outline btn-sm" data-wa-carrito='${JSON.stringify({ telefono: c.telefono || '', items: c.carrito_actual }).replace(/'/g, '&#39;')}'>📲 Compartir</button>`
+          : ''}
+      </td>
+    </tr>`).join('');
+
+  tbody.querySelectorAll('[data-wa-carrito]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const { telefono, items } = JSON.parse(btn.dataset.waCarrito);
+      compartirCarritoPorWhatsapp(telefono, items, null);
+    });
+  });
+}
+
+function renderDetalleCompartidos(datos, titulo, thead, tbody) {
+  titulo.textContent = `🔗 Carritos compartidos (${datos.length})`;
+  thead.innerHTML = '<tr><th>Creado</th><th>Contenido</th><th style="text-align:right;">Acciones</th></tr>';
+
+  if (datos.length === 0) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="3">Todavía no se ha compartido ningún carrito.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = datos.map(c => `
+    <tr>
+      <td>${tsAChile(c.creado_en)}</td>
+      <td>${resumenItemsCarrito(c.items)}</td>
+      <td style="text-align:right;">
+        <div class="cell-actions" style="justify-content:flex-end;">
+          ${c.link ? `<button class="btn btn-outline btn-sm" data-copiar-link="${escHtml(c.link)}">🔗 Copiar link</button>` : ''}
+          ${c.items?.length ? `<button class="btn btn-outline btn-sm" data-wa-carrito='${JSON.stringify({ telefono: '', items: c.items, link: c.link }).replace(/'/g, '&#39;')}'>📲 WhatsApp</button>` : ''}
+        </div>
+      </td>
+    </tr>`).join('');
+
+  tbody.querySelectorAll('[data-copiar-link]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(btn.dataset.copiarLink);
+        showToast('Link copiado', 'ok');
+      } catch {
+        showToast('No se pudo copiar — cópialo a mano: ' + btn.dataset.copiarLink, 'err');
+      }
+    });
+  });
+  tbody.querySelectorAll('[data-wa-carrito]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const { telefono, items, link } = JSON.parse(btn.dataset.waCarrito);
+      compartirCarritoPorWhatsapp(telefono, items, link);
+    });
+  });
+}
+
+function renderDetalleAbandonados(datos, titulo, thead, tbody) {
+  titulo.textContent = `🛒 Carritos abandonados (${datos.length})`;
+  thead.innerHTML = '<tr><th>Correo</th><th>Dejado</th><th>Contenido</th><th>Estado</th><th style="text-align:right;">Acciones</th></tr>';
+
+  if (datos.length === 0) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="5">No hay carritos abandonados pendientes.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = datos.map(c => {
+    const estado = c.expirado
+      ? '<span class="badge badge-red">Expirado</span>'
+      : c.recordatorio_enviado_en
+        ? `<span class="badge badge-blue">Recordatorio enviado</span>`
+        : '<span class="badge badge-gold">Sin recordatorio</span>';
+    return `
+    <tr data-fila-carrito="${c.id}">
+      <td>${escHtml(c.correo || '(sin correo)')}</td>
+      <td>${tsAChile(c.actualizado_en || c.creado_en)}</td>
+      <td>${resumenItemsCarrito(c.items)}</td>
+      <td>${estado}</td>
+      <td style="text-align:right;">
+        <div class="cell-actions" style="justify-content:flex-end;">
+          ${c.correo ? `<button class="btn btn-outline btn-sm" data-reenviar-correo="${c.id}">✉️ Reenviar correo</button>` : ''}
+          ${c.items?.length ? `<button class="btn btn-outline btn-sm" data-wa-carrito='${JSON.stringify({ telefono: '', items: c.items, link: null }).replace(/'/g, '&#39;')}'>📲 WhatsApp</button>` : ''}
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  tbody.querySelectorAll('[data-reenviar-correo]').forEach(btn => {
+    btn.addEventListener('click', () => reenviarCorreoCarrito(btn.dataset.reenviarCorreo, btn));
+  });
+  tbody.querySelectorAll('[data-wa-carrito]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const { telefono, items, link } = JSON.parse(btn.dataset.waCarrito);
+      compartirCarritoPorWhatsapp(telefono, items, link);
+    });
+  });
+}
+
+async function reenviarCorreoCarrito(id, btn) {
+  const textoOriginal = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Enviando…';
+  try {
+    const resp = await API.metricasWeb.reenviarCorreoCarrito(id);
+    if (resp?.enviado) {
+      showToast('Correo reenviado', 'ok');
+      const fila = btn.closest('tr');
+      const celdaEstado = fila?.children?.[3];
+      if (celdaEstado) celdaEstado.innerHTML = '<span class="badge badge-blue">Recordatorio enviado</span>';
+    } else {
+      showToast('La tienda no pudo enviarlo (revisa que el dominio de Resend esté verificado)', 'err');
+    }
+  } catch (err) {
+    console.error('Error al reenviar el correo del carrito:', err.message || err);
+    showToast(err.message || 'No se pudo reenviar el correo', 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = textoOriginal;
+  }
+}
+
+/* Abre WhatsApp con un mensaje armado a partir del carrito — con
+   teléfono, va directo a esa conversación; sin teléfono (carrito de
+   invitado sin cuenta), abre igual pero con el número vacío para que el
+   dueño lo complete a mano (pedido explícito: mejor ofrecer el botón
+   siempre que no tener nada). */
+function compartirCarritoPorWhatsapp(telefono, items, link) {
+  const detalle = (items || []).map(it => `• ${it.cantidad}× ${it.nombre}`).join('\n');
+  const partes = [
+    'Hola! Vi que dejaste esto en tu carrito de Sevelin:',
+    detalle,
+    link ? `Puedes retomarlo aquí: ${link}` : '¿Te ayudamos a completar la compra?',
+  ];
+  const mensaje = encodeURIComponent(partes.join('\n\n'));
+  const numero = (telefono || '').replace(/\D/g, '');
+  window.open(`https://wa.me/${numero}?text=${mensaje}`, '_blank');
 }

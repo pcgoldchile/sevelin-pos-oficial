@@ -2150,25 +2150,30 @@
           </div>
 
           <div class="kpi-grid">
+            <div class="kpi-card kpi-green" id="kpiCardActivosAhora">
+              <div class="kpi-label">🟢 Visitando ahora</div>
+              <div class="kpi-value" id="kpiVisitantesActivos">0</div>
+              <div class="kpi-foot">Se actualiza solo cada 20s</div>
+            </div>
             <div class="kpi-card kpi-blue">
               <div class="kpi-label">👁️ Visitas totales</div>
               <div class="kpi-value" id="kpiVisitasTotales">0</div>
               <div class="kpi-foot" id="kpiVisitas30Dias">Últimos 30 días: 0</div>
             </div>
-            <div class="kpi-card kpi-green">
+            <div class="kpi-card kpi-green kpi-clickable" id="kpiCardCuentas" data-drill="cuentas" title="Ver el detalle">
               <div class="kpi-label">👥 Cuentas de cliente creadas</div>
               <div class="kpi-value" id="kpiUsuariosRegistrados">0</div>
-              <div class="kpi-foot">Registro real en la tienda (no invitados)</div>
+              <div class="kpi-foot">Registro real en la tienda (no invitados) · click para ver</div>
             </div>
-            <div class="kpi-card kpi-gold">
+            <div class="kpi-card kpi-gold kpi-clickable" id="kpiCardCompartidos" data-drill="compartidos" title="Ver el detalle">
               <div class="kpi-label">🔗 Carritos compartidos</div>
               <div class="kpi-value" id="kpiCarritosCompartidos">0</div>
-              <div class="kpi-foot">Links creados con "Compartir carrito"</div>
+              <div class="kpi-foot">Links creados con "Compartir carrito" · click para ver</div>
             </div>
-            <div class="kpi-card kpi-red">
+            <div class="kpi-card kpi-red kpi-clickable" id="kpiCardAbandonados" data-drill="abandonados" title="Ver el detalle">
               <div class="kpi-label">🛒 Carritos abandonados</div>
               <div class="kpi-value" id="kpiCarritosAbandonados">0</div>
-              <div class="kpi-foot" id="kpiCarritosConvertidos">Terminaron en compra: 0</div>
+              <div class="kpi-foot" id="kpiCarritosConvertidos">Terminaron en compra: 0 · click para ver</div>
             </div>
           </div>
           <p class="subtitle" style="margin-top:14px;">
@@ -2176,6 +2181,22 @@
             los que dejaron su correo en el checkout y no completaron el pago dentro de las 24 horas
             en que el carrito sigue vigente.
           </p>
+
+          <!-- Detalle desplegable de una de las 3 tarjetas cliqueables de arriba —
+               mismo <tbody> reutilizado, se arma distinto según cuál se abrió
+               (ver renderDetalleMetricas en js/pagina-web.js). -->
+          <div id="panelDetalleMetricas" style="display:none; margin-top:16px;">
+            <div class="card-head" style="padding:0 0 10px;">
+              <h3 id="tituloDetalleMetricas" style="margin:0;">Detalle</h3>
+              <button class="btn btn-ghost btn-sm" id="btnCerrarDetalleMetricas">✕ Cerrar</button>
+            </div>
+            <div class="table-wrapper">
+              <table class="data-table">
+                <thead id="theadDetalleMetricas"></thead>
+                <tbody id="tbodyDetalleMetricas"></tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
 
