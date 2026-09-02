@@ -657,6 +657,21 @@ input[type="checkbox"] { width: auto; height: auto; accent-color: var(--blue); c
     .nav-links .nav-btn {
         flex: 0 0 auto; white-space: nowrap; padding: 0 16px; font-size: 13.5px;
     }
+
+    /* BUG REAL (02-09-2026): .nav-group y .nav-subitems seguían en columna
+       (layout de escritorio) dentro de la barra horizontal de celular —
+       la columna de sub-ítems de Finanzas/Servicio Técnico se desbordaba
+       verticalmente y tapaba el contenido de abajo. Se aplanan también a
+       fila: cada grupo (botón padre + sus sub-ítems) queda como un bloque
+       horizontal más dentro del mismo scroll, sin apilarse. */
+    .nav-group { flex-direction: row; align-items: center; flex: 0 0 auto; gap: 4px; }
+    .nav-subitems {
+        flex-direction: row; margin: 0; padding-left: 8px; gap: 2px;
+        border-left: 1.5px solid var(--border);
+    }
+    .nav-subitems .nav-subitem {
+        flex: 0 0 auto; white-space: nowrap; padding: 0 10px; height: 32px;
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {
