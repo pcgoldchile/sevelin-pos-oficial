@@ -702,7 +702,9 @@ const CAMPOS_PRODUCTO = [
   // NOVEDAD/TENDENCIA/OFERTA — ver sql/28-etiqueta-web.sql.
   'etiqueta_web',
   // Módulo Garantías — ver sql/31-garantias.sql.
-  'condicion', 'meses_garantia'
+  'condicion', 'meses_garantia',
+  // Archivar (retirar del POS/venta/tienda sin borrar, ver sql/32-archivar-productos.sql).
+  'archivado'
 ];
 
 /* Normaliza el código de barras: SOLO dígitos.
@@ -743,6 +745,14 @@ function sanearProducto(body = {}) {
      importación masiva o un PUT parcial jamás encienden los lotes por su
      cuenta: la única forma es el checkbox del modal de producto. */
   if (body.usa_lotes !== undefined) p.usa_lotes = !!body.usa_lotes;
+  // Archivar: siempre se lleva publicado_web=false consigo, para que un
+  // producto archivado nunca pueda quedar visible en la tienda por
+  // separado (el frontend ya lo manda así, esto es la garantía del
+  // servidor por si algún día se llama a este endpoint desde otro lado).
+  if (body.archivado !== undefined) {
+    p.archivado = !!body.archivado;
+    if (p.archivado) p.publicado_web = false;
+  }
 
   // Cada vez que se toca el stock queda registrada la fecha del cambio
   if (p.stock !== undefined) p.stock_actualizado_en = new Date().toISOString();
@@ -832,8 +842,18 @@ app.post('/api/productos/limpiar-codigos', auth(true), exigirPinAdmin, async (re
   res.json({ revisados: (data || []).length, corregidos });
 });
 
+/* Por defecto solo trae productos NO archivados — este endpoint alimenta
+   `productsList`, compartida por TODA la app (venta, OT, mermas, lotes,
+   reportes, no solo el módulo Productos), así que un producto archivado
+   queda excluido de golpe en todos lados con este único filtro. Con
+   ?archivados=1 se pide lo contrario (solo archivados), para la vista
+   "Ver: Archivados" del módulo Productos — nunca se mezclan ambos en la
+   misma respuesta. */
 app.get('/api/productos', auth(), async (req, res) => {
-  const { data, error } = await db.from('productos').select('*').order('nombre', { ascending: true });
+  const soloArchivados = req.query.archivados === '1';
+  const { data, error } = await db.from('productos').select('*')
+    .eq('archivado', soloArchivados)
+    .order('nombre', { ascending: true });
   if (error) return enviarErrorBD(res, error);
   res.json(limpiarLista(data, req.usuario.rol));
 });
@@ -1127,12 +1147,14 @@ app.get('/api/productos/buscar', auth(), async (req, res) => {
     return res.json({ ...limpiarParaRol(producto, req.usuario.rol), _origen: origen });
   };
 
-  // 1) Código de barras (lo habitual al escanear)
-  const { data: porBarra } = await db.from('productos').select('*').eq('codigo_barras', codigo).limit(1);
+  // 1) Código de barras (lo habitual al escanear) — archivado=false: un
+  // producto archivado no debe poder agregarse a una venta ni escaneando
+  // su código directo (ver sql/32-archivar-productos.sql).
+  const { data: porBarra } = await db.from('productos').select('*').eq('codigo_barras', codigo).eq('archivado', false).limit(1);
   if (porBarra && porBarra[0]) return responder(porBarra[0], 'codigo_barras');
 
   // 2) SKU
-  const { data: porSku } = await db.from('productos').select('*').eq('sku', codigo).limit(1);
+  const { data: porSku } = await db.from('productos').select('*').eq('sku', codigo).eq('archivado', false).limit(1);
   if (porSku && porSku[0]) return responder(porSku[0], 'sku');
 
   // 3) Número de serie de una unidad ya vendida

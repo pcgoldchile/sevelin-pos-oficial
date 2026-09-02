@@ -11,11 +11,20 @@ let editingProductId = null;
 let productosSeleccionados = new Set();
 let productosVisibles = [];   // última lista renderizada (para "seleccionar todo")
 
+// Productos archivados: NO viven en productsList (que alimenta venta, OT,
+// mermas, lotes, reportes — un archivado no debe aparecer ahí). Se piden
+// aparte solo cuando se elige "Ver: Archivados", y se cachean para no
+// volver a pedirlos en cada tecla del buscador. Se invalida (= null) cada
+// vez que se archiva/desarchiva algo.
+let productosArchivadosCache = null;
+
 /* Íconos SVG: heredan el color del botón, así el lápiz nunca se pierde
    contra el fondo (antes era un emoji sobre un degradado dorado). */
 const ICO_EDITAR_PROD = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
 const ICO_ETIQUETA_PROD = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 12 22l-9-9V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.2"/></svg>`;
 const ICO_ELIMINAR_PROD = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>`;
+const ICO_ARCHIVAR_PROD = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></svg>`;
+const ICO_DESARCHIVAR_PROD = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M12 17v-4M10 15l2-2 2 2"/></svg>`;
 
 /* Etiqueta destacada (NOVEDAD/TENDENCIA/OFERTA) — se muestra igual en la
    tabla del POS y en la tienda web (ver tarjeta-producto.tsx). */
@@ -581,12 +590,18 @@ const POR_PAGINA = 50;
 let paginaActual = 1;
 let itemsFiltrados = [];
 
-function renderProductosTabla(items) {
+function renderProductosTabla(items, origen) {
   if (!elProductosTableBody) return;
   productosVisibles = items || [];
+  // 'activos' (por defecto) busca en productsList al editar/etiquetar;
+  // 'archivados' busca en su propia caché, que vive fuera de productsList.
+  const fuente = origen === 'archivados' ? productosArchivadosCache : productsList;
 
   if (!items || items.length === 0) {
-    elProductosTableBody.innerHTML = '<tr class="empty-row"><td colspan="12">No hay productos en el inventario. Crea uno o importa tu CSV de Tiendanube.</td></tr>';
+    const mensaje = origen === 'archivados'
+      ? 'No hay productos archivados.'
+      : 'No hay productos en el inventario. Crea uno o importa tu CSV de Tiendanube.';
+    elProductosTableBody.innerHTML = `<tr class="empty-row"><td colspan="12">${mensaje}</td></tr>`;
     actualizarBarraProductos();
     return;
   }
@@ -631,6 +646,9 @@ function renderProductosTabla(items) {
         <div class="cell-actions">
           <button class="btn btn-icon btn-icon-view" data-etiqueta="${p.id}" title="Imprimir etiqueta de código de barras">${ICO_ETIQUETA_PROD}</button>
           <button class="btn btn-icon btn-icon-edit" data-editar="${p.id}" title="Editar producto">${ICO_EDITAR_PROD}</button>
+          ${origen === 'archivados'
+            ? `<button class="btn btn-icon btn-icon-edit" data-desarchivar="${p.id}" title="Desarchivar producto">${ICO_DESARCHIVAR_PROD}</button>`
+            : `<button class="btn btn-icon btn-icon-edit" data-archivar="${p.id}" title="Archivar producto (retirarlo sin borrar su historial)">${ICO_ARCHIVAR_PROD}</button>`}
           <button class="btn btn-icon btn-icon-del" data-eliminar="${p.id}" title="Eliminar producto">${ICO_ELIMINAR_PROD}</button>
         </div>
       </td>
@@ -653,14 +671,14 @@ function renderProductosTabla(items) {
      cualquier elemento. Sin este cambio, tocar el nombre no haría nada. */
   elProductosTableBody.querySelectorAll('[data-editar]').forEach(btn => {
     btn.addEventListener('click', () => {
-      const producto = productsList.find(p => String(p.id) === btn.dataset.editar);
+      const producto = (fuente || []).find(p => String(p.id) === btn.dataset.editar);
       if (producto) abrirModalProducto(producto);
     });
   });
 
   elProductosTableBody.querySelectorAll('button[data-etiqueta]').forEach(btn => {
     btn.addEventListener('click', () => {
-      const producto = productsList.find(p => String(p.id) === btn.dataset.etiqueta);
+      const producto = (fuente || []).find(p => String(p.id) === btn.dataset.etiqueta);
       if (producto && typeof abrirModalEtiqueta === 'function') abrirModalEtiqueta(producto);
     });
   });
@@ -668,12 +686,24 @@ function renderProductosTabla(items) {
   elProductosTableBody.querySelectorAll('button[data-eliminar]').forEach(btn => {
     btn.addEventListener('click', () => eliminarProducto(btn.dataset.eliminar));
   });
+
+  elProductosTableBody.querySelectorAll('button[data-archivar]').forEach(btn => {
+    btn.addEventListener('click', () => archivarProducto(btn.dataset.archivar, fuente));
+  });
+
+  elProductosTableBody.querySelectorAll('button[data-desarchivar]').forEach(btn => {
+    btn.addEventListener('click', () => desarchivarProducto(btn.dataset.desarchivar, fuente));
+  });
 }
 
 // ---------- Filtro de búsqueda + orden/filtro especial ----------
 function handleBuscarProductoTabla() {
   const q = (elBuscarProductoTabla?.value || '').trim().toLowerCase();
   const modo = elOrdenProductos ? elOrdenProductos.value : '';
+
+  // "Ver: Archivados" no filtra productsList (los archivados ni siquiera
+  // están ahí) — pide su propia lista aparte, ver renderProductosArchivados.
+  if (modo === 'archivados') { renderProductosArchivados(q); return; }
 
   let resultado = productsList.filter(p =>
     (p.nombre || '').toLowerCase().includes(q) ||
@@ -714,6 +744,27 @@ function handleBuscarProductoTabla() {
   }
 
   renderProductosTabla(resultado);
+}
+
+/* Trae (y cachea) los productos archivados, filtra por el buscador y los
+   pinta con las acciones propias de esa vista (Desarchivar en vez de
+   Archivar, ver renderProductosTabla). */
+async function renderProductosArchivados(q) {
+  try {
+    if (!productosArchivadosCache) productosArchivadosCache = await API.productos.listarArchivados();
+    const resultado = productosArchivadosCache
+      .filter(p =>
+        (p.nombre || '').toLowerCase().includes(q) ||
+        (p.sku || '').toLowerCase().includes(q) ||
+        (p.codigo_barras || '').toLowerCase().includes(q)
+      )
+      .slice()
+      .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+    renderProductosTabla(resultado, 'archivados');
+  } catch (err) {
+    console.error('Error al cargar productos archivados:', err.message || err);
+    showToast(err.message || 'No se pudieron cargar los productos archivados', 'err');
+  }
 }
 
 /* Controles de página. Se ocultan solos si todo cabe en una. */
@@ -1625,7 +1676,50 @@ async function eliminarProducto(id) {
     cargarProductos(true);
   } catch (err) {
     console.error('Error al eliminar producto:', err.message || err);
-    showToast(err.message || 'No se pudo eliminar el producto', 'err');
+    // Causa más común: el producto tiene ventas reales (venta_items) —
+    // no se puede borrar sin romper ese historial. La solución es
+    // archivarlo, no forzar el borrado.
+    showToast(err.message || 'No se pudo eliminar — si tiene ventas, archívalo en vez de borrarlo', 'err');
+  }
+}
+
+// ---------- Archivar / Desarchivar ----------
+// Retira un producto del POS/venta/tienda SIN borrarlo (a diferencia de
+// Eliminar, que la base rechaza si el producto tiene ventas reales). El
+// nombre viaja siempre: sanearProducto() exige `nombre` incluso en un PUT
+// parcial, así que un body con solo {archivado:true} da 400.
+async function archivarProducto(id, fuente) {
+  const producto = (fuente || productsList).find(p => String(p.id) === String(id));
+  if (!producto) return;
+  if (!confirm(`Archivar "${producto.nombre}"? Deja de aparecer en el POS y en la tienda web, pero conserva su historial de ventas.`)) return;
+
+  try {
+    await API.productos.actualizar(id, { nombre: producto.nombre, archivado: true });
+    showToast('Producto archivado', 'ok');
+    productosArchivadosCache = null;   // se invalida: la próxima vez que se abra "Ver: Archivados" debe traerlo
+    cargarProductos(true);
+  } catch (err) {
+    console.error('Error al archivar producto:', err.message || err);
+    showToast(err.message || 'No se pudo archivar el producto', 'err');
+  }
+}
+
+async function desarchivarProducto(id, fuente) {
+  const producto = (fuente || productosArchivadosCache || []).find(p => String(p.id) === String(id));
+  if (!producto) return;
+
+  try {
+    await API.productos.actualizar(id, { nombre: producto.nombre, archivado: false });
+    showToast('Producto desarchivado — vuelve a aparecer en el POS', 'ok');
+    // Se invalida la caché de archivados y se refresca productsList en un
+    // solo paso: cargarProductos(true) termina llamando a
+    // handleBuscarProductoTabla(), que como el filtro sigue en
+    // "Ver: Archivados" vuelve a pedir la lista (ya sin este producto).
+    productosArchivadosCache = null;
+    cargarProductos(true);
+  } catch (err) {
+    console.error('Error al desarchivar producto:', err.message || err);
+    showToast(err.message || 'No se pudo desarchivar el producto', 'err');
   }
 }
 

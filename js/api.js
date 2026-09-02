@@ -72,6 +72,9 @@ const API = {
 
   productos: {
     listar: () => apiRequest('/productos'),
+    // Archivados: mismo endpoint, ?archivados=1 invierte el filtro
+    // (ver GET /api/productos en el backend) — nunca se mezclan.
+    listarArchivados: () => apiRequest('/productos?archivados=1'),
     crear: (p) => apiRequest('/productos', { method: 'POST', body: p }),
     actualizar: (id, p) => apiRequest(`/productos/${id}`, { method: 'PUT', body: p }),
     eliminar: (id) => apiRequest(`/productos/${id}`, { method: 'DELETE' }),
