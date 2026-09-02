@@ -112,7 +112,17 @@
            se cuadra caja, y el taller se atiende aparte). Solo cambia el orden
            visual: los data-view y los ids de las secciones no se tocan. -->
       <button class="nav-btn active" data-view="view-pos">🛒 POS</button>
-      <button class="nav-btn admin-only" data-view="view-productos">📦 Productos</button>
+
+      <!-- "Archivados" como sub-ítem de Productos (mismo patrón que
+           Finanzas/Servicio Técnico abajo) — antes esa vista solo se podía
+           llegar a mano desde el filtro "Ver: Archivados" del listado,
+           pedido explícito de que tenga su propio acceso en el menú. -->
+      <div class="nav-group">
+        <button class="nav-btn admin-only" data-view="view-productos">📦 Productos</button>
+        <div class="nav-subitems admin-only">
+          <button class="nav-subitem" data-view="view-productos" data-subtab="archivados">📥 Archivados</button>
+        </div>
+      </div>
 
       <!-- Sub-ítems SIEMPRE visibles debajo de cada padre (sin acordeón:
            el pedido fue "que se desplieguen sin que yo los toque") — cada

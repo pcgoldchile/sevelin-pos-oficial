@@ -1724,6 +1724,7 @@ async function archivarProducto(id, fuente) {
 async function desarchivarProducto(id, fuente) {
   const producto = (fuente || productosArchivadosCache || []).find(p => String(p.id) === String(id));
   if (!producto) return;
+  if (!confirm(`¿Desarchivar "${producto.nombre}"? Vuelve a aparecer en el POS, la venta y la tienda web.`)) return;
 
   try {
     await API.productos.actualizar(id, { nombre: producto.nombre, archivado: false });
@@ -1752,7 +1753,10 @@ async function alternarArchivadoDesdeEditor() {
   const nuevoEstado = !productoEnEdicionArchivado;
   const nombre = (elProdNombre?.value || '').trim() || 'este producto';
 
-  if (nuevoEstado && !confirm(`Archivar "${nombre}"? Deja de aparecer en el POS y en la tienda web, pero conserva su historial de ventas.`)) return;
+  const mensajeConfirmacion = nuevoEstado
+    ? `¿Archivar "${nombre}"? Deja de aparecer en el POS y en la tienda web, pero conserva su historial de ventas.`
+    : `¿Desarchivar "${nombre}"? Vuelve a aparecer en el POS, la venta y la tienda web.`;
+  if (!confirm(mensajeConfirmacion)) return;
 
   try {
     await API.productos.actualizar(editingProductId, { nombre, archivado: nuevoEstado });

@@ -337,7 +337,16 @@ function activarVista(viewId, subtab) {
   }
   targetView.classList.add('active');
 
-  if (viewId === 'view-productos' && typeof cargarProductos === 'function') cargarProductos();
+  /* "📥 Archivados" (sub-ítem de Productos): pone el filtro del listado
+     en "archivados" ANTES de cargar, para que se abra directo ahí en vez
+     de la lista normal — y lo devuelve a "" si se entra por el botón
+     padre (📦 Productos) sin sub-pestaña, para no quedar pegado en
+     Archivados la próxima vez que se entre por el atajo normal. */
+  if (viewId === 'view-productos') {
+    const elOrden = document.getElementById('ordenProductos');
+    if (elOrden) elOrden.value = subtab === 'archivados' ? 'archivados' : '';
+    if (typeof cargarProductos === 'function') cargarProductos();
+  }
 
   /* Historial y Gastos pasaron a ser sub-pestañas de Finanzas. La
      pestaña por defecto ahora es Historial de Ventas (antes Balance):
