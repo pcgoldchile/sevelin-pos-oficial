@@ -1914,7 +1914,9 @@
           <div class="card">
             <div class="card-head"><div><h2>Fotos</h2>
               <p class="subtitle">Se procesan automáticamente a 1000×1000, fondo blanco. La primera es la foto principal del catálogo.</p>
-            </div></div>
+            </div>
+              <button type="button" class="btn btn-outline btn-sm" id="btnDescargarTodasFotos" style="display:none;" title="Descarga todas las fotos de este producto en un .zip">⬇️ Descargar todas</button>
+            </div>
 
             <label class="dropzone-fotos" id="dropzoneFotos" for="prodFotoInput">
               <span class="dropzone-fotos-icono">🖼️</span>
@@ -4942,6 +4944,8 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+  <!-- Empaqueta las fotos de un producto en un .zip para "Descargar todas" (ver js/productos.js). -->
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <!-- Escáner por cámara y generador de códigos de barras para etiquetas -->
   <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>

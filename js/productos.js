@@ -192,6 +192,7 @@ function setupProductosEventListeners() {
   if (elBtnCancelarProducto) elBtnCancelarProducto.addEventListener('click', cerrarModalProducto);
   if (elBtnVolverProductos) elBtnVolverProductos.addEventListener('click', cerrarModalProducto);
   if (elBtnGuardarProducto) elBtnGuardarProducto.addEventListener('click', guardarProducto);
+  document.getElementById('btnDescargarTodasFotos')?.addEventListener('click', descargarTodasFotosProducto);
   if (elBtnGenerarSeoIA) elBtnGenerarSeoIA.addEventListener('click', generarSeoConIA);
   if (elProdMetaTitulo) elProdMetaTitulo.addEventListener('input', actualizarContadoresSeo);
   if (elProdMetaDescripcion) elProdMetaDescripcion.addEventListener('input', actualizarContadoresSeo);
@@ -1355,6 +1356,8 @@ let fotoArrastrandoIdx = null;
 function renderFotosProducto() {
   if (!elProdFotosGrid) return;
   const lista = fotosActivas();
+  const elBtnDescargarTodas = document.getElementById('btnDescargarTodasFotos');
+  if (elBtnDescargarTodas) elBtnDescargarTodas.style.display = lista.length ? '' : 'none';
   if (!lista.length) {
     elProdFotosGrid.innerHTML = '<p class="modal-hint">Sin fotos todavía.</p>';
     return;
@@ -1369,6 +1372,8 @@ function renderFotosProducto() {
         <img src="${escHtml(url)}" style="width:100%; height:100%; object-fit:cover; border-radius:8px; border:1px solid #d8dee9; pointer-events:none;">
         <button type="button" class="btn-quitar-foto" data-idx="${i}"
           style="position:absolute; top:-6px; right:-6px; width:22px; height:22px; border-radius:999px; border:none; background:#dc2626; color:#fff; cursor:pointer; line-height:1;">×</button>
+        <button type="button" class="btn-descargar-foto" data-idx="${i}" title="Descargar esta foto"
+          style="position:absolute; bottom:-6px; right:-6px; width:22px; height:22px; border-radius:999px; border:none; background:#0891b2; color:#fff; cursor:pointer; line-height:1; font-size:11px;">⬇</button>
         ${i === 0 ? '<span style="position:absolute; bottom:4px; left:4px; background:rgba(37,99,235,.9); color:#fff; font-size:10px; font-weight:700; padding:2px 6px; border-radius:999px;">Principal</span>' : ''}
       </div>
       <div style="display:flex; justify-content:center; gap:4px; margin-top:4px;">
@@ -1385,7 +1390,91 @@ function renderFotosProducto() {
   elProdFotosGrid.querySelectorAll('.btn-mover-foto').forEach(btn => {
     btn.addEventListener('click', () => moverFotoProducto(Number(btn.dataset.idx), btn.dataset.direccion));
   });
+  elProdFotosGrid.querySelectorAll('.btn-descargar-foto').forEach(btn => {
+    btn.addEventListener('click', () => descargarFotoProducto(Number(btn.dataset.idx), btn));
+  });
   configurarArrastreFotos();
+}
+
+/* ---------- Descargar fotos (una o todas) ----------
+   Las fotos viven en Supabase Storage (bucket público) — un <a href
+   download> normal no fuerza la descarga en un dominio distinto (el
+   navegador la abre en pestaña nueva en vez de bajarla), así que se trae
+   la imagen como blob y se dispara la descarga desde ahí, con el nombre
+   de archivo real del producto en vez del hash del storage. */
+function slugArchivo(base) {
+  return (base || 'producto').trim().toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'producto';
+}
+
+function nombreArchivoFoto(base, idx, total, url) {
+  const ext = (url.split('.').pop() || 'webp').split('?')[0].slice(0, 5);
+  const limpio = slugArchivo(base);
+  return total > 1 ? `${limpio}-${idx + 1}.${ext}` : `${limpio}.${ext}`;
+}
+
+function dispararDescargaBlob(blob, nombreArchivo) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nombreArchivo;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+async function descargarFotoProducto(idx, boton) {
+  const lista = fotosActivas();
+  const url = lista[idx];
+  if (!url) return;
+  const nombre = elProdNombre?.value.trim() || 'producto';
+  if (boton) boton.disabled = true;
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('No se pudo descargar la foto');
+    const blob = await resp.blob();
+    dispararDescargaBlob(blob, nombreArchivoFoto(nombre, idx, lista.length, url));
+  } catch (err) {
+    showToast(err.message || 'No se pudo descargar la foto', 'err');
+  } finally {
+    if (boton) boton.disabled = false;
+  }
+}
+
+/* "Descargar todas": una sola foto se baja directa; dos o más se empaquetan
+   en un .zip (JSZip, cargado en index.html) — bajar 5 archivos sueltos de
+   un solo click casi siempre lo bloquea el navegador (límite de descargas
+   múltiples por interacción del usuario). */
+async function descargarTodasFotosProducto() {
+  const lista = fotosActivas();
+  if (!lista.length) return;
+  const nombre = elProdNombre?.value.trim() || 'producto';
+  const boton = document.getElementById('btnDescargarTodasFotos');
+  if (boton) { boton.disabled = true; boton.textContent = '⏳ Descargando…'; }
+  try {
+    const blobs = await Promise.all(lista.map(async (url) => {
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`No se pudo descargar una de las fotos (${resp.status})`);
+      return resp.blob();
+    }));
+
+    if (blobs.length === 1) {
+      dispararDescargaBlob(blobs[0], nombreArchivoFoto(nombre, 0, 1, lista[0]));
+      return;
+    }
+
+    if (typeof JSZip === 'undefined') { showToast('No se pudo cargar el compresor .zip', 'err'); return; }
+    const zip = new JSZip();
+    blobs.forEach((blob, i) => zip.file(nombreArchivoFoto(nombre, i, lista.length, lista[i]), blob));
+    const zipBlob = await zip.generateAsync({ type: 'blob' });
+    dispararDescargaBlob(zipBlob, `${slugArchivo(nombre)}-fotos.zip`);
+  } catch (err) {
+    showToast(err.message || 'No se pudieron descargar las fotos', 'err');
+  } finally {
+    if (boton) { boton.disabled = false; boton.textContent = '⬇️ Descargar todas'; }
+  }
 }
 
 /* Arrastrar y soltar para reordenar libremente (además de las flechas
