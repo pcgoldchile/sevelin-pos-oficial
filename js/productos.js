@@ -1179,28 +1179,27 @@ function cerrarModalProducto() {
 }
 
 // ---------- Guardar (crear / actualizar) ----------
-/* Publicar sin SKU o con stock 0 falla en silencio: el receptor del webhook
-   de sevelin-tienda responde 200 { ok:false, motivo:'sin_sku' } sin insertar
-   nada (no es un error visible), y el catálogo público filtra siempre
-   stock_web > 0. Este aviso no bloquea el guardado, solo evita que el error
-   pase desapercibido — ver docs/SNAPSHOT.md o el changelog de esta sesión. */
+/* Publicar con stock 0 falla en silencio: el catálogo público de
+   sevelin-tienda filtra siempre stock_web > 0. Este aviso no bloquea el
+   guardado, solo evita que el error pase desapercibido.
+   NO avisa por falta de SKU: sevelin-tienda ya arma un slug de respaldo
+   a partir del nombre + id cuando no hay SKU (ver slugDeRespaldo() en
+   sevelin-tienda/src/app/api/sync/producto/route.ts) — útil sobre todo
+   para productos que en realidad son servicios, que nunca llevan SKU ni
+   código de barras. Avisar igual ahí era falso y solo entorpecía. */
 function evaluarAvisoPublicacion() {
   if (!elAvisoPublicacionIncompleta) return;
   const publicado = !!(elProdPublicadoWeb && elProdPublicadoWeb.checked);
-  const sinSku = !(elProdSku?.value || '').trim();
   const ilimitado = !!(elProdStockIlimitado && elProdStockIlimitado.checked);
   const sinStock = !ilimitado && (Number(elProdStock?.value) || 0) === 0;
 
-  if (!publicado || (!sinSku && !sinStock)) {
+  if (!publicado || !sinStock) {
     elAvisoPublicacionIncompleta.style.display = 'none';
     return;
   }
 
-  const motivos = [];
-  if (sinSku) motivos.push('sin SKU');
-  if (sinStock) motivos.push('con stock en 0');
   elAvisoPublicacionIncompleta.textContent =
-    `⚠️ Este producto está ${motivos.join(' y ')}: no va a aparecer en sevelin.cl hasta que lo corrijas.`;
+    '⚠️ Este producto está con stock en 0: no va a aparecer en sevelin.cl hasta que lo corrijas.';
   elAvisoPublicacionIncompleta.style.display = '';
 }
 
