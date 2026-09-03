@@ -1720,9 +1720,11 @@
       <input type="hidden" id="prodEditId">
 
       <div class="editor-grid">
-        <!-- ---------- Información principal ---------- -->
+        <div class="editor-col-principal">
+
+        <!-- ---------- Información básica ---------- -->
         <div class="card">
-          <div class="card-head"><div><h2>Información principal</h2></div></div>
+          <div class="card-head"><div><h2>Información básica</h2></div></div>
 
           <div class="grid grid-2">
             <div class="field">
@@ -1748,7 +1750,21 @@
             <input type="text" id="prodNombre" placeholder="Descripción corta del producto">
           </div>
 
-          <div class="grid grid-3" style="margin-top:12px;">
+          <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--border);">
+            <label class="sn-toggle" style="width:fit-content;">
+              <input type="checkbox" id="prodRequiereSN"> El producto requiere registrar S/N al vender
+            </label>
+            <label class="sn-toggle" style="width:fit-content; margin-top:10px;">
+              <input type="checkbox" id="prodEsRepuesto"> Es repuesto / insumo de taller
+            </label>
+          </div>
+        </div>
+
+        <!-- ---------- Precio y stock ---------- -->
+        <div class="card">
+          <div class="card-head"><div><h2>Precio y stock</h2></div></div>
+
+          <div class="grid grid-3">
             <div class="field">
               <label>Costo Unit.</label>
               <input type="number" id="prodCosto" min="0" step="1" placeholder="0">
@@ -1763,12 +1779,11 @@
             </div>
           </div>
 
-          <span class="section-label" style="margin-top:18px;">Control de stock</span>
-          <label class="check-item" id="itemProdStockIlimitado" style="margin-bottom:10px;">
+          <label class="check-item" id="itemProdStockIlimitado" style="margin-top:16px;">
             <input type="checkbox" id="prodStockIlimitado">
             <span>♾️ Stock ilimitado (para servicios o ítems sin inventario físico — no se descuenta al vender)</span>
           </label>
-          <div class="grid grid-2" id="gridProdStockControl">
+          <div class="grid grid-2" id="gridProdStockControl" style="margin-top:12px;">
             <div class="field">
               <label>Alerta de bajo stock cuando queden</label>
               <input type="number" id="prodStockMinimo" min="0" step="1" placeholder="3">
@@ -1780,21 +1795,26 @@
               </label>
             </div>
           </div>
-          <p class="modal-hint" id="prodStockActualizado">Última actualización de stock: —</p>
+          <p class="modal-hint" id="prodStockActualizado" style="margin-top:10px;">Última actualización de stock: —</p>
+        </div>
 
-          <!-- ============================================================
-               COSTOS POR LOTE (PEPS / FIFO)
-               Apagado por defecto. Solo el administrador lo enciende a mano,
-               producto por producto: ningún producto nuevo ni existente lo
-               activa solo.
-               ============================================================ -->
-          <span class="section-label" style="margin-top:18px;">Costos por lote (PEPS / FIFO)</span>
-          <label class="check-item" id="itemProdUsaLotes" style="margin-bottom:10px;">
+        <!-- ============================================================
+             COSTOS POR LOTE (PEPS / FIFO)
+             Apagado por defecto. Solo el administrador lo enciende a mano,
+             producto por producto: ningún producto nuevo ni existente lo
+             activa solo. Tarjeta propia (no mezclada con Precio y stock):
+             es una función avanzada que la mayoría de los productos nunca
+             usa, no necesita competir por espacio con lo básico.
+             ============================================================ -->
+        <div class="card">
+          <div class="card-head"><div><h2>Costos por lote (PEPS / FIFO)</h2></div></div>
+
+          <label class="check-item" id="itemProdUsaLotes">
             <input type="checkbox" id="prodUsaLotes">
             <span>📚 ¿Habilitar múltiples costos por lote? (el costo de cada venta sale de la capa más antigua)</span>
           </label>
 
-          <div id="bloqueProdLotes" style="display:none;">
+          <div id="bloqueProdLotes" style="display:none; margin-top:14px;">
             <p class="modal-hint" id="prodLotesAviso">
               Con esta opción activa, el costo unitario de arriba deja de usarse en las ventas:
               cada venta consume primero las unidades más antiguas y toma su costo real.
@@ -1823,8 +1843,11 @@
               <p class="modal-hint">Guarda el producto para poder cargarle lotes.</p>
             </div>
           </div>
+        </div>
 
-          <span class="section-label" style="margin-top:18px;">Medidas y envío (Tiendanube)</span>
+        <!-- ---------- Medidas y envío ---------- -->
+        <div class="card">
+          <div class="card-head"><div><h2>Medidas y envío</h2><p class="subtitle">Mismo formato del CSV de Tiendanube.</p></div></div>
           <div class="grid grid-4">
             <div class="field">
               <label>Peso (kg)</label>
@@ -1843,9 +1866,12 @@
               <input type="number" id="prodProfundidad" min="0" step="0.1">
             </div>
           </div>
+        </div>
 
-          <div class="field" style="margin-top:12px;">
-            <label>Descripción</label>
+        <!-- ---------- Descripción ---------- -->
+        <div class="card">
+          <div class="card-head"><div><h2>Descripción</h2></div></div>
+          <div class="field">
             <p class="subtitle" style="margin-bottom:6px;">Esta es la ÚNICA descripción del producto — se usa tal cual en la ficha de la tienda web (sevelin.cl) cuando el producto está publicado.</p>
             <!-- Editor de texto enriquecido (Quill, ver <head>): negrita,
                  cursiva, listas, links. #prodDescripcion pasa a ser un
@@ -1877,16 +1903,9 @@
             </div>
             <textarea id="prodDescripcion" style="display:none"></textarea>
           </div>
-
-          <div style="margin: 18px 0 0;">
-            <label class="sn-toggle" style="width:fit-content;">
-              <input type="checkbox" id="prodRequiereSN"> El producto requiere registrar S/N al vender
-            </label>
-            <label class="sn-toggle" style="width:fit-content; margin-top:10px;">
-              <input type="checkbox" id="prodEsRepuesto"> Es repuesto / insumo de taller
-            </label>
-          </div>
         </div>
+
+        </div><!-- /.editor-col-principal -->
 
         <!-- ---------- Columna lateral: Fotos, Categoría, Tienda web ---------- -->
         <div class="editor-col-lateral">
