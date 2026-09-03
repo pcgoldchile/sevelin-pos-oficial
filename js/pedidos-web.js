@@ -102,6 +102,10 @@ const ETIQUETAS_ESTADO_PEDIDO_WEB = {
   ENTREGADO:  { txt: '✅ Entregado',    clase: 'badge-green' },
   CANCELADO:  { txt: '❌ Cancelado',    clase: 'badge-red' },
   FALLIDO:    { txt: '⚠️ Pago fallido', clase: 'badge-red' },
+  // 24h+ en Creado sin que Flow avisara pago ni fallo — lo pone el cron de
+  // limpieza (sevelin-tienda GET /api/cron/expirar-pedidos), no un click
+  // acá. Gris, no rojo: no es un error, es un carrito que nunca volvió.
+  EXPIRADO:   { txt: '⏳ Expirado',      clase: 'badge-soft' },
   // Pago cobrado de verdad en Flow, pero sin stock para despachar (carrera
   // entre dos checkouts casi simultáneos de la última unidad) — el sistema
   // NUNCA reembolsa ni cancela solo, esto es la señal para revisarlo a
@@ -124,17 +128,24 @@ function renderPedidosWebTabla(lista) {
   }
 
   elPedidosWebTableBody.innerHTML = lista.map(p => {
-    // CREADO/FALLIDO: el pago todavía no se confirmó, nada que despachar
-    // (lo controla el webhook de pago de sevelin-tienda, no este panel).
-    const puedeDespachar = !['CREADO', 'FALLIDO'].includes(p.estado);
+    // CREADO/FALLIDO/EXPIRADO: el pago nunca se confirmó, nada que
+    // despachar (lo controla el webhook de pago de sevelin-tienda, no
+    // este panel — EXPIRADO lo pone solo el cron de limpieza).
+    const puedeDespachar = !['CREADO', 'FALLIDO', 'EXPIRADO'].includes(p.estado);
     // Cancelar YA era posible desde "Gestionar" (el select ya tenía la
     // opción) pero quedaba escondido a dos clics — este botón es el
     // atajo directo que se pidió. Se esconde si ya está cancelado (nada
     // que cancelar dos veces).
     const puedeCancelar = puedeDespachar && p.estado !== 'CANCELADO';
+    // Mismo atajo de un clic para el otro cambio de estado más frecuente:
+    // marcar como entregado sin abrir "Gestionar". Solo tiene sentido una
+    // vez que el pedido ya salió (Preparando/Enviado) — si sigue "Por
+    // preparar" (PAGADO) es más fácil equivocarse de un salto.
+    const puedeMarcarEntregado = ['PREPARANDO', 'ENVIADO'].includes(p.estado);
     const accion = puedeDespachar
       ? `<div class="cell-actions" style="justify-content:flex-end;">
            <button class="btn btn-outline btn-sm" data-pedido-web="${p.id}">Gestionar</button>
+           ${puedeMarcarEntregado ? `<button class="btn btn-outline btn-sm" style="color:var(--green);border-color:rgba(34,197,94,.4);" data-entregar-pedido-web="${p.id}">✅ Entregado</button>` : ''}
            ${puedeCancelar ? `<button class="btn btn-outline btn-sm" style="color:var(--red);border-color:rgba(239,68,68,.4);" data-cancelar-pedido-web="${p.id}">Cancelar</button>` : ''}
          </div>`
       : '<span style="color:var(--text-muted);">—</span>';
@@ -160,6 +171,32 @@ function renderPedidosWebTabla(lista) {
   elPedidosWebTableBody.querySelectorAll('[data-cancelar-pedido-web]').forEach(btn => {
     btn.addEventListener('click', () => cancelarPedidoWebDirecto(btn.dataset.cancelarPedidoWeb));
   });
+
+  elPedidosWebTableBody.querySelectorAll('[data-entregar-pedido-web]').forEach(btn => {
+    btn.addEventListener('click', () => marcarPedidoWebEntregado(btn.dataset.entregarPedidoWeb, btn));
+  });
+}
+
+/* Atajo de un clic — mismo cambio de estado que "Gestionar" (PUT
+   /api/pos/pedidos-web/:id con estado: 'ENTREGADO'), sin abrir el modal.
+   Dispara el correo con el pedido de reseña de Google (ver
+   TIENDA_NOTIFICAR_ENTREGA_URL en api/index.js) igual que si se hubiera
+   guardado desde el modal — es la misma ruta del backend. */
+async function marcarPedidoWebEntregado(id, boton) {
+  const pedido = pedidosWebList.find(p => String(p.id) === String(id));
+  const numero = pedido?.numero_pedido || `#${id}`;
+  if (boton) boton.disabled = true;
+  try {
+    const resultado = await API.pedidosWeb.actualizar(id, { estado: 'ENTREGADO' });
+    showToast(
+      `Pedido ${numero} marcado como entregado` + (resultado?.correo_enviado ? ' — cliente notificado por correo' : ''),
+      'ok'
+    );
+    await cargarPedidosWeb();
+  } catch (err) {
+    showToast(err.message || 'No se pudo marcar el pedido como entregado', 'err');
+    if (boton) boton.disabled = false;
+  }
 }
 
 /* Atajo de un clic desde la tabla — mismo cambio de estado que ya permitía

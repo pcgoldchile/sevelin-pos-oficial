@@ -5563,11 +5563,13 @@ app.put('/api/pos/pedidos-web/:id', auth(true), async (req, res) => {
   // El pedido tiene que estar pagado (o más avanzado) para tener algo que
   // despachar — CREADO/FALLIDO son estados del ciclo de pago, controlados
   // por el mutex de POST /api/flow-webhook en sevelin-tienda, no por este
-  // panel.
+  // panel. EXPIRADO es el mismo caso: lo puso ahí el cron de limpieza
+  // (ver sevelin-tienda GET /api/cron/expirar-pedidos) por 24h sin pago
+  // confirmado — tampoco hay nada que despachar.
   const { data: actual, error: errorActual } = await dbWeb
     .from('pedidos_web').select('estado, items').eq('id', req.params.id).single();
   if (errorActual) return enviarError(res, 404, 'Pedido no encontrado');
-  if (['CREADO', 'FALLIDO'].includes(actual.estado)) {
+  if (['CREADO', 'FALLIDO', 'EXPIRADO'].includes(actual.estado)) {
     return enviarError(res, 409, 'Este pedido todavía no tiene el pago confirmado');
   }
 
