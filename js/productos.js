@@ -85,6 +85,12 @@ const elProdPrecioWeb = document.getElementById('prodPrecioWeb');
 const elProdCategoriaWeb = document.getElementById('prodCategoriaWeb');
 const elProdStockUmbralWeb = document.getElementById('prodStockUmbralWeb');
 const elProdEtiquetaWeb = document.getElementById('prodEtiquetaWeb');
+const elProdMetaTitulo = document.getElementById('prodMetaTitulo');
+const elProdMetaTituloContador = document.getElementById('prodMetaTituloContador');
+const elProdMetaDescripcion = document.getElementById('prodMetaDescripcion');
+const elProdMetaDescripcionContador = document.getElementById('prodMetaDescripcionContador');
+const elBtnGenerarSeoIA = document.getElementById('btnGenerarSeoIA');
+const elProdSeoIAAviso = document.getElementById('prodSeoIAAviso');
 let productoEnEdicionImagenUrls = [];
 // Fotos elegidas ANTES de que el producto tenga id (modo creación): quedan
 // acá como data URLs hasta que guardarProducto() cree el producto y recién
@@ -186,6 +192,9 @@ function setupProductosEventListeners() {
   if (elBtnCancelarProducto) elBtnCancelarProducto.addEventListener('click', cerrarModalProducto);
   if (elBtnVolverProductos) elBtnVolverProductos.addEventListener('click', cerrarModalProducto);
   if (elBtnGuardarProducto) elBtnGuardarProducto.addEventListener('click', guardarProducto);
+  if (elBtnGenerarSeoIA) elBtnGenerarSeoIA.addEventListener('click', generarSeoConIA);
+  if (elProdMetaTitulo) elProdMetaTitulo.addEventListener('input', actualizarContadoresSeo);
+  if (elProdMetaDescripcion) elProdMetaDescripcion.addEventListener('input', actualizarContadoresSeo);
   if (elBtnEliminarTodosProductos) elBtnEliminarTodosProductos.addEventListener('click', eliminarTodosLosProductos);
 
   if (elOrdenProductos) elOrdenProductos.addEventListener('change', handleBuscarProductoTabla);
@@ -928,6 +937,7 @@ function initEditorDescripcion() {
     // chequeo, cada producto nuevo terminaría con una descripción "vacía"
     // que en realidad no lo está.
     elProdDescripcion.value = editorDescripcion.getText().trim() ? editorDescripcion.root.innerHTML : '';
+    actualizarDisponibilidadSeoIA();
   });
 
   // Toggle "Convertir Markdown al pegar" — recordado en localStorage entre
@@ -972,10 +982,52 @@ function initEditorDescripcion() {
 // producto existente o limpiar el formulario) pasa siempre por acá en vez
 // de tocar el textarea oculto directo, para que Quill y el textarea nunca
 // queden desincronizados.
+/* ---------- SEO con IA (título/meta-descripción para Google) ----------
+   La IA solo reescribe la Descripción que ya existe — nunca agrega specs
+   nuevas (ver CLAUDE.md, "no inventar specs"); el servidor rechaza la
+   llamada si no hay descripción real todavía. El resultado se deja en los
+   dos campos para que el admin lo revise/edite — recién se guarda de
+   verdad cuando aprieta "Guardar producto", como cualquier otro campo. */
+function actualizarContadoresSeo() {
+  if (elProdMetaTituloContador) elProdMetaTituloContador.textContent = (elProdMetaTitulo?.value || '').length;
+  if (elProdMetaDescripcionContador) elProdMetaDescripcionContador.textContent = (elProdMetaDescripcion?.value || '').length;
+}
+
+function actualizarDisponibilidadSeoIA() {
+  const hayDescripcion = !!(elProdDescripcion?.value || '').trim();
+  if (elBtnGenerarSeoIA) elBtnGenerarSeoIA.disabled = !hayDescripcion;
+  if (elProdSeoIAAviso) {
+    elProdSeoIAAviso.textContent = hayDescripcion
+      ? 'Reescribe el nombre y la Descripción de arriba — revisa el resultado antes de guardar.'
+      : 'Escribe la Descripción primero — la IA reescribe lo que ya está ahí, nunca inventa características nuevas.';
+  }
+}
+
+async function generarSeoConIA() {
+  const descripcionHtml = elProdDescripcion?.value || '';
+  const nombre = elProdNombre?.value.trim() || '';
+  if (!descripcionHtml.trim()) { showToast('Escribe la Descripción primero', 'err'); return; }
+  if (!nombre) { showToast('Escribe el nombre del producto primero', 'err'); return; }
+
+  if (elBtnGenerarSeoIA) { elBtnGenerarSeoIA.disabled = true; elBtnGenerarSeoIA.textContent = '✨ Generando…'; }
+  try {
+    const resultado = await API.productos.generarSeo({ nombre, descripcion_html: descripcionHtml });
+    if (elProdMetaTitulo) elProdMetaTitulo.value = resultado.meta_titulo || '';
+    if (elProdMetaDescripcion) elProdMetaDescripcion.value = resultado.meta_descripcion || '';
+    actualizarContadoresSeo();
+    showToast('SEO generado — revísalo y guarda el producto', 'ok');
+  } catch (err) {
+    showToast(err.message || 'No se pudo generar el SEO', 'err');
+  } finally {
+    if (elBtnGenerarSeoIA) { elBtnGenerarSeoIA.disabled = false; elBtnGenerarSeoIA.textContent = '✨ Generar con IA'; }
+  }
+}
+
 function establecerDescripcion(html) {
   initEditorDescripcion();
   if (editorDescripcion) editorDescripcion.root.innerHTML = html || '<p><br></p>';
   if (elProdDescripcion) elProdDescripcion.value = html || '';
+  actualizarDisponibilidadSeoIA();
 }
 
 function abrirModalProducto(producto = null) {
@@ -1017,6 +1069,9 @@ function abrirModalProducto(producto = null) {
     if (elProdPrecioWeb) elProdPrecioWeb.value = producto.precio_web ?? '';
     if (elProdStockUmbralWeb) elProdStockUmbralWeb.value = producto.stock_umbral_web ?? '';
     if (elProdEtiquetaWeb) elProdEtiquetaWeb.value = producto.etiqueta_web || '';
+    if (elProdMetaTitulo) elProdMetaTitulo.value = producto.meta_titulo_web || '';
+    if (elProdMetaDescripcion) elProdMetaDescripcion.value = producto.meta_descripcion_web || '';
+    actualizarContadoresSeo();
     // Si el producto tiene subcategoría, hay que reseleccionar ESA opción
     // en el <select> (no la categoría padre) — si no, cada vez que se
     // reabre el editor de un producto subcategorizado, se pierde la
@@ -1055,6 +1110,9 @@ function abrirModalProducto(producto = null) {
     if (elProdPrecioWeb) elProdPrecioWeb.value = '';
     if (elProdStockUmbralWeb) elProdStockUmbralWeb.value = '';
     if (elProdEtiquetaWeb) elProdEtiquetaWeb.value = '';
+    if (elProdMetaTitulo) elProdMetaTitulo.value = '';
+    if (elProdMetaDescripcion) elProdMetaDescripcion.value = '';
+    actualizarContadoresSeo();
     poblarSelectCategoriaWeb('').then(cargarCategoriasEditor);
     productoEnEdicionImagenUrls = [];
     fotosNuevasStaged = [];
@@ -1210,6 +1268,8 @@ async function guardarProducto() {
     subcategoria_web,
     stock_umbral_web: elProdStockUmbralWeb?.value.trim() ? Number(elProdStockUmbralWeb.value) : null,
     etiqueta_web: elProdEtiquetaWeb?.value || null,
+    meta_titulo_web: elProdMetaTitulo?.value.trim() || null,
+    meta_descripcion_web: elProdMetaDescripcion?.value.trim() || null,
     // Una sola descripción para todo (ya no hay campo aparte para la web):
     // se manda el mismo HTML también a descripcion_web, la columna que
     // lee sevelin-tienda al sincronizar (ver POST /api/sync/producto).

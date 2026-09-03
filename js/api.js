@@ -95,6 +95,11 @@ const API = {
     buscarPorCodigo: (codigo) =>
       apiRequest(`/productos/buscar?codigo=${encodeURIComponent(codigo)}`, { silencioso: true }),
 
+    /* SEO con IA: reescribe nombre+descripción ya existentes en un título/
+       meta-descripción para Google — no guarda nada, el admin revisa y
+       guarda con el botón normal "Guardar producto". */
+    generarSeo: (datos) => apiRequest('/productos/generar-seo', { method: 'POST', body: datos }),
+
     // Capas de costo (PEPS / FIFO)
     listarLotes: (id) => apiRequest(`/productos/${id}/lotes`),
 
@@ -274,7 +279,9 @@ const API = {
   // Panel "Métricas" (Página Web → Métricas) — totales de visitas, carritos
   // y cuentas de cliente, agregados de Supabase Web.
   metricasWeb: {
-    obtener: () => apiRequest('/pos/metricas'),
+    obtener: (desde, hasta) => apiRequest(
+      '/pos/metricas' + (desde && hasta ? `?desde=${desde}&hasta=${hasta}` : '')
+    ),
     cuentas: () => apiRequest('/pos/metricas/cuentas'),
     carritosCompartidos: () => apiRequest('/pos/metricas/carritos-compartidos'),
     carritosAbandonados: () => apiRequest('/pos/metricas/carritos-abandonados'),

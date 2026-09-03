@@ -17,6 +17,8 @@ const elMasBuscadosDias = document.getElementById('masBuscadosDias');
 const elMasBuscadosTerminosBody = document.getElementById('masBuscadosTerminosBody');
 const elMasBuscadosProductosBody = document.getElementById('masBuscadosProductosBody');
 const elBtnRecargarMetricasWeb = document.getElementById('btnRecargarMetricasWeb');
+const elFiltrosRangoMetricas = document.querySelector('#view-pagina-web .filtros-rango [data-rango-metricas]')?.closest('.filtros-rango');
+const elBtnMetricasRangoPersonalizado = document.getElementById('btnMetricasRangoPersonalizado');
 
 document.addEventListener('DOMContentLoaded', () => {
   if (elSubtabsPaginaWeb) {
@@ -33,6 +35,27 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   if (elMasBuscadosDias) elMasBuscadosDias.addEventListener('change', () => cargarMasBuscados());
   if (elBtnRecargarMetricasWeb) elBtnRecargarMetricasWeb.addEventListener('click', () => cargarMetricasWeb());
+  const elMetricasDesde = document.getElementById('metricasDesde');
+  const elMetricasHasta = document.getElementById('metricasHasta');
+  if (elMetricasDesde) elMetricasDesde.value = todayISO();
+  if (elMetricasHasta) elMetricasHasta.value = todayISO();
+  if (elFiltrosRangoMetricas) {
+    elFiltrosRangoMetricas.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-rango-metricas]');
+      if (b) aplicarRangoMetricas(b.dataset.rangoMetricas);
+    });
+  }
+  if (elBtnMetricasRangoPersonalizado) {
+    elBtnMetricasRangoPersonalizado.addEventListener('click', () => {
+      const desde = document.getElementById('metricasDesde')?.value;
+      const hasta = document.getElementById('metricasHasta')?.value;
+      if (!desde || !hasta) { showToast('Elige las dos fechas', 'err'); return; }
+      if (desde > hasta) { showToast('La fecha inicial no puede ser posterior a la final', 'err'); return; }
+      metricasRango = { desde, hasta, etiqueta: 'Período personalizado' };
+      document.querySelectorAll('#view-pagina-web [data-rango-metricas]').forEach(b => b.classList.remove('activo'));
+      cargarMetricasWeb();
+    });
+  }
 });
 
 function mostrarPanelPaginaWeb(nombre) {
@@ -300,9 +323,49 @@ async function eliminarCategoriaWeb(id) {
 
 /* ---------- Métricas de la tienda online ---------- */
 
+// Mismo patrón que utilRango en js/utilidades.js: estado del rango elegido,
+// se recalcula con todayISO() (hora de Chile) para no desfasarse después
+// de las 20:00 (ver la nota de calcularRangoUtilidades).
+let metricasRango = { desde: null, hasta: null, etiqueta: 'Hoy' };
+
+function calcularRangoMetricas(clave) {
+  const hoy = todayISO();
+  const [a, m, d] = hoy.split('-').map(Number);
+  const iso = (y, mes, dia) => `${y}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+  const restarDias = (n) => {
+    const ref = new Date(Date.UTC(a, m - 1, d));
+    ref.setUTCDate(ref.getUTCDate() - n);
+    return ref.toISOString().slice(0, 10);
+  };
+
+  if (clave === 'ayer') {
+    const ayer = restarDias(1);
+    return { desde: ayer, hasta: ayer, etiqueta: 'Ayer' };
+  }
+  // "Esta semana" = últimos 7 días corridos incluyendo hoy (mismo criterio
+  // que Utilidades: un negocio abierto todos los días, no "desde el lunes").
+  if (clave === 'semana') return { desde: restarDias(6), hasta: hoy, etiqueta: 'Esta semana (7 días)' };
+  if (clave === 'mes') return { desde: iso(a, m, 1), hasta: hoy, etiqueta: 'Este mes' };
+  if (clave === 'anio') return { desde: iso(a, 1, 1), hasta: hoy, etiqueta: 'Este año' };
+  return { desde: hoy, hasta: hoy, etiqueta: 'Hoy' };
+}
+
+function aplicarRangoMetricas(clave) {
+  metricasRango = calcularRangoMetricas(clave);
+  document.querySelectorAll('#view-pagina-web [data-rango-metricas]').forEach(b => {
+    b.classList.toggle('activo', b.dataset.rangoMetricas === clave);
+  });
+  const dEl = document.getElementById('metricasDesde');
+  const hEl = document.getElementById('metricasHasta');
+  if (dEl) dEl.value = metricasRango.desde;
+  if (hEl) hEl.value = metricasRango.hasta;
+  cargarMetricasWeb();
+}
+
 async function cargarMetricasWeb() {
+  if (!metricasRango.desde) metricasRango = calcularRangoMetricas('hoy');
   try {
-    const datos = await API.metricasWeb.obtener();
+    const datos = await API.metricasWeb.obtener(metricasRango.desde, metricasRango.hasta);
     renderMetricasWeb(datos);
   } catch (err) {
     console.error('Error al cargar métricas web:', err.message || err);
@@ -328,6 +391,20 @@ function renderMetricasWeb(datos) {
   if (elAbandonados) elAbandonados.textContent = n(datos?.total_carritos_abandonados);
   if (elConvertidos) elConvertidos.textContent = `Terminaron en compra: ${n(datos?.total_carritos_convertidos)}`;
   if (elActivos) elActivos.textContent = n(datos?.visitantes_activos_ahora);
+
+  const p = datos?.periodo;
+  const elVisitasPeriodo = document.getElementById('kpiVisitasPeriodo');
+  const elCuentasPeriodo = document.getElementById('kpiCuentasPeriodo');
+  const elCarritosPeriodo = document.getElementById('metricasCarritosPeriodo');
+  const elEtiqueta = document.getElementById('metricasPeriodoEtiqueta');
+  if (elEtiqueta) elEtiqueta.textContent = p ? `${p.desde} al ${p.hasta} · ${metricasRango.etiqueta}` : '—';
+  if (elVisitasPeriodo) elVisitasPeriodo.textContent = n(p?.visitas);
+  if (elCuentasPeriodo) elCuentasPeriodo.textContent = n(p?.cuentas_creadas);
+  if (elCarritosPeriodo) {
+    elCarritosPeriodo.textContent = p
+      ? `Carritos del período: ${n(p.carritos_compartidos)} compartidos · ${n(p.carritos_abandonados)} abandonados · ${n(p.carritos_convertidos)} convertidos`
+      : 'Carritos del período: —';
+  }
 }
 
 /* ---------- "Visitando ahora": se refresca solo cada 20s ----------

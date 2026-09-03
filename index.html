@@ -1994,6 +1994,28 @@
               </select>
               <p class="subtitle">Aparece en la tienda y en la tabla del POS. Solo una a la vez.</p>
             </div>
+
+            <!-- SEO: título y meta-descripción que ve Google en los resultados
+                 de búsqueda — distintos del nombre/descripción que ve el
+                 cliente en la ficha. Vacíos = la tienda arma uno automático a
+                 partir del nombre y la Descripción de arriba (comportamiento
+                 de siempre, sin cambios). El botón de IA solo reescribe lo que
+                 YA existe en Descripción — nunca inventa specs que no estén
+                 ahí (ver CLAUDE.md, regla del proyecto). -->
+            <div class="field" style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">
+              <label>SEO — título para Google</label>
+              <input type="text" id="prodMetaTitulo" maxlength="70" placeholder="Vacío = usa el nombre del producto">
+              <p class="subtitle"><span id="prodMetaTituloContador">0</span>/60 caracteres recomendados</p>
+            </div>
+            <div class="field" style="margin-top:10px;">
+              <label>SEO — descripción para Google</label>
+              <textarea id="prodMetaDescripcion" rows="3" maxlength="200" placeholder="Vacío = usa un resumen automático de la Descripción"></textarea>
+              <p class="subtitle"><span id="prodMetaDescripcionContador">0</span>/155 caracteres recomendados</p>
+            </div>
+            <button type="button" class="btn btn-outline btn-sm" id="btnGenerarSeoIA" style="margin-top:8px;" disabled>
+              ✨ Generar con IA
+            </button>
+            <p class="subtitle" id="prodSeoIAAviso">Escribe la Descripción primero — la IA reescribe lo que ya está ahí, nunca inventa características nuevas.</p>
           </div>
         </div>
       </div>
@@ -2180,6 +2202,43 @@
             "Visitas" cuenta cada carga de página (no visitantes únicos). "Carritos abandonados" son
             los que dejaron su correo en el checkout y no completaron el pago dentro de las 24 horas
             en que el carrito sigue vigente.
+          </p>
+
+          <!-- Por período: mismas cifras de arriba pero acotadas a un rango de
+               fechas (hora de Chile) — responde "cuántas visitas/cuentas hubo
+               hoy/ayer/esta semana/etc.", que los acumulados de siempre no
+               pueden responder. Mismo patrón que Finanzas → Utilidades
+               (filtros-rango + fecha personalizada). -->
+          <div class="card-head" style="margin-top:22px; padding-top:14px; border-top:1px solid var(--border);">
+            <div>
+              <h3 style="margin:0;">Por período</h3>
+              <p class="subtitle" id="metricasPeriodoEtiqueta">—</p>
+            </div>
+          </div>
+          <div class="filtros-rango">
+            <button class="btn btn-outline btn-sm activo" data-rango-metricas="hoy">Hoy</button>
+            <button class="btn btn-outline btn-sm" data-rango-metricas="ayer">Ayer</button>
+            <button class="btn btn-outline btn-sm" data-rango-metricas="semana">Esta semana</button>
+            <button class="btn btn-outline btn-sm" data-rango-metricas="mes">Este mes</button>
+            <button class="btn btn-outline btn-sm" data-rango-metricas="anio">Este año</button>
+            <span class="filtro-sep"></span>
+            <input type="date" id="metricasDesde" class="filtro-fecha">
+            <input type="date" id="metricasHasta" class="filtro-fecha">
+            <button class="btn btn-outline btn-sm" id="btnMetricasRangoPersonalizado">Aplicar</button>
+          </div>
+
+          <div class="kpi-grid" style="margin-top:14px;">
+            <div class="kpi-card kpi-blue">
+              <div class="kpi-label">👁️ Visitas</div>
+              <div class="kpi-value" id="kpiVisitasPeriodo">0</div>
+            </div>
+            <div class="kpi-card kpi-green">
+              <div class="kpi-label">👥 Cuentas creadas</div>
+              <div class="kpi-value" id="kpiCuentasPeriodo">0</div>
+            </div>
+          </div>
+          <p class="subtitle" id="metricasCarritosPeriodo" style="margin-top:8px;">
+            Carritos del período: —
           </p>
 
           <!-- Detalle desplegable de una de las 3 tarjetas cliqueables de arriba —

@@ -713,7 +713,13 @@ const CAMPOS_PRODUCTO = [
   // Módulo Garantías — ver sql/31-garantias.sql.
   'condicion', 'meses_garantia',
   // Archivar (retirar del POS/venta/tienda sin borrar, ver sql/32-archivar-productos.sql).
-  'archivado'
+  'archivado',
+  // SEO — título/meta-descripción para Google, aparte del nombre/Descripción
+  // que ve el cliente. NULL = sevelin-tienda arma uno automático (ver
+  // generateMetadata en productos/[sku]/page.tsx). Se llenan a mano o con
+  // el botón "Generar con IA" (POST /api/productos/generar-seo, ver
+  // sql/33-seo-ia.sql).
+  'meta_titulo_web', 'meta_descripcion_web'
 ];
 
 /* Normaliza el código de barras: SOLO dígitos.
@@ -1043,6 +1049,110 @@ app.post('/api/productos', auth(true), async (req, res) => {
   const { data, error } = await db.from('productos').insert([producto]).select().single();
   if (error) return enviarErrorBD(res, error);
   res.status(201).json(data);
+});
+
+/* Quita las etiquetas HTML del editor (Quill: negrita, listas, links) para
+   mandarle a la IA solo el texto real — no necesita ni debe recibir markup,
+   y evitamos que confunda un <br> con contenido. No es un sanitizador (no
+   se usa para mostrar nada), solo para armar el prompt. */
+function textoPlanoParaPrompt(html) {
+  return String(html || '')
+    .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<\/(p|li|div|h[1-6])>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n\s*\n+/g, '\n')
+    .trim();
+}
+
+/* SEO con IA: título + meta-descripción para Google, a partir del nombre y
+   la Descripción YA escritos (nunca inventa specs — regla del proyecto, ver
+   CLAUDE.md). No guarda nada: el admin revisa el resultado en el modal y
+   recién queda en la base cuando aprieta "Guardar producto", como
+   cualquier otro campo (ver meta_titulo_web/meta_descripcion_web en
+   CAMPOS_PRODUCTO y sql/33-seo-ia.sql). */
+app.post('/api/productos/generar-seo', auth(true), async (req, res) => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return enviarError(res, 500, 'Falta GEMINI_API_KEY en las variables de entorno del servidor (Vercel → Settings → Environment Variables).');
+  }
+
+  const nombre = String(req.body?.nombre || '').trim();
+  const textoDescripcion = textoPlanoParaPrompt(req.body?.descripcion_html);
+  if (!nombre) return enviarError(res, 400, 'Falta el nombre del producto');
+  if (!textoDescripcion) return enviarError(res, 400, 'El producto todavía no tiene Descripción — escríbela primero, la IA no inventa specs nuevas.');
+
+  const prompt = `Eres el redactor SEO de Sevelin, una tienda de electrónica en Arica, Chile (sevelin.cl).
+Te doy el nombre y la descripción REAL de un producto ya publicados por el dueño. Tu única tarea es
+reescribirlos en un título y una meta-descripción optimizados para que aparezcan bien en los
+resultados de Google — NUNCA agregues una característica, medida, marca o dato que no esté
+explícitamente en el texto de abajo. Si algo no está mencionado, no lo menciones tú tampoco.
+
+Nombre del producto: ${nombre}
+
+Descripción real (tal cual la escribió el dueño):
+"""
+${textoDescripcion.slice(0, 4000)}
+"""
+
+Reglas:
+- Español de Chile, sin emojis, sin comillas, sin markdown.
+- "meta_titulo": máximo 60 caracteres, incluye el nombre o su idea central, atractivo para un clic real.
+- "meta_descripcion": máximo 155 caracteres, resume el beneficio real del producto usando SOLO lo ya
+  descrito arriba, invita a comprar sin exagerar ni inventar.
+- No repitas "Sevelin" en el texto (ya aparece aparte en el resultado de Google).`;
+
+  try {
+    const modelo = 'gemini-2.0-flash';
+    const respuesta = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.4,
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: 'OBJECT',
+              properties: {
+                meta_titulo: { type: 'STRING' },
+                meta_descripcion: { type: 'STRING' }
+              },
+              required: ['meta_titulo', 'meta_descripcion']
+            }
+          }
+        })
+      }
+    );
+
+    const datos = await respuesta.json();
+    if (!respuesta.ok) {
+      const mensaje = datos?.error?.message || `Gemini respondió ${respuesta.status}`;
+      return enviarError(res, 502, `No se pudo generar el SEO: ${mensaje}`);
+    }
+
+    const texto = datos?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!texto) return enviarError(res, 502, 'Gemini no devolvió ningún resultado.');
+
+    let resultado;
+    try { resultado = JSON.parse(texto); }
+    catch { return enviarError(res, 502, 'Gemini devolvió una respuesta que no se pudo interpretar.'); }
+
+    res.json({
+      meta_titulo: String(resultado.meta_titulo || '').trim().slice(0, 70),
+      meta_descripcion: String(resultado.meta_descripcion || '').trim().slice(0, 200)
+    });
+  } catch (err) {
+    console.error('[generar-seo] Error llamando a Gemini:', err.message || err);
+    enviarError(res, 502, 'No se pudo contactar el servicio de IA. Intenta de nuevo en unos segundos.');
+  }
 });
 
 /* Importación masiva (CSV / Excel de Tiendanube)
@@ -5577,7 +5687,13 @@ app.get('/api/pos/mas-buscados', auth(true), async (req, res) => {
    sin traer filas) contra `dbWeb`, en paralelo. Números acumulados de
    siempre (no por período) salvo "visitas últimos 30 días", que se agrega
    como contexto — es lo que pidió el dueño ("total de...", no "en el
-   último mes"). */
+   último mes").
+
+   `?desde=YYYY-MM-DD&hasta=YYYY-MM-DD` (opcional, ambas fechas interpretadas
+   en hora de Chile) agrega el bloque `periodo` con los mismos conteos pero
+   acotados a ese rango — permite responder "cuántas visitas/cuentas hubo
+   hoy/ayer/esta semana/un rango a elección" sin tocar los acumulados de
+   siempre, que otros lugares del panel ya leían de este mismo endpoint. */
 app.get('/api/pos/metricas', auth(true), async (req, res) => {
   const hace30Dias = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
@@ -5593,6 +5709,22 @@ app.get('/api/pos/metricas', auth(true), async (req, res) => {
   // antes de dar a esa persona por desconectada).
   const hace90Segundos = new Date(Date.now() - 90 * 1000).toISOString();
 
+  // Rango de período opcional: se valida acá (no solo con horaValida, que
+  // es para HH:MM) y se convierte a los dos límites UTC reales del rango en
+  // hora de Chile con marcaDeTiempoChile — mismo helper que ya usa el resto
+  // del POS para no reinventar el desfase de horario de verano.
+  const { desde, hasta } = req.query;
+  const fechaValida = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+  const hayPeriodo = fechaValida(desde) && fechaValida(hasta);
+  if ((desde || hasta) && !hayPeriodo) {
+    return enviarError(res, 400, 'desde/hasta deben venir como YYYY-MM-DD, las dos juntas.');
+  }
+  const desdeUTC = hayPeriodo ? marcaDeTiempoChile(desde, '00:00') : null;
+  const hastaUTC = hayPeriodo ? marcaDeTiempoChile(hasta, '23:59:59') : null;
+  if (hayPeriodo && (!desdeUTC || !hastaUTC)) {
+    return enviarError(res, 400, 'desde/hasta no son fechas válidas.');
+  }
+
   try {
     const [
       totalVisitas,
@@ -5602,6 +5734,7 @@ app.get('/api/pos/metricas', auth(true), async (req, res) => {
       carritosConvertidos,
       totalUsuarios,
       visitantesActivos,
+      ...periodo
     ] = await Promise.all([
       contar('eventos_web', q => q.eq('tipo', 'visita')),
       contar('eventos_web', q => q.eq('tipo', 'visita').gte('creado_en', hace30Dias)),
@@ -5610,13 +5743,20 @@ app.get('/api/pos/metricas', auth(true), async (req, res) => {
       contar('carritos_web', q => q.eq('origen', 'checkout').not('numero_pedido', 'is', null)),
       contar('perfiles_clientes'),
       contar('visitas_activas', q => q.gte('ultima_actividad', hace90Segundos)),
+      ...(hayPeriodo ? [
+        contar('eventos_web', q => q.eq('tipo', 'visita').gte('creado_en', desdeUTC).lte('creado_en', hastaUTC)),
+        contar('perfiles_clientes', q => q.gte('creado_en', desdeUTC).lte('creado_en', hastaUTC)),
+        contar('carritos_web', q => q.eq('origen', 'compartido').gte('creado_en', desdeUTC).lte('creado_en', hastaUTC)),
+        contar('carritos_web', q => q.eq('origen', 'checkout').is('numero_pedido', null).gte('creado_en', desdeUTC).lte('creado_en', hastaUTC)),
+        contar('carritos_web', q => q.eq('origen', 'checkout').not('numero_pedido', 'is', null).gte('creado_en', desdeUTC).lte('creado_en', hastaUTC)),
+      ] : []),
     ]);
 
-    const primerError = [totalVisitas, visitas30Dias, carritosCompartidos, carritosAbandonados, carritosConvertidos, totalUsuarios, visitantesActivos]
+    const primerError = [totalVisitas, visitas30Dias, carritosCompartidos, carritosAbandonados, carritosConvertidos, totalUsuarios, visitantesActivos, ...periodo]
       .find(r => r.error);
     if (primerError) return enviarErrorBD(res, primerError.error);
 
-    res.json({
+    const respuesta = {
       total_visitas: totalVisitas.count || 0,
       visitas_ultimos_30_dias: visitas30Dias.count || 0,
       total_carritos_compartidos: carritosCompartidos.count || 0,
@@ -5624,7 +5764,22 @@ app.get('/api/pos/metricas', auth(true), async (req, res) => {
       total_carritos_convertidos: carritosConvertidos.count || 0,
       total_usuarios_registrados: totalUsuarios.count || 0,
       visitantes_activos_ahora: visitantesActivos.count || 0,
-    });
+    };
+
+    if (hayPeriodo) {
+      const [visitasPeriodo, cuentasPeriodo, compartidosPeriodo, abandonadosPeriodo, convertidosPeriodo] = periodo;
+      respuesta.periodo = {
+        desde,
+        hasta,
+        visitas: visitasPeriodo.count || 0,
+        cuentas_creadas: cuentasPeriodo.count || 0,
+        carritos_compartidos: compartidosPeriodo.count || 0,
+        carritos_abandonados: abandonadosPeriodo.count || 0,
+        carritos_convertidos: convertidosPeriodo.count || 0,
+      };
+    }
+
+    res.json(respuesta);
   } catch (err) {
     enviarErrorBD(res, err);
   }
