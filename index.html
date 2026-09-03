@@ -2055,6 +2055,7 @@
         <button class="subtab" data-subtab="categorias">🗂️ Categorías</button>
         <button class="subtab" data-subtab="mas-buscados">🔍 Más buscados</button>
         <button class="subtab" data-subtab="metricas">📊 Métricas</button>
+        <button class="subtab" data-subtab="salud">🩺 Salud</button>
       </nav>
 
       <div class="panel-pagina-web activo" data-panel-pagina-web="pedidos">
@@ -2168,7 +2169,13 @@
               <h2>Métricas de la tienda online</h2>
               <p class="subtitle">Totales acumulados desde que se activó el registro (no se pueden reconstruir hacia atrás).</p>
             </div>
-            <button class="btn btn-outline btn-sm" id="btnRecargarMetricasWeb">🔄 Actualizar</button>
+            <div class="toolbar-group">
+              <button class="btn btn-outline btn-sm" id="btnExportarMetricasExcel"
+                      title="Descargar el informe del período en Excel">📊 Excel</button>
+              <button class="btn btn-outline btn-sm" id="btnExportarMetricasPDF"
+                      title="Descargar el informe del período en PDF">📄 PDF</button>
+              <button class="btn btn-outline btn-sm" id="btnRecargarMetricasWeb">🔄 Actualizar</button>
+            </div>
           </div>
 
           <div class="kpi-grid">
@@ -2255,6 +2262,32 @@
                 <tbody id="tbodyDetalleMetricas"></tbody>
               </table>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---------- Salud del sistema ----------
+           Antes, si faltaba una variable de entorno OPCIONAL (Redis,
+           Gemini, las URLs de sincronización con la tienda), el único
+           aviso era un console.error/warn en los logs de Vercel — que
+           nadie del negocio revisa nunca. Esto lo hace visible acá, sin
+           mostrar ningún valor real (solo si está configurada o no). -->
+      <div class="panel-pagina-web" data-panel-pagina-web="salud">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Salud del sistema</h2>
+              <p class="subtitle">Integraciones opcionales — si falta alguna, la función asociada sigue funcionando en modo reducido o queda apagada, nunca rompe el resto del POS.</p>
+            </div>
+            <button class="btn btn-outline btn-sm" id="btnRecargarSaludSistema">🔄 Actualizar</button>
+          </div>
+          <div class="table-wrapper" style="margin-top:8px;">
+            <table class="data-table">
+              <thead><tr><th>Integración</th><th>Estado</th><th>Si falta…</th></tr></thead>
+              <tbody id="saludSistemaBody">
+                <tr class="empty-row"><td colspan="3">Cargando…</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

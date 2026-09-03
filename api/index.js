@@ -55,6 +55,9 @@ const {
   // tienda que lo mande ella (POST /api/pos/notificar-cancelacion, mismo
   // SYNC_SECRET de siempre). Ver PUT /api/pos/pedidos-web/:id más abajo.
   TIENDA_NOTIFICAR_CANCELACION_URL,
+  // Correo de entrega (con el pedido de reseña de Google) — mismo criterio
+  // que la cancelación de arriba. Ver PUT /api/pos/pedidos-web/:id.
+  TIENDA_NOTIFICAR_ENTREGA_URL,
   // Mismo criterio: reenvío forzado del recordatorio de UN carrito
   // abandonado puntual, desde el panel Métricas (POST /api/pos/reenviar-
   // carrito en la tienda). Ver app.post('/api/pos/carritos/:id/reenviar-correo').
@@ -5620,6 +5623,24 @@ app.put('/api/pos/pedidos-web/:id', auth(true), async (req, res) => {
     }
   }
 
+  /* Correo de entrega (con el pedido de reseña de Google) — mismo criterio
+     de mejor esfuerzo que la cancelación de arriba: si falla, el pedido
+     queda ENTREGADO igual. Ver POST /api/pos/notificar-entrega en
+     sevelin-tienda y correoEntregaPedido() ahí mismo. */
+  if (cambios.estado === 'ENTREGADO' && TIENDA_NOTIFICAR_ENTREGA_URL && SYNC_SECRET && data?.numero_pedido) {
+    try {
+      const resp = await fetch(TIENDA_NOTIFICAR_ENTREGA_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-sync-secret': SYNC_SECRET },
+        body: JSON.stringify({ numero_pedido: data.numero_pedido })
+      });
+      const cuerpo = await resp.json().catch(() => ({}));
+      correoEnviado = !!cuerpo.enviado;
+    } catch (err) {
+      console.error('[Pedidos Web] No se pudo notificar la entrega al cliente:', req.params.id, ':', err.message);
+    }
+  }
+
   res.json({ ...data, stock_repuesto: stockRepuesto, correo_enviado: correoEnviado });
 });
 
@@ -5679,6 +5700,62 @@ app.get('/api/pos/mas-buscados', auth(true), async (req, res) => {
   }
 
   res.json({ dias, terminos_mas_buscados: terminosTop, productos_mas_vistos: productosTop });
+});
+
+/* Panel "Página Web → Salud": integraciones OPCIONALES, con su estado
+   (configurada o no) — antes el único aviso de que faltaba alguna era un
+   console.warn/error en los logs de Vercel, que nadie del negocio revisa.
+   Nunca devuelve el valor real de una env var, solo si existe. Ninguna de
+   estas rompe el resto del POS si falta — cada una degrada su propia
+   función nada más (ver los console.warn al inicio de este archivo, son
+   la misma lista). */
+app.get('/api/salud-sistema', auth(true), (req, res) => {
+  const configurada = (...vars) => vars.every((v) => !!v);
+
+  const items = [
+    {
+      nombre: 'Redis (freno de intentos de login)',
+      configurada: configurada(process.env.UPSTASH_REDIS_REST_URL, process.env.UPSTASH_REDIS_REST_TOKEN),
+      impacto: 'El freno sigue funcionando pero solo en memoria del proceso — más débil en serverless (cada instancia fría parte de cero).',
+    },
+    {
+      nombre: 'Gemini (botón "Generar con IA" del SEO)',
+      configurada: configurada(process.env.GEMINI_API_KEY),
+      impacto: 'El botón queda visible pero falla al usarlo. El SEO se puede seguir escribiendo a mano.',
+    },
+    {
+      nombre: 'Supabase Web (panel Pedidos Web)',
+      configurada: configurada(SUPABASE_WEB_URL, SUPABASE_WEB_SERVICE_ROLE_KEY),
+      impacto: 'El panel "Pedidos Web" no puede consultar ni actualizar pedidos de la tienda.',
+    },
+    {
+      nombre: 'Sincronización de stock con la tienda',
+      configurada: configurada(SYNC_SECRET),
+      impacto: 'Vender/comprar no descuenta el stock de sevelin.cl en tiempo real.',
+    },
+    {
+      nombre: 'Sincronización de catálogo a la tienda',
+      configurada: configurada(process.env.TIENDA_SYNC_URL),
+      impacto: 'El script de carga masiva del catálogo web no tiene a dónde mandar los productos.',
+    },
+    {
+      nombre: 'Correo de cancelación de pedido',
+      configurada: configurada(TIENDA_NOTIFICAR_CANCELACION_URL),
+      impacto: 'Al cancelar un pedido web, el cliente no recibe el correo de aviso.',
+    },
+    {
+      nombre: 'Correo de entrega + reseña de Google',
+      configurada: configurada(TIENDA_NOTIFICAR_ENTREGA_URL),
+      impacto: 'Al marcar un pedido como ENTREGADO, el cliente no recibe el correo con el enlace de reseña.',
+    },
+    {
+      nombre: 'Reenvío de carrito abandonado',
+      configurada: configurada(TIENDA_REENVIAR_CARRITO_URL),
+      impacto: 'El botón "Reenviar" del panel Métricas no puede mandar el correo de carrito abandonado.',
+    },
+  ];
+
+  res.json(items);
 });
 
 /* Panel "Métricas" (Página Web → Métricas): totales generales del negocio

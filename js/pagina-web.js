@@ -35,6 +35,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   if (elMasBuscadosDias) elMasBuscadosDias.addEventListener('change', () => cargarMasBuscados());
   if (elBtnRecargarMetricasWeb) elBtnRecargarMetricasWeb.addEventListener('click', () => cargarMetricasWeb());
+  document.getElementById('btnExportarMetricasExcel')?.addEventListener('click', exportarMetricasExcel);
+  document.getElementById('btnExportarMetricasPDF')?.addEventListener('click', exportarMetricasPDF);
+  document.getElementById('btnRecargarSaludSistema')?.addEventListener('click', cargarSaludSistema);
   const elMetricasDesde = document.getElementById('metricasDesde');
   const elMetricasHasta = document.getElementById('metricasHasta');
   if (elMetricasDesde) elMetricasDesde.value = todayISO();
@@ -71,6 +74,7 @@ function mostrarPanelPaginaWeb(nombre) {
   if (nombre === 'mas-buscados') cargarMasBuscados();
   if (nombre === 'metricas') { cargarMetricasWeb(); iniciarRefrescoVisitantesActivos(); }
   else { detenerRefrescoVisitantesActivos(); }
+  if (nombre === 'salud') cargarSaludSistema();
 }
 
 // Deja de refrescar "Visitando ahora" apenas se sale de la sección
@@ -327,6 +331,9 @@ async function eliminarCategoriaWeb(id) {
 // se recalcula con todayISO() (hora de Chile) para no desfasarse después
 // de las 20:00 (ver la nota de calcularRangoUtilidades).
 let metricasRango = { desde: null, hasta: null, etiqueta: 'Hoy' };
+// Última respuesta cargada — la usan los botones Excel/PDF, para no volver
+// a pedir el mismo endpoint solo para exportar lo que ya está en pantalla.
+let ultimaMetricasWeb = null;
 
 function calcularRangoMetricas(clave) {
   const hoy = todayISO();
@@ -374,6 +381,7 @@ async function cargarMetricasWeb() {
 }
 
 function renderMetricasWeb(datos) {
+  ultimaMetricasWeb = datos;
   const elVisitasTotales = document.getElementById('kpiVisitasTotales');
   const elVisitas30Dias = document.getElementById('kpiVisitas30Dias');
   const elUsuarios = document.getElementById('kpiUsuariosRegistrados');
@@ -404,6 +412,151 @@ function renderMetricasWeb(datos) {
     elCarritosPeriodo.textContent = p
       ? `Carritos del período: ${n(p.carritos_compartidos)} compartidos · ${n(p.carritos_abandonados)} abandonados · ${n(p.carritos_convertidos)} convertidos`
       : 'Carritos del período: —';
+  }
+}
+
+/* ---------- Exportar Métricas (Excel / PDF) ----------
+   Mismo criterio que Finanzas → Utilidades (js/utilidades.js): un botón
+   por formato, ambos arman el archivo con lo que YA está cargado en
+   pantalla (ultimaMetricasWeb), sin volver a pedir el endpoint. */
+function exportarMetricasExcel() {
+  if (!ultimaMetricasWeb) { showToast('Carga primero las métricas', 'err'); return; }
+  const datos = ultimaMetricasWeb;
+  const p = datos.periodo;
+  const negocio = (typeof NEGOCIO_NOMBRE !== 'undefined' && NEGOCIO_NOMBRE) ? NEGOCIO_NOMBRE : 'Sevelin';
+
+  const filas = [
+    [`${negocio} — Métricas de la tienda online`],
+    [`Generado: ${todayISO()}`],
+    [],
+    ['ACUMULADOS DE SIEMPRE', 'Valor'],
+    ['Visitas totales', datos.total_visitas || 0],
+    ['Visitas últimos 30 días', datos.visitas_ultimos_30_dias || 0],
+    ['Visitantes activos ahora', datos.visitantes_activos_ahora || 0],
+    ['Cuentas de cliente creadas', datos.total_usuarios_registrados || 0],
+    ['Carritos compartidos', datos.total_carritos_compartidos || 0],
+    ['Carritos abandonados', datos.total_carritos_abandonados || 0],
+    ['Carritos convertidos en compra', datos.total_carritos_convertidos || 0],
+  ];
+
+  if (p) {
+    filas.push(
+      [],
+      [`PERÍODO: ${p.desde} al ${p.hasta} (${metricasRango.etiqueta})`, 'Valor'],
+      ['Visitas', p.visitas || 0],
+      ['Cuentas de cliente creadas', p.cuentas_creadas || 0],
+      ['Carritos compartidos', p.carritos_compartidos || 0],
+      ['Carritos abandonados', p.carritos_abandonados || 0],
+      ['Carritos convertidos', p.carritos_convertidos || 0]
+    );
+  }
+
+  const hoja = XLSX.utils.aoa_to_sheet(filas);
+  hoja['!cols'] = [{ wch: 34 }, { wch: 14 }];
+  const libro = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(libro, hoja, 'Métricas');
+  const sufijo = p ? `${p.desde}_a_${p.hasta}` : todayISO();
+  XLSX.writeFile(libro, `metricas_${sufijo}.xlsx`);
+  showToast('Planilla de métricas descargada', 'ok');
+}
+
+function exportarMetricasPDF() {
+  if (!ultimaMetricasWeb) { showToast('Carga primero las métricas', 'err'); return; }
+  const datos = ultimaMetricasWeb;
+  const p = datos.periodo;
+  const negocio = (typeof NEGOCIO_NOMBRE !== 'undefined' && NEGOCIO_NOMBRE) ? NEGOCIO_NOMBRE : 'Sevelin';
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const TINTA = [15, 23, 42];
+  const CIAN = [8, 145, 178];
+  const GRIS = [100, 116, 139];
+  const ancho = doc.internal.pageSize.getWidth();
+  const n = (v) => (v || 0).toLocaleString('es-CL');
+
+  doc.setFillColor(...TINTA);
+  doc.rect(0, 0, ancho, 30, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(17);
+  doc.setFont(undefined, 'bold');
+  doc.text(`${negocio}`, 14, 13);
+  doc.setFontSize(11);
+  doc.setFont(undefined, 'normal');
+  doc.setTextColor(103, 232, 249);
+  doc.text('Métricas de la tienda online', 14, 21);
+  doc.setTextColor(203, 213, 225);
+  doc.setFontSize(8.5);
+  doc.text(`Emitido ${todayISO()}`, ancho - 14, 13, { align: 'right' });
+  if (p) doc.text(`Período: ${p.desde} al ${p.hasta} · ${metricasRango.etiqueta}`, ancho - 14, 19, { align: 'right' });
+
+  const cuerpoAcumulado = [
+    ['Visitas totales', n(datos.total_visitas)],
+    ['Visitas últimos 30 días', n(datos.visitas_ultimos_30_dias)],
+    ['Visitantes activos ahora', n(datos.visitantes_activos_ahora)],
+    ['Cuentas de cliente creadas', n(datos.total_usuarios_registrados)],
+    ['Carritos compartidos', n(datos.total_carritos_compartidos)],
+    ['Carritos abandonados', n(datos.total_carritos_abandonados)],
+    ['Carritos convertidos en compra', n(datos.total_carritos_convertidos)],
+  ];
+
+  doc.autoTable({
+    startY: 38,
+    head: [['Acumulados de siempre', 'Valor']],
+    body: cuerpoAcumulado,
+    theme: 'striped',
+    headStyles: { fillColor: TINTA },
+    styles: { fontSize: 9 },
+  });
+
+  if (p) {
+    const cuerpoPeriodo = [
+      ['Visitas', n(p.visitas)],
+      ['Cuentas de cliente creadas', n(p.cuentas_creadas)],
+      ['Carritos compartidos', n(p.carritos_compartidos)],
+      ['Carritos abandonados', n(p.carritos_abandonados)],
+      ['Carritos convertidos', n(p.carritos_convertidos)],
+    ];
+    doc.autoTable({
+      startY: doc.lastAutoTable.finalY + 10,
+      head: [[`Período: ${p.desde} al ${p.hasta} (${metricasRango.etiqueta})`, 'Valor']],
+      body: cuerpoPeriodo,
+      theme: 'striped',
+      headStyles: { fillColor: CIAN },
+      styles: { fontSize: 9 },
+    });
+  }
+
+  doc.setTextColor(...GRIS);
+  doc.setFontSize(7.5);
+  doc.text('"Visitas" cuenta cada carga de página, no visitantes únicos.', 14, doc.internal.pageSize.getHeight() - 10);
+
+  const sufijo = p ? `${p.desde}_a_${p.hasta}` : todayISO();
+  doc.save(`metricas_${sufijo}.pdf`);
+  showToast('Informe de métricas descargado', 'ok');
+}
+
+/* ---------- Salud del sistema ---------- */
+async function cargarSaludSistema() {
+  const tbody = document.getElementById('saludSistemaBody');
+  if (tbody) tbody.innerHTML = '<tr class="empty-row"><td colspan="3">Cargando…</td></tr>';
+  try {
+    const items = await API.saludSistema.obtener();
+    if (!tbody) return;
+    if (!items.length) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="3">Nada que revisar</td></tr>';
+      return;
+    }
+    tbody.innerHTML = items.map(it => `
+      <tr>
+        <td>${escHtml(it.nombre)}</td>
+        <td>${it.configurada ? '✅ Configurada' : '⚠️ Falta'}</td>
+        <td class="subtitle" style="margin:0;">${escHtml(it.impacto)}</td>
+      </tr>
+    `).join('');
+  } catch (err) {
+    console.error('Error al cargar salud del sistema:', err.message || err);
+    if (tbody) tbody.innerHTML = '<tr class="empty-row"><td colspan="3">No se pudo cargar</td></tr>';
+    showToast(err.message || 'No se pudo cargar la salud del sistema', 'err');
   }
 }
 

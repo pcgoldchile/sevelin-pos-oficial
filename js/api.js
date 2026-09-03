@@ -278,6 +278,10 @@ const API = {
 
   // Panel "Métricas" (Página Web → Métricas) — totales de visitas, carritos
   // y cuentas de cliente, agregados de Supabase Web.
+  saludSistema: {
+    obtener: () => apiRequest('/salud-sistema'),
+  },
+
   metricasWeb: {
     obtener: (desde, hasta) => apiRequest(
       '/pos/metricas' + (desde && hasta ? `?desde=${desde}&hasta=${hasta}` : '')
