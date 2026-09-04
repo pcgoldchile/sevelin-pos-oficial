@@ -1638,7 +1638,8 @@
             </div>
           </div>
           <select id="ordenProductos" title="Ordenar / Filtrar">
-            <option value="">Orden: Nombre A-Z</option>
+            <option value="">Orden: Más recientes primero</option>
+            <option value="nombre_asc">Orden: Nombre A-Z</option>
             <option value="precio_desc">Precio: Mayor a Menor</option>
             <option value="precio_asc">Precio: Menor a Mayor</option>
             <option value="sin_sku">Ver: Sin SKU</option>
@@ -4386,6 +4387,32 @@
 
       <div class="modal-foot">
         <button class="btn btn-ghost" id="btnCerrarValorizacion">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       RECORTAR FOTO DE PRODUCTO
+       Antes, una foto con mucho espacio vacío alrededor (ej. una foto de
+       catálogo del proveedor) se procesaba tal cual: centrada sobre el
+       lienzo 1000×1000, el producto quedaba chico y con harto blanco
+       encima. Este paso opcional deja recortar la zona útil ANTES de esa
+       centrada — se puede saltar con "Usar imagen completa" si la foto
+       ya viene bien encuadrada.
+       ============================================================ -->
+  <div id="modalRecortarFoto" class="modal-overlay">
+    <div class="modal-box" style="max-width: 560px;">
+      <h2>✂️ Recortar foto</h2>
+      <p class="modal-hint">Ajusta el recuadro a la zona que quieres conservar, o sáltalo si la foto ya viene bien encuadrada.</p>
+      <div id="recortarFotoStage" style="position:relative; max-width:100%; margin:14px auto 0; user-select:none; touch-action:none; background:#000;">
+        <img id="recortarFotoImg" style="display:block; max-width:100%; pointer-events:none; user-select:none;" draggable="false">
+        <div id="recortarFotoSeleccion" style="position:absolute; border:2px dashed var(--blue); background:rgba(0,240,255,.14); cursor:move;">
+          <div id="recortarFotoHandle" style="position:absolute; right:-7px; bottom:-7px; width:16px; height:16px; background:var(--blue); border-radius:4px; cursor:nwse-resize;"></div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnRecortarFotoCompleta">Usar imagen completa</button>
+        <button class="btn btn-primary" id="btnRecortarFotoConfirmar">✂️ Recortar y continuar</button>
       </div>
     </div>
   </div>

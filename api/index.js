@@ -877,7 +877,11 @@ app.post('/api/productos/limpiar-codigos', auth(true), exigirPinAdmin, async (re
 app.get('/api/productos', auth(), async (req, res) => {
   const soloArchivados = req.query.archivados === '1';
   const soloBorradores = req.query.borradores === '1';
-  let q = db.from('productos').select('*').order('nombre', { ascending: true });
+  // Más recientes primero por defecto (pedido explícito del dueño) — el
+  // frontend ya reordena a gusto (Nombre A-Z, Precio, etc.), pero el
+  // orden que trae la API debe coincidir con lo que se ve al abrir
+  // Productos sin tocar nada.
+  let q = db.from('productos').select('*').order('created_at', { ascending: false });
   q = soloArchivados
     ? q.eq('archivado', true)
     : soloBorradores

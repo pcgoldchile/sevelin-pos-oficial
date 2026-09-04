@@ -761,8 +761,16 @@ function handleBuscarProductoTabla() {
     case 'sin_sn':
       resultado = resultado.filter(p => !p.requiere_sn);
       break;
-    default:
+    case 'nombre_asc':
       resultado = resultado.slice().sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+      break;
+    default:
+      // "Más recientes primero": el más útil al abrir Productos sin elegir
+      // nada — lo último que se cargó es lo que más probablemente se
+      // quiere revisar (pedido explícito del dueño). created_at siempre
+      // existe (columna real de la tabla); si por lo que sea faltara, cae
+      // a 0 y esos productos quedan al final en vez de romper el orden.
+      resultado = resultado.slice().sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
   }
 
   renderProductosTabla(resultado);
@@ -1130,7 +1138,10 @@ function abrirModalProducto(producto = null) {
     if (elProdUsaLotes) elProdUsaLotes.checked = false;
     if (elProdStockIlimitado) elProdStockIlimitado.checked = false;
     if (elProdStockActualizado) elProdStockActualizado.textContent = 'Última actualización de stock: se registrará al guardar.';
-    if (elProdPublicadoWeb) elProdPublicadoWeb.checked = false;
+    // Pedido explícito del dueño: un producto nuevo nace marcado para
+    // publicarse en la web — antes había que acordarse de tildarlo a mano
+    // cada vez. Sigue siendo reversible con un click antes de guardar.
+    if (elProdPublicadoWeb) elProdPublicadoWeb.checked = true;
     if (elProdEsEncargo) elProdEsEncargo.checked = false;
     // Un producto nuevo siempre parte "Nuevo" y con 6 meses de garantía
     // (pedido explícito del dueño) — editable después si hace falta.
@@ -1690,7 +1701,12 @@ async function procesarArchivosFoto(archivos) {
    para cada archivo de la tanda. */
 async function procesarUnaFoto(archivo) {
   const bitmap = await cargarBitmapDeArchivo(archivo);
-  const dataUrlWebp = await dibujarYComprimirFoto(bitmap);
+  // Recorte opcional ANTES de centrar en el lienzo 1000×1000 — una foto
+  // con mucho espacio vacío alrededor (caso real: foto de catálogo del
+  // proveedor) quedaba con el producto chico y rodeado de blanco. "Usar
+  // imagen completa" salta este paso y sigue igual que antes.
+  const bitmapRecortado = await abrirRecortadorFoto(bitmap);
+  const dataUrlWebp = await dibujarYComprimirFoto(bitmapRecortado);
 
   // Antes, en un producto NUEVO, la foto quedaba solo en memoria del
   // navegador (fotosNuevasStaged) hasta apretar "Guardar Producto" — si se
@@ -1735,6 +1751,11 @@ async function crearBorradorProducto() {
   const payload = construirPayloadProducto();
   if (!payload) throw new Error('No se pudo crear el borrador');
   payload.es_borrador = true;
+  // Nunca publicado, sin importar la casilla: un borrador por definición
+  // está incompleto (a veces sin precio ni descripción todavía) — no
+  // debe poder aparecer en sevelin.cl solo porque "Publicar en la web"
+  // nace tildada por defecto en un producto nuevo.
+  payload.publicado_web = false;
 
   const creado = await API.productos.crear(payload);
   if (!creado?.id) throw new Error('No se pudo crear el borrador');
@@ -1754,6 +1775,128 @@ async function crearBorradorProducto() {
   }
 
   showToast('Producto creado como borrador para no perder tus fotos — complétalo y presiona "Guardar Producto" cuando termines.', 'ok');
+}
+
+/* ---------- Recortar foto (opcional) ----------
+   Modal con un recuadro arrastrable/redimensionable a mano (mousedown +
+   mousemove + mouseup en el documento, sin librería externa) sobre la
+   imagen ya cargada. Devuelve una Promise que resuelve con la imagen
+   recortada (un nuevo <img>) o la original si el usuario elige "Usar
+   imagen completa". */
+const elModalRecortarFoto = document.getElementById('modalRecortarFoto');
+const elRecortarFotoStage = document.getElementById('recortarFotoStage');
+const elRecortarFotoImg = document.getElementById('recortarFotoImg');
+const elRecortarFotoSeleccion = document.getElementById('recortarFotoSeleccion');
+const elRecortarFotoHandle = document.getElementById('recortarFotoHandle');
+const elBtnRecortarFotoCompleta = document.getElementById('btnRecortarFotoCompleta');
+const elBtnRecortarFotoConfirmar = document.getElementById('btnRecortarFotoConfirmar');
+
+function abrirRecortadorFoto(img) {
+  return new Promise((resolve) => {
+    if (!elModalRecortarFoto || !elRecortarFotoStage || !elRecortarFotoImg) { resolve(img); return; }
+
+    // El <img> que llega ya cargó su bitmap y cargarBitmapDeArchivo() ya
+    // revocó la URL de origen — se redibuja a un dataURL propio para el
+    // <img> del modal en vez de reusar esa URL (ya inválida para un
+    // elemento nuevo, aunque el original la siga mostrando bien).
+    const canvasPrevia = document.createElement('canvas');
+    canvasPrevia.width = img.naturalWidth || img.width;
+    canvasPrevia.height = img.naturalHeight || img.height;
+    canvasPrevia.getContext('2d').drawImage(img, 0, 0);
+    elRecortarFotoImg.src = canvasPrevia.toDataURL('image/png');
+
+    let sel = null;
+    let arrastre = null;
+
+    const pintarSeleccion = () => {
+      elRecortarFotoSeleccion.style.left = sel.x + 'px';
+      elRecortarFotoSeleccion.style.top = sel.y + 'px';
+      elRecortarFotoSeleccion.style.width = sel.w + 'px';
+      elRecortarFotoSeleccion.style.height = sel.h + 'px';
+    };
+
+    const clamp = () => {
+      const rect = elRecortarFotoStage.getBoundingClientRect();
+      sel.w = Math.max(30, Math.min(sel.w, rect.width));
+      sel.h = Math.max(30, Math.min(sel.h, rect.height));
+      sel.x = Math.max(0, Math.min(sel.x, rect.width - sel.w));
+      sel.y = Math.max(0, Math.min(sel.y, rect.height - sel.h));
+    };
+
+    const inicializarSeleccion = () => {
+      const rect = elRecortarFotoStage.getBoundingClientRect();
+      const w = rect.width * 0.8, h = rect.height * 0.8;
+      sel = { x: (rect.width - w) / 2, y: (rect.height - h) / 2, w, h };
+      pintarSeleccion();
+    };
+
+    const onMouseDownSeleccion = (e) => {
+      e.preventDefault();
+      arrastre = { tipo: 'mover', startX: e.clientX, startY: e.clientY, selInicial: { ...sel } };
+    };
+    const onMouseDownHandle = (e) => {
+      e.preventDefault(); e.stopPropagation();
+      arrastre = { tipo: 'resize', startX: e.clientX, startY: e.clientY, selInicial: { ...sel } };
+    };
+    const onMouseMove = (e) => {
+      if (!arrastre) return;
+      const dx = e.clientX - arrastre.startX;
+      const dy = e.clientY - arrastre.startY;
+      if (arrastre.tipo === 'mover') {
+        sel.x = arrastre.selInicial.x + dx;
+        sel.y = arrastre.selInicial.y + dy;
+      } else {
+        sel.w = arrastre.selInicial.w + dx;
+        sel.h = arrastre.selInicial.h + dy;
+      }
+      clamp();
+      pintarSeleccion();
+    };
+    const onMouseUp = () => { arrastre = null; };
+
+    const limpiar = () => {
+      elModalRecortarFoto.classList.remove('show');
+      elRecortarFotoImg.onload = null;
+      elRecortarFotoSeleccion.removeEventListener('mousedown', onMouseDownSeleccion);
+      elRecortarFotoHandle.removeEventListener('mousedown', onMouseDownHandle);
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      elBtnRecortarFotoCompleta.removeEventListener('click', usarCompleta);
+      elBtnRecortarFotoConfirmar.removeEventListener('click', confirmarRecorte);
+    };
+
+    const usarCompleta = () => { limpiar(); resolve(img); };
+
+    const confirmarRecorte = () => {
+      const rect = elRecortarFotoStage.getBoundingClientRect();
+      const escalaX = img.naturalWidth / rect.width;
+      const escalaY = img.naturalHeight / rect.height;
+      const sx = sel.x * escalaX, sy = sel.y * escalaY;
+      const sw = sel.w * escalaX, sh = sel.h * escalaY;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = sw;
+      canvas.height = sh;
+      canvas.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+
+      const recortada = new Image();
+      recortada.onload = () => { limpiar(); resolve(recortada); };
+      recortada.src = canvas.toDataURL('image/png');
+    };
+
+    elRecortarFotoSeleccion.addEventListener('mousedown', onMouseDownSeleccion);
+    elRecortarFotoHandle.addEventListener('mousedown', onMouseDownHandle);
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    elBtnRecortarFotoCompleta.addEventListener('click', usarCompleta);
+    elBtnRecortarFotoConfirmar.addEventListener('click', confirmarRecorte);
+
+    elModalRecortarFoto.classList.add('show');
+    // El stage recién tiene su tamaño real una vez que el <img> del modal
+    // (que puede ser más chico/grande que el original) terminó de cargar.
+    if (elRecortarFotoImg.complete) inicializarSeleccion();
+    else elRecortarFotoImg.onload = inicializarSeleccion;
+  });
 }
 
 function cargarBitmapDeArchivo(archivo) {
