@@ -1230,13 +1230,18 @@ function resolverCategoriaWebYSubcategoria() {
   };
 }
 
-async function guardarProducto() {
+/* Arma el payload con lo que haya escrito el formulario hasta ahora — lo
+   usan tanto guardarProducto() (guardado normal) como
+   crearBorradorProducto() (autoguardado al agregar la primera foto de un
+   producto nuevo), para no mantener dos copias de esta lista que se
+   puedan desincronizar. Devuelve null si falta el nombre. */
+function construirPayloadProducto() {
   const nombre = (elProdNombre?.value || '').trim();
-  if (!nombre) { showToast('El nombre del producto es obligatorio', 'err'); return; }
+  if (!nombre) return null;
 
   const { categoria_web, categoria_id, subcategoria_web } = resolverCategoriaWebYSubcategoria();
 
-  const payload = {
+  return {
     sku: elProdSku?.value.trim() || null,
     codigo_barras: elProdBarcode?.value.trim() || null,
     nombre,
@@ -1275,6 +1280,11 @@ async function guardarProducto() {
     // lee sevelin-tienda al sincronizar (ver POST /api/sync/producto).
     descripcion_web: elProdDescripcion?.value.trim() || null
   };
+}
+
+async function guardarProducto() {
+  const payload = construirPayloadProducto();
+  if (!payload) { showToast('El nombre del producto es obligatorio', 'err'); return; }
 
   if (elBtnGuardarProducto) elBtnGuardarProducto.disabled = true;
 
@@ -1647,15 +1657,66 @@ async function procesarUnaFoto(archivo) {
   const bitmap = await cargarBitmapDeArchivo(archivo);
   const dataUrlWebp = await dibujarYComprimirFoto(bitmap);
 
+  // Antes, en un producto NUEVO, la foto quedaba solo en memoria del
+  // navegador (fotosNuevasStaged) hasta apretar "Guardar Producto" — si se
+  // cerraba la pestaña antes de eso, la foto se perdía entera y sin aviso
+  // (caso real reportado: varias fotos subidas y nunca guardadas). Ahora,
+  // apenas se agrega la PRIMERA foto de un producto nuevo, se crea de una
+  // vez un borrador real en la base (mismo guardarProducto, con lo que
+  // haya escrito hasta ahora) para que esa y las siguientes fotos se
+  // suban de inmediato a Supabase como en modo edición — sobrevive a que
+  // se cierre el navegador. Sigue siendo un producto de verdad, editable
+  // o borrable como cualquier otro; "Guardar Producto" después solo lo
+  // actualiza (PUT), nunca crea uno segundo.
   if (!editingProductId) {
-    fotosNuevasStaged.push(dataUrlWebp);
-    renderFotosProducto();
-    return;
+    try {
+      await crearBorradorProducto();
+    } catch (err) {
+      console.error('No se pudo crear el borrador automático:', err.message || err);
+      // Sin borrador, se cae al comportamiento de siempre (memoria del
+      // navegador) — mejor que perder la foto por completo.
+      fotosNuevasStaged.push(dataUrlWebp);
+      renderFotosProducto();
+      return;
+    }
   }
 
   const actualizado = await API.productos.subirImagen(editingProductId, dataUrlWebp);
   productoEnEdicionImagenUrls = actualizado.imagen_urls || productoEnEdicionImagenUrls;
   renderFotosProducto();
+}
+
+/* Crea el producto tal cual está escrito hasta ahora en el formulario
+   (mismo construirPayloadProducto() que el guardado normal), SIN cerrar
+   el editor ni recargar el catálogo — a diferencia de guardarProducto(),
+   esto pasa de fondo mientras se sigue completando el formulario. Sin
+   nombre todavía, usa uno provisorio con la fecha; el aviso deja
+   clarísimo que hay que completarlo y no es el guardado final. */
+async function crearBorradorProducto() {
+  if (!(elProdNombre?.value || '').trim() && elProdNombre) {
+    elProdNombre.value = `Borrador sin nombre — ${new Date().toLocaleString('es-CL')}`;
+  }
+
+  const payload = construirPayloadProducto();
+  if (!payload) throw new Error('No se pudo crear el borrador');
+
+  const creado = await API.productos.crear(payload);
+  if (!creado?.id) throw new Error('No se pudo crear el borrador');
+
+  editingProductId = creado.id;
+  if (elProdEditId) elProdEditId.value = creado.id;
+  if (elProductoFormTitle) elProductoFormTitle.textContent = 'Editar Producto (borrador)';
+  // Mismo criterio que abrirModalProducto: exportar/archivar solo tienen
+  // sentido sobre un producto que ya existe de verdad — y este, apenas se
+  // creó, ya existe.
+  if (elBtnExportarProducto) elBtnExportarProducto.style.display = '';
+  if (elBtnArchivarProducto) {
+    elBtnArchivarProducto.style.display = '';
+    elBtnArchivarProducto.textContent = '📦 Archivar';
+    productoEnEdicionArchivado = false;
+  }
+
+  showToast('Producto creado como borrador para no perder tus fotos — complétalo y presiona "Guardar Producto" cuando termines.', 'ok');
 }
 
 function cargarBitmapDeArchivo(archivo) {
