@@ -21,6 +21,7 @@ let productosVisibles = [];   // última lista renderizada (para "seleccionar to
 // volver a pedirlos en cada tecla del buscador. Se invalida (= null) cada
 // vez que se archiva/desarchiva algo.
 let productosArchivadosCache = null;
+let productosBorradoresCache = null;
 
 /* Íconos SVG: heredan el color del botón, así el lápiz nunca se pierde
    contra el fondo (antes era un emoji sobre un degradado dorado). */
@@ -610,13 +611,17 @@ function renderProductosTabla(items, origen) {
   if (!elProductosTableBody) return;
   productosVisibles = items || [];
   // 'activos' (por defecto) busca en productsList al editar/etiquetar;
-  // 'archivados' busca en su propia caché, que vive fuera de productsList.
-  const fuente = origen === 'archivados' ? productosArchivadosCache : productsList;
+  // 'archivados'/'borradores' buscan en su propia caché, fuera de productsList.
+  const fuente = origen === 'archivados' ? productosArchivadosCache
+    : origen === 'borradores' ? productosBorradoresCache
+    : productsList;
 
   if (!items || items.length === 0) {
     const mensaje = origen === 'archivados'
       ? 'No hay productos archivados.'
-      : 'No hay productos en el inventario. Crea uno o importa tu CSV de Tiendanube.';
+      : origen === 'borradores'
+        ? 'No hay borradores pendientes.'
+        : 'No hay productos en el inventario. Crea uno o importa tu CSV de Tiendanube.';
     elProductosTableBody.innerHTML = `<tr class="empty-row"><td colspan="12">${mensaje}</td></tr>`;
     actualizarBarraProductos();
     return;
@@ -717,9 +722,10 @@ function handleBuscarProductoTabla() {
   const q = (elBuscarProductoTabla?.value || '').trim().toLowerCase();
   const modo = elOrdenProductos ? elOrdenProductos.value : '';
 
-  // "Ver: Archivados" no filtra productsList (los archivados ni siquiera
-  // están ahí) — pide su propia lista aparte, ver renderProductosArchivados.
+  // "Ver: Archivados" / "Ver: Borradores" no filtran productsList (ninguno
+  // de los dos está ahí) — piden su propia lista aparte.
   if (modo === 'archivados') { renderProductosArchivados(q); return; }
+  if (modo === 'borradores') { renderProductosBorradores(q); return; }
 
   let resultado = productsList.filter(p =>
     (p.nombre || '').toLowerCase().includes(q) ||
@@ -780,6 +786,28 @@ async function renderProductosArchivados(q) {
   } catch (err) {
     console.error('Error al cargar productos archivados:', err.message || err);
     showToast(err.message || 'No se pudieron cargar los productos archivados', 'err');
+  }
+}
+
+/* Mismo patrón que renderProductosArchivados — productos que se
+   autocrearon como borrador al agregar su primera foto (ver
+   crearBorradorProducto()) y todavía no pasaron por un "Guardar
+   Producto" real. */
+async function renderProductosBorradores(q) {
+  try {
+    if (!productosBorradoresCache) productosBorradoresCache = await API.productos.listarBorradores();
+    const resultado = productosBorradoresCache
+      .filter(p =>
+        (p.nombre || '').toLowerCase().includes(q) ||
+        (p.sku || '').toLowerCase().includes(q) ||
+        (p.codigo_barras || '').toLowerCase().includes(q)
+      )
+      .slice()
+      .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+    renderProductosTabla(resultado, 'borradores');
+  } catch (err) {
+    console.error('Error al cargar los borradores:', err.message || err);
+    showToast(err.message || 'No se pudieron cargar los borradores', 'err');
   }
 }
 
@@ -1278,7 +1306,10 @@ function construirPayloadProducto() {
     // Una sola descripción para todo (ya no hay campo aparte para la web):
     // se manda el mismo HTML también a descripcion_web, la columna que
     // lee sevelin-tienda al sincronizar (ver POST /api/sync/producto).
-    descripcion_web: elProdDescripcion?.value.trim() || null
+    descripcion_web: elProdDescripcion?.value.trim() || null,
+    // Todo guardado real (este botón) apaga el borrador — solo
+    // crearBorradorProducto() lo enciende, sobrescribiendo esto después.
+    es_borrador: false
   };
 }
 
@@ -1319,6 +1350,10 @@ async function guardarProducto() {
     }
 
     showToast(mensaje, 'ok');
+    // Cualquier guardado real deja es_borrador en false (ver
+    // construirPayloadProducto) — si este producto venía de "Ver:
+    // Borradores", ya no pertenece ahí.
+    productosBorradoresCache = null;
     cerrarModalProducto();
     cargarProductos(true);
   } catch (err) {
@@ -1699,9 +1734,11 @@ async function crearBorradorProducto() {
 
   const payload = construirPayloadProducto();
   if (!payload) throw new Error('No se pudo crear el borrador');
+  payload.es_borrador = true;
 
   const creado = await API.productos.crear(payload);
   if (!creado?.id) throw new Error('No se pudo crear el borrador');
+  productosBorradoresCache = null;   // se invalida: hay uno nuevo que "Ver: Borradores" todavía no tiene
 
   editingProductId = creado.id;
   if (elProdEditId) elProdEditId.value = creado.id;
@@ -1899,6 +1936,8 @@ async function eliminarProducto(id) {
   try {
     await API.productos.eliminar(id);
     showToast('Producto eliminado', 'ok');
+    productosArchivadosCache = null;
+    productosBorradoresCache = null;
     cargarProductos(true);
   } catch (err) {
     console.error('Error al eliminar producto:', err.message || err);
@@ -1923,6 +1962,7 @@ async function archivarProducto(id, fuente) {
     await API.productos.actualizar(id, { nombre: producto.nombre, archivado: true });
     showToast('Producto archivado', 'ok');
     productosArchivadosCache = null;   // se invalida: la próxima vez que se abra "Ver: Archivados" debe traerlo
+    productosBorradoresCache = null;
     cargarProductos(true);
   } catch (err) {
     console.error('Error al archivar producto:', err.message || err);
@@ -1943,6 +1983,7 @@ async function desarchivarProducto(id, fuente) {
     // handleBuscarProductoTabla(), que como el filtro sigue en
     // "Ver: Archivados" vuelve a pedir la lista (ya sin este producto).
     productosArchivadosCache = null;
+    productosBorradoresCache = null;
     cargarProductos(true);
   } catch (err) {
     console.error('Error al desarchivar producto:', err.message || err);
@@ -1982,6 +2023,7 @@ async function alternarArchivadoDesdeEditor() {
     if (nuevoEstado && elProdPublicadoWeb) elProdPublicadoWeb.checked = false;
     showToast(nuevoEstado ? 'Producto archivado' : 'Producto desarchivado — vuelve a aparecer en el POS', 'ok');
     productosArchivadosCache = null;
+    productosBorradoresCache = null;
     cargarProductos(true);
   } catch (err) {
     console.error('Error al archivar/desarchivar producto:', err.message || err);

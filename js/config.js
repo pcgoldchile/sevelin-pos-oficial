@@ -337,14 +337,14 @@ function activarVista(viewId, subtab) {
   }
   targetView.classList.add('active');
 
-  /* "📥 Archivados" (sub-ítem de Productos): pone el filtro del listado
-     en "archivados" ANTES de cargar, para que se abra directo ahí en vez
-     de la lista normal — y lo devuelve a "" si se entra por el botón
-     padre (📦 Productos) sin sub-pestaña, para no quedar pegado en
-     Archivados la próxima vez que se entre por el atajo normal. */
+  /* "📥 Archivados" / "📝 Borradores" (sub-ítems de Productos): ponen el
+     filtro del listado en el modo correspondiente ANTES de cargar, para
+     que se abra directo ahí en vez de la lista normal — y lo devuelve a
+     "" si se entra por el botón padre (📦 Productos) sin sub-pestaña,
+     para no quedar pegado la próxima vez que se entre por el atajo normal. */
   if (viewId === 'view-productos') {
     const elOrden = document.getElementById('ordenProductos');
-    if (elOrden) elOrden.value = subtab === 'archivados' ? 'archivados' : '';
+    if (elOrden) elOrden.value = (subtab === 'archivados' || subtab === 'borradores') ? subtab : '';
     if (typeof cargarProductos === 'function') cargarProductos();
   }
 

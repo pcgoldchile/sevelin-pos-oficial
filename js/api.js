@@ -75,6 +75,8 @@ const API = {
     // Archivados: mismo endpoint, ?archivados=1 invierte el filtro
     // (ver GET /api/productos en el backend) — nunca se mezclan.
     listarArchivados: () => apiRequest('/productos?archivados=1'),
+    // Borradores: mismo criterio, ?borradores=1 (ver sql/34-borrador-productos.sql).
+    listarBorradores: () => apiRequest('/productos?borradores=1'),
     crear: (p) => apiRequest('/productos', { method: 'POST', body: p }),
     actualizar: (id, p) => apiRequest(`/productos/${id}`, { method: 'PUT', body: p }),
     eliminar: (id) => apiRequest(`/productos/${id}`, { method: 'DELETE' }),

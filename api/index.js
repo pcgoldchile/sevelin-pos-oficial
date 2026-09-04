@@ -722,7 +722,11 @@ const CAMPOS_PRODUCTO = [
   // generateMetadata en productos/[sku]/page.tsx). Se llenan a mano o con
   // el botón "Generar con IA" (POST /api/productos/generar-seo, ver
   // sql/33-seo-ia.sql).
-  'meta_titulo_web', 'meta_descripcion_web'
+  'meta_titulo_web', 'meta_descripcion_web',
+  // Borrador autocreado al agregar la primera foto de un producto nuevo
+  // (ver crearBorradorProducto() en js/productos.js y sql/34-borrador-
+  // productos.sql) — false en cualquier guardado real desde el formulario.
+  'es_borrador'
 ];
 
 /* Normaliza el código de barras: SOLO dígitos.
@@ -763,6 +767,7 @@ function sanearProducto(body = {}) {
      importación masiva o un PUT parcial jamás encienden los lotes por su
      cuenta: la única forma es el checkbox del modal de producto. */
   if (body.usa_lotes !== undefined) p.usa_lotes = !!body.usa_lotes;
+  if (body.es_borrador !== undefined) p.es_borrador = !!body.es_borrador;
   // Archivar: siempre se lleva publicado_web=false consigo, para que un
   // producto archivado nunca pueda quedar visible en la tienda por
   // separado (el frontend ya lo manda así, esto es la garantía del
@@ -860,18 +865,25 @@ app.post('/api/productos/limpiar-codigos', auth(true), exigirPinAdmin, async (re
   res.json({ revisados: (data || []).length, corregidos });
 });
 
-/* Por defecto solo trae productos NO archivados — este endpoint alimenta
-   `productsList`, compartida por TODA la app (venta, OT, mermas, lotes,
-   reportes, no solo el módulo Productos), así que un producto archivado
-   queda excluido de golpe en todos lados con este único filtro. Con
-   ?archivados=1 se pide lo contrario (solo archivados), para la vista
-   "Ver: Archivados" del módulo Productos — nunca se mezclan ambos en la
-   misma respuesta. */
+/* Por defecto solo trae productos NO archivados y NO borradores — este
+   endpoint alimenta `productsList`, compartida por TODA la app (venta,
+   OT, mermas, lotes, reportes, no solo el módulo Productos), así que un
+   producto archivado o un borrador a medio llenar quedan excluidos de
+   golpe en todos lados con este único filtro. Con ?archivados=1 se pide
+   lo contrario (solo archivados, sin filtrar por borrador — caso raro,
+   no hace falta cruzarlos); con ?borradores=1, solo los borradores
+   vigentes (nunca archivados). Ver sql/34-borrador-productos.sql — nunca
+   se mezclan las tres vistas en la misma respuesta. */
 app.get('/api/productos', auth(), async (req, res) => {
   const soloArchivados = req.query.archivados === '1';
-  const { data, error } = await db.from('productos').select('*')
-    .eq('archivado', soloArchivados)
-    .order('nombre', { ascending: true });
+  const soloBorradores = req.query.borradores === '1';
+  let q = db.from('productos').select('*').order('nombre', { ascending: true });
+  q = soloArchivados
+    ? q.eq('archivado', true)
+    : soloBorradores
+      ? q.eq('es_borrador', true).eq('archivado', false)
+      : q.eq('archivado', false).eq('es_borrador', false);
+  const { data, error } = await q;
   if (error) return enviarErrorBD(res, error);
   res.json(limpiarLista(data, req.usuario.rol));
 });
