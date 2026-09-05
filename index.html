@@ -410,6 +410,48 @@
                 </div>
 
                 <div class="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+
+                  <!-- Descuento: aplica solo al total de la compra, nunca a
+                       un ítem suelto. El monto real siempre lo recalcula el
+                       servidor (ver api/index.js::calcularDescuentoMonto). -->
+                  <div class="mb-3">
+                    <div class="flex items-center justify-between mb-1.5">
+                      <span class="etiqueta-pos">Descuento (opcional)</span>
+                      <div class="flex rounded-lg overflow-hidden border border-slate-300 dark:border-slate-600 text-[11px] font-semibold">
+                        <button type="button" id="btnDescuentoMonto" data-tipo="MONTO"
+                                class="px-2.5 py-1 transition-colors">$</button>
+                        <button type="button" id="btnDescuentoPorcentaje" data-tipo="PORCENTAJE"
+                                class="px-2.5 py-1 transition-colors">%</button>
+                      </div>
+                    </div>
+                    <input type="number" id="posDescuentoValor" min="0" step="1" inputmode="decimal"
+                           placeholder="0" class="campo-pos">
+                  </div>
+
+                  <div id="filaSubtotalDescuento" style="display:none;" class="mb-2 text-sm">
+                    <div class="flex items-baseline justify-between text-slate-500 dark:text-slate-400">
+                      <span>Subtotal</span>
+                      <span id="posSubtotalText" class="tabular-nums">$0</span>
+                    </div>
+                    <div class="flex items-baseline justify-between text-rose-500 dark:text-rose-400">
+                      <span>Descuento</span>
+                      <span id="posDescuentoMontoText" class="tabular-nums">-$0</span>
+                    </div>
+                  </div>
+
+                  <!-- Solo el admin ve utilidad (mismo criterio que el resto
+                       del POS: los trabajadores no ven costos/márgenes). -->
+                  <div id="filaUtilidadPos" style="display:none;" class="mb-2 text-xs text-slate-400 dark:text-slate-500">
+                    <div class="flex items-baseline justify-between">
+                      <span>Utilidad estimada</span>
+                      <span id="posUtilidadBrutaText" class="tabular-nums">$0</span>
+                    </div>
+                    <div id="filaUtilidadNeta" style="display:none;" class="flex items-baseline justify-between text-amber-500 dark:text-amber-400">
+                      <span>Utilidad tras descuento</span>
+                      <span id="posUtilidadNetaText" class="tabular-nums">$0</span>
+                    </div>
+                  </div>
+
                   <div class="flex items-baseline justify-between mb-3">
                     <span class="text-[11px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Total</span>
                     <strong id="cartTotalText"

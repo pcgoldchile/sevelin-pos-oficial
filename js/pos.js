@@ -10,6 +10,11 @@ let cart = [];
 let productoSeleccionado = null;
 let ultimaVentaRegistrada = null;
 
+// Descuento del carrito actual — 'MONTO' ($) o 'PORCENTAJE' (%). El monto
+// real siempre lo vuelve a calcular el servidor al confirmar la venta
+// (api/index.js::calcularDescuentoMonto); esto es solo la previsualización.
+let descuentoTipo = 'MONTO';
+
 const elBuscarProducto = document.getElementById('posBuscarProducto');
 const elSugerencias = document.getElementById('posSugerencias');
 const elItemNombre = document.getElementById('itemNombre');
@@ -45,6 +50,18 @@ const elCartTotalText = document.getElementById('cartTotalText');
 const elBtnFinalizarVenta = document.getElementById('btnFinalizarVenta');
 const elBtnLimpiarSeleccion = document.getElementById('btnLimpiarSeleccion');
 
+// Descuento sobre el total del carrito (ver renderCart/aplicarDescuentoCarrito)
+const elBtnDescuentoMonto = document.getElementById('btnDescuentoMonto');
+const elBtnDescuentoPorcentaje = document.getElementById('btnDescuentoPorcentaje');
+const elPosDescuentoValor = document.getElementById('posDescuentoValor');
+const elFilaSubtotalDescuento = document.getElementById('filaSubtotalDescuento');
+const elPosSubtotalText = document.getElementById('posSubtotalText');
+const elPosDescuentoMontoText = document.getElementById('posDescuentoMontoText');
+const elFilaUtilidadPos = document.getElementById('filaUtilidadPos');
+const elPosUtilidadBrutaText = document.getElementById('posUtilidadBrutaText');
+const elFilaUtilidadNeta = document.getElementById('filaUtilidadNeta');
+const elPosUtilidadNetaText = document.getElementById('posUtilidadNetaText');
+
 const elModalVentaExitosa = document.getElementById('modalVentaExitosa');
 const elVentaExitosaDetalle = document.getElementById('ventaExitosaDetalle');
 const elVentaExitosaVuelto = document.getElementById('ventaExitosaVuelto');
@@ -58,6 +75,7 @@ const ICO_QUITAR = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 document.addEventListener('DOMContentLoaded', () => {
   if (elPosFecha) elPosFecha.value = todayISO();
   setupPosEventListeners();
+  actualizarBotonesDescuentoTipo();
   renderCart();
 });
 
@@ -96,6 +114,10 @@ function setupPosEventListeners() {
 
   if (elBtnAgregarItem) elBtnAgregarItem.addEventListener('click', agregarItemAlCarrito);
   if (elBtnFinalizarVenta) elBtnFinalizarVenta.addEventListener('click', abrirModalPago);
+
+  if (elBtnDescuentoMonto) elBtnDescuentoMonto.addEventListener('click', () => elegirTipoDescuento('MONTO'));
+  if (elBtnDescuentoPorcentaje) elBtnDescuentoPorcentaje.addEventListener('click', () => elegirTipoDescuento('PORCENTAJE'));
+  if (elPosDescuentoValor) elPosDescuentoValor.addEventListener('input', renderCart);
 
   // Limpia SOLO los campos de ingreso; el carrito queda intacto
   if (elBtnLimpiarSeleccion) elBtnLimpiarSeleccion.addEventListener('click', () => {
@@ -619,6 +641,51 @@ function limpiarFormularioItem() {
   actualizarUtilidadPreview();
 }
 
+/* Cambia entre descuento en $ o en % — mismos valores que espera el
+   servidor en descuento_tipo (calcularDescuentoMonto). */
+function elegirTipoDescuento(tipo) {
+  descuentoTipo = tipo;
+  actualizarBotonesDescuentoTipo();
+  renderCart();
+}
+
+function actualizarBotonesDescuentoTipo() {
+  [
+    [elBtnDescuentoMonto, 'MONTO'],
+    [elBtnDescuentoPorcentaje, 'PORCENTAJE']
+  ].forEach(([btn, tipo]) => {
+    if (!btn) return;
+    const activo = descuentoTipo === tipo;
+    btn.classList.toggle('bg-blue-600', activo);
+    btn.classList.toggle('text-white', activo);
+    btn.classList.toggle('bg-slate-100', !activo);
+    btn.classList.toggle('dark:bg-slate-700', !activo);
+    btn.classList.toggle('text-slate-600', !activo);
+    btn.classList.toggle('dark:text-slate-300', !activo);
+  });
+}
+
+/* Espejo (para previsualizar) de calcularDescuentoMonto() en api/index.js:
+   el monto REAL que se guarda siempre lo recalcula el servidor a partir
+   del subtotal de los ítems que reciba, nunca de lo que muestre esta
+   función. Nunca deja el descuento negativo, mayor al subtotal, ni un
+   porcentaje sobre 100. */
+function calcularDescuentoMontoPreview(subtotal, tipo, valor) {
+  const v = Math.max(0, Number(valor) || 0);
+  let monto = 0;
+  if (tipo === 'PORCENTAJE') monto = subtotal * (Math.min(v, 100) / 100);
+  else if (tipo === 'MONTO') monto = v;
+  return Math.min(Math.max(0, monto), subtotal);
+}
+
+/* Descuento tal como se manda al backend al confirmar la venta — null si
+   no hay nada válido escrito (el servidor lo trata como "sin descuento"). */
+function obtenerDescuentoActual() {
+  const valor = Number(elPosDescuentoValor?.value) || 0;
+  if (valor <= 0) return { tipo: null, valor: 0 };
+  return { tipo: descuentoTipo, valor };
+}
+
 function renderCart() {
   if (!elCartTableBody) return;
 
@@ -650,8 +717,35 @@ function renderCart() {
     });
   }
 
-  const total = cart.reduce((acc, it) => acc + it.subtotal, 0);
+  const subtotal = cart.reduce((acc, it) => acc + it.subtotal, 0);
+  const { tipo: tipoActivo, valor: descuentoValor } = obtenerDescuentoActual();
+  const descuentoMonto = tipoActivo ? calcularDescuentoMontoPreview(subtotal, tipoActivo, descuentoValor) : 0;
+  const total = subtotal - descuentoMonto;
+
   if (elCartTotalText) elCartTotalText.textContent = fmtCLP(total);
+
+  if (elFilaSubtotalDescuento) elFilaSubtotalDescuento.style.display = descuentoMonto > 0 ? '' : 'none';
+  if (descuentoMonto > 0) {
+    if (elPosSubtotalText) elPosSubtotalText.textContent = fmtCLP(subtotal);
+    if (elPosDescuentoMontoText) elPosDescuentoMontoText.textContent = `-${fmtCLP(descuentoMonto)}`;
+  }
+
+  // Utilidad: solo el admin la ve (los ítems de un trabajador ya llegan con
+  // costo_unitario=0, ver agregarItemAlCarrito — mostrarla ahí sería mentir).
+  if (elFilaUtilidadPos) {
+    const mostrar = esAdmin() && cart.length > 0;
+    elFilaUtilidadPos.style.display = mostrar ? '' : 'none';
+    if (mostrar) {
+      const costoTotal = cart.reduce((acc, it) => acc + Number(it.costo_unitario || 0) * it.cantidad, 0);
+      const utilidadBruta = subtotal - costoTotal;
+      if (elPosUtilidadBrutaText) elPosUtilidadBrutaText.textContent = fmtCLP(utilidadBruta);
+
+      if (elFilaUtilidadNeta) elFilaUtilidadNeta.style.display = descuentoMonto > 0 ? '' : 'none';
+      if (descuentoMonto > 0 && elPosUtilidadNetaText) {
+        elPosUtilidadNetaText.textContent = fmtCLP(total - costoTotal);
+      }
+    }
+  }
 }
 
 // ============================================================
@@ -689,12 +783,17 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
 
   // El backend calcula total, costo_total y utilidad a partir de los ítems,
   // y deja la venta en PENDIENTE si el método es "Por Pagar".
+  const descuento = obtenerDescuentoActual();
   const venta = await API.ventas.crear({
     fecha: elPosFecha?.value || todayISO(),
     hora: horaPersonalizada,
     tipo_dte: datosPago.tipoDte || 'SIN DTE',
     cliente: elPosCliente?.value.trim() || null,
     metodo_pago: metodoPago,
+    // Descuento sobre el TOTAL de la venta (no por ítem) — el monto real
+    // siempre lo vuelve a calcular el servidor, ver calcularDescuentoMonto().
+    descuento_tipo: descuento.tipo,
+    descuento_valor: descuento.valor,
     /* Desglose del pago mixto. Va solo si el usuario eligió "Mixto"; el
        backend lo revalida contra el total y calcula la comisión sobre
        cada parte con tarjeta por separado. */
@@ -716,6 +815,9 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
   showToast(venta.estado === 'PENDIENTE' ? 'Venta registrada como PENDIENTE de pago' : 'Venta registrada con éxito', 'ok');
 
   cart = [];
+  if (elPosDescuentoValor) elPosDescuentoValor.value = '';
+  descuentoTipo = 'MONTO';
+  actualizarBotonesDescuentoTipo();
   renderCart();
   limpiarFormularioItem();
 

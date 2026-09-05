@@ -70,6 +70,15 @@ function construirTicketHTML(venta, items) {
   const numero = String(venta.numero_orden ?? venta.id ?? 0).padStart(5, '0');
   const totalCalculado = venta.total ?? lista.reduce((a, i) => a + (Number(i.subtotal) || 0), 0);
 
+  // Con descuento, se muestra el subtotal y la rebaja antes del total —
+  // sin eso, el cliente no entiende por qué el ticket no calza con la
+  // suma de los ítems.
+  const descuentoMonto = Number(venta.descuento_monto) || 0;
+  const subtotalCalculado = totalCalculado + descuentoMonto;
+  const etiquetaDescuento = venta.descuento_tipo === 'PORCENTAJE'
+    ? `Descuento (${escHtml(String(venta.descuento_valor))}%)`
+    : 'Descuento';
+
   const filas = lista.map(it => `
     <tr>
       <td class="t-desc">
@@ -95,6 +104,10 @@ function construirTicketHTML(venta, items) {
       <tbody>${filas}</tbody>
     </table>
     <div class="t-line"></div>
+    ${descuentoMonto > 0 ? `
+    <div class="t-row"><span>Subtotal</span><span>${fmtCLP(subtotalCalculado)}</span></div>
+    <div class="t-row"><span>${etiquetaDescuento}</span><span>-${fmtCLP(descuentoMonto)}</span></div>
+    ` : ''}
     <div class="t-total">
       <span>TOTAL</span>
       <span>${fmtCLP(totalCalculado)}</span>

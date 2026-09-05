@@ -1345,6 +1345,7 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
     body.print-ticket #ticketContainer .t-desc { width: 68%; }
     body.print-ticket #ticketContainer .t-right { text-align: right; white-space: nowrap; }
     body.print-ticket #ticketContainer .t-sn { font-size: 9px; }
+    body.print-ticket #ticketContainer .t-row { display: flex; justify-content: space-between; font-size: 11px; }
     body.print-ticket #ticketContainer .t-total { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; }
     body.print-ticket #ticketContainer .t-center { text-align: center; }
     body.print-ticket #ticketContainer .t-small { font-size: 9px; }

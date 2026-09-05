@@ -2046,10 +2046,31 @@ async function revertirEfectosDeVentas(ventaIds) {
   return { stock_repuesto: repuestos.length, items_borrados: itemsBorrados };
 }
 
-function totalizar(items) {
-  const total = items.reduce((a, i) => a + i.subtotal, 0);
+/* Convierte tipo ('MONTO'|'PORCENTAJE') + valor en el monto real a
+   descontar del subtotal de los ítems — SIEMPRE calculado en el servidor
+   a partir del subtotal (nunca se confía en un monto que mande el
+   navegador, mismo criterio que el resto de las cifras de la venta).
+   Nunca deja el descuento negativo ni mayor al subtotal, y un porcentaje
+   nunca pasa de 100. */
+function calcularDescuentoMonto(items, tipo, valor) {
+  const subtotal = items.reduce((a, i) => a + i.subtotal, 0);
+  const v = Math.max(0, num(valor));
+  let monto = 0;
+  if (tipo === 'PORCENTAJE') monto = subtotal * (Math.min(v, 100) / 100);
+  else if (tipo === 'MONTO') monto = v;
+  return Math.min(Math.max(0, monto), subtotal);
+}
+
+/* `descuentoMonto` sale de calcularDescuentoMonto() — se resta del
+   subtotal para llegar a `total`, y por lo tanto también de `utilidad`
+   (total - costo_total): un descuento sale directo del margen, nunca del
+   costo de lo vendido. Ver sql/35-descuento-venta.sql. */
+function totalizar(items, descuentoMonto = 0) {
+  const subtotal = items.reduce((a, i) => a + i.subtotal, 0);
   const costoTotal = items.reduce((a, i) => a + i.costo_unitario * i.cantidad, 0);
-  return { total, costo_total: costoTotal, utilidad: total - costoTotal };
+  const descuento = Math.min(Math.max(0, num(descuentoMonto)), subtotal);
+  const total = subtotal - descuento;
+  return { total, costo_total: costoTotal, utilidad: total - costoTotal, descuento_monto: descuento };
 }
 
 app.get('/api/ventas', auth(), async (req, res) => {
@@ -2166,7 +2187,13 @@ app.post('/api/ventas', auth(), async (req, res) => {
        sin lotes pasan de largo sin cambios. */
     const { consumos } = await aplicarCostosFifo(items);
 
-    const totales = totalizar(items);
+    // Descuento sobre el total (no por ítem) — ver calcularDescuentoMonto().
+    // Sin tipo válido, es como si no hubiera descuento (venta de siempre).
+    const descuentoTipo = ['MONTO', 'PORCENTAJE'].includes(req.body?.descuento_tipo) ? req.body.descuento_tipo : null;
+    const descuentoValor = descuentoTipo ? Math.max(0, num(req.body?.descuento_valor)) : 0;
+    const descuentoMonto = descuentoTipo ? calcularDescuentoMonto(items, descuentoTipo, descuentoValor) : 0;
+
+    const totales = totalizar(items, descuentoMonto);
 
     // "Por Pagar" deja la venta PENDIENTE: no suma a totales hasta que se cobre.
     const metodoPago = req.body?.metodo_pago || 'Efectivo';
@@ -2202,6 +2229,11 @@ app.post('/api/ventas', auth(), async (req, res) => {
       ot_id: req.body?.ot_id || null,
       numero_ot: (req.body?.numero_ot || '').trim() || null,
       ...totales,
+      // Sin descuento real, se guarda tipo=NULL/valor=0 aunque el cajero
+      // haya dejado algo tipeado a medias (ej. "%" sin número) — mismo
+      // criterio que descuentoMonto === 0 arriba.
+      descuento_tipo: totales.descuento_monto > 0 ? descuentoTipo : null,
+      descuento_valor: totales.descuento_monto > 0 ? descuentoValor : 0,
       comision_pos: comisionPos,
       pago_mixto: !!pagosMixtos,
       impreso: false,
@@ -2393,7 +2425,26 @@ app.put('/api/ventas/:id', auth(true), async (req, res) => {
 
     if (Array.isArray(req.body?.items)) {
       const items = await normalizarItems(req.body.items, 'admin');
-      Object.assign(cambios, totalizar(items));
+
+      /* El descuento no viaja en cada edición de ítems: se conserva el que
+         ya tenía la venta (tipo/valor) y se recalcula el monto real contra
+         el nuevo subtotal — a menos que el body traiga un descuento_tipo
+         explícito, en cuyo caso ese manda (permite quitar o cambiar el
+         descuento desde el mismo PUT). */
+      const { data: ventaActual } = await db.from('ventas')
+        .select('descuento_tipo, descuento_valor').eq('id', id).maybeSingle();
+      const descuentoTipo = req.body.descuento_tipo !== undefined
+        ? (['MONTO', 'PORCENTAJE'].includes(req.body.descuento_tipo) ? req.body.descuento_tipo : null)
+        : (ventaActual?.descuento_tipo || null);
+      const descuentoValor = req.body.descuento_valor !== undefined
+        ? Math.max(0, num(req.body.descuento_valor))
+        : Math.max(0, num(ventaActual?.descuento_valor));
+      const descuentoMonto = descuentoTipo ? calcularDescuentoMonto(items, descuentoTipo, descuentoValor) : 0;
+
+      Object.assign(cambios, totalizar(items, descuentoMonto), {
+        descuento_tipo: descuentoMonto > 0 ? descuentoTipo : null,
+        descuento_valor: descuentoMonto > 0 ? descuentoValor : 0
+      });
 
       const { error: errDel } = await db.from('venta_items').delete().eq('venta_id', id);
       if (errDel) throw new Error(errDel.message);
