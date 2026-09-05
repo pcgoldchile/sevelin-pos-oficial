@@ -5990,7 +5990,7 @@ app.post('/api/pos/carritos/:id/reenviar-correo', auth(true), async (req, res) =
 /* ---------- 404 y errores ---------- */
 app.use('/api', (_req, res) => enviarError(res, 404, 'Endpoint no encontrado'));
 app.use((err, _req, res, _next) => {
-  console.error('[POS] Error no controlado:', err.message);
+  console.error('[POS] Error no controlado:', err.message, err.stack);
   enviarError(res, 500, 'Error interno del servidor');
 });
 
