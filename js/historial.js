@@ -1699,12 +1699,61 @@ async function verDetalleVenta(ventaId) {
 function renderDetalleVenta(venta) {
   if (!elDetalleVentaContent) return;
 
-  const filas = (venta.items || []).map(it => `
+  const items = venta.items || [];
+  // venta.utilidad solo llega si el rol es admin (ver limpiarParaRol en el
+  // backend) — mismo sentinel que ya usaba este archivo, se reutiliza para
+  // decidir si se muestra la columna de utilidad por producto.
+  const esVistaAdmin = venta.utilidad !== undefined;
+  const subtotalItems = items.reduce((a, it) => a + (Number(it.subtotal) || 0), 0);
+  const descuentoMonto = Number(venta.descuento_monto) || 0;
+  const hayDescuento = descuentoMonto > 0;
+
+  /* Prorratea el descuento (que se guarda a nivel de venta, nunca por
+     ítem — ver BIZ-01 en api/index.js) entre los productos según su peso
+     en el subtotal, SOLO para mostrar en cuánto queda quedando cada uno.
+     No cambia nada de lo guardado en venta_items. El último ítem absorbe
+     el resto del redondeo para que la suma cuadre exacto con el total
+     real de la venta (nunca $1 de diferencia por acumular redondeos). */
+  let descuentoAcumulado = 0;
+  const filasCalc = items.map((it, idx) => {
+    const esUltimo = idx === items.length - 1;
+    let descuentoItem = 0;
+    if (hayDescuento && subtotalItems > 0) {
+      descuentoItem = esUltimo
+        ? Math.max(0, descuentoMonto - descuentoAcumulado)
+        : Math.round(descuentoMonto * ((Number(it.subtotal) || 0) / subtotalItems));
+      descuentoAcumulado += descuentoItem;
+    }
+    const totalItem = (Number(it.subtotal) || 0) - descuentoItem;
+    const costoItem = Number(it.costo_unitario || 0) * Number(it.cantidad || 0);
+    return { it, descuentoItem, totalItem, utilidadItem: totalItem - costoItem };
+  });
+
+  const filas = filasCalc.map(({ it, descuentoItem, totalItem, utilidadItem }) => `
     <tr>
       <td style="padding:8px 0;">${it.cantidad}x ${escHtml(it.nombre)}${it.serial_number ? '<br><small style="color:var(--text-muted);">S/N: ' + escHtml(it.serial_number) + '</small>' : ''}</td>
-      <td style="text-align:right; padding:8px 0;">${fmtCLP(it.subtotal)}</td>
+      ${hayDescuento ? `
+      <td style="text-align:right; padding:8px 0; color:var(--text-muted); text-decoration:line-through; white-space:nowrap;">${fmtCLP(it.subtotal)}</td>
+      <td style="text-align:right; padding:8px 0; color:var(--red); white-space:nowrap;">-${fmtCLP(descuentoItem)}</td>
+      ` : ''}
+      <td style="text-align:right; padding:8px 0; font-weight:${hayDescuento ? '600' : '400'}; white-space:nowrap;">${fmtCLP(totalItem)}</td>
+      ${esVistaAdmin ? `<td class="admin-only" style="text-align:right; padding:8px 0; color:var(--green); white-space:nowrap;">${fmtCLP(utilidadItem)}</td>` : ''}
     </tr>
   `).join('');
+
+  const cabecera = `
+    <tr style="font-size:11px; text-transform:uppercase; color:var(--text-muted); border-bottom:1px solid var(--border);">
+      <th style="text-align:left; font-weight:600; padding-bottom:4px;">Producto</th>
+      ${hayDescuento ? `
+      <th style="text-align:right; font-weight:600; padding-bottom:4px;">Subtotal</th>
+      <th style="text-align:right; font-weight:600; padding-bottom:4px;">Descuento</th>
+      ` : ''}
+      <th style="text-align:right; font-weight:600; padding-bottom:4px;">Total</th>
+      ${esVistaAdmin ? `<th class="admin-only" style="text-align:right; font-weight:600; padding-bottom:4px;">Utilidad</th>` : ''}
+    </tr>
+  `;
+
+  const utilidadBruta = venta.utilidad + descuentoMonto;
 
   elDetalleVentaContent.innerHTML = `
     <div class="grid grid-2" style="gap:8px 18px; margin-bottom:12px;">
@@ -1716,12 +1765,27 @@ function renderDetalleVenta(venta) {
       </p>
     </div>
     <table style="width:100%; border-collapse:collapse;">
+      <thead>${cabecera}</thead>
       <tbody>${filas}</tbody>
     </table>
-    <div style="border-top:1px solid var(--border); margin-top:12px; padding-top:12px; display:flex; justify-content:space-between; font-weight:bold; font-size:17px;">
-      <span>TOTAL</span><span>${fmtCLP(venta.total)}</span>
+    <div style="border-top:1px solid var(--border); margin-top:12px; padding-top:12px;">
+      ${hayDescuento ? `
+      <div style="display:flex; justify-content:space-between; font-size:14px; color:var(--text-muted); margin-bottom:4px;">
+        <span>Subtotal</span><span>${fmtCLP(subtotalItems)}</span>
+      </div>
+      <div style="display:flex; justify-content:space-between; font-size:14px; color:var(--red); margin-bottom:8px;">
+        <span>Descuento${venta.descuento_tipo === 'PORCENTAJE' ? ` (${venta.descuento_valor}%)` : ''}</span>
+        <span>-${fmtCLP(descuentoMonto)}</span>
+      </div>
+      ` : ''}
+      <div style="display:flex; justify-content:space-between; font-weight:bold; font-size:17px;">
+        <span>TOTAL</span><span>${fmtCLP(venta.total)}</span>
+      </div>
     </div>
-    ${venta.utilidad !== undefined ? `<p class="modal-hint admin-only">Costo ${fmtCLP(venta.costo_total)} · Utilidad ${fmtCLP(venta.utilidad)}</p>` : ''}
+    ${esVistaAdmin ? `<p class="modal-hint admin-only">
+        Costo ${fmtCLP(venta.costo_total)} ·
+        Utilidad ${hayDescuento ? `tras descuento ${fmtCLP(venta.utilidad)} (bruta ${fmtCLP(utilidadBruta)})` : fmtCLP(venta.utilidad)}
+      </p>` : ''}
     <div class="row-actions" style="justify-content:flex-end; margin-top:16px;">
       <button class="btn btn-gold" id="btnReimprimirDesdeDetalle">🖨️ Reimprimir Ticket</button>
     </div>
