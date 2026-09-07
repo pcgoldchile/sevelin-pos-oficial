@@ -238,6 +238,28 @@ h2 { color: var(--text-100); font-weight: 700; letter-spacing: -.01em; }
 .sync-bad { background: var(--tint-red); color: var(--red); border: 1px solid rgba(239, 68, 68, .45); }
 .sync-pending { background: var(--tint-gold); color: var(--gold); border: 1px solid rgba(255, 46, 196, .45); }
 
+/* Campana de notificaciones (pedidos web pendientes) — ver
+   js/notificaciones.js. Gris cuando no hay nada pendiente, rojo y con un
+   leve pulso cuando sí, para que se note sin tener que leer el número. */
+.btn-notificaciones {
+    font-size: 11.5px; padding: 0 14px; height: var(--control-h-sm); border-radius: var(--radius-pill);
+    font-weight: 600; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+    background: var(--surface-soft); color: var(--text-300); border: 1px solid var(--border);
+    cursor: pointer; transition: background .15s, color .15s, border-color .15s;
+}
+.btn-notificaciones:hover { background: var(--surface-strong, var(--surface-soft)); }
+.badge-notificaciones {
+    font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.btn-notificaciones.tiene-pendientes {
+    background: var(--tint-red); color: var(--red); border-color: rgba(239, 68, 68, .45);
+    animation: pulso-notificacion 2s ease-in-out infinite;
+}
+@keyframes pulso-notificacion {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .65; }
+}
+
 .theme-toggle {
     height: var(--control-h-sm); width: var(--control-h-sm); border-radius: var(--radius-pill);
     background: var(--surface-soft); border: 1px solid var(--border); color: var(--text-300);

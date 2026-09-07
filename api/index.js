@@ -779,6 +779,13 @@ function sanearProducto(body = {}) {
 
   // Cada vez que se toca el stock queda registrada la fecha del cambio
   if (p.stock !== undefined) p.stock_actualizado_en = new Date().toISOString();
+  // Mismo criterio para medidas y peso — un solo timestamp para las 4
+  // juntas (se editan como grupo en "Medidas y envío", ver sql/36-medidas-
+  // actualizado-en.sql). No compara contra el valor anterior: se registra
+  // apenas cualquiera de los cuatro campos viene en el guardado.
+  if (['peso_kg', 'alto_cm', 'ancho_cm', 'profundidad_cm'].some(k => p[k] !== undefined)) {
+    p.medidas_actualizado_en = new Date().toISOString();
+  }
   ['sku', 'descripcion'].forEach(k => {
     if (p[k] !== undefined) {
       const t = String(p[k]).trim();
@@ -5602,7 +5609,13 @@ const ESTADOS_DESPACHO_PEDIDO_WEB = ['PREPARANDO', 'ENVIADO', 'ENTREGADO', 'CANC
 
 app.get('/api/pos/pedidos-web', auth(true), async (req, res) => {
   let q = dbWeb.from('pedidos_web').select('*').order('creado_en', { ascending: false });
-  if (req.query.estado) q = q.eq('estado', String(req.query.estado));
+  // Admite uno o varios estados separados por coma (ej. para el badge de
+  // notificaciones del header, que junta PAGADO + ERROR_STOCK_SIN_DESPACHO
+  // en una sola consulta) — ver js/notificaciones.js.
+  if (req.query.estado) {
+    const estados = String(req.query.estado).split(',').map(e => e.trim()).filter(Boolean);
+    q = estados.length > 1 ? q.in('estado', estados) : q.eq('estado', estados[0]);
+  }
   // Filtro opcional por tipo de pedido — ver sql/30-pedidos-por-encargo.sql
   // (POS) y supabase/18-pedidos-por-encargo.sql (tienda).
   if (req.query.tipo) q = q.eq('tipo_pedido', String(req.query.tipo));

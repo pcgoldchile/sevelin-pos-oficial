@@ -65,6 +65,7 @@ const elProdEsRepuesto = document.getElementById('prodEsRepuesto');
 const elProdStockMinimo = document.getElementById('prodStockMinimo');
 const elProdSinAlertaStock = document.getElementById('prodSinAlertaStock');
 const elProdStockActualizado = document.getElementById('prodStockActualizado');
+const elProdMedidasActualizado = document.getElementById('prodMedidasActualizado');
 const elProdStockIlimitado = document.getElementById('prodStockIlimitado');
 const elGridProdStockControl = document.getElementById('gridProdStockControl');
 const elProdPeso = document.getElementById('prodPeso');
@@ -1096,6 +1097,11 @@ function abrirModalProducto(producto = null) {
     if (elProdAlto) elProdAlto.value = producto.alto_cm || 0;
     if (elProdAncho) elProdAncho.value = producto.ancho_cm || 0;
     if (elProdProfundidad) elProdProfundidad.value = producto.profundidad_cm || 0;
+    if (elProdMedidasActualizado) {
+      elProdMedidasActualizado.textContent = producto.medidas_actualizado_en
+        ? `Última actualización de medidas y peso: ${tsAChile(producto.medidas_actualizado_en)}`
+        : 'Última actualización de medidas y peso: sin registro previo.';
+    }
     // Una sola descripción: si el producto viene de antes de este cambio y
     // solo tenía escrita la "web", se usa esa como punto de partida.
     establecerDescripcion(producto.descripcion || producto.descripcion_web || '');
@@ -1138,6 +1144,7 @@ function abrirModalProducto(producto = null) {
     if (elProdUsaLotes) elProdUsaLotes.checked = false;
     if (elProdStockIlimitado) elProdStockIlimitado.checked = false;
     if (elProdStockActualizado) elProdStockActualizado.textContent = 'Última actualización de stock: se registrará al guardar.';
+    if (elProdMedidasActualizado) elProdMedidasActualizado.textContent = 'Última actualización de medidas y peso: se registrará al guardar.';
     // Pedido explícito del dueño: un producto nuevo nace marcado para
     // publicarse en la web — antes había que acordarse de tildarlo a mano
     // cada vez. Sigue siendo reversible con un click antes de guardar.
@@ -2517,7 +2524,8 @@ function filaProductoParaExportar(p) {
     'Stock Mínimo': Number(p.stock_minimo) || 0,
     'Alerta de Stock': p.alerta_stock === false ? 'Desactivada' : 'Activa',
     'Stock Ilimitado': p.stock_ilimitado ? 'Sí' : 'No',
-    'Última Act. Stock': p.stock_actualizado_en ? tsAChile(p.stock_actualizado_en) : ''
+    'Última Act. Stock': p.stock_actualizado_en ? tsAChile(p.stock_actualizado_en) : '',
+    'Última Act. Medidas': p.medidas_actualizado_en ? tsAChile(p.medidas_actualizado_en) : ''
   };
 }
 
