@@ -511,13 +511,26 @@ SERVITEC ARICA 3,6 (92).
 > mercado donde el cliente elige por confianza, esa es una brecha concreta y barata de cerrar —
 > pedirle la reseña a cada cliente en la entrega presencial, que es donde está el volumen real.
 
+### 5.1b Lo entregado el 07-09-2026, en producción
+
+| Versión | Qué | Estado |
+|---|---|---|
+| v51 | Panel **Finanzas → 🧠 Inteligencia** (Fase 1 completa) | En producción |
+| v52 | **Contacto del cliente en la venta** (bloqueo B5: captura construida) | En producción |
+| v53 | **Feed de catálogo** para Meta Commerce y Google Merchant (Fase 3, "dejar de publicar a mano") | En producción |
+
 ### 5.2 Lo que sigue necesitando de ti
 
 1. **Flow productivo** y **DNS de Resend** (siguen abiertos, desbloquean Fases 0 y 4).
-2. **Los 21 costos faltantes** — el panel Inteligencia ya te los lista con ID y nombre.
+2. **Los 21 costos faltantes** — el panel Inteligencia ya te los lista con ID y nombre. *En curso.*
 3. **Decisión sobre los 43 productos dormidos** ($1.954.370): cuáles se liquidan y cuáles se
    mantienen. Yo puedo proponer, la decisión comercial es tuya.
 4. **Página de Facebook + Business Manager** (bloqueo B6) — es riesgo de continuidad, no marketing.
+   Ahora además tiene premio inmediato: el feed de 99 productos está listo para subir apenas exista.
+5. **Cargar el WhatsApp en cada venta** (v52 ya construyó el campo). Sin datos, la herramienta no
+   sirve — y es lo que habilita el aviso de garantía por vencer, que ningún competidor de Arica hace.
+6. **13 productos sin foto y 18 sin stock** quedaron fuera del feed. Los 13 son foto; los 18 son
+   reposición, o bien decidir que la tienda muestre las fichas agotadas (hoy devuelven 404).
 
 ---
 
@@ -528,7 +541,7 @@ SERVITEC ARICA 3,6 (92).
 | 0 — Destrabar la caja | Esperando al dueño | 07-09-2026 | — | Flow productivo y DNS de Resend: "aún no" |
 | 1 — Verdad de los datos | **Construida** | 07-09-2026 | 07-09-2026 (panel) | Panel Finanzas → Inteligencia en producción, ver `CHANGELOG-V51.md`. Queda que el dueño llene los 21 costos |
 | 2 — Oferta y precio | Lista para empezar | — | — | Ya hay datos: cajones, capital dormido y concentración medidos |
-| 3 — Blindar el canal que vende | Por empezar | — | — | **Reescrita.** Depende de B6 (Página + Business Manager) y B3 |
+| 3 — Blindar el canal que vende | **Empezada** | 07-09-2026 | — | **Reescrita.** "Dejar de publicar a mano" **hecho** (v53: feed de catálogo para Meta y Google, 99 productos listos). Lo demás depende de B6 (Página + Business Manager) y B3 |
 | 4 — Conversión y recuperación | Bloqueada | — | — | Depende de B1 (Flow), B2 (Resend) y B5 (captura de cliente) |
 | 5 — Competencia | Lista para empezar | — | — | Lista de competidores ya cargada en §5.1 |
 | 6 — Monetización | Por empezar | — | — | Depende de Fase 2 |
