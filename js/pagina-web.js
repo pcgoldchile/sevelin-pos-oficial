@@ -75,6 +75,8 @@ function mostrarPanelPaginaWeb(nombre) {
   if (nombre === 'metricas') { cargarMetricasWeb(); iniciarRefrescoVisitantesActivos(); }
   else { detenerRefrescoVisitantesActivos(); }
   if (nombre === 'salud') cargarSaludSistema();
+  /* El feed NO se genera solo al entrar: recorre el catálogo
+     completo y el dueño lo pide cuando de verdad va a subirlo. */
 }
 
 // Deja de refrescar "Visitando ahora" apenas se sale de la sección
@@ -784,4 +786,71 @@ function compartirCarritoPorWhatsapp(telefono, items, link) {
   const mensaje = encodeURIComponent(partes.join('\n\n'));
   const numero = (telefono || '').replace(/\D/g, '');
   window.open(`https://wa.me/${numero}?text=${mensaje}`, '_blank');
+}
+
+/* ============================================================
+   FEED DE CATÁLOGO (Meta Commerce Manager / Google Merchant Center)
+   ------------------------------------------------------------
+   El CSV lo arma el servidor (GET /api/pos/feed-catalogo). Acá solo se
+   descarga y se muestra el resumen, incluida la lista de lo que quedó
+   FUERA con su motivo — que es la parte más útil: una subida rechazada
+   por Meta no dice qué producto falló, y esta lista sí.
+   ============================================================ */
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btnDescargarFeed')?.addEventListener('click', descargarFeedCatalogo);
+});
+
+async function descargarFeedCatalogo() {
+  const boton = document.getElementById('btnDescargarFeed');
+  const caja = document.getElementById('feedResultado');
+  if (boton) { boton.disabled = true; boton.textContent = '⏳ Generando…'; }
+
+  try {
+    const feed = await API.feedCatalogo.generar();
+    descargarArchivo(feed.nombre, feed.csv, 'text/csv');
+
+    const porMotivo = new Map();
+    (feed.omitidos || []).forEach(o => {
+      if (!porMotivo.has(o.motivo)) porMotivo.set(o.motivo, []);
+      porMotivo.get(o.motivo).push(o);
+    });
+
+    if (caja) {
+      caja.innerHTML = `
+        <div class="kpi-grid" style="margin-top:4px;">
+          <div class="kpi-card kpi-green">
+            <div class="kpi-label">✅ En el archivo</div>
+            <div class="kpi-value">${feed.total}</div>
+            <div class="kpi-foot">productos listos para publicar</div>
+          </div>
+          <div class="kpi-card kpi-red">
+            <div class="kpi-label">⛔ Quedaron fuera</div>
+            <div class="kpi-value">${feed.omitidos.length}</div>
+            <div class="kpi-foot">de ${feed.publicados} publicados en la tienda</div>
+          </div>
+        </div>
+        <p class="subtitle" style="margin-top:14px;">
+          Archivo <b>${escHtml(feed.nombre)}</b> descargado. Se sube en
+          Meta Commerce Manager → Catálogo → Fuentes de datos → Subir archivo,
+          y sirve igual como fuente en Google Merchant Center.
+        </p>
+        ${porMotivo.size ? [...porMotivo.entries()].map(([motivo, lista]) => `
+          <h4 style="margin:18px 0 6px;">${lista.length} ${lista.length === 1 ? 'producto' : 'productos'} — ${escHtml(motivo)}</h4>
+          <div class="tabla-scroll">
+            <table class="data-table">
+              <thead><tr><th>SKU</th><th>Producto</th></tr></thead>
+              <tbody>
+                ${lista.map(o => `<tr><td>${escHtml(o.sku || '—')}</td><td>${escHtml(o.nombre || '')}</td></tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+        `).join('') : '<p class="subtitle">Ningún producto quedó fuera.</p>'}
+      `;
+    }
+    showToast(`Feed generado: ${feed.total} productos`, 'ok');
+  } catch (err) {
+    showToast(err.message || 'No se pudo generar el feed', 'err');
+  } finally {
+    if (boton) { boton.disabled = false; boton.textContent = '⬇️ Generar y descargar'; }
+  }
 }

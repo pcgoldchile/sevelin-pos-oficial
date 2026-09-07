@@ -303,6 +303,13 @@ const API = {
     ),
   },
 
+  /* Feed de catálogo para Meta Commerce Manager / Google Merchant Center.
+     El CSV lo arma el servidor y viaja como texto dentro del JSON: así el
+     formato tiene una sola fuente de verdad y el navegador solo lo baja. */
+  feedCatalogo: {
+    generar: () => apiRequest('/pos/feed-catalogo'),
+  },
+
   // Categorías del catálogo web (módulo "Página Web → Categorías") —
   // distinto de repuestos.categorias (taller).
   productosCategorias: {

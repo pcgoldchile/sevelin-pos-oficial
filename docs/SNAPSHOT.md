@@ -3,7 +3,18 @@
 > Actualiza SOLO este archivo al cerrar una sesión. Para el detalle completo, ver `docs/README.md`.
 > Para saber qué otro documento leer según lo que necesites, ver `docs/README-DOCS.md`.
 
-**Fecha:** 07-09-2026 · **Versión activa:** v52 (**contacto del cliente en la venta — bloqueo B5 del
+**Fecha:** 07-09-2026 · **Versión activa:** v53 (**feed de catálogo para Meta y Google**, ver
+`docs/CHANGELOG-V53.md`). `GET /api/pos/feed-catalogo` + sub-pestaña "Página Web → 📣 Feed de
+catálogo": genera el CSV que comen Meta Commerce Manager y Google Merchant Center, para dejar de
+escribir cada publicación de Marketplace a mano (ese canal produce casi toda la venta). Los datos
+salen de `productos_web` (ahí está el `sku` ya resuelto que forma la URL real), no de `productos`.
+**Bug real encontrado al verificar:** la tienda devuelve **404** en la ficha de un producto con
+`stock_web = 0` (`obtenerProductoPorSku()` filtra por `stock_web.gt.0`), así que un tercio de los
+links del feed estaban rotos — se omiten esos productos, porque un feed con links rotos hace que la
+plataforma rechace el catálogo entero. Resultado real: 130 publicados → **99 al feed, 31 fuera**
+(13 sin foto, 18 sin stock), con la lista de omitidos y su motivo a la vista antes de subir.
+
+**Versión anterior:** v52 (**contacto del cliente en la venta — bloqueo B5 del
 plan**, ver `docs/CHANGELOG-V52.md`). `ventas.cliente_telefono`/`cliente_correo` (`sql/37`, aplicada),
 campo "WhatsApp del cliente" en el POS y en el modal de editar venta (se puede rellenar DESPUÉS: el
 cliente da el número al coordinar la entrega), teléfono como link directo a `wa.me` en el detalle de

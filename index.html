@@ -2275,6 +2275,7 @@
         <button class="subtab" data-subtab="categorias">🗂️ Categorías</button>
         <button class="subtab" data-subtab="mas-buscados">🔍 Más buscados</button>
         <button class="subtab" data-subtab="metricas">📊 Métricas</button>
+        <button class="subtab" data-subtab="feed">📣 Feed de catálogo</button>
         <button class="subtab" data-subtab="salud">🩺 Salud</button>
       </nav>
 
@@ -2493,6 +2494,26 @@
            aviso era un console.error/warn en los logs de Vercel — que
            nadie del negocio revisa nunca. Esto lo hace visible acá, sin
            mostrar ningún valor real (solo si está configurada o no). -->
+      <!-- ============================================================
+           FEED DE CATÁLOGO — el archivo que comen Meta Commerce Manager
+           (catálogo de Facebook/Instagram) y Google Merchant Center.
+           Existe porque hoy cada publicación de Marketplace se escribe a
+           mano, y ese es el canal que produce casi toda la venta.
+           Todo el armado vive en GET /api/pos/feed-catalogo.
+           ============================================================ -->
+      <div class="panel-pagina-web" data-panel-pagina-web="feed">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Feed de catálogo para Facebook e Instagram</h2>
+              <p class="subtitle">Genera el archivo con los productos publicados, listo para subir a Meta Commerce Manager o a Google Merchant Center. Así el catálogo se alimenta desde el POS en vez de escribir cada publicación a mano.</p>
+            </div>
+            <button class="btn btn-primary" id="btnDescargarFeed">⬇️ Generar y descargar</button>
+          </div>
+          <div id="feedResultado"></div>
+        </div>
+      </div>
+
       <div class="panel-pagina-web" data-panel-pagina-web="salud">
         <div class="card">
           <div class="card-head">

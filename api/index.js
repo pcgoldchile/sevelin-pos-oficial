@@ -6416,6 +6416,174 @@ app.get('/api/pos/inteligencia', auth(true), async (req, res) => {
   }
 });
 
+/* ============================================================
+   GET /api/pos/feed-catalogo — Página Web → Feed de catálogo
+   ------------------------------------------------------------
+   Genera el archivo que comen Meta Commerce Manager (catálogo de
+   Facebook/Instagram) y Google Merchant Center, con los productos que ya
+   están publicados en la tienda.
+
+   POR QUÉ EXISTE
+   Hoy cada publicación de Facebook Marketplace se escribe a mano, una por
+   una, y ese es el canal que produce prácticamente toda la venta de
+   Sevelin (ver docs/PLAN-CRECIMIENTO-2026.md, Fase 3). El catálogo real ya
+   vive en el POS: este endpoint lo entrega en el formato que las dos
+   plataformas aceptan, para dejar de tipear lo mismo dos veces.
+
+   DE DÓNDE SALEN LOS DATOS
+   De `productos_web` (Supabase Web, cliente `dbWeb`), no de `productos`,
+   porque ahí está el `sku` YA RESUELTO que forma la URL real de la ficha
+   —incluido el slug de respaldo que la tienda genera para los productos
+   sin SKU—. Recalcular esa URL acá sería una segunda fuente de verdad que
+   tarde o temprano se desincroniza. Lo único que se busca en el POS es
+   `condicion` (nuevo/reacondicionado), que el trigger de sincronización no
+   manda a la tienda.
+
+   QUÉ SE OMITE Y POR QUÉ SE INFORMA
+   Meta y Google rechazan filas sin foto, sin precio o sin link, y una
+   subida rechazada no dice cuál producto falló de forma útil. Por eso el
+   endpoint devuelve, junto al archivo, la lista de lo que dejó fuera con
+   el motivo: es la misma auditoría del panel Inteligencia, pero mirada
+   desde "qué me falta para poder publicar".
+   ============================================================ */
+
+/* Una celda de CSV. Se citan SIEMPRE los textos: los nombres de producto
+   traen comas, comillas y saltos de línea, y una sola celda mal escapada
+   corre todas las columnas de esa fila. */
+function celdaCsv(valor) {
+  const texto = valor === null || valor === undefined ? '' : String(valor);
+  return `"${texto.replace(/"/g, '""')}"`;
+}
+
+/* Descripción en texto plano para el feed.
+   Las fichas se guardan como HTML (editor Quill), y ni Meta ni Google
+   aceptan marcado. No se INVENTA descripción cuando falta: se arma una
+   línea mínima con datos que ya existen (nombre y categoría), porque el
+   campo es obligatorio y dejarlo vacío hace que la plataforma rechace el
+   producto entero. */
+function descripcionParaFeed(fila) {
+  const plano = String(fila.descripcion_web || '')
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<\/(p|div|li|h[1-6])>/gi, ' ')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (plano) return plano.slice(0, 4900);
+  const categoria = fila.categoria ? ` — ${fila.categoria}` : '';
+  return `${fila.nombre}${categoria}. Disponible en Sevelin, Arica.`;
+}
+
+app.get('/api/pos/feed-catalogo', auth(true), async (req, res) => {
+  const sitio = (process.env.TIENDA_URL_PUBLICA || 'https://www.sevelin.cl').replace(/\/+$/, '');
+
+  try {
+    const [respWeb, respPos] = await Promise.all([
+      dbWeb.from('productos_web')
+        .select('producto_pos_id, sku, nombre, descripcion_web, precio_web, stock_web, imagen_urls, categoria, subcategoria, publicado_web, es_pedido_encargo')
+        .eq('publicado_web', true),
+      db.from('productos').select('id, condicion, archivado, es_borrador')
+    ]);
+    if (respWeb.error) throw respWeb.error;
+    if (respPos.error) throw respPos.error;
+
+    const posPorId = new Map(respPos.data.map(p => [p.id, p]));
+
+    const COLUMNAS = [
+      'id', 'title', 'description', 'availability', 'condition', 'price',
+      'link', 'image_link', 'additional_image_link', 'brand', 'product_type',
+      'quantity_to_sell_on_facebook', 'identifier_exists'
+    ];
+
+    const filas = [];
+    const omitidos = [];
+
+    for (const p of respWeb.data) {
+      const posible = posPorId.get(p.producto_pos_id);
+      // Un producto archivado o en borrador no debería estar publicado,
+      // pero si quedó así, no se manda a anunciar.
+      if (posible && (posible.archivado || posible.es_borrador)) {
+        omitidos.push({ sku: p.sku, nombre: p.nombre, motivo: 'archivado o en borrador en el POS' });
+        continue;
+      }
+      const imagenes = Array.isArray(p.imagen_urls) ? p.imagen_urls.filter(Boolean) : [];
+      if (!imagenes.length) {
+        omitidos.push({ sku: p.sku, nombre: p.nombre, motivo: 'sin foto (Meta y Google rechazan productos sin imagen)' });
+        continue;
+      }
+      if (!num(p.precio_web)) {
+        omitidos.push({ sku: p.sku, nombre: p.nombre, motivo: 'sin precio' });
+        continue;
+      }
+
+      /* Disponibilidad. Un pedido por encargo no tiene stock propio y no
+         por eso está agotado: se declara como pedido especial, que es lo
+         que las dos plataformas entienden por "in stock" con demora. */
+      const hayStock = p.es_pedido_encargo || num(p.stock_web) > 0;
+
+      /* SIN STOCK NO PUEDE IR AL FEED, aunque Meta y Google acepten
+         "out of stock" como valor válido.
+         Motivo real, verificado el 07-09-2026 contra producción: la
+         tienda devuelve **404** en la ficha de un producto con
+         `stock_web = 0` que no sea pedido por encargo (ver
+         `obtenerProductoPorSku()` en sevelin-tienda/src/lib/catalogo.ts,
+         que filtra por `stock_web.gt.0`). Un feed con links rotos no es
+         un producto que no se vende: es un catálogo que la plataforma
+         rechaza entero y que baja la calidad de la cuenta.
+         Si algún día la tienda sirve las fichas agotadas (mejor para SEO,
+         pero es una decisión de negocio), acá basta con dejar pasar la
+         fila con `availability: out of stock`. */
+      if (!hayStock) {
+        omitidos.push({ sku: p.sku, nombre: p.nombre, motivo: 'sin stock: su ficha devuelve 404 en la tienda, el link del feed quedaría roto' });
+        continue;
+      }
+
+      filas.push({
+        id: p.sku,
+        title: String(p.nombre || '').slice(0, 150),
+        description: descripcionParaFeed(p),
+        availability: hayStock ? 'in stock' : 'out of stock',
+        condition: posible && posible.condicion === 'reacondicionado' ? 'refurbished' : 'new',
+        price: `${Math.round(num(p.precio_web))} CLP`,
+        link: `${sitio}/productos/${encodeURIComponent(p.sku)}`,
+        image_link: imagenes[0],
+        // Meta acepta hasta 20 adicionales separadas por coma.
+        additional_image_link: imagenes.slice(1, 21).join(','),
+        /* MARCA: el catálogo del POS no tiene un campo `marca` todavía,
+           y Meta/Google exigen `brand`. Se manda el nombre de la tienda,
+           que es lo que hace un retailer sin datos de marca, y se declara
+           `identifier_exists=no` (no hay GTIN ni MPN) para que Google no
+           lo rechace por identificador faltante.
+           PENDIENTE REAL: agregar `marca` a `productos` y usarla acá —
+           con la marca verdadera, estos productos compiten mucho mejor en
+           Google Shopping. Ver docs/PLAN-CRECIMIENTO-2026.md. */
+        brand: 'Sevelin',
+        product_type: [p.categoria, p.subcategoria].filter(Boolean).join(' > '),
+        quantity_to_sell_on_facebook: p.es_pedido_encargo ? '' : Math.max(0, Math.round(num(p.stock_web))),
+        identifier_exists: 'no'
+      });
+    }
+
+    const csv = [COLUMNAS.join(',')]
+      .concat(filas.map(f => COLUMNAS.map(c => celdaCsv(f[c])).join(',')))
+      .join('\r\n');
+
+    res.json({
+      nombre: `catalogo-sevelin-${fechaHoyChile()}.csv`,
+      // BOM incluido: sin él, Excel abre el archivo con los acentos rotos.
+      csv: '﻿' + csv,
+      total: filas.length,
+      publicados: respWeb.data.length,
+      omitidos
+    });
+  } catch (error) {
+    return enviarErrorBD(res, error, 'GET /api/pos/feed-catalogo');
+  }
+});
+
 /* ---------- 404 y errores ---------- */
 app.use('/api', (_req, res) => enviarError(res, 404, 'Endpoint no encontrado'));
 app.use((err, _req, res, _next) => {
