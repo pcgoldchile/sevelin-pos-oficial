@@ -32,6 +32,24 @@ let ventasSeleccionadas = new Set();
    manda el metodo_pago_final. */
 const metodoDeVenta = v => v.metodo_pago_final || v.metodo_pago || 'Sin especificar';
 
+/* Teléfono del cliente en el detalle de la venta, como link a WhatsApp
+   (sql/37). Es lo que convierte el dato en algo útil: desde el historial
+   se puede escribirle a quien compró — postventa, aviso de garantía,
+   recuperar a alguien que no vuelve.
+   El número se guarda normalizado a puros dígitos con código de país, así
+   que sirve tal cual en la URL de wa.me. Si la venta no tiene teléfono,
+   devuelve string vacío y el detalle se ve igual que antes. */
+function enlaceWhatsappCliente(venta) {
+  const digitos = String(venta?.cliente_telefono || '').replace(/\D/g, '');
+  if (!digitos) return '';
+  // 56 9 1234 5678 → "+56 9 1234 5678" solo para mostrar
+  const legible = digitos.length === 11 && digitos.startsWith('569')
+    ? `+56 9 ${digitos.slice(3, 7)} ${digitos.slice(7)}`
+    : `+${digitos}`;
+  return ` · <a href="https://wa.me/${escHtml(digitos)}" target="_blank" rel="noopener noreferrer"
+      title="Escribirle por WhatsApp">📲 ${escHtml(legible)}</a>`;
+}
+
 /* ---------- DTE e IVA ----------
    Los precios del sistema son BRUTOS (IVA incluido), así que el IVA
    contenido en un monto es: monto / 1,19 * 0,19. */
@@ -116,6 +134,7 @@ const elEditVentaNumero = document.getElementById('editVentaNumero');
 const elEditVentaFecha = document.getElementById('editVentaFecha');
 const elEditVentaHora = document.getElementById('editVentaHora');
 const elEditVentaCliente = document.getElementById('editVentaCliente');
+const elEditVentaClienteTelefono = document.getElementById('editVentaClienteTelefono');
 const elEditVentaMetodoPago = document.getElementById('editVentaMetodoPago');
 const elEditVentaItemsList = document.getElementById('editVentaItemsList');
 const elEditVentaTotales = document.getElementById('editVentaTotales');
@@ -650,6 +669,7 @@ function obtenerFilasHistorialParaExportar(ventas) {
     Fecha: v.fecha || '',
     Hora: v.hora || '',
     Cliente: v.cliente || 'Consumidor Final',
+    'WhatsApp': v.cliente_telefono || '',
     'Método de Pago': metodoDeVenta(v),
     Estado: estaPendiente(v) ? 'PENDIENTE' : 'PAGADA',
     DTE: dteDeVenta(v),
@@ -1491,6 +1511,7 @@ async function abrirModalEditarVenta(ventaId) {
     if (elEditVentaFecha) elEditVentaFecha.value = venta.fecha || todayISO();
     if (elEditVentaHora) elEditVentaHora.value = (venta.hora || '').slice(0, 5);
     if (elEditVentaCliente) elEditVentaCliente.value = venta.cliente || '';
+    if (elEditVentaClienteTelefono) elEditVentaClienteTelefono.value = venta.cliente_telefono || '';
     if (elEditVentaMetodoPago) elEditVentaMetodoPago.value = venta.metodo_pago || 'Efectivo';
 
     renderItemsEditables();
@@ -1668,6 +1689,7 @@ async function guardarEdicionVenta() {
       fecha: elEditVentaFecha?.value || todayISO(),
       hora: elEditVentaHora?.value || null,
       cliente: elEditVentaCliente?.value.trim() || null,
+      cliente_telefono: elEditVentaClienteTelefono?.value.trim() || null,
       metodo_pago: elEditVentaMetodoPago?.value || null,
       items: itemsEditando
     });
@@ -1759,7 +1781,7 @@ function renderDetalleVenta(venta) {
     <div class="grid grid-2" style="gap:8px 18px; margin-bottom:12px;">
       <p><b>Orden:</b> #${String(venta.numero_orden ?? venta.id).padStart(5, '0')}</p>
       <p><b>Fecha:</b> ${venta.fecha || '-'}${venta.hora ? ' · ' + venta.hora : ''}</p>
-      <p><b>Cliente:</b> ${escHtml(venta.cliente || 'Consumidor Final')}</p>
+      <p><b>Cliente:</b> ${escHtml(venta.cliente || 'Consumidor Final')}${enlaceWhatsappCliente(venta)}</p>
       <p><b>Pago:</b> ${metodoDeVenta(venta)}
         <span class="badge ${estaPendiente(venta) ? 'badge-red' : 'badge-green'}">${estaPendiente(venta) ? 'PENDIENTE' : 'PAGADA'}</span>
       </p>

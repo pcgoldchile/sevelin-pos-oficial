@@ -364,6 +364,32 @@ function tipoDteValido(valor) {
   return TIPOS_DTE.includes(v) ? v : 'SIN DTE';
 }
 
+/* Normaliza un teléfono chileno a solo dígitos con código de país
+   (ej. "+56 9 1234 5678", "912345678" y "56912345678" → "56912345678").
+   ------------------------------------------------------------
+   Se guarda normalizado, no como lo escribió el cajero, porque el
+   objetivo del campo es poder AGRUPAR las compras de una misma persona
+   (recompra, postventa, aviso de garantía). Si el mismo cliente queda
+   como "+569 1234 5678" en una venta y "912345678" en otra, son dos
+   clientes distintos para el sistema y la métrica de recompra miente.
+
+   Devuelve null cuando lo escrito no puede ser un teléfono (muy corto o
+   absurdamente largo): mejor vacío que basura que después nadie limpia.
+   NUNCA lanza ni bloquea: una venta jamás se cae porque el teléfono
+   venga raro. */
+function normalizarTelefonoChile(valor) {
+  const digitos = String(valor || '').replace(/\D/g, '');
+  if (!digitos) return null;
+  // Celular chileno escrito sin país: 9 dígitos que parten en 9.
+  if (digitos.length === 9 && digitos.startsWith('9')) return '56' + digitos;
+  // Ya viene con el 56 delante (celular 11, fijo 10).
+  if ((digitos.length === 11 || digitos.length === 10) && digitos.startsWith('56')) return digitos;
+  // Cualquier otro largo plausible (fijo sin país, número extranjero) se
+  // guarda tal cual: no se adivina un código de país que no se sabe.
+  if (digitos.length >= 8 && digitos.length <= 15) return digitos;
+  return null;
+}
+
 /* Acepta "HH:MM" o "HH:MM:SS"; devuelve null si no es una hora válida */
 function horaValida(valor) {
   const v = String(valor || '').trim();
@@ -2227,6 +2253,11 @@ app.post('/api/ventas', auth(), async (req, res) => {
       // Marca de tiempo real (fecha + hora elegida), interpretada en Chile
       vendida_en: marcaDeTiempoChile(fecha, hora),
       cliente: (req.body?.cliente || '').trim() || null,
+      // Contacto del cliente (sql/37). Siempre opcional: si no viene,
+      // la venta se registra igual — el POS atiende con el cliente
+      // esperando enfrente y nada puede bloquear el cobro.
+      cliente_telefono: normalizarTelefonoChile(req.body?.cliente_telefono),
+      cliente_correo: (req.body?.cliente_correo || '').trim().toLowerCase() || null,
       metodo_pago: metodoPago,
       estado: esPendiente ? 'PENDIENTE' : 'PAGADA',
       fecha_pago: esPendiente ? null : new Date().toISOString(),
@@ -2419,6 +2450,11 @@ app.put('/api/ventas/:id', auth(true), async (req, res) => {
     if (req.body?.fecha) cambios.fecha = req.body.fecha;
     if (req.body?.hora !== undefined) cambios.hora = horaValida(req.body.hora) || null;
     if (req.body?.cliente !== undefined) cambios.cliente = (req.body.cliente || '').trim() || null;
+    /* Contacto del cliente (sql/37): editable después de la venta a
+       propósito. El caso real es que el cliente da su WhatsApp recién al
+       coordinar la entrega, cuando la venta ya está registrada. */
+    if (req.body?.cliente_telefono !== undefined) cambios.cliente_telefono = normalizarTelefonoChile(req.body.cliente_telefono);
+    if (req.body?.cliente_correo !== undefined) cambios.cliente_correo = (req.body.cliente_correo || '').trim().toLowerCase() || null;
     if (req.body?.metodo_pago) cambios.metodo_pago = req.body.metodo_pago;
     if (req.body?.tipo_dte !== undefined) cambios.tipo_dte = tipoDteValido(req.body.tipo_dte);
 
@@ -6113,7 +6149,7 @@ app.get('/api/pos/inteligencia', auth(true), async (req, res) => {
 
   try {
     let consultaVentas = db.from('ventas')
-      .select('id, fecha, total, costo_total, utilidad, cliente, tipo_dte, metodo_pago, descuento_monto')
+      .select('id, fecha, total, costo_total, utilidad, cliente, cliente_telefono, tipo_dte, metodo_pago, descuento_monto')
       .order('fecha', { ascending: true });
     if (desde) consultaVentas = consultaVentas.gte('fecha', desde);
     if (hasta) consultaVentas = consultaVentas.lte('fecha', hasta);
@@ -6134,7 +6170,25 @@ app.get('/api/pos/inteligencia', auth(true), async (req, res) => {
     /* ---------- Resumen del período ---------- */
     const ingresos = ventas.reduce((s, v) => s + num(v.total), 0);
     const utilidad = ventas.reduce((s, v) => s + num(v.utilidad), 0);
-    const conCliente = ventas.filter(v => (v.cliente || '').trim() && (v.cliente || '').trim().toLowerCase() !== 'cliente').length;
+    /* Una venta cuenta como "identificada" si tiene nombre o teléfono.
+       El teléfono (sql/37) es el que sirve de verdad: el nombre es texto
+       libre y "Juan" no se puede unir con "juan p." Por eso la RECOMPRA
+       se mide solo con el teléfono normalizado — es la única llave
+       confiable para saber que dos ventas son de la misma persona. */
+    const tieneNombre = (v) => {
+      const n = (v.cliente || '').trim().toLowerCase();
+      return !!n && n !== 'cliente';
+    };
+    const conCliente = ventas.filter(v => tieneNombre(v) || v.cliente_telefono).length;
+    const conTelefono = ventas.filter(v => v.cliente_telefono).length;
+
+    const comprasPorTelefono = new Map();
+    ventas.forEach(v => {
+      if (!v.cliente_telefono) return;
+      comprasPorTelefono.set(v.cliente_telefono, (comprasPorTelefono.get(v.cliente_telefono) || 0) + 1);
+    });
+    const clientesUnicos = comprasPorTelefono.size;
+    const clientesQueRepiten = [...comprasPorTelefono.values()].filter(n => n > 1).length;
 
     /* CUÁNTA DE LA UTILIDAD NO TIENE UN COSTO DETRÁS.
        ------------------------------------------------------------
@@ -6181,6 +6235,10 @@ app.get('/api/pos/inteligencia', auth(true), async (req, res) => {
       sinDte: ventas.filter(v => !v.tipo_dte || v.tipo_dte === 'SIN DTE').length,
       conCliente,
       sinCliente: ventas.length - conCliente,
+      conTelefono,
+      clientesUnicos,
+      clientesQueRepiten,
+      recompraPct: clientesUnicos ? (100 * clientesQueRepiten) / clientesUnicos : 0,
       primeraVenta: ventas.length ? ventas[0].fecha : null,
       ultimaVenta: ventas.length ? ventas[ventas.length - 1].fecha : null
     };

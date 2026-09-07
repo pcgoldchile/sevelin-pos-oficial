@@ -170,6 +170,12 @@ function pintarResumenInteligencia() {
     ? `${Math.round((100 * s.capitalDormido) / s.capital)}% de ${fmtCLP(s.capital)} en stock`
     : 'sin stock valorizado');
   set('intelKpiSinCliente', `${r.sinCliente} de ${r.ventas}`);
+  /* La recompra solo se puede medir con el teléfono: el nombre es texto
+     libre y "Juan" no se une con "juan p.". Mientras no haya teléfonos
+     cargados, el pie dice qué falta en vez de mostrar un 0% engañoso. */
+  set('intelKpiSinClienteFoot', r.conTelefono
+    ? `${r.clientesUnicos} clientes con WhatsApp · ${r.clientesQueRepiten} volvieron a comprar (${r.recompraPct.toFixed(0)}% de recompra)`
+    : 'Sin nombre ni WhatsApp no hay recompra ni postventa posible');
 
   const conc = intelInforme.concentracion;
   set('intelKpiConcentracion', `${conc.top10.toFixed(0)}%`);

@@ -376,7 +376,16 @@
                   </div>
                   <div>
                     <label for="posCliente" class="etiqueta-pos">Cliente</label>
-                    <input type="text" id="posCliente" placeholder="Opcional / Particular" class="campo-pos">
+                    <input type="text" id="posCliente" placeholder="Nombre de quien compra" class="campo-pos">
+                  </div>
+                  <!-- Contacto del cliente (sql/37). Es opcional y nunca
+                       bloquea el cobro, pero es el dato que habilita el
+                       aviso de garantía, la postventa y medir recompra:
+                       antes de esto, 166 de 167 ventas eran anónimas. -->
+                  <div class="col-span-2">
+                    <label for="posClienteTelefono" class="etiqueta-pos">WhatsApp del cliente</label>
+                    <input type="tel" id="posClienteTelefono" placeholder="9 1234 5678 — para avisarle de su garantía"
+                           inputmode="tel" autocomplete="off" class="campo-pos">
                   </div>
                   <div class="col-span-2">
                     <label for="posEditarHora" class="caja-check h-9 text-[13px]">
@@ -1009,7 +1018,7 @@
             <div class="kpi-card kpi-red">
               <div class="kpi-label">👤 Ventas sin cliente</div>
               <div class="kpi-value" id="intelKpiSinCliente">0 de 0</div>
-              <div class="kpi-foot">Sin nombre no hay recompra ni postventa posible</div>
+              <div class="kpi-foot" id="intelKpiSinClienteFoot">Sin nombre ni WhatsApp no hay recompra ni postventa posible</div>
             </div>
           </div>
 
@@ -4125,7 +4134,14 @@
         </div>
         <div class="field">
           <label>Cliente</label>
-          <input type="text" id="editVentaCliente" placeholder="Cliente Opcional / Particular">
+          <input type="text" id="editVentaCliente" placeholder="Nombre de quien compró">
+        </div>
+        <!-- El WhatsApp se puede completar DESPUÉS de la venta a propósito:
+             el caso real es que el cliente lo da al coordinar la entrega,
+             cuando la venta ya está registrada (sql/37). -->
+        <div class="field">
+          <label>WhatsApp del cliente</label>
+          <input type="tel" id="editVentaClienteTelefono" placeholder="9 1234 5678" inputmode="tel" autocomplete="off">
         </div>
         <div class="field">
           <label>Método de Pago</label>

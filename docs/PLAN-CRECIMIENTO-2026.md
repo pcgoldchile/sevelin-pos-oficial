@@ -113,7 +113,7 @@ con **[B]** los que bloquean el plan de crecimiento.
 | B2 | **Verificar dominio propio en Resend** (2-3 registros DNS en `sevelin.cl`). Sin esto, cero email marketing y los correos de pedido a clientes reales fallan en silencio. | Dueño | Fase 3 completa |
 | B3 | **Meta Pixel ID** (Events Manager) + **Catálogo de Meta Commerce** (no existe) + **ID y label de conversión de Google Ads**. | Dueño (cuentas) + Claude (integración) | Fases 5 y 6 |
 | B4 | **Costos reales faltantes** — 21 productos activos del catálogo en $0 (auditoría de la Fase 1, ya listados en el panel Inteligencia). | ~~Claude audita~~ (hecho), dueño llena | Fases 4, 5, 6 |
-| **B5** | **No se registra quién compra.** 166 de 167 ventas sin nombre de cliente. El dueño SÍ tiene el WhatsApp de cada uno (coordina por ahí), pero el POS no lo guarda: no hay a quién mandarle nada, ni a quién medirle recompra. | Claude construye la captura, dueño la usa | **Objetivos 2 y 5 completos** |
+| **B5** | ~~**No se registra quién compra.**~~ — **CAPTURA CONSTRUIDA 07-09-2026 (v52)**: campo "WhatsApp del cliente" en el POS y en editar venta, teléfono normalizado, link a `wa.me` en el detalle y recompra real en el panel. **Lo que falta ahora es usarlo**: cargar el teléfono en cada venta. Sin datos cargados, la herramienta no sirve. | ~~Claude construye~~ (hecho) · **dueño lo usa en cada venta** | **Objetivos 2 y 5 completos** |
 | **B6** | **Todo el negocio cuelga de una cuenta PERSONAL de Facebook.** Si Meta la restringe, las ventas caen a cero de un día para otro. Migrar a Página + Business Manager es además lo que desbloquea B3 (Pixel y catálogo de Commerce). | Dueño | Continuidad del negocio + fases 3, 5, 6 |
 
 ### 2.2 Del dueño, de la sesión v50 (los 5 que ya tenías anotados)

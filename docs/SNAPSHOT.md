@@ -3,7 +3,18 @@
 > Actualiza SOLO este archivo al cerrar una sesión. Para el detalle completo, ver `docs/README.md`.
 > Para saber qué otro documento leer según lo que necesites, ver `docs/README-DOCS.md`.
 
-**Fecha:** 07-09-2026 · **Versión activa:** v51 (**Fase 1 del plan de crecimiento — panel Finanzas →
+**Fecha:** 07-09-2026 · **Versión activa:** v52 (**contacto del cliente en la venta — bloqueo B5 del
+plan**, ver `docs/CHANGELOG-V52.md`). `ventas.cliente_telefono`/`cliente_correo` (`sql/37`, aplicada),
+campo "WhatsApp del cliente" en el POS y en el modal de editar venta (se puede rellenar DESPUÉS: el
+cliente da el número al coordinar la entrega), teléfono como link directo a `wa.me` en el detalle de
+la venta, columna en la exportación, y métrica de recompra real en el panel Inteligencia. El número
+se guarda **normalizado a puros dígitos con código de país** (`+56 9 8765 4321` y `987654321` quedan
+iguales) — si no, el mismo cliente cuenta como dos y la recompra miente. **Todo opcional: una venta
+nunca se cae por el teléfono.** Motivo: 168 de 169 ventas eran anónimas, y eso bloquea completos los
+objetivos de fidelización y recompra. Probado de punta a punta contra producción (PUT real, revertido)
++ prueba de inyección en el link de WhatsApp.
+
+**Versión anterior:** v51 (**Fase 1 del plan de crecimiento — panel Finanzas →
 🧠 Inteligencia**, ver `docs/CHANGELOG-V51.md` y `docs/PLAN-CRECIMIENTO-2026.md`). Nuevo
 `GET /api/pos/inteligencia` + `js/inteligencia.js`: margen real por producto, los cuatro cajones del
 catálogo (ancla/gancho/joya/lastre con cortes por mediana, no por umbral inventado), capital dormido,

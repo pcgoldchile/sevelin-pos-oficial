@@ -45,6 +45,10 @@ const elGrupoPosHora = document.getElementById('grupoPosHora');
 const elGrupoItemSN = document.getElementById('grupoItemSN');
 const elPosHora = document.getElementById('posHora');
 const elPosCliente = document.getElementById('posCliente');
+/* Contacto del cliente (sql/37, bloqueo B5 del plan de crecimiento):
+   opcional, nunca bloquea el cobro. El backend lo normaliza a dígitos
+   con código de país para poder agrupar las compras de una persona. */
+const elPosClienteTelefono = document.getElementById('posClienteTelefono');
 const elCartTableBody = document.getElementById('cartTableBody');
 const elCartTotalText = document.getElementById('cartTotalText');
 const elBtnFinalizarVenta = document.getElementById('btnFinalizarVenta');
@@ -789,6 +793,7 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
     hora: horaPersonalizada,
     tipo_dte: datosPago.tipoDte || 'SIN DTE',
     cliente: elPosCliente?.value.trim() || null,
+    cliente_telefono: elPosClienteTelefono?.value.trim() || null,
     metodo_pago: metodoPago,
     // Descuento sobre el TOTAL de la venta (no por ítem) — el monto real
     // siempre lo vuelve a calcular el servidor, ver calcularDescuentoMonto().
@@ -830,6 +835,7 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
      después de registrar la venta, así que la venta se guardaba pero el
      carrito no se limpiaba y el modal de éxito nunca aparecía. */
   if (elPosCliente) elPosCliente.value = '';
+  if (elPosClienteTelefono) elPosClienteTelefono.value = '';
   if (elPosEditarHora) elPosEditarHora.checked = false;
   if (elPosHora) { elPosHora.value = ''; elPosHora.disabled = true; }
 
