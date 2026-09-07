@@ -139,6 +139,7 @@
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="ventas">Historial de Ventas</button>
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="balance">Balance</button>
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="utilidades">Utilidades</button>
+          <button class="nav-subitem" data-view="view-finanzas" data-subtab="inteligencia">Inteligencia</button>
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="gastos">Gastos</button>
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="fijos">Gastos Fijos</button>
         </div>
@@ -926,9 +927,146 @@
         <button class="subtab activo" data-subtab="ventas">📜 Historial de Ventas</button>
         <button class="subtab" data-subtab="balance">📊 Balance</button>
         <button class="subtab" data-subtab="utilidades">💎 Utilidades</button>
+        <button class="subtab" data-subtab="inteligencia">🧠 Inteligencia</button>
         <button class="subtab" data-subtab="gastos">📑 Gastos</button>
         <button class="subtab" data-subtab="fijos">🔁 Gastos Fijos</button>
       </nav>
+
+      <!-- ============================================================
+           INTELIGENCIA — Fase 1 del plan de crecimiento
+           ------------------------------------------------------------
+           Balance responde "cómo está la caja". Utilidades responde
+           "cuánto gané". Esto responde una tercera pregunta distinta:
+           "¿en qué me conviene poner la plata y qué datos tengo mal?".
+           Todo el cálculo vive en GET /api/pos/inteligencia; acá solo se
+           pinta (ver js/inteligencia.js).
+           ============================================================ -->
+      <div class="panel-finanzas" data-panel-finanzas="inteligencia">
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Inteligencia del negocio</h2>
+              <p class="subtitle" id="intelPeriodo">—</p>
+            </div>
+            <div class="toolbar-group">
+              <button class="btn btn-outline btn-sm" id="btnIntelRecargar">🔄 Actualizar</button>
+            </div>
+          </div>
+
+          <div class="filtros-rango">
+            <button class="btn btn-outline btn-sm activo" data-rango-intel="todo">Todo el histórico</button>
+            <button class="btn btn-outline btn-sm" data-rango-intel="mes">Este mes</button>
+            <button class="btn btn-outline btn-sm" data-rango-intel="semana">Esta semana</button>
+            <button class="btn btn-outline btn-sm" data-rango-intel="hoy">Hoy</button>
+            <input type="date" id="intelDesde" class="filtro-fecha">
+            <input type="date" id="intelHasta" class="filtro-fecha">
+            <button class="btn btn-outline btn-sm" id="btnIntelRangoPersonalizado">Aplicar</button>
+          </div>
+        </div>
+
+        <div id="intelContenido">
+
+          <!-- Lo primero que hay que ver: qué está costando plata AHORA -->
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h3 style="margin:0;">Alertas</h3>
+                <p class="subtitle">Ordenadas por plata en juego, no por orden de aparición.</p>
+              </div>
+            </div>
+            <div id="intelAlertas"></div>
+          </div>
+
+          <p class="subtitle" id="intelAvisoMargen" hidden></p>
+
+          <div class="kpi-grid">
+            <div class="kpi-card kpi-blue">
+              <div class="kpi-label">💰 Facturado</div>
+              <div class="kpi-value" id="intelKpiIngresos">$0</div>
+              <div class="kpi-foot" id="intelKpiIngresosFoot">0 ventas</div>
+            </div>
+            <div class="kpi-card kpi-green">
+              <div class="kpi-label">📈 Utilidad bruta</div>
+              <div class="kpi-value" id="intelKpiUtilidad">$0</div>
+              <div class="kpi-foot" id="intelKpiMargen">0% de margen</div>
+            </div>
+            <div class="kpi-card kpi-gold">
+              <div class="kpi-label">🎟️ Ticket promedio</div>
+              <div class="kpi-value" id="intelKpiTicket">$0</div>
+              <div class="kpi-foot" id="intelKpiItems">0 productos por venta</div>
+            </div>
+            <div class="kpi-card kpi-red">
+              <div class="kpi-label">🧊 Capital dormido</div>
+              <div class="kpi-value" id="intelKpiDormido">$0</div>
+              <div class="kpi-foot" id="intelKpiDormidoFoot">—</div>
+            </div>
+            <div class="kpi-card kpi-violet">
+              <div class="kpi-label">🎯 Concentración del margen</div>
+              <div class="kpi-value" id="intelKpiConcentracion">0%</div>
+              <div class="kpi-foot" id="intelKpiConcentracionFoot">—</div>
+            </div>
+            <div class="kpi-card kpi-red">
+              <div class="kpi-label">👤 Ventas sin cliente</div>
+              <div class="kpi-value" id="intelKpiSinCliente">0 de 0</div>
+              <div class="kpi-foot">Sin nombre no hay recompra ni postventa posible</div>
+            </div>
+          </div>
+
+          <!-- Los cuatro cajones: qué hacer con cada producto -->
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h3 style="margin:0;">Los cuatro cajones del catálogo</h3>
+                <p class="subtitle">Cada producto vendido cae en un cajón según cuánto rota y cuánto margen deja. Cada cajón tiene una política distinta.</p>
+              </div>
+            </div>
+            <div class="filtros-rango" id="intelCajonesTabs"></div>
+            <div id="intelCajonCuerpo"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h3 style="margin:0;">Los que hacen el negocio</h3>
+                <p class="subtitle">Top 20 por margen generado, con el acumulado: dónde se corta el 80%.</p>
+              </div>
+            </div>
+            <div id="intelRanking"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h3 style="margin:0;">Capital dormido</h3>
+                <p class="subtitle">Stock con existencias que nunca registró una venta.</p>
+              </div>
+            </div>
+            <div id="intelDormido"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h3 style="margin:0;">Auditoría del catálogo</h3>
+                <p class="subtitle">Datos faltantes o mal cargados que ensucian todos los reportes y frenan la tienda web.</p>
+              </div>
+            </div>
+            <div id="intelAuditoria"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h3 style="margin:0;">Mes a mes</h3>
+                <p class="subtitle">Facturación, utilidad, margen y ticket promedio por mes.</p>
+              </div>
+            </div>
+            <div id="intelMeses"></div>
+          </div>
+
+        </div>
+      </div>
 
       <!-- ============================================================
            UTILIDADES — de lo que entró, ¿cuánto es del negocio?
@@ -5061,6 +5199,7 @@
   <script src="js/balance.js"></script>
   <script src="js/finanzas-ajustes.js"></script>   <!-- ajustes de saldo + checklist (req 3 y 4) -->
   <script src="js/utilidades.js"></script>   <!-- después de balance.js: reutiliza cerrarModal y el panel de Finanzas -->
+  <script src="js/inteligencia.js"></script>   <!-- después de balance.js: reutiliza calcularRango y el panel de Finanzas -->
   <script src="js/finanzas-gate.js"></script>   <!-- después de balance/config: intercepta la navegación a Finanzas -->
   <script src="js/reportes.js"></script>
   <script src="js/print.js"></script>

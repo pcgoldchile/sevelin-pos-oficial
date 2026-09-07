@@ -3,7 +3,40 @@
 > Actualiza SOLO este archivo al cerrar una sesión. Para el detalle completo, ver `docs/README.md`.
 > Para saber qué otro documento leer según lo que necesites, ver `docs/README-DOCS.md`.
 
-**Fecha:** 01-09-2026 · **Versión activa:** v49 (**sesión de seguridad + catálogo** — auditoría SAST
+**Fecha:** 07-09-2026 · **Versión activa:** v51 (**Fase 1 del plan de crecimiento — panel Finanzas →
+🧠 Inteligencia**, ver `docs/CHANGELOG-V51.md` y `docs/PLAN-CRECIMIENTO-2026.md`). Nuevo
+`GET /api/pos/inteligencia` + `js/inteligencia.js`: margen real por producto, los cuatro cajones del
+catálogo (ancla/gancho/joya/lastre con cortes por mediana, no por umbral inventado), capital dormido,
+auditoría de calidad de datos del catálogo y alertas ordenadas por plata en juego. Va dentro de
+Finanzas, así que hereda el PIN y la expulsión por inactividad.
+**Cifras reales medidas contra producción (167 ventas, 03-08 al 06-09-2026):** $5.811.000 facturado ·
+margen 30,9% · ticket $34.796 · **1,28 productos por venta** · **$1.954.370 de capital dormido (41%
+del stock, 43 productos que nunca vendieron)** · 10 productos hacen el 44% del margen ·
+**166 de 167 ventas SIN cliente identificado** · 165 de 167 retiro y pago presencial.
+**Dato de negocio que cambió el plan:** el dueño confirmó que casi todas las ventas nacen en
+**Facebook Marketplace desde su cuenta PERSONAL**, se coordinan por WhatsApp y terminan presenciales
+— la tienda web es herramienta de cierre, no canal de captación (~4 pedidos históricos). Eso agregó
+dos bloqueos nuevos al plan: **B5** (no se registra quién compra) y **B6** (todo el negocio cuelga de
+una cuenta personal de Facebook). También se corrigió el **HP ProDesk 400 G1 (id 181) a
+reacondicionado** (confirmado por el dueño; tercer HP con el mismo problema) y se verificó que el
+trigger lo sincronizó solo a la tienda.
+
+**Fecha:** 07-09-2026 · **Versión activa:** v50 (**descuento en el POS, notificaciones, catálogo
+grande, Khipu base, migración de Google Merchant Center fuera de Tiendanube** — ver
+`docs/CHANGELOG-V50.md` para el detalle completo. Resumen: descuento monto/porcentaje sobre el total
+de la venta [nunca por ítem, `sql/35`], detalle de venta con descuento prorrateado por producto solo
+para mostrar, campana de notificaciones de pedidos web en el header, seguimiento de última
+actualización de medidas/peso [`sql/36`], compra de prueba real en sandbox de Flow verificada de
+punta a punta [hallazgo: un pago sandbox SÍ descuenta stock real], 8 fichas de producto con
+marca/modelo investigadas por internet + 2 servicios mal clasificados corregidos, 27 productos sin
+categoría categorizados y publicados [3 subcategorías nuevas: Computadores→Nuevos/Reacondicionados,
+Cables y Adaptadores→Cables de Poder], 13 monitores reacondicionados nuevos [9 modelos únicos, fotos
+reales corregidas], base de integración con Khipu en `sevelin-tienda` [sin credenciales todavía,
+apagada sola], y la cuenta de Google Merchant Center desvinculada de Tiendanube + fuente
+"Encontrado por Google" activada como reemplazo + `sevelin.contacto@gmail.com` agregado como admin
+[pendiente de verificar]. **Pendiente real que deja esta sesión, ver `docs/CHANGELOG-V50.md`.**)
+
+**Fecha:** 01-09-2026 · **Versión activa anterior:** v49 (**sesión de seguridad + catálogo** — auditoría SAST
 propia + contra-auditoría red-team, remediación de los hallazgos reales: freno de login ahora lee la
 IP real de `X-Forwarded-For` [antes spoofeable], throttle de intentos movido a Redis (Upstash,
 persistente entre instancias serverless, con respaldo en memoria si faltan las variables — **falta
@@ -451,9 +484,41 @@ Ninguno confirmado. El bug crítico histórico de `descontar_stock_venta` (colum
 verificó esta sesión como **corregido** en la base real (`sql/20` sí se aplicó en algún momento —
 la función usa la variable local, no la columna ambigua).
 
-## Pendiente (real, verificado al 01-09-2026)
+## Pendiente (real, verificado al 07-09-2026)
 
-**Seguridad / catálogo / Starken / SEO — lo más reciente, v49 (fuera de código, del dueño):**
+> **Plan de crecimiento por fases:** `docs/PLAN-CRECIMIENTO-2026.md` (07-09-2026) consolida TODOS los
+> pendientes de abajo + los de `sevelin-tienda`, y los ordena en 8 fases para los objetivos de
+> negocio del dueño. Dos bloqueos de negocio que esa auditoría encontró y que no estaban listados
+> acá: **Flow sigue en sandbox** (`FLOW_API_BASE` cae a `sandbox.flow.cl` — la tienda no cobra plata
+> real) y **`sevelin.cl` YA apunta a la tienda nueva** (el SNAPSHOT de `sevelin-tienda` decía lo
+> contrario, corregido).
+
+**Lo más reciente, v50 (fuera de código, del dueño) — ver `docs/CHANGELOG-V50.md` para el contexto:**
+-1. **Sumar +1 al stock del Adaptador HDMI a VGA (id 104)** — una compra de prueba en sandbox de
+    Flow lo descontó de verdad (hallazgo real: sandbox de pago SÍ mueve stock real). El dueño
+    prefirió hacerlo él mismo desde el POS, no por script directo.
+-2. **Costo real del Ventilador Industrial Metálico 18" (id 192)** — quedó en $0 al categorizar el
+    lote de 27 productos, utilidad falsa en reportes hasta que se cargue.
+-3. **Confirmar que `sevelin.contacto@gmail.com` quedó "Verificada" en Google Merchant Center**
+    (aceptar la invitación por correo) — **recién ahí** quitar el acceso de `pcgoldchile@gmail.com`,
+    nunca antes (hoy es el único admin con acceso directo confirmado).
+-4. **En ~3 días (recordatorio programado), revisar la fuente "sevelin.cl" en Merchant Center**
+    (`https://merchants.google.com/mc/products/sources?a=5836999734`) — si ya se pobló con una
+    cantidad similar a los 107 productos viejos y los datos coinciden, eliminar la fuente vieja
+    "Tiendanube API" para no tener dos fuentes compitiendo.
+-5. **Khipu sin `KHIPU_API_KEY`** — el dueño la crea cuando tenga lista la cuenta de cobro; sin eso
+    el checkout sigue funcionando igual (solo Flow), no es bloqueante.
+-6. ~~**HP ProDesk 400 G1 (id 181)**: ¿nuevo o reacondicionado?~~ — **RESUELTO 07-09-2026 (v51)**:
+    el dueño confirmó que es **reacondicionado**. Se corrigió `condicion`, se movió a
+    "Computadores → Reacondicionados" y se agregó "Reacondicionado" al nombre (su ficha está vacía,
+    el nombre era el único lugar donde el cliente podía enterarse). Sincronizado a la tienda por el
+    trigger, verificado en `productos_web`.
+-7. **Los 21 costos en $0 del catálogo** (incluye el id 192 del punto -2): el panel Finanzas →
+    Inteligencia los lista con ID y nombre. Los montos reales los sabe el dueño.
+-8. **43 productos con $1.954.370 de stock que nunca vendieron nada** — decisión comercial pendiente
+    (liquidar / mantener). Listados en el mismo panel.
+
+**Seguridad / catálogo / Starken / SEO — v49 (fuera de código, del dueño):**
 0. **Confirmar `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` en Vercel del POS** (dashboard de
    Vercel del proyecto `sevelin-pos-oficial` → Settings → Environment Variables). En `sevelin-tienda`
    ya quedaron puestas esta sesión; en el POS nunca se confirmó — sin ellas el freno de login cae al

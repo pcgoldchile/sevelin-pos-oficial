@@ -104,6 +104,14 @@ function mostrarPanelFinanzas(nombre) {
   if (nombre === 'utilidades' && typeof aplicarRangoUtilidades === 'function') {
     aplicarRangoUtilidades('mes');
   }
+
+  /* Inteligencia (js/inteligencia.js): abre en "Todo el histórico" a
+     propósito, no en el mes. El panel existe para ver tendencias de
+     rotación, margen y capital dormido — con un mes suelto de datos
+     esas señales no se leen. El filtro por período sigue disponible. */
+  if (nombre === 'inteligencia' && typeof aplicarRangoInteligencia === 'function') {
+    aplicarRangoInteligencia('todo');
+  }
 }
 
 /* ============================================================

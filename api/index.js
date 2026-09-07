@@ -6051,6 +6051,313 @@ app.post('/api/pos/carritos/:id/reenviar-correo', auth(true), async (req, res) =
   }
 });
 
+/* ============================================================
+   GET /api/pos/inteligencia — Finanzas → Inteligencia (Fase 1)
+   ------------------------------------------------------------
+   Responde las preguntas que el dueño no podía contestar mirando el
+   POS: cuál es el producto que MÁS MARGEN deja (no el que más vende),
+   cuánta plata hay dormida en stock que nunca rotó, y qué datos del
+   catálogo están mal cargados y ensucian todos los reportes.
+
+   POR QUÉ SE CALCULA ACÁ Y NO EN SQL
+   El volumen real es chico (cientos de ventas, ~150 productos): traer
+   las tres tablas y agrupar en JS es más simple de leer y de cambiar
+   que una RPC nueva, y sigue el mismo criterio que ya se tomó en
+   /api/pos/mas-buscados. Si algún día esto crece a decenas de miles de
+   ventas, hay que mover el agrupado a una función SQL.
+
+   DOS TRAMPAS DEL NEGOCIO QUE ESTE ENDPOINT RESPETA
+   1. Los SERVICIOS TÉCNICOS tienen costo 0 legítimamente (son mano de
+      obra), así que su margen es 100% por definición. Mezclarlos con
+      los productos falsea el ranking, por eso van marcados aparte y
+      quedan fuera de los "cajones" y de las alertas de costo en $0.
+   2. El margen se calcula sobre el costo GUARDADO EN LA VENTA
+      (venta_items.costo_unitario), no sobre el costo actual del
+      producto: si el costo de reposición subió después, la utilidad
+      histórica no cambia.
+   ============================================================ */
+
+/* Trae una tabla completa en páginas de 1000 (límite de PostgREST).
+   Solo para las tablas chicas de este endpoint. */
+async function intelTraerTodo(tabla, columnas) {
+  let filas = [];
+  for (let desde = 0; ; desde += 1000) {
+    const { data, error } = await db.from(tabla).select(columnas).range(desde, desde + 999);
+    if (error) throw error;
+    filas = filas.concat(data);
+    if (data.length < 1000) return filas;
+    if (filas.length > 50000) return filas;      // freno duro, no colgar el serverless
+  }
+}
+
+/* Un producto es "servicio" si está en la categoría web de servicios o
+   si tiene stock ilimitado (así se cargan los servicios en este POS).
+   No existe `es_servicio` en `productos` — solo en `venta_items`, que
+   es la venta ya hecha (ver Pendiente del SNAPSHOT). */
+const intelEsServicio = (p) =>
+  p.categoria_web === 'Servicios Técnicos' || p.stock_ilimitado === true;
+
+const intelMediana = (valores) => {
+  if (!valores.length) return 0;
+  const orden = [...valores].sort((a, b) => a - b);
+  const medio = Math.floor(orden.length / 2);
+  return orden.length % 2 ? orden[medio] : (orden[medio - 1] + orden[medio]) / 2;
+};
+
+app.get('/api/pos/inteligencia', auth(true), async (req, res) => {
+  const { desde, hasta } = req.query;
+  const fechaValida = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+  if ((desde && !fechaValida(desde)) || (hasta && !fechaValida(hasta))) {
+    return enviarError(res, 400, 'desde/hasta deben venir como YYYY-MM-DD.');
+  }
+
+  try {
+    let consultaVentas = db.from('ventas')
+      .select('id, fecha, total, costo_total, utilidad, cliente, tipo_dte, metodo_pago, descuento_monto')
+      .order('fecha', { ascending: true });
+    if (desde) consultaVentas = consultaVentas.gte('fecha', desde);
+    if (hasta) consultaVentas = consultaVentas.lte('fecha', hasta);
+
+    const [respVentas, items, productos] = await Promise.all([
+      consultaVentas,
+      intelTraerTodo('venta_items', 'venta_id, producto_id, nombre, cantidad, costo_unitario, subtotal, es_servicio'),
+      intelTraerTodo('productos', 'id, nombre, sku, costo_unitario, precio_unitario, stock, stock_ilimitado, archivado, es_borrador, categoria_web, subcategoria_web, imagen_urls, descripcion_web, publicado_web, peso_kg, condicion')
+    ]);
+    if (respVentas.error) throw respVentas.error;
+
+    const ventas = respVentas.data;
+    const idsVenta = new Set(ventas.map(v => v.id));
+    const itemsPeriodo = items.filter(it => idsVenta.has(it.venta_id));
+    const porId = new Map(productos.map(p => [p.id, p]));
+    const activos = productos.filter(p => !p.archivado && !p.es_borrador);
+
+    /* ---------- Resumen del período ---------- */
+    const ingresos = ventas.reduce((s, v) => s + num(v.total), 0);
+    const utilidad = ventas.reduce((s, v) => s + num(v.utilidad), 0);
+    const conCliente = ventas.filter(v => (v.cliente || '').trim() && (v.cliente || '').trim().toLowerCase() !== 'cliente').length;
+
+    /* CUÁNTA DE LA UTILIDAD NO TIENE UN COSTO DETRÁS.
+       ------------------------------------------------------------
+       Un ítem vendido con `costo_unitario = 0` aporta el 100% de su
+       precio a la utilidad. A veces eso es correcto (un servicio
+       técnico es mano de obra, no tiene costo de mercadería) y a veces
+       no (un producto que se cobró sin cargarle el costo).
+       El margen global no distingue los dos casos, así que **el número
+       grande puede estar bastante inflado sin que nada se vea raro**.
+       Acá se mide cuánto es, para poder advertirlo junto al margen en
+       vez de publicar una sola cifra que se lee como si fuera exacta.
+
+       Los servicios que el sistema PUEDE reconocer (el ítem venía
+       marcado `es_servicio`, o su producto está en la categoría de
+       servicios / con stock ilimitado) se descuentan de esta cuenta:
+       ahí el costo $0 está probado, no es una duda. Lo que queda son
+       los casos realmente dudosos — productos sin costo cargado, y
+       servicios escritos a mano en el POS, que el sistema no tiene cómo
+       distinguir de un producto. Esos dos casos los separan las dos
+       alertas de más abajo (catálogo vs. ítem escrito a mano). */
+    const servicioProbado = (it) => {
+      if (it.es_servicio === true) return true;
+      const p = it.producto_id != null ? porId.get(it.producto_id) : null;
+      return p ? intelEsServicio(p) : false;
+    };
+    const utilidadSinCosto = itemsPeriodo
+      .filter(it => num(it.costo_unitario) === 0 && !servicioProbado(it))
+      .reduce((s, it) => s + num(it.subtotal), 0);
+
+    const resumen = {
+      ventas: ventas.length,
+      ingresos,
+      costo: ventas.reduce((s, v) => s + num(v.costo_total), 0),
+      utilidad,
+      margenPct: ingresos ? (100 * utilidad) / ingresos : 0,
+      utilidadSinCosto,
+      utilidadSinCostoPct: utilidad ? (100 * utilidadSinCosto) / utilidad : 0,
+      /* Piso del margen: qué quedaría si NADA de lo que se vendió sin
+         costo hubiera dejado un peso. El margen real está entre este
+         piso y el margen de arriba. */
+      margenPisoPct: ingresos ? (100 * (utilidad - utilidadSinCosto)) / ingresos : 0,
+      ticket: ventas.length ? ingresos / ventas.length : 0,
+      itemsPorVenta: ventas.length ? itemsPeriodo.length / ventas.length : 0,
+      sinDte: ventas.filter(v => !v.tipo_dte || v.tipo_dte === 'SIN DTE').length,
+      conCliente,
+      sinCliente: ventas.length - conCliente,
+      primeraVenta: ventas.length ? ventas[0].fecha : null,
+      ultimaVenta: ventas.length ? ventas[ventas.length - 1].fecha : null
+    };
+
+    /* ---------- Serie por mes ---------- */
+    const mapaMeses = new Map();
+    ventas.forEach(v => {
+      if (!v.fecha) return;
+      const clave = String(v.fecha).slice(0, 7);
+      const m = mapaMeses.get(clave) || { mes: clave, ventas: 0, ingresos: 0, utilidad: 0 };
+      m.ventas++; m.ingresos += num(v.total); m.utilidad += num(v.utilidad);
+      mapaMeses.set(clave, m);
+    });
+    const meses = [...mapaMeses.values()].sort((a, b) => a.mes.localeCompare(b.mes))
+      .map(m => ({ ...m, margenPct: m.ingresos ? (100 * m.utilidad) / m.ingresos : 0, ticket: m.ventas ? m.ingresos / m.ventas : 0 }));
+
+    /* ---------- Agrupado por producto ---------- */
+    const mapaProd = new Map();
+    itemsPeriodo.forEach(it => {
+      const clave = it.producto_id != null ? `p${it.producto_id}` : `n:${it.nombre}`;
+      const a = mapaProd.get(clave) || {
+        id: it.producto_id != null ? it.producto_id : null, nombre: it.nombre, unidades: 0, ingresos: 0, costo: 0, veces: 0,
+        esServicio: it.es_servicio === true
+      };
+      a.unidades += num(it.cantidad);
+      a.ingresos += num(it.subtotal);
+      a.costo += num(it.costo_unitario) * num(it.cantidad);
+      a.veces++;
+      mapaProd.set(clave, a);
+    });
+
+    const vendidos = [...mapaProd.values()].map(a => {
+      const p = a.id != null ? porId.get(a.id) : null;
+      const esServicio = a.esServicio || (p ? intelEsServicio(p) : false);
+      return {
+        id: a.id,
+        nombre: a.nombre,
+        unidades: a.unidades,
+        ingresos: a.ingresos,
+        costo: a.costo,
+        veces: a.veces,
+        esServicio,
+        margen: a.ingresos - a.costo,
+        margenPct: a.ingresos ? (100 * (a.ingresos - a.costo)) / a.ingresos : 0,
+        stock: p ? num(p.stock) : null,
+        categoria: p ? (p.categoria_web || null) : null
+      };
+    }).sort((x, y) => y.margen - x.margen);
+
+    const margenTotal = vendidos.reduce((s, a) => s + a.margen, 0);
+    const acumuladoHasta = (n) => {
+      const parcial = vendidos.slice(0, n).reduce((s, a) => s + a.margen, 0);
+      return margenTotal ? (100 * parcial) / margenTotal : 0;
+    };
+    const concentracion = { top5: acumuladoHasta(5), top10: acumuladoHasta(10), top20: acumuladoHasta(20) };
+
+    /* ---------- Cajones (solo productos, sin servicios) ----------
+       Rotación = unidades vendidas en el período. Margen = % real de
+       la venta. Se compara cada uno contra la MEDIANA del propio
+       catálogo vendido, no contra un número fijo inventado: así el
+       corte se mueve solo cuando cambia la mezcla de productos. */
+    const soloProductos = vendidos.filter(a => !a.esServicio && a.id != null);
+    const medianaUnidades = intelMediana(soloProductos.map(a => a.unidades));
+    const medianaMargen = intelMediana(soloProductos.map(a => a.margenPct));
+    const cajonDe = (a) => {
+      const rota = a.unidades >= medianaUnidades;
+      const rinde = a.margenPct >= medianaMargen;
+      if (rota && rinde) return 'ancla';
+      if (rota && !rinde) return 'gancho';
+      if (!rota && rinde) return 'joya';
+      return 'lastre';
+    };
+    soloProductos.forEach(a => { a.cajon = cajonDe(a); });
+    const cajones = { ancla: [], gancho: [], joya: [], lastre: [] };
+    soloProductos.forEach(a => cajones[a.cajon].push(a));
+
+    /* ---------- Capital en stock y capital dormido ---------- */
+    const idsVendidosAlgunaVez = new Set(items.map(it => it.producto_id).filter(x => x != null));
+    const conStock = activos.filter(p => !p.stock_ilimitado && num(p.stock) > 0);
+    const valorDe = (p) => num(p.stock) * num(p.costo_unitario);
+    const capital = conStock.reduce((s, p) => s + valorDe(p), 0);
+    const dormidos = conStock.filter(p => !idsVendidosAlgunaVez.has(p.id))
+      .map(p => ({ id: p.id, nombre: p.nombre, stock: num(p.stock), costo: num(p.costo_unitario), precio: num(p.precio_unitario), valor: valorDe(p), categoria: p.categoria_web || null }))
+      .sort((a, b) => b.valor - a.valor);
+    const capitalDormido = dormidos.reduce((s, p) => s + p.valor, 0);
+
+    /* ---------- Auditoría de datos del catálogo ---------- */
+    const resumido = (p) => ({ id: p.id, nombre: p.nombre, sku: p.sku || null, costo: num(p.costo_unitario), precio: num(p.precio_unitario), stock: num(p.stock) });
+    const productosNoServicio = activos.filter(p => !intelEsServicio(p));
+    const auditoria = {
+      totalActivos: activos.length,
+      costoCero: productosNoServicio.filter(p => num(p.costo_unitario) === 0).map(resumido),
+      margenNegativo: productosNoServicio.filter(p => num(p.precio_unitario) > 0 && num(p.costo_unitario) > 0 && num(p.precio_unitario) <= num(p.costo_unitario)).map(resumido),
+      margenFlaco: productosNoServicio
+        .filter(p => num(p.precio_unitario) > 0 && num(p.costo_unitario) > 0 && ((num(p.precio_unitario) - num(p.costo_unitario)) / num(p.precio_unitario)) < 0.15)
+        .map(p => Object.assign(resumido(p), { margenPct: (100 * (num(p.precio_unitario) - num(p.costo_unitario))) / num(p.precio_unitario) }))
+        .sort((a, b) => a.margenPct - b.margenPct),
+      sinSku: activos.filter(p => !p.sku).length,
+      sinFoto: activos.filter(p => !Array.isArray(p.imagen_urls) || p.imagen_urls.length === 0).length,
+      sinFicha: activos.filter(p => !p.descripcion_web).length,
+      sinCategoria: activos.filter(p => !p.categoria_web).length,
+      sinPublicar: activos.filter(p => !p.publicado_web).length,
+      sinMedidas: productosNoServicio.filter(p => !num(p.peso_kg)).length
+    };
+
+    /* ---------- Alertas accionables ----------
+       Cada alerta dice qué hacer, no solo qué pasa. Se ordenan por
+       plata en juego, que es el criterio que le sirve al dueño. */
+    const alertas = [];
+    if (capital > 0 && capitalDormido / capital > 0.25) {
+      alertas.push({ nivel: 'alta', titulo: 'Capital dormido', detalle: `${Math.round((100 * capitalDormido) / capital)}% del capital en stock (${dormidos.length} productos) nunca registró una venta.`, monto: capitalDormido });
+    }
+    /* Costo $0 en la venta: hay que separar DOS casos que se ven igual
+       en los números pero significan cosas distintas.
+       (a) Un producto del catálogo (producto_id no nulo) vendido con
+           costo 0 → error de datos real, infla la utilidad.
+       (b) Un ítem escrito a mano en el POS, que nunca existió como
+           producto (producto_id nulo) → no hay costo que cargar porque
+           no hay ficha; puede ser un servicio o una venta suelta. No es
+           un error a corregir en el catálogo, pero igual deja la
+           utilidad sin respaldo, así que se informa aparte. */
+    const catalogoSinCosto = vendidos.filter(a => !a.esServicio && a.id != null && a.costo === 0 && a.ingresos > 0);
+    if (catalogoSinCosto.length) {
+      alertas.push({ nivel: 'alta', titulo: 'Utilidad inflada por costos en $0', detalle: `${catalogoSinCosto.length} producto(s) del catálogo se vendieron con costo $0 cargado: esa utilidad no es real.`, monto: catalogoSinCosto.reduce((s, a) => s + a.ingresos, 0) });
+    }
+    const sueltosSinCosto = vendidos.filter(a => !a.esServicio && a.id == null && a.costo === 0 && a.ingresos > 0);
+    if (sueltosSinCosto.length) {
+      alertas.push({ nivel: 'media', titulo: 'Ítems vendidos fuera del catálogo', detalle: `${sueltosSinCosto.length} ítem(s) se cobraron escribiéndolos a mano, sin producto asociado: no tienen costo, así que su utilidad figura al 100% y no se puede medir su rotación.`, monto: sueltosSinCosto.reduce((s, a) => s + a.ingresos, 0) });
+    }
+    const vendidosAPerdida = vendidos.filter(a => !a.esServicio && a.margen < 0);
+    if (vendidosAPerdida.length) {
+      alertas.push({ nivel: 'alta', titulo: 'Vendido bajo el costo', detalle: `${vendidosAPerdida.length} producto(s) se vendieron a pérdida en el período.`, monto: Math.abs(vendidosAPerdida.reduce((s, a) => s + a.margen, 0)) });
+    }
+    if (resumen.ventas && resumen.sinCliente / resumen.ventas > 0.5) {
+      alertas.push({ nivel: 'alta', titulo: 'Ventas sin cliente identificado', detalle: `${resumen.sinCliente} de ${resumen.ventas} ventas no tienen nombre de cliente: sin eso no hay recompra, ni postventa, ni fidelización posible.`, monto: 0 });
+    }
+    if (auditoria.costoCero.length) {
+      alertas.push({ nivel: 'media', titulo: 'Productos sin costo cargado', detalle: `${auditoria.costoCero.length} producto(s) del catálogo (sin contar servicios) tienen costo $0: su margen es falso.`, monto: 0 });
+    }
+    if (auditoria.margenFlaco.length) {
+      alertas.push({ nivel: 'media', titulo: 'Margen bajo 15%', detalle: `${auditoria.margenFlaco.length} producto(s) publicados dejan menos del 15% — revisar precio antes de anunciarlos.`, monto: 0 });
+    }
+    /* Quiebre de stock de algo que SÍ rota: es venta que se está
+       perdiendo, no un problema de datos. */
+    const quiebres = soloProductos
+      .filter(a => a.unidades >= Math.max(2, medianaUnidades) && a.stock === 0)
+      .map(a => ({ id: a.id, nombre: a.nombre, unidades: a.unidades, margen: a.margen }))
+      .sort((x, y) => y.margen - x.margen);
+    if (quiebres.length) {
+      alertas.push({ nivel: 'alta', titulo: 'Se agotó algo que sí vende', detalle: `${quiebres.length} producto(s) con rotación por sobre la mediana están en stock 0.`, monto: quiebres.reduce((s, q) => s + q.margen, 0) });
+    }
+    alertas.sort((a, b) => (a.nivel === b.nivel ? b.monto - a.monto : a.nivel === 'alta' ? -1 : 1));
+
+    res.json({
+      periodo: { desde: desde || null, hasta: hasta || null },
+      resumen,
+      meses,
+      productos: vendidos.slice(0, 60),
+      concentracion,
+      cortes: { medianaUnidades, medianaMargen },
+      cajones: {
+        ancla: cajones.ancla.sort((a, b) => b.margen - a.margen).slice(0, 15),
+        gancho: cajones.gancho.sort((a, b) => b.unidades - a.unidades).slice(0, 15),
+        joya: cajones.joya.sort((a, b) => b.margenPct - a.margenPct).slice(0, 15),
+        lastre: cajones.lastre.sort((a, b) => b.ingresos - a.ingresos).slice(0, 15),
+        conteo: { ancla: cajones.ancla.length, gancho: cajones.gancho.length, joya: cajones.joya.length, lastre: cajones.lastre.length }
+      },
+      stock: { capital, capitalDormido, productosConStock: conStock.length, productosDormidos: dormidos.length, dormidos: dormidos.slice(0, 20) },
+      auditoria,
+      quiebres: quiebres.slice(0, 10),
+      alertas
+    });
+  } catch (error) {
+    return enviarErrorBD(res, error, 'GET /api/pos/inteligencia');
+  }
+});
+
 /* ---------- 404 y errores ---------- */
 app.use('/api', (_req, res) => enviarError(res, 404, 'Endpoint no encontrado'));
 app.use((err, _req, res, _next) => {

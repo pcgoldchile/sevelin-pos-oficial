@@ -294,6 +294,15 @@ const API = {
     reenviarCorreoCarrito: (id) => apiRequest(`/pos/carritos/${id}/reenviar-correo`, { method: 'POST' }),
   },
 
+  /* Finanzas → Inteligencia (Fase 1 del plan de crecimiento). Sin
+     desde/hasta trae TODO el histórico, que es lo útil cuando el
+     sistema lleva pocos meses de ventas. */
+  inteligencia: {
+    obtener: (desde, hasta) => apiRequest(
+      '/pos/inteligencia' + (desde && hasta ? `?desde=${desde}&hasta=${hasta}` : '')
+    ),
+  },
+
   // Categorías del catálogo web (módulo "Página Web → Categorías") —
   // distinto de repuestos.categorias (taller).
   productosCategorias: {

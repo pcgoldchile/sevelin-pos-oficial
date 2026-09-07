@@ -3895,3 +3895,39 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
     .util-fila { flex-wrap: wrap; gap: 6px; }
     .util-casillas { gap: 12px; }
 }
+
+/* ============================================================
+   INTELIGENCIA (Finanzas → Inteligencia, js/inteligencia.js)
+   ============================================================ */
+.intel-alerta {
+    border-left: 3px solid var(--border-strong);
+    background: var(--surface-soft);
+    padding: 10px 14px;
+    margin-bottom: 8px;
+    border-radius: 0 6px 6px 0;
+}
+.intel-alerta:last-child { margin-bottom: 0; }
+.intel-alerta-alta { border-left-color: var(--red); background: linear-gradient(90deg, var(--tint-red), transparent); }
+.intel-alerta-media { border-left-color: var(--gold); background: linear-gradient(90deg, var(--tint-gold), transparent); }
+.intel-alerta-titulo { font-weight: 600; font-size: 13.5px; }
+.intel-alerta-detalle { color: var(--text-300); font-size: 12.5px; line-height: 1.5; margin-top: 2px; }
+.intel-alerta-monto { color: var(--text-muted); font-size: 11.5px; margin-top: 3px; font-variant-numeric: tabular-nums; }
+
+.intel-chips {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    margin-bottom: 6px;
+}
+.intel-chip {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    background: var(--surface-soft);
+}
+.intel-chip-alerta { border-color: var(--border-strong); }
+.intel-chip-valor { font-size: 22px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.intel-chip-label { font-size: 12px; color: var(--text-300); margin-top: 2px; }
+.intel-chip-nota { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; }
+
+#intelContenido.cargando { opacity: .5; pointer-events: none; }
