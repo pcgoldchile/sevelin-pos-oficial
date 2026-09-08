@@ -520,6 +520,8 @@ SERVITEC ARICA 3,6 (92).
 | v53 | **Feed de catálogo** para Meta Commerce y Google Merchant (Fase 3, "dejar de publicar a mano") | En producción |
 | v54 | **Marca del producto** en el catálogo, el feed, la ficha y el JSON-LD (47 marcas cargadas) | En producción |
 | v55 | **Aviso de garantía por vencer** (Fase 4, automatización #4 de la tabla) | En producción |
+| v56 | **Garantías abierto al rol trabajador** | En producción |
+| v57 | **Informe semanal** (Fase 7, el ritmo del lunes) | En producción |
 
 ### 5.2 Lo que sigue necesitando de ti
 
@@ -547,4 +549,4 @@ SERVITEC ARICA 3,6 (92).
 | 4 — Conversión y recuperación | **Empezada, parcialmente bloqueada** | 07-09-2026 | — | Hecho: captura de cliente (v52) y **aviso de garantía por vencer** (v55, la única automatización que no dependía de correo). El resto espera B1 (Flow) y B2 (Resend) |
 | 5 — Competencia | Lista para empezar | — | — | Lista de competidores ya cargada en §5.1 |
 | 6 — Monetización | Por empezar | — | — | Depende de Fase 2 |
-| 7 — Sistema consistente | Por empezar | — | — | Permanente, ya tiene su fuente de datos (Fase 1) |
+| 7 — Sistema consistente | **Empezada** | 08-09-2026 | — | **Informe semanal en producción (v57)**. Falta el informe mensual y los procesos escritos (SOP) |

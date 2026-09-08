@@ -6333,6 +6333,69 @@ const intelMediana = (valores) => {
   return orden.length % 2 ? orden[medio] : (orden[medio - 1] + orden[medio]) / 2;
 };
 
+/* Los números de un período de ventas, calculados UNA SOLA VEZ para todo
+   el sistema.
+   ------------------------------------------------------------
+   Lo usan el panel Inteligencia y el Informe Semanal. Está extraído a
+   propósito: dos copias de la fórmula del margen son dos números que
+   tarde o temprano se contradicen en pantalla, y el que mira no tiene
+   cómo saber cuál creer. Si hay que cambiar cómo se calcula el ticket o
+   el margen, se cambia acá y cambia en los dos lados.
+
+   `esServicioProbado(item)` lo entrega quien llama: es lo único que
+   depende del catálogo (ver intelEsServicio). */
+function resumenDeVentas(ventas, itemsPeriodo, esServicioProbado) {
+  const ingresos = ventas.reduce((s, v) => s + num(v.total), 0);
+  const utilidad = ventas.reduce((s, v) => s + num(v.utilidad), 0);
+
+  const tieneNombre = (v) => {
+    const n = (v.cliente || '').trim().toLowerCase();
+    return !!n && n !== 'cliente';
+  };
+  const conCliente = ventas.filter(v => tieneNombre(v) || v.cliente_telefono).length;
+  const conTelefono = ventas.filter(v => v.cliente_telefono).length;
+
+  const comprasPorTelefono = new Map();
+  ventas.forEach(v => {
+    if (!v.cliente_telefono) return;
+    comprasPorTelefono.set(v.cliente_telefono, (comprasPorTelefono.get(v.cliente_telefono) || 0) + 1);
+  });
+  const clientesUnicos = comprasPorTelefono.size;
+  const clientesQueRepiten = [...comprasPorTelefono.values()].filter(n => n > 1).length;
+
+  /* Utilidad sin costo detrás: se descuentan los servicios que el sistema
+     PUEDE probar que lo son (ahí el costo $0 es correcto, es mano de
+     obra). Lo que queda son los casos dudosos de verdad. */
+  const utilidadSinCosto = itemsPeriodo
+    .filter(it => num(it.costo_unitario) === 0 && !esServicioProbado(it))
+    .reduce((s, it) => s + num(it.subtotal), 0);
+
+  return {
+    ventas: ventas.length,
+    ingresos,
+    costo: ventas.reduce((s, v) => s + num(v.costo_total), 0),
+    utilidad,
+    margenPct: ingresos ? (100 * utilidad) / ingresos : 0,
+    utilidadSinCosto,
+    utilidadSinCostoPct: utilidad ? (100 * utilidadSinCosto) / utilidad : 0,
+    /* Piso del margen: qué quedaría si NADA de lo que se vendió sin costo
+       hubiera dejado un peso. El margen real está entre este piso y el
+       margen de arriba. */
+    margenPisoPct: ingresos ? (100 * (utilidad - utilidadSinCosto)) / ingresos : 0,
+    ticket: ventas.length ? ingresos / ventas.length : 0,
+    itemsPorVenta: ventas.length ? itemsPeriodo.length / ventas.length : 0,
+    sinDte: ventas.filter(v => !v.tipo_dte || v.tipo_dte === 'SIN DTE').length,
+    conCliente,
+    sinCliente: ventas.length - conCliente,
+    conTelefono,
+    clientesUnicos,
+    clientesQueRepiten,
+    recompraPct: clientesUnicos ? (100 * clientesQueRepiten) / clientesUnicos : 0,
+    primeraVenta: ventas.length ? ventas[0].fecha : null,
+    ultimaVenta: ventas.length ? ventas[ventas.length - 1].fecha : null
+  };
+}
+
 app.get('/api/pos/inteligencia', auth(true), async (req, res) => {
   const { desde, hasta } = req.query;
   const fechaValida = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
@@ -6361,80 +6424,15 @@ app.get('/api/pos/inteligencia', auth(true), async (req, res) => {
     const activos = productos.filter(p => !p.archivado && !p.es_borrador);
 
     /* ---------- Resumen del período ---------- */
-    const ingresos = ventas.reduce((s, v) => s + num(v.total), 0);
-    const utilidad = ventas.reduce((s, v) => s + num(v.utilidad), 0);
-    /* Una venta cuenta como "identificada" si tiene nombre o teléfono.
-       El teléfono (sql/37) es el que sirve de verdad: el nombre es texto
-       libre y "Juan" no se puede unir con "juan p." Por eso la RECOMPRA
-       se mide solo con el teléfono normalizado — es la única llave
-       confiable para saber que dos ventas son de la misma persona. */
-    const tieneNombre = (v) => {
-      const n = (v.cliente || '').trim().toLowerCase();
-      return !!n && n !== 'cliente';
-    };
-    const conCliente = ventas.filter(v => tieneNombre(v) || v.cliente_telefono).length;
-    const conTelefono = ventas.filter(v => v.cliente_telefono).length;
-
-    const comprasPorTelefono = new Map();
-    ventas.forEach(v => {
-      if (!v.cliente_telefono) return;
-      comprasPorTelefono.set(v.cliente_telefono, (comprasPorTelefono.get(v.cliente_telefono) || 0) + 1);
-    });
-    const clientesUnicos = comprasPorTelefono.size;
-    const clientesQueRepiten = [...comprasPorTelefono.values()].filter(n => n > 1).length;
-
-    /* CUÁNTA DE LA UTILIDAD NO TIENE UN COSTO DETRÁS.
-       ------------------------------------------------------------
-       Un ítem vendido con `costo_unitario = 0` aporta el 100% de su
-       precio a la utilidad. A veces eso es correcto (un servicio
-       técnico es mano de obra, no tiene costo de mercadería) y a veces
-       no (un producto que se cobró sin cargarle el costo).
-       El margen global no distingue los dos casos, así que **el número
-       grande puede estar bastante inflado sin que nada se vea raro**.
-       Acá se mide cuánto es, para poder advertirlo junto al margen en
-       vez de publicar una sola cifra que se lee como si fuera exacta.
-
-       Los servicios que el sistema PUEDE reconocer (el ítem venía
-       marcado `es_servicio`, o su producto está en la categoría de
-       servicios / con stock ilimitado) se descuentan de esta cuenta:
-       ahí el costo $0 está probado, no es una duda. Lo que queda son
-       los casos realmente dudosos — productos sin costo cargado, y
-       servicios escritos a mano en el POS, que el sistema no tiene cómo
-       distinguir de un producto. Esos dos casos los separan las dos
-       alertas de más abajo (catálogo vs. ítem escrito a mano). */
+    /* Servicios que el sistema PUEDE probar que lo son: el ítem venía
+       marcado es_servicio, o su producto está en la categoría de
+       servicios / con stock ilimitado. Ahí el costo $0 está demostrado. */
     const servicioProbado = (it) => {
       if (it.es_servicio === true) return true;
       const p = it.producto_id != null ? porId.get(it.producto_id) : null;
       return p ? intelEsServicio(p) : false;
     };
-    const utilidadSinCosto = itemsPeriodo
-      .filter(it => num(it.costo_unitario) === 0 && !servicioProbado(it))
-      .reduce((s, it) => s + num(it.subtotal), 0);
-
-    const resumen = {
-      ventas: ventas.length,
-      ingresos,
-      costo: ventas.reduce((s, v) => s + num(v.costo_total), 0),
-      utilidad,
-      margenPct: ingresos ? (100 * utilidad) / ingresos : 0,
-      utilidadSinCosto,
-      utilidadSinCostoPct: utilidad ? (100 * utilidadSinCosto) / utilidad : 0,
-      /* Piso del margen: qué quedaría si NADA de lo que se vendió sin
-         costo hubiera dejado un peso. El margen real está entre este
-         piso y el margen de arriba. */
-      margenPisoPct: ingresos ? (100 * (utilidad - utilidadSinCosto)) / ingresos : 0,
-      ticket: ventas.length ? ingresos / ventas.length : 0,
-      itemsPorVenta: ventas.length ? itemsPeriodo.length / ventas.length : 0,
-      sinDte: ventas.filter(v => !v.tipo_dte || v.tipo_dte === 'SIN DTE').length,
-      conCliente,
-      sinCliente: ventas.length - conCliente,
-      conTelefono,
-      clientesUnicos,
-      clientesQueRepiten,
-      recompraPct: clientesUnicos ? (100 * clientesQueRepiten) / clientesUnicos : 0,
-      primeraVenta: ventas.length ? ventas[0].fecha : null,
-      ultimaVenta: ventas.length ? ventas[ventas.length - 1].fecha : null
-    };
+    const resumen = resumenDeVentas(ventas, itemsPeriodo, servicioProbado);
 
     /* ---------- Serie por mes ---------- */
     const mapaMeses = new Map();
@@ -6780,6 +6778,229 @@ app.get('/api/pos/feed-catalogo', auth(true), async (req, res) => {
     });
   } catch (error) {
     return enviarErrorBD(res, error, 'GET /api/pos/feed-catalogo');
+  }
+});
+
+/* ============================================================
+   GET /api/pos/informe-semanal — Finanzas → 📅 Semanal
+   ------------------------------------------------------------
+   Los 5 números del lunes, ya comparados con la semana anterior, más las
+   alertas que hay que mirar. Es la Fase 7 del plan de crecimiento: lo
+   que hace que el panel Inteligencia se USE en vez de quedar esperando
+   a que alguien se acuerde de abrirlo.
+
+   POR QUÉ EL TEXTO SE ARMA EN EL SERVIDOR
+   El informe se lee en pantalla, pero también se copia y se manda por
+   WhatsApp. Si el texto se redactara en el navegador, tarde o temprano
+   la pantalla y el mensaje dirían cosas distintas. Una sola redacción,
+   acá, y el navegador solo la muestra.
+
+   LOS NÚMEROS TAMPOCO SE RECALCULAN: usa resumenDeVentas(), la misma
+   función que alimenta el panel Inteligencia. Dos fórmulas del mismo
+   margen es como dos pantallas terminan contradiciéndose.
+   ============================================================ */
+
+/* Lunes de la semana que contiene `fechaISO` (semana lun–dom, que es
+   como se cuenta una semana comercial en Chile). Se opera sobre la
+   fecha pura a mediodía UTC para que el cambio de día en Chile no corra
+   el resultado. */
+function lunesDeLaSemana(fechaISO) {
+  const d = new Date(`${fechaISO}T12:00:00Z`);
+  const diaSemana = (d.getUTCDay() + 6) % 7;          // 0 = lunes
+  d.setUTCDate(d.getUTCDate() - diaSemana);
+  return d.toISOString().slice(0, 10);
+}
+
+function sumarDias(fechaISO, n) {
+  const d = new Date(`${fechaISO}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+app.get('/api/pos/informe-semanal', auth(true), async (req, res) => {
+  const fechaValida = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+  if (req.query.semana && !fechaValida(req.query.semana)) {
+    return enviarError(res, 400, 'semana debe venir como YYYY-MM-DD.');
+  }
+
+  /* Por defecto, la SEMANA PASADA completa: el informe se lee el lunes y
+     una semana a medias no se puede comparar con una entera. Con
+     ?semana= se puede pedir cualquier otra (incluida la en curso). */
+  const hoy = fechaHoyChile();
+  const base = req.query.semana || sumarDias(lunesDeLaSemana(hoy), -1);
+  const desde = lunesDeLaSemana(base);
+  const hasta = sumarDias(desde, 6);
+  const desdePrevia = sumarDias(desde, -7);
+  const hastaPrevia = sumarDias(desde, -1);
+
+  try {
+    const [respVentas, items, productos] = await Promise.all([
+      db.from('ventas')
+        .select('id, fecha, total, costo_total, utilidad, cliente, cliente_telefono, tipo_dte')
+        .gte('fecha', desdePrevia).lte('fecha', hasta).order('fecha', { ascending: true }),
+      intelTraerTodo('venta_items', 'venta_id, producto_id, nombre, cantidad, costo_unitario, subtotal, es_servicio'),
+      intelTraerTodo('productos', 'id, nombre, stock, stock_ilimitado, categoria_web, archivado, es_borrador')
+    ]);
+    if (respVentas.error) throw respVentas.error;
+
+    const porId = new Map(productos.map(p => [p.id, p]));
+    const servicioProbado = (it) => {
+      if (it.es_servicio === true) return true;
+      const p = it.producto_id != null ? porId.get(it.producto_id) : null;
+      return p ? intelEsServicio(p) : false;
+    };
+
+    const enRango = (d, h) => respVentas.data.filter(v => v.fecha >= d && v.fecha <= h);
+    const itemsDe = (ventas) => {
+      const ids = new Set(ventas.map(v => v.id));
+      return items.filter(it => ids.has(it.venta_id));
+    };
+
+    const ventasSemana = enRango(desde, hasta);
+    const ventasPrevia = enRango(desdePrevia, hastaPrevia);
+    const itemsSemana = itemsDe(ventasSemana);
+    const actual = resumenDeVentas(ventasSemana, itemsSemana, servicioProbado);
+    const previa = resumenDeVentas(ventasPrevia, itemsDe(ventasPrevia), servicioProbado);
+
+    /* Variación porcentual. Cuando la semana anterior fue 0 no existe
+       "cuánto subió": se devuelve null y la pantalla escribe "sin
+       comparación" en vez de un ∞ o un 100% inventado. */
+    const variacion = (ahora, antes) => (antes ? ((ahora - antes) / antes) * 100 : null);
+    const cambios = {
+      ingresos: variacion(actual.ingresos, previa.ingresos),
+      utilidad: variacion(actual.utilidad, previa.utilidad),
+      ventas: variacion(actual.ventas, previa.ventas),
+      ticket: variacion(actual.ticket, previa.ticket),
+      margenPuntos: actual.margenPct - previa.margenPct     // margen se compara en PUNTOS, no en %
+    };
+
+    /* ---------- Top 3 de la semana, por margen generado ---------- */
+    const agg = new Map();
+    itemsSemana.forEach(it => {
+      const clave = it.producto_id != null ? `p${it.producto_id}` : `n:${it.nombre}`;
+      const a = agg.get(clave) || { nombre: it.nombre, unidades: 0, ingresos: 0, costo: 0 };
+      a.unidades += num(it.cantidad);
+      a.ingresos += num(it.subtotal);
+      a.costo += num(it.costo_unitario) * num(it.cantidad);
+      agg.set(clave, a);
+    });
+    const top = [...agg.values()]
+      .map(a => ({ ...a, margen: a.ingresos - a.costo }))
+      .sort((x, y) => y.margen - x.margen)
+      .slice(0, 3);
+
+    /* ---------- La tienda web ---------- */
+    let web = null;
+    try {
+      const rangoUTC = (d, h) => [marcaDeTiempoChile(d, '00:00'), marcaDeTiempoChile(h, '23:59:59')];
+      const [d1, h1] = rangoUTC(desde, hasta);
+      const [d0, h0] = rangoUTC(desdePrevia, hastaPrevia);
+      const contar = (tabla, desdeISO, hastaISO, filtro) => {
+        let q = dbWeb.from(tabla).select('*', { count: 'exact', head: true })
+          .gte('creado_en', desdeISO).lte('creado_en', hastaISO);
+        if (filtro) q = filtro(q);
+        return q;
+      };
+      const [visitas, visitasAntes, pedidos, pedidosAntes] = await Promise.all([
+        contar('eventos_web', d1, h1, q => q.eq('tipo', 'visita')),
+        contar('eventos_web', d0, h0, q => q.eq('tipo', 'visita')),
+        contar('pedidos_web', d1, h1),
+        contar('pedidos_web', d0, h0)
+      ]);
+      web = {
+        visitas: visitas.count || 0,
+        visitasPrevia: visitasAntes.count || 0,
+        pedidos: pedidos.count || 0,
+        pedidosPrevia: pedidosAntes.count || 0
+      };
+    } catch (errWeb) {
+      /* La tienda es un SEGUNDO Supabase: si no responde, el informe del
+         POS igual sale. Perder las visitas no puede dejar sin números al
+         negocio principal. */
+      console.warn('[POS] informe-semanal: no se pudo leer la tienda —', errWeb?.message || errWeb);
+    }
+
+    /* ---------- Alertas de la semana ---------- */
+    const alertas = [];
+    const vendidosSemana = new Set(itemsSemana.map(it => it.producto_id).filter(x => x != null));
+    const quiebres = productos.filter(p =>
+      !p.archivado && !p.es_borrador && !p.stock_ilimitado && num(p.stock) <= 0 && vendidosSemana.has(p.id));
+    if (quiebres.length) {
+      alertas.push({
+        nivel: 'alta',
+        texto: `${quiebres.length} producto(s) que vendiste esta semana quedaron en stock 0: ${quiebres.slice(0, 3).map(p => p.nombre).join(', ')}${quiebres.length > 3 ? '…' : ''}`
+      });
+    }
+    const sinCostoSemana = itemsSemana.filter(it => num(it.costo_unitario) === 0 && !servicioProbado(it));
+    if (sinCostoSemana.length) {
+      alertas.push({
+        nivel: 'media',
+        texto: `${sinCostoSemana.length} ítem(s) se vendieron sin costo cargado: esa utilidad no es real.`
+      });
+    }
+    if (actual.ventas && actual.sinCliente === actual.ventas) {
+      alertas.push({ nivel: 'media', texto: 'Ninguna venta de la semana quedó con cliente registrado: sin eso no hay postventa ni recompra.' });
+    }
+
+    /* Garantías que vencen en los próximos 30 días: es el aviso que hay
+       que mandar ESTA semana, no el mes que viene. */
+    try {
+      const { data: itemsGar } = await db.from('venta_items')
+        .select('venta_id, meses_garantia, aviso_garantia_en').eq('es_servicio', false).limit(5000);
+      const idsG = [...new Set((itemsGar || []).map(i => i.venta_id).filter(Boolean))];
+      const fechasVenta = new Map();
+      if (idsG.length) {
+        const { data: vs } = await db.from('ventas').select('id, fecha').in('id', idsG);
+        (vs || []).forEach(v => fechasVenta.set(v.id, v.fecha));
+      }
+      const porVencer = (itemsGar || []).filter(it => {
+        if (it.aviso_garantia_en) return false;
+        const { vence_el, estado_garantia } = calcularEstadoGarantia(fechasVenta.get(it.venta_id), it.meses_garantia);
+        return vence_el && estado_garantia === 'VIGENTE' && diasHastaFecha(vence_el) <= 30;
+      }).length;
+      if (porVencer) {
+        alertas.push({ nivel: 'alta', texto: `${porVencer} garantía(s) vencen en los próximos 30 días y no se ha avisado. Ver Garantías → Por vencer.` });
+      }
+    } catch (errG) {
+      console.warn('[POS] informe-semanal: no se pudieron revisar las garantías —', errG?.message || errG);
+    }
+
+    /* ---------- El texto para copiar y mandar ---------- */
+    const clp = (n) => '$' + Math.round(n || 0).toLocaleString('es-CL');
+    const flecha = (v) => v === null ? '' : v > 0.5 ? ` ▲${v.toFixed(0)}%` : v < -0.5 ? ` ▼${Math.abs(v).toFixed(0)}%` : ' =';
+    const lineas = [
+      `SEVELIN · semana del ${desde} al ${hasta}`,
+      '',
+      `Ventas:   ${actual.ventas}${flecha(cambios.ventas)}`,
+      `Facturado: ${clp(actual.ingresos)}${flecha(cambios.ingresos)}`,
+      `Utilidad:  ${clp(actual.utilidad)}${flecha(cambios.utilidad)}  (margen ${actual.margenPct.toFixed(1)}%${cambios.margenPuntos ? `, ${cambios.margenPuntos > 0 ? '+' : ''}${cambios.margenPuntos.toFixed(1)} pts` : ''})`,
+      `Ticket:    ${clp(actual.ticket)}${flecha(cambios.ticket)}`,
+      `Productos por venta: ${actual.itemsPorVenta.toFixed(2)}`
+    ];
+    if (web) lineas.push(`Web: ${web.visitas} visitas · ${web.pedidos} pedido(s)`);
+    if (top.length) {
+      lineas.push('', 'Lo que más margen dejó:');
+      top.forEach((t, i) => lineas.push(`  ${i + 1}. ${t.nombre} — ${clp(t.margen)} (${t.unidades} u.)`));
+    }
+    if (alertas.length) {
+      lineas.push('', 'Ojo con esto:');
+      alertas.forEach(a => lineas.push(`  ${a.nivel === 'alta' ? '!' : '-'} ${a.texto}`));
+    }
+
+    res.json({
+      periodo: { desde, hasta },
+      periodoPrevio: { desde: desdePrevia, hasta: hastaPrevia },
+      esSemanaEnCurso: hasta >= hoy,
+      actual,
+      previa,
+      cambios,
+      top,
+      web,
+      alertas,
+      texto: lineas.join('\n')
+    });
+  } catch (error) {
+    return enviarErrorBD(res, error, 'GET /api/pos/informe-semanal');
   }
 });
 

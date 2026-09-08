@@ -140,6 +140,7 @@
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="balance">Balance</button>
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="utilidades">Utilidades</button>
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="inteligencia">Inteligencia</button>
+          <button class="nav-subitem" data-view="view-finanzas" data-subtab="semanal">Informe Semanal</button>
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="gastos">Gastos</button>
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="fijos">Gastos Fijos</button>
         </div>
@@ -938,9 +939,73 @@
         <button class="subtab" data-subtab="balance">📊 Balance</button>
         <button class="subtab" data-subtab="utilidades">💎 Utilidades</button>
         <button class="subtab" data-subtab="inteligencia">🧠 Inteligencia</button>
+        <button class="subtab" data-subtab="semanal">📅 Semanal</button>
         <button class="subtab" data-subtab="gastos">📑 Gastos</button>
         <button class="subtab" data-subtab="fijos">🔁 Gastos Fijos</button>
       </nav>
+
+      <!-- ============================================================
+           INFORME SEMANAL — los 5 números del lunes, ya comparados con
+           la semana anterior. Fase 7 del plan de crecimiento: es lo que
+           hace que el panel Inteligencia se USE, en vez de esperar a que
+           alguien se acuerde de abrirlo.
+           El texto para copiar lo REDACTA EL SERVIDOR (ver
+           GET /api/pos/informe-semanal): si se armara acá, la pantalla y
+           el mensaje de WhatsApp terminarían diciendo cosas distintas.
+           ============================================================ -->
+      <div class="panel-finanzas" data-panel-finanzas="semanal">
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Informe semanal</h2>
+              <p class="subtitle" id="semanalPeriodo">—</p>
+            </div>
+            <div class="toolbar-group">
+              <button class="btn btn-outline btn-sm" id="btnSemanalAnterior">← Semana anterior</button>
+              <button class="btn btn-outline btn-sm" id="btnSemanalSiguiente">Semana siguiente →</button>
+              <button class="btn btn-primary btn-sm" id="btnSemanalCopiar" title="Copia el informe en texto, listo para pegar en WhatsApp">📋 Copiar</button>
+            </div>
+          </div>
+
+          <div class="kpi-grid">
+            <div class="kpi-card kpi-blue">
+              <div class="kpi-label">💰 Facturado</div>
+              <div class="kpi-value" id="semanalIngresos">$0</div>
+              <div class="kpi-foot" id="semanalIngresosVar">—</div>
+            </div>
+            <div class="kpi-card kpi-green">
+              <div class="kpi-label">📈 Utilidad</div>
+              <div class="kpi-value" id="semanalUtilidad">$0</div>
+              <div class="kpi-foot" id="semanalUtilidadVar">—</div>
+            </div>
+            <div class="kpi-card kpi-violet">
+              <div class="kpi-label">📊 Margen</div>
+              <div class="kpi-value" id="semanalMargen">0%</div>
+              <div class="kpi-foot" id="semanalMargenVar">—</div>
+            </div>
+            <div class="kpi-card kpi-gold">
+              <div class="kpi-label">🎟️ Ticket promedio</div>
+              <div class="kpi-value" id="semanalTicket">$0</div>
+              <div class="kpi-foot" id="semanalTicketVar">—</div>
+            </div>
+            <div class="kpi-card kpi-blue">
+              <div class="kpi-label">🧾 Ventas</div>
+              <div class="kpi-value" id="semanalVentas">0</div>
+              <div class="kpi-foot" id="semanalVentasVar">—</div>
+            </div>
+            <div class="kpi-card kpi-green">
+              <div class="kpi-label">🌐 Tienda web</div>
+              <div class="kpi-value" id="semanalWeb">—</div>
+              <div class="kpi-foot" id="semanalWebVar">—</div>
+            </div>
+          </div>
+
+          <div id="semanalAlertas" style="margin-top:16px;"></div>
+          <div id="semanalTop" style="margin-top:16px;"></div>
+        </div>
+      </div>
+
 
       <!-- ============================================================
            INTELIGENCIA — Fase 1 del plan de crecimiento
@@ -5306,6 +5371,7 @@
   <script src="js/finanzas-ajustes.js"></script>   <!-- ajustes de saldo + checklist (req 3 y 4) -->
   <script src="js/utilidades.js"></script>   <!-- después de balance.js: reutiliza cerrarModal y el panel de Finanzas -->
   <script src="js/inteligencia.js"></script>   <!-- después de balance.js: reutiliza calcularRango y el panel de Finanzas -->
+  <script src="js/informe-semanal.js"></script>   <!-- después de balance.js: usa el panel de Finanzas y fmtCLP -->
   <script src="js/finanzas-gate.js"></script>   <!-- después de balance/config: intercepta la navegación a Finanzas -->
   <script src="js/reportes.js"></script>
   <script src="js/print.js"></script>

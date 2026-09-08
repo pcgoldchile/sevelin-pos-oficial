@@ -109,6 +109,14 @@ function mostrarPanelFinanzas(nombre) {
      propósito, no en el mes. El panel existe para ver tendencias de
      rotación, margen y capital dormido — con un mes suelto de datos
      esas señales no se leen. El filtro por período sigue disponible. */
+  /* Informe semanal (js/informe-semanal.js): al entrar siempre vuelve a
+     la última semana CERRADA. Es el informe del lunes: si conservara la
+     semana que se estaba mirando, se leería una vieja sin notarlo. */
+  if (nombre === 'semanal' && typeof cargarInformeSemanal === 'function') {
+    semanalFecha = null;
+    cargarInformeSemanal();
+  }
+
   if (nombre === 'inteligencia' && typeof aplicarRangoInteligencia === 'function') {
     aplicarRangoInteligencia('todo');
   }

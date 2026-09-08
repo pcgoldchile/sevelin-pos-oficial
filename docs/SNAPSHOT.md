@@ -3,7 +3,21 @@
 > Actualiza SOLO este archivo al cerrar una sesión. Para el detalle completo, ver `docs/README.md`.
 > Para saber qué otro documento leer según lo que necesites, ver `docs/README-DOCS.md`.
 
-**Fecha:** 07-09-2026 · **Versión activa:** v56 (**Garantías accesible para el rol trabajador**, ver
+**Fecha:** 08-09-2026 · **Versión activa:** v57 (**informe semanal**, ver `docs/CHANGELOG-V57.md`).
+Nueva sub-pestaña **Finanzas → 📅 Semanal**: los 5 números del lunes ya comparados con la semana
+anterior, alertas, top 3 por margen y botón **📋 Copiar** que deja el informe listo para pegar en
+WhatsApp. `GET /api/pos/informe-semanal` — sin parámetro devuelve la última semana CERRADA (lun–dom).
+**Refactor previo:** se extrajo `resumenDeVentas()` del endpoint de Inteligencia y ahora los dos
+paneles usan la misma función — dos copias de la fórmula del margen son dos números que se
+contradicen en pantalla. Verificado que no movió ningún valor. **El texto se redacta en el servidor**
+(si se armara en el navegador, pantalla y WhatsApp dirían cosas distintas), **el margen se compara en
+PUNTOS y no en %**, y si la semana previa fue 0 dice "sin comparación" en vez de inventar un 100%.
+Las visitas de la tienda van en su propio `try/catch`: si el segundo Supabase no responde, el informe
+igual sale. **Primer informe real (31-08 al 06-09): 36 ventas ▲80%, facturado ▲17%, pero utilidad
+▼7%, ticket ▼35% y margen 6,4 puntos abajo** — se vendió más y se ganó menos, justo lo que un total
+mensual esconde. Web: 852 visitas → 2 pedidos (0,2% de conversión, primer dato real).
+
+**Versión anterior:** v56 (**Garantías accesible para el rol trabajador**, ver
 `docs/CHANGELOG-V56.md`). Los 4 endpoints del módulo pasaron de `auth(true)` a `auth()`: el módulo
 era visible para trabajador desde v48 pero todos sus endpoints eran solo-admin, así que entraba y
 recibía errores. **Es seguro porque ninguna respuesta del módulo trae costo, precio, utilidad ni

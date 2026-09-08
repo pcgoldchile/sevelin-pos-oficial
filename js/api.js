@@ -315,6 +315,12 @@ const API = {
     ),
   },
 
+  /* Informe semanal (Finanzas → 📅 Semanal). Sin `semana` trae la última
+     semana CERRADA (lun–dom), que es la que se lee el lunes. */
+  informeSemanal: {
+    obtener: (semana) => apiRequest('/pos/informe-semanal' + (semana ? `?semana=${encodeURIComponent(semana)}` : '')),
+  },
+
   /* Feed de catálogo para Meta Commerce Manager / Google Merchant Center.
      El CSV lo arma el servidor y viaja como texto dentro del JSON: así el
      formato tiene una sola fuente de verdad y el navegador solo lo baja. */
