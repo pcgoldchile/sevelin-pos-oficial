@@ -3,7 +3,14 @@
 > Actualiza SOLO este archivo al cerrar una sesión. Para el detalle completo, ver `docs/README.md`.
 > Para saber qué otro documento leer según lo que necesites, ver `docs/README-DOCS.md`.
 
-**Fecha:** 07-09-2026 · **Versión activa:** v55 (**aviso de garantía por vencer**, ver
+**Fecha:** 07-09-2026 · **Versión activa:** v56 (**Garantías accesible para el rol trabajador**, ver
+`docs/CHANGELOG-V56.md`). Los 4 endpoints del módulo pasaron de `auth(true)` a `auth()`: el módulo
+era visible para trabajador desde v48 pero todos sus endpoints eran solo-admin, así que entraba y
+recibía errores. **Es seguro porque ninguna respuesta del módulo trae costo, precio, utilidad ni
+margen** — y esa condición quedó escrita en el encabezado del módulo: si alguna vez se le agrega una
+cifra de plata a estos endpoints, hay que volver a evaluar el permiso. Sin token siguen dando 401.
+
+**Versión anterior:** v55 (**aviso de garantía por vencer**, ver
 `docs/CHANGELOG-V55.md`). Nueva sub-pestaña **Garantías → ⏰ Por vencer**: a quién le vence la
 garantía pronto y todavía no se le avisó, con botón que abre **WhatsApp con el mensaje ya escrito** y
 marca de "avisado" (`sql/39`: `venta_items.aviso_garantia_en` y `ordenes_trabajo.aviso_garantia_en`,
