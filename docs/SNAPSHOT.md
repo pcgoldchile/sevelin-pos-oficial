@@ -594,6 +594,7 @@ la función usa la variable local, no la columna ambigua).
 | 8 | **Registrar el WhatsApp en cada venta nueva** (el campo existe desde v52) | Hábito diario | Sin esto, en febrero habrá 200 garantías por vencer y nadie a quién avisarle |
 | 9 | **+1 al stock del Adaptador HDMI a VGA (id 104)** — lo descontó el pago de prueba de Flow | POS | Corrige el stock real |
 | 10 | Confirmar `UPSTASH_REDIS_REST_URL`/`TOKEN` en el Vercel **del POS**; tope de gasto en Google Cloud; seguimiento a Starken; `NEXT_PUBLIC_PRIVACIDAD_EMAIL` | Vercel / Google / correo | Arrastrados de v49, ninguno bloqueante |
+| 11 | **Preguntas Frecuentes** (`sevelin-tienda/docs/FAQ-PROPUESTA.md`, 08-09-2026): el dueño ya confirmó reacondicionados (se revisa todo + se ofrece probar el equipo), accesorios (cargador y caja, original o equivalente técnico) y devoluciones (solo por falla de fábrica, nunca por arrepentimiento). **Falta solo**: confirmar el plazo de gestión de garantía (recomendado: diagnóstico 24-48h hábiles, resolución hasta 10 días hábiles) y una 5ª respuesta que quedó sin escribir | Dueño | Construir la página `/preguntas-frecuentes` (todavía NO existe) |
 
 **Riesgo de seguridad abierto:** las credenciales de Khipu (llave de cobrador y API key) se pegaron en
 un chat el 08-09-2026. Conviene expirarlas y crear nuevas desde el panel de Khipu una vez que la
