@@ -15,11 +15,15 @@ Kronos 4, Samsung 3, MSI, AOC, Caixun, NewGen 2 c/u, y 13 más de una): el feed 
 filas con marca real y los publicados sin marca bajaron de **113 a 66** (la mayoría genéricos de
 verdad — cables, adaptadores, tornillos — está bien así). Los 3 casos "Funda para Samsung" /
 "compatible con Samsung TV" quedaron vacíos a propósito.
-**⚠️ El lado tienda está codificado pero NO desplegado** (`productos_web.marca` aplicada, el receptor
-de sync la mapea, la ficha la muestra y el JSON-LD ya incluye `brand`): el repo `sevelin-tienda`
-tiene cambios sin commitear de la sesión anterior (Khipu, toca el checkout) y desplegar la marca los
-arrastraría a producción sin que nadie lo pidiera. Mientras tanto la marca **sí** llega al feed (lee
-`productos.marca` del POS directo) pero **no** a `productos_web` — verificado, es lo esperado.
+**El lado tienda también está desplegado y verificado** (`productos_web.marca`, el receptor de sync
+la mapea, la ficha la muestra sobre el nombre y el JSON-LD incluye `brand` solo cuando existe): se
+hizo en un **commit separado a pedido del dueño**, porque `sevelin-tienda` tiene cambios sin
+commitear de la sesión anterior (Khipu, toca el checkout) que **siguen sin commitear y sin
+desplegar**, intactos. Ver `docs/CHANGELOG-V54.md` §4 para cómo se aisló (el único archivo mezclado
+era `src/lib/tipos.ts`) y por qué hubo que **re-empujar** los 48 productos con marca después del
+despliegue: se habían guardado antes de que el receptor conociera el campo. **Regla para la próxima
+vez: primero desplegar el receptor, después cargar los datos.** Verificado en vivo: 4 fichas del
+sitio real devuelven el `brand` correcto.
 
 **Versión anterior:** v53 (**feed de catálogo para Meta y Google**, ver
 `docs/CHANGELOG-V53.md`). `GET /api/pos/feed-catalogo` + sub-pestaña "Página Web → 📣 Feed de

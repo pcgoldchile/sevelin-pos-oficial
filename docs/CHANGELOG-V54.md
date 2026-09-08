@@ -49,7 +49,7 @@ Por eso:
   que viajan al feed. Un genérico legítimo va a estar ahí siempre y está bien — el número sirve para
   encontrar los que **sí** tienen marca conocida y están compitiendo peor de lo que podrían.
 
-### Tienda (`sevelin-tienda`) — **codificado, NO desplegado todavía**
+### Tienda (`sevelin-tienda`) — desplegado en su propio commit, sin arrastrar Khipu (ver §4)
 - `productos_web.marca` (`supabase/23-marca.sql`, aplicada).
 - El receptor de sincronización (`POST /api/sync/producto`) mapea `marca`.
 - La ficha muestra la marca **encima del nombre**, como cualquier ficha de retail: es lo primero que
@@ -87,23 +87,44 @@ que en un cable genérico es correcto.
 
 ---
 
-## 4. ⚠️ Estado del despliegue
+## 4. Despliegue — completo en los dos repos
 
 | Parte | Estado |
 |---|---|
-| POS (campo, feed, panel, SQL) | **Desplegado** |
-| Tienda (sync, ficha, JSON-LD, SQL) | **SQL aplicada; el código NO está desplegado** |
+| POS (campo, feed, panel, SQL) | **Desplegado y verificado** |
+| Tienda (sync, ficha, JSON-LD, SQL) | **Desplegado y verificado** |
 
-**Por qué no se desplegó la tienda:** el repo `sevelin-tienda` tiene cambios **sin commitear de la
-sesión anterior** (la integración de Khipu, que toca el checkout). Desplegar la marca arrastraría
-ese trabajo ajeno a producción sin que nadie lo haya pedido, en la pasarela de pago de una tienda en
-vivo. **Se dejó para que el dueño decida.**
+**El commit de la tienda se separó a pedido del dueño.** `sevelin-tienda` tenía cambios sin commitear
+de la sesión anterior (la integración de Khipu, que toca el checkout), y desplegar la marca los
+habría arrastrado a producción sin que nadie lo pidiera, en la pasarela de pago de una tienda en
+vivo. Se aisló así:
 
-**Consecuencia concreta mientras tanto:** guardar una marca en el POS **sí** la usa el feed (que lee
-`productos.marca` directo del POS), pero **no** llega a `productos_web` — el receptor desplegado
-todavía no conoce el campo. Verificado: al guardar "Kingston" en el id 188, `sincronizado_en` se
-actualizó pero `marca` quedó en `null` del lado tienda. **Es exactamente lo esperado, no un bug**, y
-se arregla solo con el despliegue.
+1. `src/lib/tipos.ts` era el único archivo con cambios **mezclados** (marca + Khipu). Se restauró
+   desde `HEAD`, se le re-aplicó solo lo de marca, y el archivo completo quedó guardado aparte para
+   devolverlo después. *(Detalle que costó un intento: tras `git checkout HEAD --`, el archivo vuelve
+   con CRLF, y los reemplazos escritos con `\n` no calzan.)*
+2. Se preparó el commit con los 5 archivos de marca y se verificó que **no contuviera la palabra
+   "khipu" en ninguna línea**.
+3. Se apartó el resto con `git stash --keep-index -u` para que el árbol quedara **exactamente** igual
+   al commit, y ahí se corrió `tsc --noEmit`: limpio. Recién entonces se hizo el commit.
+4. Se devolvió Khipu al árbol de trabajo y se comprobó que su diff pendiente sea solo suyo, y que
+   `tsc --noEmit` siga limpio con marca commiteada y Khipu encima.
+
+> **Ojo con el paso 3:** el stash NO contenía los cambios de Khipu en `tipos.ts` (ese archivo ya
+> estaba idéntico al índice), así que si no fuera por la copia del paso 1 se habrían perdido. Copiar
+> primero, restaurar después.
+
+**Khipu sigue sin commitear y sin desplegar**, intacto, esperando la decisión del dueño.
+
+### Paso operativo que hizo falta después del despliegue
+
+Las 47 marcas se guardaron **antes** de que el receptor de la tienda conociera el campo, así que esos
+disparos del trigger viajaron sin `marca`. Hubo que **re-empujar esos productos** para que el dato
+llegara — mismo contrato del webhook (`POST /api/sync/producto` con `x-sync-secret`), sin duplicar
+lógica de sincronización. Resultado: **48 productos con marca en `productos_web`**.
+
+> Vale para la próxima vez que se agregue un campo sincronizado: **primero desplegar el receptor,
+> después cargar los datos.** Al revés, hay que re-empujar.
 
 ---
 
@@ -120,7 +141,11 @@ se arregla solo con el despliegue.
   5 opciones para 8 entradas, como corresponde.
 - **Panel en jsdom** con el informe real: 9 chips de auditoría (antes 8), 0 errores, 0 `<script>`
   inyectados.
-- `tsc --noEmit` en la tienda: limpio.
+- `tsc --noEmit` en la tienda: limpio, dos veces — sobre el estado exacto que se commiteó (con Khipu
+  apartado) y sobre el árbol completo después de devolverlo.
+- **En producción real, tras el despliegue y el re-empuje**: se pidieron 4 fichas al sitio en vivo y
+  las 4 devuelven el `brand` correcto en el JSON-LD (Sony, HP, Master-G, Urbano Labs), con la marca
+  también visible sobre el nombre en el HTML.
 - `node --check` en los 3 archivos JS tocados; chequeos de colisión de funciones, `const`/`let`
   globales e `id`: **todos vacíos**.
 
@@ -144,7 +169,7 @@ se arregla solo con el despliegue.
 
 ## 7. Lo que sigue
 
-1. **Decidir el despliegue de `sevelin-tienda`** (ver sección 4).
+1. **Decidir qué pasa con Khipu**: sigue sin commitear en `sevelin-tienda`, intacto, y sin desplegar.
 2. **Revisar las 47 marcas cargadas** (sección 3b) y completar las que falten: quedan 66 publicados
    sin marca, y la mayoría está bien así. Solo vale la pena los que tengan fabricante real en el
    nombre. Los cables, tornillos y genéricos se quedan vacíos a propósito.
