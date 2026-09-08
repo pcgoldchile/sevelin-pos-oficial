@@ -337,6 +337,7 @@ function pintarAuditoriaCatalogo() {
       ${chip('sin ficha', a.sinFicha, 'Google no las posiciona')}
       ${chip('sin publicar en la web', a.sinPublicar, '')}
       ${chip('sin peso ni medidas', a.sinMedidas, 'no se puede cotizar envío')}
+      ${chip('publicados sin marca', a.sinMarca || 0, 'compiten peor en Google')}
     </div>
     <p class="subtitle">Sobre ${a.totalActivos} productos activos (sin archivados ni borradores). Los servicios técnicos quedan fuera de "sin costo" y "sin medidas": no tienen ni lo uno ni lo otro por naturaleza.</p>
     ${tabla('Productos del catálogo con costo en $0', a.costoCero)}

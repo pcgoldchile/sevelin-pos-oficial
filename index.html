@@ -1948,6 +1948,21 @@
             <input type="text" id="prodNombre" placeholder="Descripción corta del producto">
           </div>
 
+          <!-- MARCA (sql/38). Es la marca de QUIEN FABRICA, no de para qué
+               sirve: un cargador para notebook HP no es marca HP. Se deja
+               vacía en los genéricos — Google penaliza una marca falsa, y
+               el feed y la ficha simplemente la omiten cuando no está.
+               El datalist se llena con las marcas ya usadas en el catálogo
+               (js/productos.js) para no terminar con "MSI", "msi" y
+               "M.S.I" como tres marcas distintas. -->
+          <div class="field" style="margin-top:12px;">
+            <label>Marca</label>
+            <input type="text" id="prodMarca" list="listaMarcas" autocomplete="off"
+                   placeholder="Kingston, MSI, HP… — vacío si es genérico">
+            <datalist id="listaMarcas"></datalist>
+            <small class="fila-meta">Quien fabrica el producto. Un cargador <em>para</em> HP no es marca HP: eso es genérico.</small>
+          </div>
+
           <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--border);">
             <label class="sn-toggle" style="width:fit-content;">
               <input type="checkbox" id="prodRequiereSN"> El producto requiere registrar S/N al vender

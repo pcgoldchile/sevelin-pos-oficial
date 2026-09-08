@@ -741,6 +741,11 @@ const CAMPOS_PRODUCTO = [
   'etiqueta_web',
   // Módulo Garantías — ver sql/31-garantias.sql.
   'condicion', 'meses_garantia',
+  /* Marca del fabricante (sql/38). Se usa como `brand` en el feed de
+     Meta/Google, donde es lo que permite que el producto compita en las
+     búsquedas de esa marca. Ojo: es de QUIEN FABRICA, no de "compatible
+     con" — un cargador para notebook HP no es marca HP. */
+  'marca',
   // Archivar (retirar del POS/venta/tienda sin borrar, ver sql/32-archivar-productos.sql).
   'archivado',
   // SEO — título/meta-descripción para Google, aparte del nombre/Descripción
@@ -812,7 +817,7 @@ function sanearProducto(body = {}) {
   if (['peso_kg', 'alto_cm', 'ancho_cm', 'profundidad_cm'].some(k => p[k] !== undefined)) {
     p.medidas_actualizado_en = new Date().toISOString();
   }
-  ['sku', 'descripcion'].forEach(k => {
+  ['sku', 'descripcion', 'marca'].forEach(k => {
     if (p[k] !== undefined) {
       const t = String(p[k]).trim();
       // "null" como texto viene de importaciones mal mapeadas
@@ -6157,7 +6162,7 @@ app.get('/api/pos/inteligencia', auth(true), async (req, res) => {
     const [respVentas, items, productos] = await Promise.all([
       consultaVentas,
       intelTraerTodo('venta_items', 'venta_id, producto_id, nombre, cantidad, costo_unitario, subtotal, es_servicio'),
-      intelTraerTodo('productos', 'id, nombre, sku, costo_unitario, precio_unitario, stock, stock_ilimitado, archivado, es_borrador, categoria_web, subcategoria_web, imagen_urls, descripcion_web, publicado_web, peso_kg, condicion')
+      intelTraerTodo('productos', 'id, nombre, sku, costo_unitario, precio_unitario, stock, stock_ilimitado, archivado, es_borrador, categoria_web, subcategoria_web, imagen_urls, descripcion_web, publicado_web, peso_kg, condicion, marca')
     ]);
     if (respVentas.error) throw respVentas.error;
 
@@ -6341,7 +6346,13 @@ app.get('/api/pos/inteligencia', auth(true), async (req, res) => {
       sinFicha: activos.filter(p => !p.descripcion_web).length,
       sinCategoria: activos.filter(p => !p.categoria_web).length,
       sinPublicar: activos.filter(p => !p.publicado_web).length,
-      sinMedidas: productosNoServicio.filter(p => !num(p.peso_kg)).length
+      sinMedidas: productosNoServicio.filter(p => !num(p.peso_kg)).length,
+      /* Sin marca (sql/38): solo cuenta los PUBLICADOS, que son los
+         que viajan al feed de Meta/Google. Un genérico legítimo (un
+         cable, unos tornillos) va a estar acá siempre y está bien — el
+         número sirve para encontrar los que sí tienen marca conocida y
+         están compitiendo peor de lo que podrían en Google Shopping. */
+      sinMarca: productosNoServicio.filter(p => p.publicado_web && !p.marca).length
     };
 
     /* ---------- Alertas accionables ----------
@@ -6485,7 +6496,7 @@ app.get('/api/pos/feed-catalogo', auth(true), async (req, res) => {
       dbWeb.from('productos_web')
         .select('producto_pos_id, sku, nombre, descripcion_web, precio_web, stock_web, imagen_urls, categoria, subcategoria, publicado_web, es_pedido_encargo')
         .eq('publicado_web', true),
-      db.from('productos').select('id, condicion, archivado, es_borrador')
+      db.from('productos').select('id, condicion, marca, archivado, es_borrador')
     ]);
     if (respWeb.error) throw respWeb.error;
     if (respPos.error) throw respPos.error;
@@ -6523,6 +6534,7 @@ app.get('/api/pos/feed-catalogo', auth(true), async (req, res) => {
          por eso está agotado: se declara como pedido especial, que es lo
          que las dos plataformas entienden por "in stock" con demora. */
       const hayStock = p.es_pedido_encargo || num(p.stock_web) > 0;
+      const marcaProducto = posible && posible.marca ? String(posible.marca).trim() : '';
 
       /* SIN STOCK NO PUEDE IR AL FEED, aunque Meta y Google acepten
          "out of stock" como valor válido.
@@ -6552,15 +6564,14 @@ app.get('/api/pos/feed-catalogo', auth(true), async (req, res) => {
         image_link: imagenes[0],
         // Meta acepta hasta 20 adicionales separadas por coma.
         additional_image_link: imagenes.slice(1, 21).join(','),
-        /* MARCA: el catálogo del POS no tiene un campo `marca` todavía,
-           y Meta/Google exigen `brand`. Se manda el nombre de la tienda,
-           que es lo que hace un retailer sin datos de marca, y se declara
-           `identifier_exists=no` (no hay GTIN ni MPN) para que Google no
-           lo rechace por identificador faltante.
-           PENDIENTE REAL: agregar `marca` a `productos` y usarla acá —
-           con la marca verdadera, estos productos compiten mucho mejor en
-           Google Shopping. Ver docs/PLAN-CRECIMIENTO-2026.md. */
-        brand: 'Sevelin',
+        /* MARCA (sql/38). Meta y Google exigen `brand`, así que cuando el
+           producto no tiene marca cargada se manda el nombre de la tienda
+           —lo que hace cualquier retailer con productos genéricos— y no
+           una marca inventada, que sí haría que Google penalice la cuenta.
+           Un cable sin marca ES genérico: "Sevelin" ahí es honesto.
+           `identifier_exists=no` porque no hay GTIN ni MPN en el catálogo;
+           sin eso Google rechaza las filas de marca conocida sin código. */
+        brand: (marcaProducto || 'Sevelin'),
         product_type: [p.categoria, p.subcategoria].filter(Boolean).join(' > '),
         quantity_to_sell_on_facebook: p.es_pedido_encargo ? '' : Math.max(0, Math.round(num(p.stock_web))),
         identifier_exists: 'no'

@@ -3,7 +3,20 @@
 > Actualiza SOLO este archivo al cerrar una sesión. Para el detalle completo, ver `docs/README.md`.
 > Para saber qué otro documento leer según lo que necesites, ver `docs/README-DOCS.md`.
 
-**Fecha:** 07-09-2026 · **Versión activa:** v53 (**feed de catálogo para Meta y Google**, ver
+**Fecha:** 07-09-2026 · **Versión activa:** v54 (**marca del producto**, ver
+`docs/CHANGELOG-V54.md`). `productos.marca` (`sql/38`, aplicada) + campo en el modal con `<datalist>`
+de las marcas ya usadas (si no, quedan "MSI", "msi" y "M.S.I" como tres marcas distintas en el feed).
+El feed de Meta/Google usa la marca real y deja "Sevelin" solo de respaldo. Chip "publicados sin
+marca" en la auditoría (113 de 133 hoy). **La columna nace NULL en todo el catálogo a propósito: no
+se corrió ningún script que adivine la marca desde el nombre** — un "Cargador para notebook HP" no es
+marca HP, y Google penaliza el dato incorrecto más de lo que premia el dato presente.
+**⚠️ El lado tienda está codificado pero NO desplegado** (`productos_web.marca` aplicada, el receptor
+de sync la mapea, la ficha la muestra y el JSON-LD ya incluye `brand`): el repo `sevelin-tienda`
+tiene cambios sin commitear de la sesión anterior (Khipu, toca el checkout) y desplegar la marca los
+arrastraría a producción sin que nadie lo pidiera. Mientras tanto la marca **sí** llega al feed (lee
+`productos.marca` del POS directo) pero **no** a `productos_web` — verificado, es lo esperado.
+
+**Versión anterior:** v53 (**feed de catálogo para Meta y Google**, ver
 `docs/CHANGELOG-V53.md`). `GET /api/pos/feed-catalogo` + sub-pestaña "Página Web → 📣 Feed de
 catálogo": genera el CSV que comen Meta Commerce Manager y Google Merchant Center, para dejar de
 escribir cada publicación de Marketplace a mano (ese canal produce casi toda la venta). Los datos

@@ -48,6 +48,11 @@ const elBtnVolverProductos = document.getElementById('btnVolverProductos');
 const elProductoFormTitle = document.getElementById('productoFormTitle');
 const elProdEditId = document.getElementById('prodEditId');
 const elProdSku = document.getElementById('prodSku');
+/* Marca del fabricante (sql/38). El datalist se llena con las marcas ya
+   usadas en el catálogo, para no terminar con "MSI", "msi" y "M.S.I"
+   como tres marcas distintas en el feed de Meta/Google. */
+const elProdMarca = document.getElementById('prodMarca');
+const elListaMarcas = document.getElementById('listaMarcas');
 const elProdBarcode = document.getElementById('prodBarcode');
 const elProdNombre = document.getElementById('prodNombre');
 const elProdCosto = document.getElementById('prodCosto');
@@ -315,6 +320,7 @@ async function cargarProductos(forzar = false) {
 
     handleBuscarProductoTabla();
     renderPanelBajoStock();
+    refrescarListaMarcas();
   } catch (err) {
     console.error('Error al cargar productos:', err.message || err);
     showToast(err.message || 'Error al obtener el inventario', 'err');
@@ -1077,6 +1083,7 @@ function abrirModalProducto(producto = null) {
     if (elProductoFormTitle) elProductoFormTitle.textContent = 'Editar Producto';
     if (elProdEditId) elProdEditId.value = producto.id;
     if (elProdSku) elProdSku.value = producto.sku || '';
+    if (elProdMarca) elProdMarca.value = producto.marca || '';
     if (elProdBarcode) elProdBarcode.value = producto.codigo_barras || '';
     if (elProdNombre) elProdNombre.value = producto.nombre || '';
     if (elProdCosto) elProdCosto.value = producto.costo_unitario || '';
@@ -1127,7 +1134,7 @@ function abrirModalProducto(producto = null) {
     editingProductId = null;
     if (elProductoFormTitle) elProductoFormTitle.textContent = 'Nuevo Producto';
     if (elProdEditId) elProdEditId.value = '';
-    [elProdSku, elProdBarcode, elProdNombre].forEach(el => { if (el) el.value = ''; });
+    [elProdSku, elProdBarcode, elProdNombre, elProdMarca].forEach(el => { if (el) el.value = ''; });
     establecerDescripcion('');
     // Costo y precio quedan VACÍOS (con placeholder "0") — no "0" puesto de
     // verdad, para que pegar o escribir un monto lo reemplace en vez de
@@ -1289,6 +1296,7 @@ function construirPayloadProducto() {
 
   return {
     sku: elProdSku?.value.trim() || null,
+    marca: elProdMarca?.value.trim() || null,
     codigo_barras: elProdBarcode?.value.trim() || null,
     nombre,
     costo_unitario: Number(elProdCosto?.value) || 0,
@@ -2568,4 +2576,22 @@ function exportarProductosPDF() {
 
   doc.save(`productos_${todayISO()}.pdf`);
   showToast('PDF generado', 'ok');
+}
+
+/* Marcas ya usadas en el catálogo, para el desplegable del modal de
+   producto (sql/38). No es una tabla aparte a propósito: con ~130
+   productos, derivar la lista del propio catálogo evita mantener un
+   maestro de marcas que se desincroniza. Ordenadas alfabéticamente,
+   sin repetir y sin distinguir mayúsculas al comparar — así el dueño
+   vuelve a elegir "Kingston" en vez de escribir "kingston" y terminar
+   con dos marcas distintas en el feed de Meta/Google. */
+function refrescarListaMarcas() {
+  if (!elListaMarcas) return;
+  const vistas = new Map();
+  productsList.forEach(p => {
+    const marca = (p.marca || '').trim();
+    if (marca && !vistas.has(marca.toLowerCase())) vistas.set(marca.toLowerCase(), marca);
+  });
+  const marcas = [...vistas.values()].sort((a, b) => a.localeCompare(b, 'es'));
+  elListaMarcas.innerHTML = marcas.map(m => `<option value="${escHtml(m)}"></option>`).join('');
 }
