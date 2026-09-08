@@ -167,6 +167,7 @@
         <div class="nav-subitems">
           <button class="nav-subitem" data-view="view-garantias" data-subtab="productos">Productos</button>
           <button class="nav-subitem" data-view="view-garantias" data-subtab="servicios">Servicios</button>
+          <button class="nav-subitem" data-view="view-garantias" data-subtab="por-vencer">Por vencer</button>
         </div>
       </div>
     </nav>
@@ -2560,6 +2561,7 @@
       <nav class="subtabs" id="subtabsGarantias">
         <button class="subtab activo" data-subtab="productos">📦 Productos</button>
         <button class="subtab" data-subtab="servicios">🔧 Servicios</button>
+        <button class="subtab" data-subtab="por-vencer">⏰ Por vencer</button>
       </nav>
 
       <div class="panel-garantias activo" data-panel-garantias="productos">
@@ -2641,6 +2643,58 @@
               </thead>
               <tbody id="garantiasServiciosTableBody">
                 <tr class="empty-row"><td colspan="7">Cargando…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ============================================================
+           POR VENCER — a quién le vence la garantía pronto y todavía no
+           se le ha avisado. Es lo que convierte el módulo Garantías de
+           consulta pasiva (responder un reclamo) en atención postventa.
+           El envío es manual por WhatsApp: el canal real de Sevelin, y
+           el correo sigue bloqueado hasta verificar el dominio en Resend.
+           Ver GET /api/garantias/por-vencer y js/garantias.js.
+           ============================================================ -->
+      <div class="panel-garantias" data-panel-garantias="por-vencer">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Garantías por vencer</h2>
+              <p class="subtitle">A quién avisarle antes de que se le cierre la garantía. Ningún competidor de Arica hace esto.</p>
+            </div>
+            <div class="toolbar-group">
+              <div class="chip-group" id="porVencerChips">
+                <button class="chip active" data-dias="30">30 días</button>
+                <button class="chip" data-dias="60">60 días</button>
+                <button class="chip" data-dias="90">90 días</button>
+                <button class="chip" data-dias="180">6 meses</button>
+              </div>
+              <label class="caja-check" style="height:34px;">
+                <input type="checkbox" id="porVencerIncluirAvisados"> Ver también los ya avisados
+              </label>
+              <button class="btn btn-outline btn-sm" id="btnRecargarPorVencer">🔄 Actualizar</button>
+            </div>
+          </div>
+
+          <div id="porVencerResumen"></div>
+
+          <div class="table-wrapper" style="margin-top:14px;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Vence</th>
+                  <th>Cliente</th>
+                  <th>Producto / Equipo</th>
+                  <th>Origen</th>
+                  <th>Garantía</th>
+                  <th style="text-align:right;">Aviso</th>
+                </tr>
+              </thead>
+              <tbody id="porVencerTableBody">
+                <tr class="empty-row"><td colspan="6">Cargando…</td></tr>
               </tbody>
             </table>
           </div>

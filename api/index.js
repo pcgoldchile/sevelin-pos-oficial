@@ -5124,6 +5124,180 @@ app.get('/api/garantias/servicios', auth(true), async (req, res) => {
 });
 
 /* ============================================================
+   GARANTÍAS POR VENCER — Garantías → ⏰ Por vencer
+   ------------------------------------------------------------
+   Lo que el módulo Garantías no hacía: avisar ANTES. Hasta ahora el
+   vencimiento solo se consultaba cuando alguien ya llegaba con un equipo
+   malo. Esto da vuelta la pregunta: ¿a quién le vence pronto y todavía
+   no le hemos avisado?
+
+   POR QUÉ SALE POR WHATSAPP Y NO POR CORREO
+   El canal real de Sevelin es WhatsApp (así se coordina casi toda la
+   venta), y el correo transaccional está bloqueado hasta verificar el
+   dominio en Resend. Este panel arma la lista y el mensaje; el envío lo
+   hace el dueño con un click en wa.me. Cuando Resend esté listo, el
+   mismo endpoint sirve para automatizarlo — la lista ya está calculada.
+
+   EL VENCIMIENTO NO SE RECALCULA ACÁ: reutiliza calcularEstadoGarantia()
+   del módulo Garantías (sql/31), que ya usa el snapshot de meses de cada
+   venta_item / OT. Dos fórmulas del mismo dato es como se desincronizan
+   los sistemas.
+   ============================================================ */
+
+/* Días entre hoy (Chile) y una fecha 'YYYY-MM-DD'. Positivo = falta;
+   negativo = ya pasó. Se comparan fechas puras a mediodía UTC para que
+   el cambio de día en Chile no corra el resultado en 1. */
+function diasHastaFecha(fechaISO) {
+  const hoy = fechaHoyChile();
+  const ms = Date.parse(`${fechaISO}T12:00:00Z`) - Date.parse(`${hoy}T12:00:00Z`);
+  return Math.round(ms / 86400000);
+}
+
+app.get('/api/garantias/por-vencer', auth(true), async (req, res) => {
+  /* Ventana de aviso. 30 días es el valor por defecto porque es tiempo
+     suficiente para que el cliente pruebe el equipo, lo traiga y se
+     alcance a reparar antes de que la garantía se cierre. */
+  const dias = Math.min(180, Math.max(1, Number(req.query.dias) || 30));
+  const incluirAvisados = req.query.avisados === '1';
+
+  try {
+    const hoy = fechaHoyChile();
+
+    /* ---------- Productos ---------- */
+    const { data: items, error: errI } = await db.from('venta_items')
+      .select('id, venta_id, nombre, sku, serial_number, condicion, meses_garantia, aviso_garantia_en')
+      .eq('es_servicio', false)
+      .order('id', { ascending: false })
+      .limit(5000);
+    if (errI) throw errI;
+
+    const idsVenta = [...new Set((items || []).map(i => i.venta_id).filter(Boolean))];
+    const ventasPorId = new Map();
+    if (idsVenta.length) {
+      const { data: ventas, error: errV } = await db.from('ventas')
+        .select('id, fecha, numero_orden, cliente, cliente_telefono')
+        .in('id', idsVenta);
+      if (errV) throw errV;
+      (ventas || []).forEach(v => ventasPorId.set(v.id, v));
+    }
+
+    /* Vencimiento vigente más cercano, MIRE O NO dentro de la ventana.
+       Sirve para el estado vacío: "no hay nada por avisar" no dice nada,
+       "el primero vence el 03-02-2027" sí — y evita que alguien crea que
+       el panel está roto cuando simplemente todavía no toca. */
+    let proximoVencimiento = null;
+    const registrarProximo = (fecha) => {
+      if (fecha && (!proximoVencimiento || fecha < proximoVencimiento)) proximoVencimiento = fecha;
+    };
+
+    const productos = [];
+    for (const it of (items || [])) {
+      const venta = ventasPorId.get(it.venta_id);
+      if (!venta) continue;                                  // venta borrada: no se muestra huérfana
+      const { vence_el, estado_garantia } = calcularEstadoGarantia(venta.fecha, it.meses_garantia);
+      if (!vence_el || estado_garantia !== 'VIGENTE') continue;
+      registrarProximo(vence_el);
+      const restan = diasHastaFecha(vence_el);
+      if (restan > dias) continue;
+      if (it.aviso_garantia_en && !incluirAvisados) continue;
+      productos.push({
+        tipo: 'producto',
+        id: it.id,
+        referencia: venta.numero_orden ? `Venta #${String(venta.numero_orden).padStart(5, '0')}` : `Venta ${venta.id}`,
+        fecha_inicio: venta.fecha,
+        cliente: venta.cliente || null,
+        cliente_telefono: venta.cliente_telefono || null,
+        detalle: it.nombre,
+        sku: it.sku || null,
+        serial_number: it.serial_number || null,
+        condicion: it.condicion || null,
+        meses_garantia: it.meses_garantia,
+        vence_el,
+        dias_restantes: restan,
+        aviso_garantia_en: it.aviso_garantia_en || null
+      });
+    }
+
+    /* ---------- Servicios (órdenes de trabajo entregadas) ---------- */
+    const { data: ots, error: errO } = await db.from('ordenes_trabajo')
+      .select('id, numero_ot, cliente_nombre, cliente_telefono, dispositivo_categoria, dispositivo_modelo, dispositivo_sn, fecha_entrega, meses_garantia, aviso_garantia_en')
+      .eq('estado', 'ENTREGADO')
+      .limit(2000);
+    if (errO) throw errO;
+
+    const servicios = [];
+    for (const o of (ots || [])) {
+      const { vence_el, estado_garantia } = calcularEstadoGarantia(o.fecha_entrega, o.meses_garantia);
+      if (!vence_el || estado_garantia !== 'VIGENTE') continue;
+      registrarProximo(vence_el);
+      const restan = diasHastaFecha(vence_el);
+      if (restan > dias) continue;
+      if (o.aviso_garantia_en && !incluirAvisados) continue;
+      servicios.push({
+        tipo: 'servicio',
+        id: o.id,
+        referencia: o.numero_ot ? `OT ${o.numero_ot}` : `OT ${o.id}`,
+        fecha_inicio: o.fecha_entrega,
+        cliente: o.cliente_nombre || null,
+        cliente_telefono: o.cliente_telefono || null,
+        detalle: [o.dispositivo_categoria, o.dispositivo_modelo].filter(Boolean).join(' ') || 'Equipo',
+        sku: null,
+        serial_number: o.dispositivo_sn || null,
+        condicion: null,
+        meses_garantia: o.meses_garantia,
+        vence_el,
+        dias_restantes: restan,
+        aviso_garantia_en: o.aviso_garantia_en || null
+      });
+    }
+
+    /* Lo más urgente primero: es una lista para actuar, no para leer. */
+    const filas = [...productos, ...servicios].sort((a, b) => a.dias_restantes - b.dias_restantes);
+
+    /* Contexto honesto para la pantalla: de nada sirve decir "hay 12 por
+       avisar" si a 11 no se les puede escribir. El teléfono se empezó a
+       registrar recién en v52, así que las ventas viejas no lo tienen. */
+    const conTelefono = filas.filter(f => f.cliente_telefono).length;
+
+    res.json({
+      hoy,
+      dias,
+      total: filas.length,
+      conTelefono,
+      sinTelefono: filas.length - conTelefono,
+      proximo_vencimiento: proximoVencimiento,
+      dias_al_proximo: proximoVencimiento ? diasHastaFecha(proximoVencimiento) : null,
+      filas: filas.slice(0, 300)
+    });
+  } catch (error) {
+    return enviarErrorBD(res, error, 'GET /api/garantias/por-vencer');
+  }
+});
+
+/* Marca (o desmarca) que ya se le avisó al cliente.
+   `tipo` decide la tabla: los productos viven en venta_items y los
+   servicios en ordenes_trabajo — son dos garantías distintas con dos
+   fechas de inicio distintas, no una tabla común. */
+app.post('/api/garantias/:tipo/:id/aviso', auth(true), async (req, res) => {
+  const { tipo, id } = req.params;
+  if (tipo !== 'producto' && tipo !== 'servicio') {
+    return enviarError(res, 400, 'El tipo debe ser "producto" o "servicio".');
+  }
+  const tabla = tipo === 'producto' ? 'venta_items' : 'ordenes_trabajo';
+  // avisado=false permite deshacer un click equivocado sin tocar la base.
+  const marcar = req.body?.avisado !== false;
+
+  const { data, error } = await db.from(tabla)
+    .update({ aviso_garantia_en: marcar ? new Date().toISOString() : null })
+    .eq('id', id)
+    .select('id, aviso_garantia_en')
+    .maybeSingle();
+  if (error) return enviarErrorBD(res, error, 'POST /api/garantias/:tipo/:id/aviso');
+  if (!data) return enviarError(res, 404, 'No se encontró esa garantía.');
+  res.json({ ok: true, aviso_garantia_en: data.aviso_garantia_en });
+});
+
+/* ============================================================
    REPUESTOS INTERNOS DE TALLER
    Inventario propio, fuera del catálogo comercial.
    Ver: admin y trabajador (el técnico los usa) · Escribir: admin

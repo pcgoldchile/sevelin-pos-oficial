@@ -269,7 +269,19 @@ const API = {
       if (estado) params.set('estado', estado);
       const qs = params.toString();
       return apiRequest('/garantias/servicios' + (qs ? `?${qs}` : ''));
-    }
+    },
+
+    /* Garantías por vencer (Garantías → ⏰ Por vencer, sql/39). Devuelve
+       productos y servicios juntos, ya ordenados por urgencia — el
+       servidor calcula vence_el y los días restantes, nunca el navegador. */
+    porVencer: (dias, incluirAvisados) => apiRequest(
+      `/garantias/por-vencer?dias=${encodeURIComponent(dias || 30)}` +
+      (incluirAvisados ? '&avisados=1' : '')
+    ),
+    marcarAviso: (tipo, id, avisado = true) => apiRequest(
+      `/garantias/${encodeURIComponent(tipo)}/${encodeURIComponent(id)}/aviso`,
+      { method: 'POST', body: { avisado } }
+    )
   },
 
   // Panel "Más buscados" (Página Web → Más buscados) — agrega eventos_web

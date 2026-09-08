@@ -3,7 +3,22 @@
 > Actualiza SOLO este archivo al cerrar una sesión. Para el detalle completo, ver `docs/README.md`.
 > Para saber qué otro documento leer según lo que necesites, ver `docs/README-DOCS.md`.
 
-**Fecha:** 07-09-2026 · **Versión activa:** v54 (**marca del producto**, ver
+**Fecha:** 07-09-2026 · **Versión activa:** v55 (**aviso de garantía por vencer**, ver
+`docs/CHANGELOG-V55.md`). Nueva sub-pestaña **Garantías → ⏰ Por vencer**: a quién le vence la
+garantía pronto y todavía no se le avisó, con botón que abre **WhatsApp con el mensaje ya escrito** y
+marca de "avisado" (`sql/39`: `venta_items.aviso_garantia_en` y `ordenes_trabajo.aviso_garantia_en`,
+timestamp y no booleano, para poder reavisar sin perder el registro). `GET /api/garantias/por-vencer`
++ `POST /api/garantias/:tipo/:id/aviso`; **el vencimiento NO se recalcula**, reutiliza
+`calcularEstadoGarantia()` de v48. Va por WhatsApp manual porque es el canal real de Sevelin y el
+correo sigue bloqueado (Resend, B2) — cuando se destrabe, el mismo endpoint sirve para automatizarlo.
+**Hoy el panel está vacío a propósito y lo explica**: las ventas parten el 03-08-2026 con garantía de
+6 meses, así que la primera vence el **03-02-2027** (149 días); el selector de 6 meses ya muestra las
+210 que vienen. **De esas 210, solo 1 tiene WhatsApp registrado** (el campo existe desde v52) — quien
+no quede registrado hoy no se le puede avisar en febrero. **Trampa de jsdom anotada**: disparar
+`DOMContentLoaded` a mano después del `eval` lo ejecuta DOS veces (jsdom ya lo emite solo) y duplica
+los listeners delegados; en las pruebas hay que esperar un tick, no dispararlo.
+
+**Versión anterior:** v54 (**marca del producto**, ver
 `docs/CHANGELOG-V54.md`). `productos.marca` (`sql/38`, aplicada) + campo en el modal con `<datalist>`
 de las marcas ya usadas (si no, quedan "MSI", "msi" y "M.S.I" como tres marcas distintas en el feed).
 El feed de Meta/Google usa la marca real y deja "Sevelin" solo de respaldo. Chip "publicados sin
