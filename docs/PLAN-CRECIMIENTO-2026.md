@@ -544,7 +544,7 @@ SERVITEC ARICA 3,6 (92).
 | 1 — Verdad de los datos | **Construida** | 07-09-2026 | 07-09-2026 (panel) | Panel Finanzas → Inteligencia en producción, ver `CHANGELOG-V51.md`. Queda que el dueño llene los 21 costos |
 | 2 — Oferta y precio | Lista para empezar | — | — | Ya hay datos: cajones, capital dormido y concentración medidos |
 | 3 — Blindar el canal que vende | **Empezada** | 07-09-2026 | — | **Reescrita.** "Dejar de publicar a mano" **hecho** (v53: feed de catálogo para Meta y Google, 99 productos listos). Lo demás depende de B6 (Página + Business Manager) y B3 |
-| 4 — Conversión y recuperación | Bloqueada | — | — | Depende de B1 (Flow), B2 (Resend) y B5 (captura de cliente) |
+| 4 — Conversión y recuperación | **Empezada, parcialmente bloqueada** | 07-09-2026 | — | Hecho: captura de cliente (v52) y **aviso de garantía por vencer** (v55, la única automatización que no dependía de correo). El resto espera B1 (Flow) y B2 (Resend) |
 | 5 — Competencia | Lista para empezar | — | — | Lista de competidores ya cargada en §5.1 |
 | 6 — Monetización | Por empezar | — | — | Depende de Fase 2 |
 | 7 — Sistema consistente | Por empezar | — | — | Permanente, ya tiene su fuente de datos (Fase 1) |
