@@ -5002,6 +5002,20 @@ app.delete('/api/ot/:id', auth(true), async (req, res) => {
    catálogo cambió después. vence_el/estado_garantia se calculan siempre
    en el servidor (nunca en el navegador), con fechaHoyChile()/
    sumarMeses() ya usados en otras partes del sistema.
+
+   PERMISOS — admin Y trabajador (cambio del 07-09-2026, v56)
+   ------------------------------------------------------------
+   Todo este módulo era `auth(true)` (solo admin), pero el botón del
+   sidebar y la sección NUNCA tuvieron `admin-only`: un trabajador veía
+   la pantalla y recibía errores en cada consulta. Se abrió a
+   `auth()` porque es quien está en el mostrador cuando alguien llega
+   con un equipo malo, y quien manda el aviso de garantía por vencer.
+
+   Es seguro: **ninguna respuesta de este módulo trae costo, precio ni
+   utilidad.** Solo nombre del producto, SKU, número de serie, fechas,
+   meses de garantía y el contacto del cliente. Si alguna vez se le
+   agrega una cifra de plata a estos endpoints, hay que volver a
+   evaluar el permiso — no darlo por hecho porque "ya estaba abierto".
    ============================================================ */
 function calcularEstadoGarantia(fechaInicioISO, mesesGarantia) {
   const fecha = String(fechaInicioISO || '').slice(0, 10);
@@ -5010,7 +5024,7 @@ function calcularEstadoGarantia(fechaInicioISO, mesesGarantia) {
   return { vence_el: venceEl, estado_garantia: venceEl >= fechaHoyChile() ? 'VIGENTE' : 'VENCIDA' };
 }
 
-app.get('/api/garantias/productos', auth(true), async (req, res) => {
+app.get('/api/garantias/productos', auth(), async (req, res) => {
   const q = String(req.query.q || '').trim();
   const filtroEstado = String(req.query.estado || '').toUpperCase(); // VIGENTE | VENCIDA | ''
 
@@ -5089,7 +5103,7 @@ app.get('/api/garantias/productos', auth(true), async (req, res) => {
   res.json(filas.slice(0, 200));
 });
 
-app.get('/api/garantias/servicios', auth(true), async (req, res) => {
+app.get('/api/garantias/servicios', auth(), async (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
   const filtroEstado = String(req.query.estado || '').toUpperCase();
 
@@ -5153,7 +5167,7 @@ function diasHastaFecha(fechaISO) {
   return Math.round(ms / 86400000);
 }
 
-app.get('/api/garantias/por-vencer', auth(true), async (req, res) => {
+app.get('/api/garantias/por-vencer', auth(), async (req, res) => {
   /* Ventana de aviso. 30 días es el valor por defecto porque es tiempo
      suficiente para que el cliente pruebe el equipo, lo traiga y se
      alcance a reparar antes de que la garantía se cierre. */
@@ -5278,7 +5292,7 @@ app.get('/api/garantias/por-vencer', auth(true), async (req, res) => {
    `tipo` decide la tabla: los productos viven en venta_items y los
    servicios en ordenes_trabajo — son dos garantías distintas con dos
    fechas de inicio distintas, no una tabla común. */
-app.post('/api/garantias/:tipo/:id/aviso', auth(true), async (req, res) => {
+app.post('/api/garantias/:tipo/:id/aviso', auth(), async (req, res) => {
   const { tipo, id } = req.params;
   if (tipo !== 'producto' && tipo !== 'servicio') {
     return enviarError(res, 400, 'El tipo debe ser "producto" o "servicio".');
