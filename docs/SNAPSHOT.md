@@ -584,7 +584,7 @@ la función usa la variable local, no la columna ambigua).
 
 | # | Qué | Dónde | Qué desbloquea |
 |---|---|---|---|
-| 1 | **`KHIPU_API_KEY` en Vercel** (`sevelin-tienda` → Settings → Environment Variables). Confirmar ahí mismo que `NEXT_PUBLIC_SITE_URL` sea `https://www.sevelin.cl`. | Vercel | Enciende Khipu, ya desplegado |
+| 1 | **`KHIPU_API_KEY` y `KHIPU_SECRET` en Vercel** (`sevelin-tienda` → Settings → Environment Variables). `KHIPU_SECRET` es la **llave de cobrador** (40 hex), distinta de la API key. Confirmar ahí mismo que `NEXT_PUBLIC_SITE_URL` sea `https://www.sevelin.cl`. **En el primer pago real, mirar los logs de Vercel**: la línea `[khipu] firma válida con …` dice qué llave es la correcta, y ahí se deja solo esa. | Vercel | Enciende Khipu, ya desplegado |
 | 2 | **Correo a `soporte@khipu.com`** para subir el límite de cobro (hoy **$5.000**). Datos: cuenta **527804**, `https://www.sevelin.cl`, RUT 21.961.387-3. **Confirmar antes que ese sea el RUT con el que emite boletas en el SII.** | Correo | Que Khipu sirva para vender de verdad |
 | 3 | **Credenciales de producción de Flow** + `FLOW_API_BASE=https://www.flow.cl/api` en Vercel | Flow + Vercel | **Bloqueo B1**: hoy la tienda NO cobra plata real |
 | 4 | **Verificar dominio en Resend** (2-3 registros DNS en `sevelin.cl`) | DNS | **Bloqueo B2**: hoy TODO correo a clientes falla en silencio |
