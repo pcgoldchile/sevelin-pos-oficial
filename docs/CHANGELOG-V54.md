@@ -21,8 +21,11 @@ HP: es un genérico compatible con HP. Rellenar esto mal es **peor que dejarlo v
 penaliza los datos incorrectos.
 
 Por eso:
-- **La columna nace NULL en todo el catálogo.** No se corrió ningún script que adivine la marca desde
-  el nombre. Se llena a mano, producto por producto.
+- **La columna nace NULL** y la regla para llenarla es una sola: **la marca se carga solo cuando el
+  propio nombre del producto declara al fabricante.** No se deduce de ninguna otra fuente ni se
+  busca por internet.
+- **El patrón "para X" / "compatible con X" queda SIEMPRE vacío**, aunque el nombre traiga una marca
+  conocida. "Funda para Samsung Galaxy A25" es un genérico, no un producto Samsung.
 - El campo del modal lo dice explícitamente bajo el input.
 - Un producto **sin** marca no muestra marca inventada en ningún lado: la ficha de la tienda la
   omite, el JSON-LD la omite, y solo el feed manda "Sevelin" — que para un cable genérico es honesto,
@@ -58,6 +61,32 @@ Por eso:
 
 ---
 
+## 3b. Carga inicial: 47 marcas
+
+Aplicada con un script de una sola vez (ya descartado), siguiendo la regla de la sección 2.
+
+- **47 productos** recibieron marca: HP (7), Master-G (6), Kingston (6), Kronos (4), Samsung (3),
+  NewGen (2), MSI (2), Caixun (2), AOC (2), y una cada uno de Dblue, Duracell, Sony, Gigabyte, Aigo,
+  Crucial, Hiksemi, Urbano Labs, Ekipax, ESGAMING, Snake Gamer, LinkOn y Dell. Más el id 188
+  (Kingston) que ya se había cargado al probar el endpoint.
+- **3 casos se dejaron vacíos a propósito** — son el patrón "para X": `142` Funda **para** Samsung
+  Galaxy A25, `143` Funda **para** Xiaomi Redmi 14C, `193` Control Remoto Universal **compatible
+  con** Samsung TV. Ninguno lo fabrica esa marca.
+- **66 publicados siguen sin marca**, y la mayoría está bien así: cables, adaptadores, tornillos y
+  productos sin fabricante identificable en el nombre. Los que sí tengan marca conocida (ej. `97`
+  Mouse Gamer **Reptilex** RX0047, que el detector no conocía) los puede cargar el dueño desde el
+  modal, ahora con el desplegable de marcas ya usadas.
+- **Freno de seguridad en el script**: no pisaba ninguna marca ya cargada a mano. No hizo falta, pero
+  quedó anotado por si se repite la operación.
+
+**Efecto en el feed**: pasó de 1 fila con marca real a **37 de 99**. El resto sigue con "Sevelin",
+que en un cable genérico es correcto.
+
+**Cómo revertir si algo quedó mal**: es una sola columna, se limpia con
+`UPDATE productos SET marca = NULL WHERE id IN (…)`. Nada más depende de ella.
+
+---
+
 ## 4. ⚠️ Estado del despliegue
 
 | Parte | Estado |
@@ -83,8 +112,9 @@ se arregla solo con el despliegue.
 - **Ida y vuelta real contra producción**: `PUT /api/productos/188` con `"  Kingston  "` → guardado
   como `"Kingston"` (recortado). Se dejó puesto: es la marca correcta de ese SSD, no un dato de
   prueba.
-- **Feed**: 99 filas, `brand` = `{Sevelin: 98, Kingston: 1}`. La fila de Kingston sale con su marca
-  real.
+- **Feed**: 99 filas. Antes de la carga inicial, `brand` = `{Sevelin: 98, Kingston: 1}`; después,
+  **37 filas con marca real** y 62 con "Sevelin".
+- **Auditoría**: "publicados sin marca" bajó de **113 a 66** tras la carga.
 - **`refrescarListaMarcas()`**: "MSI" y "msi" colapsan en una sola opción, `" Kingston "` se recorta,
   los vacíos y nulos se ignoran, y un valor con HTML (`<img src=x onerror=…>`) sale **escapado** —
   5 opciones para 8 entradas, como corresponde.
@@ -115,7 +145,7 @@ se arregla solo con el despliegue.
 ## 7. Lo que sigue
 
 1. **Decidir el despliegue de `sevelin-tienda`** (ver sección 4).
-2. **Cargar las marcas**: 113 productos publicados no la tienen. No hace falta llenarlos todos —
-   solo los que tienen marca conocida de verdad (Kingston, MSI, HP, Samsung, Master-G…). Los cables,
-   tornillos y genéricos se quedan vacíos a propósito.
+2. **Revisar las 47 marcas cargadas** (sección 3b) y completar las que falten: quedan 66 publicados
+   sin marca, y la mayoría está bien así. Solo vale la pena los que tengan fabricante real en el
+   nombre. Los cables, tornillos y genéricos se quedan vacíos a propósito.
 3. Cuando haya marcas cargadas, **el feed rinde mejor sin ningún cambio de código**.

@@ -7,9 +7,14 @@
 `docs/CHANGELOG-V54.md`). `productos.marca` (`sql/38`, aplicada) + campo en el modal con `<datalist>`
 de las marcas ya usadas (si no, quedan "MSI", "msi" y "M.S.I" como tres marcas distintas en el feed).
 El feed de Meta/Google usa la marca real y deja "Sevelin" solo de respaldo. Chip "publicados sin
-marca" en la auditoría (113 de 133 hoy). **La columna nace NULL en todo el catálogo a propósito: no
-se corrió ningún script que adivine la marca desde el nombre** — un "Cargador para notebook HP" no es
-marca HP, y Google penaliza el dato incorrecto más de lo que premia el dato presente.
+marca" en la auditoría. **Regla única para llenarla: la marca se carga SOLO cuando el propio NOMBRE
+del producto declara al fabricante** — un "Cargador para notebook HP" NO es marca HP, y Google
+penaliza el dato incorrecto más de lo que premia el dato presente; el patrón "para X"/"compatible con
+X" queda siempre vacío. Con esa regla se cargaron **47 marcas** (HP 7, Master-G 6, Kingston 6,
+Kronos 4, Samsung 3, MSI, AOC, Caixun, NewGen 2 c/u, y 13 más de una): el feed pasó de 1 a **37 de 99**
+filas con marca real y los publicados sin marca bajaron de **113 a 66** (la mayoría genéricos de
+verdad — cables, adaptadores, tornillos — está bien así). Los 3 casos "Funda para Samsung" /
+"compatible con Samsung TV" quedaron vacíos a propósito.
 **⚠️ El lado tienda está codificado pero NO desplegado** (`productos_web.marca` aplicada, el receptor
 de sync la mapea, la ficha la muestra y el JSON-LD ya incluye `brand`): el repo `sevelin-tienda`
 tiene cambios sin commitear de la sesión anterior (Khipu, toca el checkout) y desplegar la marca los
