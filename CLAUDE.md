@@ -93,6 +93,39 @@ inserte en el DOM pasa por `escHtml`** (regla de seguridad).
 
 ---
 
+## ⚠️ Modelo: avísame si esta tarea pide Opus (regla del dueño, 08-09-2026)
+
+**El dueño trabaja en Sonnet por defecto** para ahorrar. Pidió expresamente que **le avises ANTES de
+empezar** si la tarea que acaba de mandar es de las que conviene hacer en Opus.
+
+**Cómo avisar:** una sola línea al principio de tu respuesta, antes de tocar nada. Por ejemplo:
+> ⚠️ Esto conviene hacerlo en Opus: toca el cálculo del margen y se replica en dos paneles. ¿Cambias
+> de modelo o sigo igual?
+
+Y después **espera su respuesta**. Si dice que sigas, sigues — es su decisión, no la discutas dos
+veces.
+
+**Avisa cuando la tarea:**
+- toca **plata**: costos, precios, márgenes, utilidad, comisiones, IVA;
+- toca **permisos, autenticación o datos personales** de clientes;
+- **cruza los dos repos** (`sevelin-pos-oficial` + `sevelin-tienda`) o toca las dos bases de datos;
+- **despliega a producción algo que cobra**, o toca el checkout de la tienda en vivo;
+- implica **decidir** en vez de ejecutar: "revisa", "analiza", "¿por qué…?", "¿conviene…?";
+- pide una **migración SQL nueva** o cambia un contrato de sincronización;
+- exige **dudar de los datos** (auditorías, informes, cualquier cosa donde un número mal leído lleve
+  a una decisión de negocio equivocada).
+
+**NO avises (hazlo en Sonnet y punto)** cuando es: un campo más en un modal siguiendo un patrón que
+ya existe, un chip o columna en un panel, cargar/corregir datos con una regla clara, textos,
+documentación de rutina, CSS o recompilar Tailwind, o arreglar algo que ya está diagnosticado.
+
+**Por qué existe esta regla:** en la sesión del 07/08-09-2026 los hallazgos que evitaron daño real no
+salieron de escribir código, sino de desconfiar de lo que los datos parecían decir — el feed con 1 de
+cada 3 links en 404, el margen inflado por ítems sin costo, separar el commit de marca sin arrastrar
+Khipu al checkout de una tienda en vivo. Ese es el tipo de tarea que justifica el modelo caro.
+
+---
+
 ## Backlog (pendientes, ninguno bloqueante — ver `docs/SNAPSHOT.md` para el detalle)
 
 1. **E-commerce: YA conectado y en producción** (`sevelin-tienda`, repo aparte) — catálogo real

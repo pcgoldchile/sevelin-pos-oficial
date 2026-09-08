@@ -2,8 +2,20 @@
 > Léelo (o pégalo) al abrir un chat nuevo o al llevar el proyecto a otra IA.
 > Actualiza SOLO este archivo al cerrar una sesión. Para el detalle completo, ver `docs/README.md`.
 > Para saber qué otro documento leer según lo que necesites, ver `docs/README-DOCS.md`.
+>
+> **⚠️ EL DUEÑO TRABAJA EN SONNET.** Si la tarea que te mandó conviene hacerla en Opus, **avísale en
+> una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
+> sección "Modelo: avísame si esta tarea pide Opus".
 
-**Fecha:** 08-09-2026 · **Versión activa:** v57 (**informe semanal**, ver `docs/CHANGELOG-V57.md`).
+**Fecha:** 08-09-2026 · **Versión activa:** v57 · **También hoy, en `sevelin-tienda`: Khipu
+desplegado pero APAGADO** (transferencia bancaria como segundo medio de pago). Sin `KHIPU_API_KEY` en
+Vercel el checkout se comporta exactamente como antes — verificado en producción. Se enciende solo al
+agregar la variable, así que el momento riesgoso quedó separado del despliegue. **La `notify_url` NO
+se configura en el panel de Khipu**: viaja en cada cobro (`notify_api_version 3.0`); esa casilla del
+panel es del formato antiguo 1.3 y llenarla rompería el webhook. Detalle en el SNAPSHOT de
+`sevelin-tienda`.
+
+**Versión activa del POS:** v57 (**informe semanal**, ver `docs/CHANGELOG-V57.md`).
 Nueva sub-pestaña **Finanzas → 📅 Semanal**: los 5 números del lunes ya comparados con la semana
 anterior, alertas, top 3 por margen y botón **📋 Copiar** que deja el informe listo para pegar en
 WhatsApp. `GET /api/pos/informe-semanal` — sin parámetro devuelve la última semana CERRADA (lun–dom).
@@ -563,6 +575,32 @@ dejar que abra el navegador por defecto solo).
 Ninguno confirmado. El bug crítico histórico de `descontar_stock_venta` (columna ambigua, v22) se
 verificó esta sesión como **corregido** en la base real (`sql/20` sí se aplicó en algún momento —
 la función usa la variable local, no la columna ambigua).
+
+## ⭐ PENDIENTE AL 08-09-2026 — TODO ES DEL DUEÑO, NADA ES DE CÓDIGO
+
+> Empieza por acá. Nada de esto lo puede resolver una sesión de Claude: son cuentas, credenciales y
+> decisiones comerciales. Mientras estos no se muevan, las Fases 0, 2, 4 y 6 del plan de crecimiento
+> están detenidas — no por falta de código.
+
+| # | Qué | Dónde | Qué desbloquea |
+|---|---|---|---|
+| 1 | **`KHIPU_API_KEY` en Vercel** (`sevelin-tienda` → Settings → Environment Variables). Confirmar ahí mismo que `NEXT_PUBLIC_SITE_URL` sea `https://www.sevelin.cl`. | Vercel | Enciende Khipu, ya desplegado |
+| 2 | **Correo a `soporte@khipu.com`** para subir el límite de cobro (hoy **$5.000**). Datos: cuenta **527804**, `https://www.sevelin.cl`, RUT 21.961.387-3. **Confirmar antes que ese sea el RUT con el que emite boletas en el SII.** | Correo | Que Khipu sirva para vender de verdad |
+| 3 | **Credenciales de producción de Flow** + `FLOW_API_BASE=https://www.flow.cl/api` en Vercel | Flow + Vercel | **Bloqueo B1**: hoy la tienda NO cobra plata real |
+| 4 | **Verificar dominio en Resend** (2-3 registros DNS en `sevelin.cl`) | DNS | **Bloqueo B2**: hoy TODO correo a clientes falla en silencio |
+| 5 | **Página de Facebook + Business Manager** | Meta | **Bloqueo B6** (el negocio cuelga de una cuenta personal) y **B3** (Pixel + catálogo). El feed de 99 productos ya está listo para subir |
+| 6 | **Cargar los 21 costos en $0** — el panel Finanzas → Inteligencia los lista con ID y nombre | POS | **Bloqueo B4**: sin esto no hay decisión de precio ni de publicidad posible |
+| 7 | **Decidir qué hacer con los 43 productos dormidos** ($1.954.370, 41% del stock, nunca vendieron nada) | Decisión comercial | Libera casi 2 millones para reinvertir |
+| 8 | **Registrar el WhatsApp en cada venta nueva** (el campo existe desde v52) | Hábito diario | Sin esto, en febrero habrá 200 garantías por vencer y nadie a quién avisarle |
+| 9 | **+1 al stock del Adaptador HDMI a VGA (id 104)** — lo descontó el pago de prueba de Flow | POS | Corrige el stock real |
+| 10 | Confirmar `UPSTASH_REDIS_REST_URL`/`TOKEN` en el Vercel **del POS**; tope de gasto en Google Cloud; seguimiento a Starken; `NEXT_PUBLIC_PRIVACIDAD_EMAIL` | Vercel / Google / correo | Arrastrados de v49, ninguno bloqueante |
+
+**Riesgo de seguridad abierto:** las credenciales de Khipu (llave de cobrador y API key) se pegaron en
+un chat el 08-09-2026. Conviene expirarlas y crear nuevas desde el panel de Khipu una vez que la
+integración esté funcionando. De aquí en adelante: pegar las credenciales directo en `.env.local` y
+en Vercel, y decirle a Claude "ya la puse" — no necesita verlas.
+
+---
 
 ## Pendiente (real, verificado al 07-09-2026)
 
