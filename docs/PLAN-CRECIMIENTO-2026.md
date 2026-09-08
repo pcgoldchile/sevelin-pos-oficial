@@ -339,7 +339,7 @@ Automatizaciones a construir, por orden de plata que recuperan:
 | 1 | **Carrito abandonado** | `carritos_web` | **Ya existe** (1×/día por plan Hobby) |
 | 2 | **Post-compra / cross-sell**: "compraste un monitor, te falta el cable" | `pedidos_web`, ventas POS | Por hacer |
 | 3 | **Pedir reseña de Google** tras la entrega | `pedidos_web` | Ya existe en el correo de entrega — falta insistir |
-| 4 | **Garantía por vencer** (mes 5 de 6): "revisa tu equipo antes de que venza" | módulo Garantías (v48) | **Por hacer — nadie en Arica hace esto** |
+| 4 | **Garantía por vencer**: "revisa tu equipo antes de que venza" | módulo Garantías (v48) + `sql/39` | **HECHO (v55)** — panel con WhatsApp listo. Empieza a llenarse en enero 2027; la primera garantía vence el 03-02-2027 |
 | 5 | **Win-back** a 60/90 días sin comprar | `perfiles_clientes` + ventas | Por hacer |
 | 6 | **Volvió el stock** de un producto que miraron | `eventos_web` + `productos.stock` | Por hacer |
 | 7 | **Bienvenida** a cuenta nueva, con el diferencial (garantía, taller propio) | `perfiles_clientes` | Por hacer |
@@ -518,6 +518,8 @@ SERVITEC ARICA 3,6 (92).
 | v51 | Panel **Finanzas → 🧠 Inteligencia** (Fase 1 completa) | En producción |
 | v52 | **Contacto del cliente en la venta** (bloqueo B5: captura construida) | En producción |
 | v53 | **Feed de catálogo** para Meta Commerce y Google Merchant (Fase 3, "dejar de publicar a mano") | En producción |
+| v54 | **Marca del producto** en el catálogo, el feed, la ficha y el JSON-LD (47 marcas cargadas) | En producción |
+| v55 | **Aviso de garantía por vencer** (Fase 4, automatización #4 de la tabla) | En producción |
 
 ### 5.2 Lo que sigue necesitando de ti
 
