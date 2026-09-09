@@ -6765,8 +6765,30 @@ async function construirFeedCatalogo() {
         continue;
       }
 
+      /* EL `id` NO PUEDE PASAR DE 50 CARACTERES.
+         Verificado contra Google el 09-09-2026 en la primera lectura real
+         del feed: "Valor demasiado largo en el atributo: id — 49 productos
+         afectados", o sea la MITAD del catálogo quedaba fuera. Los SKU de
+         respaldo que genera la tienda son slugs del nombre completo
+         ("fuente-de-poder-650w-certificada-80-bronce-msi-mag-a650bn-atx-1tcuz",
+         67 caracteres) y se pasan del límite.
+         El `id` del feed no tiene por qué ser el SKU: basta con que sea
+         único y ESTABLE. Se cambia solo cuando hace falta —los que ya caben
+         conservan el suyo— porque cambiarle el id a un producto que Google
+         ya aceptó lo vuelve un producto nuevo y deja el viejo duplicado
+         hasta que expira. El respaldo por hash cubre el caso raro de una
+         fila de la tienda sin `producto_pos_id`, donde truncar el slug sí
+         podría chocar con otro que comparta los primeros 50 caracteres.
+         El `link` NO se toca: ahí va el SKU completo, que es la URL real. */
+      const skuTexto = String(p.sku || '');
+      const idFeed = skuTexto.length <= 50
+        ? skuTexto
+        : (p.producto_pos_id
+          ? `sev-${p.producto_pos_id}`
+          : `sku-${crypto.createHash('sha1').update(skuTexto).digest('hex').slice(0, 16)}`);
+
       filas.push({
-        id: p.sku,
+        id: idFeed,
         title: String(p.nombre || '').slice(0, 150),
         description: descripcionParaFeed(p),
         availability: hayStock ? 'in stock' : 'out of stock',
