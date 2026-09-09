@@ -6,6 +6,12 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["api/index.js"],
       "port": 3100
+    },
+    {
+      "name": "sevelin-tienda-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "C:\\Users\\Usuario\\Desktop\\sevelin-tienda", "run", "dev"],
+      "port": 3000
     }
   ]
 }
