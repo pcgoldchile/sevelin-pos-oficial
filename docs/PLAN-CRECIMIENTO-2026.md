@@ -414,7 +414,7 @@ Automatizaciones a construir, por orden de plata que recuperan:
 | 1 | **Carrito abandonado** | `carritos_web` | **Ya existe** (1×/día por plan Hobby) |
 | 2 | **Post-compra / cross-sell**: "compraste un monitor, te falta el cable" | `pedidos_web`, ventas POS | Por hacer |
 | 3 | **Pedir reseña de Google** tras la entrega | `pedidos_web` | Ya existe en el correo de entrega — falta insistir |
-| 4 | **Garantía por vencer**: "revisa tu equipo antes de que venza" | módulo Garantías (v48) + `sql/39` | **HECHO (v55)** — panel con WhatsApp listo. Empieza a llenarse en enero 2027; la primera garantía vence el 03-02-2027 |
+| ~~4~~ | ~~**Garantía por vencer**~~ | — | **DESCARTADA POR EL DUEÑO (09-09-2026), no reproponer.** Avisar que la garantía está por vencer invita a reclamos oportunistas justo antes del plazo, y mucha gente perdió la boleta: abre una discusión que no existía. El módulo v55 queda **construido pero sin uso** (no es un pendiente ni algo a "activar"). Ojo: esto **invalida el argumento principal para pedirle cargar el WhatsApp en cada venta** — si se vuelve a proponer, tiene que ser por una razón comercial real y preguntándole antes |
 | 5 | **Win-back** a 60/90 días sin comprar | `perfiles_clientes` + ventas | Por hacer |
 | 6 | **Volvió el stock** de un producto que miraron | `eventos_web` + `productos.stock` | Por hacer |
 | 7 | **Bienvenida** a cuenta nueva, con el diferencial (garantía, taller propio) | `perfiles_clientes` | Por hacer |
@@ -625,7 +625,7 @@ SERVITEC ARICA 3,6 (92).
 | 1 — Verdad de los datos | **Construida** | 07-09-2026 | 07-09-2026 (panel) | Panel Finanzas → Inteligencia en producción, ver `CHANGELOG-V51.md`. Queda que el dueño llene los 21 costos |
 | 2 — Oferta y precio | **Empezada** | 08-09-2026 | — | Ya hay datos: cajones, capital dormido y concentración medidos. **Precio diferenciado por medio de pago: construido, probado y APAGADO** (`sevelin-tienda/docs/PLAN-PRECIOS-DIFERENCIADOS.md`) — se decidió absorber la comisión con Transbank en vez de traspasarla. Sigue bloqueada de fondo por B4 (**19 costos en $0**, 10 de ellos con stock): sin costo real no hay decisión de precio que valga |
 | 3 — Blindar el canal que vende | **Empezada** | 07-09-2026 | — | **Reescrita.** "Dejar de publicar a mano" **hecho** (v53: feed de catálogo para Meta y Google, 99 productos listos). Lo demás depende de B6 (Página + Business Manager) y B3 |
-| 4 — Conversión y recuperación | **Empezada, parcialmente bloqueada** | 07-09-2026 | — | Hecho: captura de cliente (v52) y **aviso de garantía por vencer** (v55, la única automatización que no dependía de correo). El resto espera B1 (Flow) y B2 (Resend) |
+| 4 — Conversión y recuperación | **Desbloqueada** | 07-09-2026 | — | **B2 (Resend) YA ESTABA RESUELTO** — verificado el 09-09-2026 contra Vercel: `RESEND_API_KEY`/`FROM`/`REPLY_TO` en producción hace 7 días y correos entregándose a clientes reales. El plan decía lo contrario por no haberlo remedido. Vivo hoy: confirmación de pedido, carrito abandonado y entrega, **los tres con foto de producto**. El aviso de garantía (v55) quedó **descartado por el dueño**, ver automatización #4 |
 | 5 — Competencia | Lista para empezar | — | — | Lista de competidores ya cargada en §5.1 |
 | 6 — Monetización | Por empezar | — | — | Depende de Fase 2 |
 | 7 — Sistema consistente | **Empezada** | 08-09-2026 | — | **Informe semanal en producción (v57)**. Falta el informe mensual y los procesos escritos (SOP) |
