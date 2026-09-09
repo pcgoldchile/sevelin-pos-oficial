@@ -6416,7 +6416,9 @@ app.get('/api/pos/inteligencia', auth(true), async (req, res) => {
     const [respVentas, items, productos] = await Promise.all([
       consultaVentas,
       intelTraerTodo('venta_items', 'venta_id, producto_id, nombre, cantidad, costo_unitario, subtotal, es_servicio'),
-      intelTraerTodo('productos', 'id, nombre, sku, costo_unitario, precio_unitario, stock, stock_ilimitado, archivado, es_borrador, categoria_web, subcategoria_web, imagen_urls, descripcion_web, publicado_web, peso_kg, condicion, marca')
+      // created_at: sin él no se puede medir cuánto tarda un producto en
+      // vender por primera vez (ver rotación, más abajo).
+      intelTraerTodo('productos', 'id, nombre, sku, costo_unitario, precio_unitario, stock, stock_ilimitado, archivado, es_borrador, categoria_web, subcategoria_web, imagen_urls, descripcion_web, publicado_web, peso_kg, condicion, marca, created_at')
     ]);
     if (respVentas.error) throw respVentas.error;
 
@@ -6592,12 +6594,182 @@ app.get('/api/pos/inteligencia', auth(true), async (req, res) => {
     }
     alertas.sort((a, b) => (a.nivel === b.nivel ? b.monto - a.monto : a.nivel === 'alta' ? -1 : 1));
 
+    /* ============================================================
+       TRES MEDIDAS QUE NO NECESITAN QUE NADIE ANOTE NADA
+       ------------------------------------------------------------
+       Salen de cruzar datos que el sistema YA guarda. Se calculan acá
+       a propósito: cualquier medición que dependa de que alguien la
+       registre en cada venta termina vacía (el campo de WhatsApp del
+       cliente lleva 0 de 171 ventas desde v52 — el dato está, el hábito
+       no). Lo que se puede deducir, se deduce.
+       ============================================================ */
+
+    /* 1. DÍAS HASTA LA PRIMERA VENTA — cuánto tarda en rotar cada cosa.
+       Responde "cuánto capital tengo que tener parado para sostener
+       esta venta", que es la pregunta de fondo del crecimiento. */
+    const primeraVentaDe = new Map();
+    const fechaVentaPorId = new Map(ventas.map(v => [v.id, v.fecha]));
+    items.forEach(it => {
+      if (it.producto_id == null) return;
+      const f = fechaVentaPorId.get(it.venta_id);
+      if (!f) return;
+      const previa = primeraVentaDe.get(it.producto_id);
+      if (!previa || String(f) < String(previa)) primeraVentaDe.set(it.producto_id, f);
+    });
+
+    const diasEntre = (desdeISO, hastaISO) =>
+      Math.round((new Date(hastaISO) - new Date(desdeISO)) / 86400000);
+
+    const rotaciones = [];
+    productos.forEach(p => {
+      const f = primeraVentaDe.get(p.id);
+      if (!f || !p.created_at) return;
+      const d = diasEntre(p.created_at, f);
+      // Un producto vendido ANTES de su fecha de alta es un dato sucio
+      // (se cargó al catálogo después de venderlo), no una rotación de 0.
+      if (d < 0) return;
+      rotaciones.push({ id: p.id, nombre: p.nombre, categoria: p.categoria_web || null, dias: d });
+    });
+
+    const porCategoriaRot = new Map();
+    rotaciones.forEach(r => {
+      const c = r.categoria || 'Sin categoría';
+      if (!porCategoriaRot.has(c)) porCategoriaRot.set(c, []);
+      porCategoriaRot.get(c).push(r.dias);
+    });
+
+    const rotacion = {
+      medianaDias: intelMediana(rotaciones.map(r => r.dias)),
+      medidos: rotaciones.length,
+      porCategoria: [...porCategoriaRot.entries()]
+        .map(([categoria, dias]) => ({ categoria, productos: dias.length, medianaDias: intelMediana(dias) }))
+        .filter(c => c.productos >= 2)          // con 1 dato no hay mediana que valga
+        .sort((a, b) => b.medianaDias - a.medianaDias),
+      masLentos: rotaciones.sort((a, b) => b.dias - a.dias).slice(0, 10)
+    };
+
+    /* 2. CONVERSIÓN DE FICHA A VENTA — quién se mira y no se compra.
+       Vive en el Supabase de la TIENDA, así que va en su propio
+       try/catch: si esa base no responde, el panel sale igual sin esta
+       sección (mismo criterio que las visitas del informe semanal). */
+    let conversionFicha = null;
+    try {
+      let vistasRaw = [];
+      for (let saltar = 0; ; saltar += 1000) {
+        const { data, error } = await dbWeb.from('eventos_web')
+          .select('producto_pos_id').eq('tipo', 'vista_producto')
+          .range(saltar, saltar + 999);
+        if (error) throw error;
+        vistasRaw = vistasRaw.concat(data || []);
+        if (!data || data.length < 1000 || vistasRaw.length > 50000) break;
+      }
+
+      const vistasPorProducto = new Map();
+      vistasRaw.forEach(e => {
+        if (e.producto_pos_id == null) return;
+        vistasPorProducto.set(e.producto_pos_id, (vistasPorProducto.get(e.producto_pos_id) || 0) + 1);
+      });
+
+      const unidadesPorProducto = new Map();
+      items.forEach(it => {
+        if (it.producto_id == null) return;
+        unidadesPorProducto.set(it.producto_id, (unidadesPorProducto.get(it.producto_id) || 0) + num(it.cantidad));
+      });
+
+      const medianaVistas = intelMediana([...vistasPorProducto.values()]);
+      const filas = [...vistasPorProducto.entries()]
+        .map(([id, v]) => {
+          const p = porId.get(id);
+          const u = unidadesPorProducto.get(id) || 0;
+          return {
+            id, nombre: p ? p.nombre : '(producto eliminado)',
+            vistas: v, unidades: u,
+            conversionPct: v ? (100 * u) / v : 0,
+            precio: p ? num(p.precio_unitario) : null,
+            stock: p ? num(p.stock) : null
+          };
+        })
+        .filter(f => f.vistas >= Math.max(5, medianaVistas / 2));
+
+      conversionFicha = {
+        vistasTotales: vistasRaw.length,
+        productosConVistas: vistasPorProducto.size,
+        medianaVistas,
+        /* Lo accionable: MUCHO mirado y CERO vendido. No es falta de
+           visibilidad —ya lo están viendo—, es precio, competencia
+           interna o clientela equivocada. */
+        mirados_sin_vender: filas.filter(f => f.unidades === 0)
+          .sort((a, b) => b.vistas - a.vistas).slice(0, 15),
+        mejor_convierten: filas.filter(f => f.unidades > 0)
+          .sort((a, b) => b.conversionPct - a.conversionPct).slice(0, 10)
+      };
+    } catch (err) {
+      console.warn('[inteligencia] sin datos de vistas de la tienda:', err.message || err);
+    }
+
+    /* 3. QUÉ SE COMPRA JUNTO CON QUÉ — la base real de los combos.
+       Hoy da poca señal (1,28 ítems por venta), pero crece solo con el
+       tiempo y evita tener que inventar los packs a mano. */
+    /* La clave es el producto del catálogo cuando existe, y el NOMBRE
+       cuando el ítem se escribió a mano en el POS. Contar solo por
+       producto_id dejaba el resultado en cero: varias ventas de dos
+       ítems tienen al menos uno escrito a mano, y esas también son
+       ventas reales. */
+    const claveItem = (it) => (it.producto_id != null ? `p${it.producto_id}` : `n:${(it.nombre || '').trim().toLowerCase()}`);
+    const nombreDeClave = new Map();
+    const itemsPorVenta = new Map();
+    itemsPeriodo.forEach(it => {
+      const k = claveItem(it);
+      if (k === 'n:') return;
+      if (!nombreDeClave.has(k)) {
+        const p = it.producto_id != null ? porId.get(it.producto_id) : null;
+        nombreDeClave.set(k, p ? p.nombre : (it.nombre || '(sin nombre)'));
+      }
+      if (!itemsPorVenta.has(it.venta_id)) itemsPorVenta.set(it.venta_id, new Set());
+      itemsPorVenta.get(it.venta_id).add(k);
+    });
+
+    const pares = new Map();
+    itemsPorVenta.forEach(conjunto => {
+      const claves = [...conjunto].sort();
+      for (let i = 0; i < claves.length; i++) {
+        for (let j = i + 1; j < claves.length; j++) {
+          const par = `${claves[i]}||${claves[j]}`;
+          pares.set(par, (pares.get(par) || 0) + 1);
+        }
+      }
+    });
+
+    /* Se devuelve el CONTEXTO además de la lista, no la lista sola.
+       Hoy la respuesta honesta es "todavía no hay patrón": 31 ventas de
+       dos o más ítems producen 46 combinaciones y ninguna se repite. Una
+       sección vacía parecería un error; el contexto dice cuánto falta.
+       Ojo con el conteo: hay que contar VENTAS distintas, no filas. Si
+       una venta trae dos líneas del mismo producto, un cruce ingenuo
+       cuenta el par dos veces y fabrica un patrón que no existe. Por eso
+       cada venta aporta un conjunto de claves únicas. */
+    const compradosJuntos = {
+      ventasConDosOMas: [...itemsPorVenta.values()].filter(s => s.size >= 2).length,
+      combinacionesDistintas: pares.size,
+      repetidos: [...pares.entries()]
+        .map(([par, veces]) => {
+          const [a, b] = par.split('||');
+          return { veces, a: nombreDeClave.get(a) || a, b: nombreDeClave.get(b) || b };
+        })
+        .filter(p => p.veces >= 2)
+        .sort((x, y) => y.veces - x.veces)
+        .slice(0, 15)
+    };
+
     res.json({
       periodo: { desde: desde || null, hasta: hasta || null },
       resumen,
       meses,
       productos: vendidos.slice(0, 60),
       concentracion,
+      rotacion,
+      conversionFicha,
+      compradosJuntos,
       cortes: { medianaUnidades, medianaMargen },
       cajones: {
         ancla: cajones.ancla.sort((a, b) => b.margen - a.margen).slice(0, 15),

@@ -16,6 +16,22 @@ let campoArchivoPendiente = null;   // atajo desde el ✖ de la tabla
 /* Las clasificaciones se cargan desde el backend (tabla administrable).
    La lista local solo actúa de respaldo si la API aún no respondió. */
 let clasificacionesList = [];
+
+/* Color del badge de una compra según el GRUPO de su clasificación:
+   azul = mercadería (inventario), ámbar = gasto operativo (sueldos,
+   arriendo, servicios, impuestos), verde = inversión, rojo = merma.
+   Si la clasificación no está en la lista todavía (aún cargando, o una
+   clasificación borrada), cae en azul como antes: nunca deja la celda
+   sin estilo. */
+function claseBadgeClasificacion(compra) {
+  if (compra.origen === 'MERMA') return 'badge-red';
+  const clasif = clasificacionesList.find(c => c.nombre === compra.clasificacion);
+  switch (clasif && clasif.grupo) {
+    case 'OPERATIVO': return 'badge-gold';
+    case 'INVERSION': return 'badge-green';
+    default: return 'badge-blue';
+  }
+}
 const CLASIFICACION_MERMA = 'Mermas / Pérdidas de Inventario';
 
 const ICO_EDITAR_COMPRA = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
@@ -401,6 +417,12 @@ function renderComprasTabla(listaOriginal) {
   }
 
   elComprasTableBody.innerHTML = lista.map(c => {
+    /* El color del badge lo decide el GRUPO, no la clasificación.
+       Antes todo lo que no fuera merma se pintaba azul, así que en la
+       lista un sueldo se veía idéntico a una compra de mercadería —
+       reportado por el dueño el 09-09-2026: "siento que se registró
+       como mercadería" cuando el dato estaba correcto. El problema no
+       era el registro, era que la pantalla no dejaba distinguirlos. */
     const marcada = comprasSeleccionadas.has(String(c.id));
     return `
     <tr class="row-in${marcada ? ' fila-marcada' : ''}">
@@ -411,7 +433,7 @@ function renderComprasTabla(listaOriginal) {
         ${c.descripcion ? `<br><small style="color:var(--text-muted);">${escHtml(c.descripcion)}</small>` : ''}
       </td>
       <td>
-        <span class="badge ${c.origen === 'MERMA' ? 'badge-red' : 'badge-blue'}">${escHtml(c.clasificacion)}</span>
+        <span class="badge ${claseBadgeClasificacion(c)}">${escHtml(c.clasificacion)}</span>
         ${c.origen === 'MERMA' ? '<br><small style="color:var(--text-muted);">📉 generado por merma</small>' : ''}
       </td>
       <td class="num strong">${fmtCLP(c.costo_total)}</td>
