@@ -272,6 +272,12 @@ function seleccionarProductoCatalogo(producto, opciones = {}) {
     alternarCampoSN(elCheckSN.checked);
   }
 
+  // Se marca solo por la categoría, no por stock_ilimitado: ese campo
+  // también lo usan productos físicos sin control de stock exacto
+  // (ver Rollos Térmicos, Disipador CPU) y marcarlos "servicio" ahí
+  // falsearía el resumen de ventas en productos vs. servicios.
+  if (elCheckEsServicio) elCheckEsServicio.checked = producto.categoria_web === 'Servicios Técnicos';
+
   actualizarUtilidadPreview();
 
   /* Alta directa al carrito en modo rápido.
