@@ -21,6 +21,81 @@
 >
 > Las cifras reales del negocio, medidas contra la base de producción, están en §1.5.
 
+> ## ⚡ Actualización 09-09-2026 — remedición contra producción
+>
+> Se volvieron a medir todas las cifras contra la base real. **Varias de §1.5 quedaron obsoletas** y
+> aparecieron tres hallazgos que cambian el orden de las palancas. Detalle en §1.6.
+>
+> | Indicador | Decía el plan (07-09) | **Real (09-09)** |
+> |---|---|---|
+> | Costos en $0 | 21 → 19 | **7** (el dueño avanzó) |
+> | Capital dormido | $1.954.370 | **$2.425.541 en 42 productos** (subió al cargarse los costos que faltaban: la foto anterior estaba subestimada) |
+> | Ventas con teléfono | campo construido en v52 | **0 de 171** — el campo existe pero no se usa; **B5 sigue abierto de hecho** |
+> | Margen | 30,9% global | **ago 31,4% → sep 25,0%** (−6,4 puntos, sin causa investigada) |
+> | Ingresos por servicios | no medido | **$70.000 de $6.031.000 = 1,2%**, con margen 100% |
+>
+> **Corrección de método:** el plan decía que los bundles se deducirían de "qué se compra junto".
+> Se midió: solo **4 pares** se repiten dos veces en todo el histórico. Con 1,28 ítems por venta
+> **no hay señal estadística para minar combos** — hay que diseñarlos por criterio comercial. La
+> única señal real es que el **Pendrive Kingston 128GB aparece en 3 de esos 4 pares**.
+
+---
+
+## 1.6 Los tres hallazgos del 09-09-2026 (y la aritmética de los $20M)
+
+**1. El segundo ítem duplica el ticket, no lo suma.**
+
+| Ítems en la venta | Ventas | Ticket promedio |
+|---|---|---|
+| 1 ítem | 133 (78%) | $27.165 |
+| 2 ítems | 31 (18%) | **$57.484** (+112%) |
+| 3 ítems | 6 | $81.500 |
+
+Llevar un cuarto de las ventas de 1 ítem a 2 vale **~$800.000/mes** sin un cliente nuevo. Es la
+palanca más barata que existe y no depende de ningún bloqueo externo.
+
+**2. Los servicios son el 1,2% de los ingresos y tienen margen 100%.** Con taller propio y 13
+servicios en catálogo. Se vendieron ~15 computadores en el período: uno con formateo cada vez
+habrían sido **~$225.000 de margen puro** (+12% de la utilidad total) sin comprar mercadería.
+Además se encontraron **"Instalacion SSD 128GB" e "Instalacion SSD 128GB NVME" vendidos como
+producto con costo $0** — inflando el margen. Es el bug del checkbox corregido ese mismo día.
+
+**3. El producto que más factura casi no deja plata.** Monitor Gamer MSI MAG 255F: **$600.000
+facturados, 7,0% de margen**. El Dell OptiPlex 9020: $390.000 facturados, **40,6%**. Se está
+vendiendo volumen del producto equivocado.
+
+### La ruta a $20M/mes: el cuello es capital, no marketing
+
+Con ticket actual ($35.269), $20M son **567 ventas/mes = 19 al día** contra 4,6 de hoy: 4× la
+capacidad de atención. Con ticket de $60.000 baja a **11 al día**; con un canal B2B que aporte $6M,
+a **8 al día**. Ese es el único camino operativamente realista.
+
+**Pero antes que la demanda está el capital de trabajo.** $20M/mes al 30% de margen exigen **$14M
+mensuales en mercadería**. Hoy hay $5.205.888 en stock, de los cuales $2.425.541 no rota → capital
+productivo real **$2,8M**. Sostener $20M pide del orden de **$11-12M rotando: 4× lo actual.**
+
+Orden de las fuentes, por facilidad:
+1. **Rescatar los $2.425.541 dormidos** — casi duplica el capital productivo y ya está en la bodega.
+2. **Crédito de proveedor (30-60 días)** — capital gratis, sin diluir. Es lo que separa una tienda
+   de $5M de una de $20M, más que cualquier campaña.
+3. **Utilidad reinvertida** — pero primero hay que explicar la caída de margen de 31,4% a 25,0%.
+
+> **Conclusión que reordena el plan: $20M no se desbloquea con anuncios, se desbloquea con rotación
+> de capital y ticket más alto.** El marketing amplifica un motor que funciona; hoy amplificaría uno
+> con el 47% del combustible congelado.
+
+### Por qué los ads pagados todavía no cierran
+
+Margen por venta hoy: $35.269 × 30% = **$10.686**. Un clic en electrónica en Chile cuesta del orden
+de $150-400 CLP (estimación de mercado, no medida propia). Con 1% de conversión en tráfico frío,
+conseguir una venta cuesta ~$25.000 para ganar $10.686: **se pierde plata en cada venta**. Habría
+que convertir al 8% para empatar, y eso no existe en tráfico frío.
+
+Lo que sí rinde hoy, gratis o casi: **listados gratuitos de Google Shopping** (el feed de v53 ya
+está listo), **Google Business + reseñas** (0 reseñas contra competidores con 80), **retargeting**
+a quien ya visitó (necesita el Pixel, o sea B6), y **Marketplace**, que ya produce $4,9M/mes.
+Ads de captación fría: **cuando el ticket supere ~$60.000**, no antes.
+
 ---
 
 ## 0. Verificaciones hechas al escribir este plan (no de memoria)
@@ -458,10 +533,14 @@ llegar.
 | **Skill `skill-creator`** | Convertir cada proceso repetible de Sevelin en una skill propia (ficha de producto, informe semanal, creativo de anuncio, ingreso de producto nuevo) | Fase 7 |
 | **Artifacts** | Paneles y documentos compartibles con link, sin desplegar nada | Todas |
 
-**Claude Cowork:** existe una skill de setup (`setup-cowork`) en este entorno. Sirve para el trabajo
-recurrente que **no es código** (documentos, planillas, investigación, conectores a tus herramientas).
-Encaja en las Fases 6-7. **No lo instalo sin que me lo pidas**, y antes te digo exactamente qué
-conecta y qué datos toca.
+**Claude Cowork:** ~~existe una skill de setup (`setup-cowork`)~~ — **CORREGIDO 09-09-2026: eso era
+falso.** No existe ninguna skill `setup-cowork`, y no hace falta: **Cowork ya está disponible**, es
+una pestaña dentro de la misma app de Claude Desktop que se usa para esto (junto a Chat y Code),
+incluida en el plan que el dueño ya paga. No hay nada que instalar ni conectar.
+Sirve para el trabajo recurrente que **no es código** (documentos, planillas, investigación).
+**Sigue sin usarse todavía, y por una razón distinta a la que decía antes:** Cowork rinde cuando hay
+un proceso repetible que delegar, y los procesos de Sevelin todavía no están escritos. Encaja en las
+Fases 6-7, después de los SOP.
 
 **Conectores MCP** (Google Ads, Meta, Analytics, Supabase): se pueden buscar en el registro de
 conectores cuando lleguemos a la Fase 5-6, para que los números de anuncios entren solos al informe.
