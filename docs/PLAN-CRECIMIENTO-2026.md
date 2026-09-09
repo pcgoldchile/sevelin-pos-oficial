@@ -542,9 +542,9 @@ SERVITEC ARICA 3,6 (92).
 
 | Fase | Estado | Abierta | Cerrada | Nota |
 |---|---|---|---|---|
-| 0 — Destrabar la caja | Esperando al dueño | 07-09-2026 | — | Flow productivo y DNS de Resend: "aún no" |
+| 0 — Destrabar la caja | **A medio destrabar** | 07-09-2026 | — | **08-09-2026: la tienda YA cobra plata real por Khipu** (transferencia, encendido, probado con una compra real y sin límite de monto desde el 08-09). Falta Flow (tarjetas) y el DNS de Resend. O sea: B1 está resuelto a medias — se puede vender, pero solo por transferencia y sin que llegue ningún correo |
 | 1 — Verdad de los datos | **Construida** | 07-09-2026 | 07-09-2026 (panel) | Panel Finanzas → Inteligencia en producción, ver `CHANGELOG-V51.md`. Queda que el dueño llene los 21 costos |
-| 2 — Oferta y precio | Lista para empezar | — | — | Ya hay datos: cajones, capital dormido y concentración medidos |
+| 2 — Oferta y precio | **Empezada** | 08-09-2026 | — | Ya hay datos: cajones, capital dormido y concentración medidos. **08-09-2026: plan del precio diferenciado por medio de pago escrito** (`sevelin-tienda/docs/PLAN-PRECIOS-DIFERENCIADOS.md`) — esperando 4 decisiones del dueño. Sigue bloqueada de fondo por B4 (21 costos en $0): sin costo real no hay decisión de precio que valga |
 | 3 — Blindar el canal que vende | **Empezada** | 07-09-2026 | — | **Reescrita.** "Dejar de publicar a mano" **hecho** (v53: feed de catálogo para Meta y Google, 99 productos listos). Lo demás depende de B6 (Página + Business Manager) y B3 |
 | 4 — Conversión y recuperación | **Empezada, parcialmente bloqueada** | 07-09-2026 | — | Hecho: captura de cliente (v52) y **aviso de garantía por vencer** (v55, la única automatización que no dependía de correo). El resto espera B1 (Flow) y B2 (Resend) |
 | 5 — Competencia | Lista para empezar | — | — | Lista de competidores ya cargada en §5.1 |
