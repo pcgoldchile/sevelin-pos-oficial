@@ -4,8 +4,8 @@
   "private": true,
   "description": "POS Sevelin — frontend estático + API serverless en Vercel",
   "scripts": {
-    "dev": "node api/index.js",
-    "start": "node api/index.js",
+    "dev": "node --env-file-if-exists=.env api/index.js",
+    "start": "node --env-file-if-exists=.env api/index.js",
     "css": "tailwindcss -c tailwind.config.js -i css/tailwind-input.css -o css/tailwind.css --minify",
     "css:watch": "tailwindcss -c tailwind.config.js -i css/tailwind-input.css -o css/tailwind.css --watch"
   },
