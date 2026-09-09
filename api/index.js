@@ -1165,7 +1165,10 @@ Reglas:
 - No repitas "Sevelin" en el texto (ya aparece aparte en el resultado de Google).`;
 
   try {
-    const modelo = 'gemini-3.6-flash';
+    // Alias que Google mantiene apuntando al flash vigente — evita que el
+    // botón se rompa de nuevo cuando retiren la próxima versión fija (ver
+    // CHANGELOG: gemini-2.0-flash quedó fuera de servicio el 09-09-2026).
+    const modelo = 'gemini-flash-latest';
     const respuesta = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey}`,
       {
@@ -6674,10 +6677,19 @@ function descripcionParaFeed(fila) {
   return `${fila.nombre}${categoria}. Disponible en Sevelin, Arica.`;
 }
 
-app.get('/api/pos/feed-catalogo', auth(true), async (req, res) => {
+/* La generación del feed vive en UNA función, no en el handler.
+   ------------------------------------------------------------
+   La usan dos endpoints: el del panel (descarga manual del admin) y el
+   público que Google Merchant Center lee solo. Está extraída a propósito,
+   mismo criterio que `resumenDeVentas()` en v57: dos copias de las reglas
+   de omisión son dos catálogos distintos según por dónde se mire, y quien
+   sube el feed no tiene cómo saber cuál de los dos creer.
+   Devuelve el CSV SIN BOM — cada endpoint decide si lo necesita (ver la
+   nota del BOM en cada uno, no es un detalle cosmético). */
+async function construirFeedCatalogo() {
   const sitio = (process.env.TIENDA_URL_PUBLICA || 'https://www.sevelin.cl').replace(/\/+$/, '');
 
-  try {
+  {
     const [respWeb, respPos] = await Promise.all([
       dbWeb.from('productos_web')
         .select('producto_pos_id, sku, nombre, descripcion_web, precio_web, stock_web, imagen_urls, categoria, subcategoria, publicado_web, es_pedido_encargo')
@@ -6704,6 +6716,20 @@ app.get('/api/pos/feed-catalogo', auth(true), async (req, res) => {
       // pero si quedó así, no se manda a anunciar.
       if (posible && (posible.archivado || posible.es_borrador)) {
         omitidos.push({ sku: p.sku, nombre: p.nombre, motivo: 'archivado o en borrador en el POS' });
+        continue;
+      }
+      /* Los SERVICIOS no van a un catálogo de compras.
+         Google Merchant Center es para productos FÍSICOS: un formateo o un
+         diagnóstico no es elegible para Shopping, y mandarlo igual no lo
+         publica —lo desaprueba, y las desaprobaciones acumuladas bajan la
+         calidad de toda la cuenta—. El taller se promociona por otras vías
+         (publicación normal, ficha del sitio, Google Business), no por acá.
+         Se filtra por CATEGORÍA y no por `stock_ilimitado`, porque ese campo
+         también lo usan productos físicos sin control de stock exacto
+         (rollos térmicos, disipador) que SÍ deben ir al feed — mismo criterio
+         que el checkbox "es servicio" del POS. */
+      if (p.categoria === 'Servicios Técnicos') {
+        omitidos.push({ sku: p.sku, nombre: p.nombre, motivo: 'es un servicio: Google Merchant Center solo acepta productos físicos' });
         continue;
       }
       const imagenes = Array.isArray(p.imagen_urls) ? p.imagen_urls.filter(Boolean) : [];
@@ -6768,16 +6794,74 @@ app.get('/api/pos/feed-catalogo', auth(true), async (req, res) => {
       .concat(filas.map(f => COLUMNAS.map(c => celdaCsv(f[c])).join(',')))
       .join('\r\n');
 
+    return { csv, total: filas.length, publicados: respWeb.data.length, omitidos };
+  }
+}
+
+app.get('/api/pos/feed-catalogo', auth(true), async (req, res) => {
+  try {
+    const feed = await construirFeedCatalogo();
     res.json({
       nombre: `catalogo-sevelin-${fechaHoyChile()}.csv`,
       // BOM incluido: sin él, Excel abre el archivo con los acentos rotos.
-      csv: '﻿' + csv,
-      total: filas.length,
-      publicados: respWeb.data.length,
-      omitidos
+      // Acá SÍ va, porque este archivo lo abre una persona en Excel.
+      csv: '﻿' + feed.csv,
+      total: feed.total,
+      publicados: feed.publicados,
+      omitidos: feed.omitidos
     });
   } catch (error) {
     return enviarErrorBD(res, error, 'GET /api/pos/feed-catalogo');
+  }
+});
+
+/* ============================================================
+   GET /api/feed/catalogo.csv?token=… — el MISMO feed, para que Google
+   Merchant Center (y Meta) lo lean SOLOS, todos los días.
+   ------------------------------------------------------------
+   POR QUÉ EXISTE, y por qué no bastaba el endpoint de arriba
+   El de arriba exige un JWT de admin: sirve para que una persona baje el
+   archivo y lo suba a mano. Eso ya se demostró que no se sostiene —
+   hallazgo del 09-09-2026: los 19 productos que quedaban en Merchant
+   Center venían TODOS de la integración vieja de Tiendanube, y el
+   catálogo real de sevelin.cl nunca llegó a Google. Un feed que depende
+   de que alguien se acuerde de subirlo es un feed que queda viejo.
+   Con esta URL, Merchant Center la busca por su cuenta cada día.
+
+   POR QUÉ ES SEGURO EXPONERLO
+   El feed no lleva NADA que no esté ya publicado en la tienda: sku,
+   nombre, descripción, precio, stock, fotos, marca y categoría. Ni costo,
+   ni margen, ni utilidad, ni datos de clientes (esos ni siquiera se
+   consultan acá). Aun así va con token: evita que quede indexable y que
+   un competidor se baje el catálogo entero de un solo GET.
+
+   EL BOM NO VA ACÁ, Y ES IMPORTANTE
+   Excel necesita el BOM para no romper los acentos, pero un robot que lee
+   el CSV lo toma como parte del nombre de la primera columna: leería
+   "﻿id" en vez de "id" y rechazaría el feed COMPLETO por no
+   encontrar la columna obligatoria. Por eso `construirFeedCatalogo()`
+   devuelve el CSV limpio y el BOM se agrega solo en el endpoint del panel.
+
+   `Cache-Control` de 30 minutos: Google pasa una vez al día y el stock no
+   cambia al segundo. Además es el freno barato si el token se filtrara —
+   el CDN de Vercel responde sin volver a golpear las dos bases.
+   ============================================================ */
+app.get('/api/feed/catalogo.csv', async (req, res) => {
+  const tokenReal = process.env.FEED_TOKEN;
+  if (!tokenReal) {
+    return enviarError(res, 503, 'El feed público no está configurado (falta FEED_TOKEN en el servidor).');
+  }
+  if (!secretosIguales(req.query.token, tokenReal)) {
+    return enviarError(res, 401, 'Token de feed inválido');
+  }
+
+  try {
+    const feed = await construirFeedCatalogo();
+    res.set('Content-Type', 'text/csv; charset=utf-8');
+    res.set('Cache-Control', 'public, max-age=1800');
+    res.send(feed.csv);
+  } catch (error) {
+    return enviarErrorBD(res, error, 'GET /api/feed/catalogo.csv');
   }
 });
 
