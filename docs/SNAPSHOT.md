@@ -7,7 +7,53 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
-**Fecha:** 09-09-2026 · **Versión activa del POS:** v57 (sin cambios hoy) · **Lo de hoy pasó todo en
+**Fecha:** 09-09-2026 (sesión de la tarde) · **Versión activa del POS: v58 — el catálogo real llega
+por fin a Google.**
+
+**El hallazgo que motivó todo:** al revisar Merchant Center se descubrió que los 19 productos que
+quedaban ahí venían **TODOS de la integración vieja de Tiendanube**, que se está apagando (habían
+caído de ~107 a 19 en una semana). El catálogo real de `sevelin.cl` **nunca había llegado a Google**:
+el feed existía desde v53 pero detrás de auth de admin, o sea para bajar un CSV a mano — y no se
+subía desde el 26 de agosto.
+
+**Lo entregado (v58):**
+- **`GET /api/feed/catalogo.csv?token=…`** — el mismo feed, público con token, para que Merchant
+  Center lo lea **solo cada 24 h**. La generación se extrajo a `construirFeedCatalogo()`, compartida
+  con el endpoint del panel (mismo criterio que `resumenDeVentas()` en v57).
+- **Conectado y funcionando en Merchant Center**: leyó **96 productos, 47 nuevos**. Configurado para
+  Chile / español / fichas gratuitas + Shopping.
+- **Dos trampas encontradas verificando contra Google, ninguna cosmética:** (1) el **BOM** va SOLO en
+  la descarga del panel (Excel lo necesita); en el feed un robot lo lee como parte del nombre de la
+  primera columna (`﻿id`) y **rechaza el catálogo entero**. (2) Google limita el atributo `id` a **50
+  caracteres** y los SKU de respaldo (slugs del nombre) se pasan: **49 de 96 productos quedaban
+  fuera**. Se acorta a `sev-<id del POS>` **solo cuando hace falta**, porque cambiarle el id a un
+  producto ya aceptado lo duplica hasta que expira.
+- **Los servicios técnicos quedan fuera del feed**: Merchant Center solo acepta productos físicos y
+  las desaprobaciones bajan la calidad de la cuenta. Se filtra por categoría, no por
+  `stock_ilimitado` (ese campo también lo usan productos físicos sin control de stock exacto).
+- **SEO de 107 productos generado y guardado** (109/109 con ficha quedaron completos, 106 ya
+  sincronizados a la tienda). **NO se usó IA**: el plan gratuito de Gemini permite **20 peticiones al
+  día** (verificado), lo que habría tomado ~6 días. Se generó desde el texto que el dueño ya escribió
+  en cada ficha —el párrafo `✨` de introducción es exactamente lo que Google quiere—, así que no
+  inventa nada. Los **21 productos sin ficha quedaron sin SEO a propósito**: cuando se escriban sus
+  fichas, se vuelve a correr el generador.
+- **Search Console: propiedad `https://www.sevelin.cl/` verificada** (Google la validó sola por
+  etiqueta HTML) y **sitemap enviado — 118 páginas descubiertas**. Antes no existía ninguna
+  propiedad. **Google Analytics sigue sin existir** y no es urgente: `eventos_web` ya mide el embudo.
+- **Modelo de Gemini**: `gemini-2.0-flash` fue retirado por Google. Ahora se usa el alias
+  **`gemini-flash-latest`** en vez de una versión fija, para que no vuelva a romperse solo.
+
+> **⚠️ PENDIENTE DE VERIFICAR (mañana):** mientras se probaba el feed a repetición con `curl`, Vercel
+> activó sus **mitigaciones automáticas** y el dominio del POS empezó a responder **403 "Security
+> Checkpoint"** a clientes sin navegador. **El POS funciona normal para personas** (verificado: la
+> pantalla de login carga bien) y la tienda no está afectada, pero **falta confirmar que el fetcher
+> de Google pueda seguir leyendo el feed**. La evidencia dice que sí —Google ya lo leyó con éxito— y
+> un bot verificado no es lo mismo que un `curl` con user-agent falsificado, que es justo lo que
+> dispara bloqueos. **Revisar en Merchant Center que la lectura de las 0:00 haya funcionado.** El
+> plan Hobby no permite reglas de bypass; si fallara, la salida es servir el feed desde
+> `sevelin.cl` (que no tiene el checkpoint), lo que exige sincronizar `condicion` a `productos_web`.
+
+**Fecha:** 09-09-2026 (más temprano) · **Lo de ese tramo pasó todo en
 `sevelin-tienda`:** la tienda cobra **solo por Khipu** (transferencia). **Flow quedó APAGADO** en el
 código (`FLOW_HABILITADO = false`), lo que además cerró un riesgo vivo: apuntaba al **sandbox**, así
 que la opción "tarjeta" llevaba a un pago de PRUEBA que dejaba el pedido `PAGADO` sin que entrara un
