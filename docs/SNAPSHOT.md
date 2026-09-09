@@ -43,15 +43,20 @@ subía desde el 26 de agosto.
 - **Modelo de Gemini**: `gemini-2.0-flash` fue retirado por Google. Ahora se usa el alias
   **`gemini-flash-latest`** en vez de una versión fija, para que no vuelva a romperse solo.
 
-> **⚠️ PENDIENTE DE VERIFICAR (mañana):** mientras se probaba el feed a repetición con `curl`, Vercel
-> activó sus **mitigaciones automáticas** y el dominio del POS empezó a responder **403 "Security
-> Checkpoint"** a clientes sin navegador. **El POS funciona normal para personas** (verificado: la
-> pantalla de login carga bien) y la tienda no está afectada, pero **falta confirmar que el fetcher
-> de Google pueda seguir leyendo el feed**. La evidencia dice que sí —Google ya lo leyó con éxito— y
-> un bot verificado no es lo mismo que un `curl` con user-agent falsificado, que es justo lo que
-> dispara bloqueos. **Revisar en Merchant Center que la lectura de las 0:00 haya funcionado.** El
-> plan Hobby no permite reglas de bypass; si fallara, la salida es servir el feed desde
-> `sevelin.cl` (que no tiene el checkpoint), lo que exige sincronizar `condicion` a `productos_web`.
+> **Susto del día, ya resuelto — pero deja una regla:** mientras se probaba el feed a repetición con
+> `curl` (incluido un bucle que consultaba cada 15 s), Vercel activó sus **mitigaciones automáticas**
+> y el dominio del POS pasó a responder **403 "Security Checkpoint"** a clientes sin navegador. El
+> POS nunca dejó de funcionar para personas (verificado en un navegador real) y la tienda no se vio
+> afectada. **Al bajar el tráfico se desactivaron solas y el feed volvió a responder 200 con el CSV
+> completo** — verificado.
+> **La regla que queda: no golpear `/api/feed/catalogo.csv` en ráfaga.** Es un endpoint pesado
+> (consulta las dos bases) y Vercel lo interpreta como ataque. Para probarlo, una petición y listo;
+> tiene `Cache-Control` de 30 min justamente para eso. El plan Hobby **no permite reglas de bypass**,
+> así que si algún día el fetcher de Google fallara de verdad, la salida sería servir el feed desde
+> `sevelin.cl` (sin checkpoint), lo que exige sincronizar `condicion` a `productos_web`.
+>
+> **Sí queda por mirar mañana** (normal, no es problema): que la lectura automática de las 0:00 haya
+> subido los productos de Merchant Center de 47 hacia ~96, ahora que los `id` largos están corregidos.
 
 **Fecha:** 09-09-2026 (más temprano) · **Lo de ese tramo pasó todo en
 `sevelin-tienda`:** la tienda cobra **solo por Khipu** (transferencia). **Flow quedó APAGADO** en el
