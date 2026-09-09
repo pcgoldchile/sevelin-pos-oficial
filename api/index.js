@@ -1165,7 +1165,7 @@ Reglas:
 - No repitas "Sevelin" en el texto (ya aparece aparte en el resultado de Google).`;
 
   try {
-    const modelo = 'gemini-2.0-flash';
+    const modelo = 'gemini-3.6-flash';
     const respuesta = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey}`,
       {
