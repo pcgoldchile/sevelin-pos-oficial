@@ -39,6 +39,17 @@
 > UTM, fotos) con aprobación del dueño, y la publicación simultánea se hace con una herramienta que
 > ya tiene su app aprobada. Falta construirlo.
 
+> ## 💳 Actualización 11-09-2026 — el crédito BancoEstado entra al plan
+>
+> El dueño entregó el contrato en papel (fotos de las páginas 3-6, 10, 17-20 y 29 de 34). Es un
+> **crédito COMERCIAL de microempresa con garantía FOGAPE** —no de consumo, como decía el POS— de
+> **$10.000.000 líquidos**, 70 cuotas de **$293.584**, CAE 26,36%. Junto con el BCI, el negocio paga
+> **$472.873 al mes en deuda: el 43% de sus gastos fijos**. El dueño quiere **prepagarlo de forma
+> ordenada**. Análisis completo, reglas y escenarios en **§1.7**.
+>
+> **Corregido en el POS el mismo día:** la cuota estaba cargada para el **día 15** y vence el
+> **día 10**. El recordatorio del sistema lo habría hecho pagar 5 días tarde todos los meses.
+
 > ## 💰 Actualización 10-09-2026 — postulación a fondo Impulso Chileno 2026
 >
 > Fuera de las fases de este plan, pero relevante para financiar la Fase que exige capital (ver
@@ -136,6 +147,283 @@ Lo que sí rinde hoy, gratis o casi: **listados gratuitos de Google Shopping** (
 está listo), **Google Business + reseñas** (0 reseñas contra competidores con 80), **retargeting**
 a quien ya visitó (necesita el Pixel, o sea B6), y **Marketplace**, que ya produce $4,9M/mes.
 Ads de captación fría: **cuando el ticket supere ~$60.000**, no antes.
+
+---
+
+## 1.7 El crédito BancoEstado: pagarlo sin ahogar el negocio (11-09-2026)
+
+> Fuente: el contrato en papel del 07-07-2026 (fotos entregadas por el dueño). Datos personales del
+> titular omitidos a propósito: este archivo vive en el repositorio.
+
+### Los números del contrato
+
+| Concepto | Valor |
+|---|---|
+| Tipo | **Comercial**, microempresa no agrícola, garantía **FOGAPE** (código 137F) |
+| Recibido en la cuenta (líquido) | **$10.000.000** |
+| Monto bruto (lo que se debe) | $11.841.156 |
+| La diferencia de $1.841.156 | seguros $1.744.427 + impuesto de timbres $94.729 + notaría $2.000 |
+| Cuotas | **70 de $293.584** (la última $293.171), mensuales |
+| Vencimiento | **día 10** de cada mes (si es inhábil, el hábil siguiente). Primera 10-09-2026, última 10-06-2032 |
+| Tasa | 1,58% mensual fija (18,96% anual). **CAE 26,36%** |
+| Costo total | **$20.550.467** — se reciben $10M y se devuelven $20,5M |
+| Seguros incluidos | desgravamen/hospitalización $439.638 · incapacidad temporal $986.392 · invalidez $318.397 |
+
+**Tres detalles que no se ven a primera vista:**
+
+1. **Las cuotas 1 y 2 son solo intereses.** El capital no empieza a bajar hasta noviembre de 2026.
+2. **Los seguros cuestan $48.620 al mes.** La cuota sin seguros sería $244.964; financiados a 6 años,
+   terminan pesando ~$3,4M en total. No se pueden anular sin contratar uno externo equivalente
+   (cláusula quinta), y el de incapacidad temporal tiene valor real: el dueño es quien opera la tienda.
+3. **El atraso es caro y peligroso.** Ante "mora o simple retardo" el banco puede exigir **el total**
+   de la deuda; con más de 20 días cobra 9% de cobranza sobre la cuota (~$26.400) más interés máximo
+   convencional. No es una multa: es el riesgo de que se venga todo encima.
+
+### Lo que el negocio carga cada mes
+
+| Deuda | Cuota | Termina |
+|---|---|---|
+| BancoEstado FOGAPE | $293.584 | 10-06-2032 |
+| BCI PYME FOGAPE (CAE 40,80%) | $179.289 | 20-05-2027 |
+| **Total** | **$472.873** | 43% de los gastos fijos |
+
+Gastos fijos totales con la cuota real: **$1.109.873/mes**. Punto de equilibrio: **$3.591.822** con
+margen de 30,9% · **$4.439.492** con margen de 25,0% (el de septiembre). Agosto facturó $4,9M: con el
+margen de septiembre, el negocio queda casi justo en el borde.
+
+### Regla central: cada peso del crédito tiene que estar rotando
+
+El crédito cuesta **1,67% al mes** (1,58% más la comisión FOGAPE que va dentro de la cuota). Un
+producto que rota una vez al mes con 25-30% de margen lo paga 15 veces. Uno que no se vende lo pierde
+entero: **los $2.425.541 en stock dormido cuestan unos $40.000 al mes solo en intereses del crédito.**
+Por eso, desde hoy, **liquidar el stock dormido (el "lastre" de la Fase 2) es también pagar deuda.**
+
+### Las reglas para no atrasarse nunca
+
+1. **Pagar entre el 5 y el 8 de cada mes**, nunca el 10 al límite.
+2. **Apartar la plata de las cuotas a medida que entra**: ~$16.000 diarios (o $110.000 cada lunes)
+   cubren BancoEstado + BCI.
+3. **Nunca pagar una cuota con tarjeta de crédito** — su costo es mucho mayor que el de la deuda que
+   se quiere pagar.
+4. **Registrar cada pago en el POS** (Finanzas → Gastos fijos → marcar pagado). Editar el monto del
+   gasto fijo no registra el pago.
+
+### El plan de prepago (objetivo del dueño: terminarlo pronto)
+
+**Condiciones del contrato:** comisión de prepago = **un mes de intereses sobre lo que se prepaga**
+(créditos bajo UF 5.000), salvo que el FOGAPE sea de los programas exentos (COVID, Reactivación,
+Chile Apoya) — **por confirmar con el banco**. Cada prepago parcial debe ser **al menos el 10% del
+saldo** (~$1,1-1,2M al principio). Pedir siempre **rebaja de plazo, no de cuota**: mantiene la cuota
+y borra cuotas del final, que es donde está el ahorro.
+
+**Cuánto vale prepagar:** cada **$1.000.000 prepagado en mayo de 2027 borra unas 9 cuotas del final
+(~$2,6M)**. Pagarlo entero en mayo de 2027 exigiría **~$11,34M ese día** y ahorraría ~$6,56M.
+
+**¿Se puede terminar junto con el BCI (mayo 2027)?** Solo si hoy hay **~$7-8M del crédito sin gastar**
+en la cuenta. Con plata del negocio no alcanza: la operación genera del orden de $150-400 mil libres al
+mes. Si ese dinero existe y está quieto, prepagar ya es lo correcto — quieto cuesta ~$158.000 al mes
+por cada $10M.
+
+**Escenarios desde la operación** (simulados con el calendario real; prepago en bloques de al menos
+10% del saldo, rebaja de plazo, y los $179.289 del BCI redirigidos al fondo desde junio de 2027):
+
+| Escenario | Aporte mensual al fondo | Stock dormido liquidado | Termina | Total pagado aprox. |
+|---|---|---|---|---|
+| Conservador | $250.000 | $1,0M | **mayo 2028** | ~$14,6M |
+| Base | $400.000 | $1,5M | **diciembre 2027** | ~$14,0M |
+| Agresivo | $600.000 | $2,0M | **septiembre 2027** | ~$13,5M |
+| *Sin prepagar* | — | — | *junio 2032* | *$20,55M* |
+
+Hoy, con el margen de septiembre, el escenario realista es el **conservador**; el base exige volver a
+~31% de margen y ~$5M de ventas.
+
+**El orden inteligente:**
+
+1. **Fondo de prepago en una cuenta aparte**, que no se toca para otra cosa. Se alimenta de: (a) todo
+   lo que entre por liquidar stock dormido, (b) un monto fijo del excedente mensual, (c) cualquier
+   plata del crédito que no esté rotando.
+2. **Primero el BCI si hay un bloque disponible**: es la deuda más cara (CAE 40,8% contra 26,4%), le
+   quedan ~$1,25M y liberarlo antes suma $179.289 al mes al fondo. Confirmar su comisión de prepago.
+3. **Después, bloques a BancoEstado** cada vez que el fondo llegue al 10% del saldo.
+4. **Piso de capital de trabajo — no negociable.** Nunca prepagar si la caja queda por debajo de 2
+   cuotas de reserva ($587.168) más un mes de compras de mercadería. Este plan dice desde el §1.6 que
+   el cuello es el capital: prepagar dejando la tienda sin stock que rote es cambiar una deuda cara
+   por ventas perdidas.
+5. **Al terminar, pedir la devolución de la prima no consumida de los seguros** ($1.744.427 pagados
+   por 6 años). Si el crédito termina a los ~18 meses, queda sin usar cerca de tres cuartos.
+   Confirmar el procedimiento con el banco (o con el SERNAC).
+
+> **Aviso:** esto es análisis de flujo del negocio con los números del contrato, no asesoría
+> financiera profesional. Antes del primer prepago: simulación oficial del banco (monto exacto,
+> comisión, cuántas cuotas borra) y confirmación del contador.
+
+### Actualización (11-09-2026, tarde): dónde está el crédito y cómo se reparte
+
+El dueño confirmó que **la primera cuota se pagó el 10-09-2026** y aclaró el destino de los $10M:
+
+- **$5.000.000 en mercadería** — es la plata que trabaja en el negocio.
+- **$5.000.000 fueron un préstamo familiar**, fuera del negocio. El acuerdo es que **cada uno paga el
+  50% de la cuota ($146.792) hasta que termine el crédito**.
+
+Esto cambia la meta. El dueño no necesita juntar el crédito entero para quedar libre: **necesita
+prepagar su mitad**. Y la herramienta correcta para eso es la **rebaja de cuota**, no de plazo: si
+prepaga su mitad del saldo pidiendo rebaja de cuota, la cuota queda en ~la mitad, que es la parte
+familiar, y sigue su curso normal.
+
+**Objetivo del dueño:** saldar su mitad cuando termine el crédito BCI. **Fecha confirmada con el
+comprobante del BCI: última cuota el 20-05-2027** (10 cuotas desde el 20-08-2026, tasa 3,00% mensual,
+CAE 40,80%, sin seguros, costo total $1.789.335). El dueño **no quiere prepagar el BCI**.
+
+| Si prepaga en… | Saldo total | Todo el crédito | **Su mitad** (con comisión de 1 mes) |
+|---|---|---|---|
+| Mayo 2027 | $11.167.102 | $11.343.542 | **$5.671.771** |
+| Julio 2027 | $10.964.273 | $11.137.509 | **$5.568.754** |
+
+**¿Es viable para mayo de 2027?** (8 aportes al fondo, de octubre 2026 a mayo 2027; desde junio de
+2027 se suman los $179.289 que libera el BCI)
+
+| Aporte mensual al fondo | Stock dormido liquidado | Junta a mayo 2027 | Su mitad queda saldada |
+|---|---|---|---|
+| $300.000 | $1,0M | $3,4M (60%) | **octubre 2027** |
+| $400.000 | $1,5M | $4,7M (83%) | **julio 2027** |
+| $550.000 | $2,0M | $6,4M (113%) | **abril 2027** |
+
+**Veredicto: viable, con un desfase de ~2 meses en el escenario del medio.** Con ~$400.000 al mes más
+~$1,5M de liquidar stock dormido (de los $2,4M que no rotan), su mitad queda saldada en **julio de
+2027**, dos meses después de que termine el BCI. **Para llegar justo en mayo hacen falta ~$520.000 al
+mes** con el mismo stock liquidado (o ~$460.000 si se liquidan $2M). El aporte puede salir del
+excedente del negocio y de ingresos personales nuevos del dueño que empiezan en octubre. **El crédito
+completo en mayo de 2027 (~$11,34M) solo es posible si la parte familiar también junta su mitad** —
+eso ya no depende del negocio.
+
+### La ruta de prepago, mes a mes (definida el 11-09-2026)
+
+**De dónde sale el fondo, sin tocar el capital de trabajo.** Desde octubre de 2026 el arriendo pasa a
+pagarse a la misma parte familiar que comparte el crédito, y **la mitad de la cuota de esa parte se
+descuenta del arriendo**; además el dueño suma un ingreso personal nuevo. Resultado: **salen $296.792
+menos al mes de su bolsillo, sin cambiar nada en el negocio**. Ese es el aporte base del fondo. A eso
+se suman ~$1,5M de liquidar stock dormido (octubre-diciembre) y los $179.289 que libera el BCI desde
+junio de 2027.
+
+**El mecanismo justo (esto es lo importante).** El crédito se trata como **dos sub-créditos iguales**
+de $5.920.578, cada uno con su cuota de $146.792 y plazo a junio de 2032:
+
+- La parte familiar **nunca cambia**: paga $146.792 al mes hasta 2032, pase lo que pase.
+- Cada prepago del dueño se hace **pidiendo rebaja de cuota, nunca de plazo**. Como la cuota es
+  proporcional al saldo y el plazo no se mueve, **la cuota de la otra parte se mantiene intacta en
+  $146.792 y solo baja la del dueño**, en la misma proporción en que baja su saldo.
+- Si se pidiera rebaja de plazo, el crédito terminaría antes para los dos y la parte familiar se
+  ahorraría intereses con plata del dueño. **Por eso siempre rebaja de cuota.**
+- Cuando el sub-crédito del dueño llega a cero, la cuota total queda en $146.792 y la sigue pagando la
+  otra parte hasta 2032.
+- **Poner el acuerdo por escrito**, aunque sea una hoja: saldo de cada uno, y actualizarlo en cada
+  prepago. El banco solo ve un crédito y un deudor; el reparto existe únicamente entre las partes.
+
+**La proyección** (aporte base $296.792/mes + $500.000 mensuales de stock dormido en oct-nov-dic +
+$179.289 desde junio 2027; prepagos cuando el fondo llega al 10% del saldo, que es el mínimo del
+contrato):
+
+| Mes | Fondo | Prepago | Le queda de su mitad | Su cuota desde ahí |
+|---|---|---|---|---|
+| oct-26 | $796.792 | — | $5.872.896 | $145.610 |
+| **nov-26** | $0 | **$1.593.584** | $4.230.833 | **$104.897** |
+| dic-26 | $796.792 | — | $4.154.865 | $103.014 |
+| **ene-27** | $0 | **$1.093.584** | $2.984.041 | **$73.985** |
+| feb-27 | $296.792 | — | $2.887.202 | $71.584 |
+| mar-27 | $593.584 | — | $2.788.742 | $69.143 |
+| **abr-27** | $0 | **$890.376** | $1.798.257 | **$44.585** |
+| may-27 | $296.792 | — | $1.681.568 | $41.692 |
+| **jun-27** | $0 | **$772.873** | $790.053 | **$19.588** |
+| jul-27 | $476.081 | — | $656.486 | $16.277 |
+| **ago-27** | $431.478 | **$520.684** | **$0 ✅** | **$0** |
+
+**Resultado: su mitad queda saldada en agosto de 2027**, tres meses después del BCI. Pagaría
+**$6.709.568** en total (12 cuotas + $4.871.101 de prepagos + $76.963 de comisiones) en vez de los
+**$10.275.440** que le costaría su mitad llegando hasta 2032: **ahorro de $3.565.872**.
+
+Y hay dos palancas que pueden adelantarlo aún más: **dar de baja los seguros** (hasta ~$1,7M menos de
+deuda, la mitad de eso a su favor) y **cada peso extra de excedente del negocio**. Nótese que la cuota
+propia va bajando en cada prepago: esa diferencia debe ir al fondo, no al consumo.
+
+**El piso que no se cruza:** nunca prepagar si la caja queda con menos de 2 cuotas de reserva
+($587.168) más un mes de compras de mercadería. El fondo se llena con stock dormido y excedente, no
+con el capital que hace girar la tienda.
+
+### Cómo se controla cada mes
+
+Rutina fija, **el día 11 de cada mes** (al día siguiente de pagar la cuota):
+
+1. El dueño paga la cuota entre el 5 y el 8, y la **registra en el POS** (Finanzas → Gastos fijos).
+2. Abre una sesión y escribe **"control mensual"**, con dos datos que el POS no puede saber:
+   **saldo del fondo de prepago** y **saldo del crédito** según la app del banco.
+3. Del POS se leen solos: ventas del mes, margen, gastos fijos pagados, stock dormido restante.
+4. La respuesta siempre contesta lo mismo: ¿va adelantado o atrasado contra la tabla de arriba?,
+   ¿alcanza para un prepago este mes (fondo ≥ 10% del saldo)?, ¿cuánto falta para saldar su mitad?
+5. Cada prepago se anota en la tabla de control de abajo, con el saldo nuevo de cada parte.
+
+**Tabla de control (se completa mes a mes):**
+
+| Mes | Fondo objetivo | Fondo real | Prepago hecho | Saldo su mitad | Saldo parte familiar |
+|---|---|---|---|---|---|
+| sep-26 | — | — | — | $5.920.578 | $5.920.578 |
+| oct-26 | $796.792 | | | | |
+| nov-26 | prepago $1.593.584 | | | | |
+| dic-26 | $796.792 | | | | |
+
+### Sobre "pagarlo todo para acceder a otro crédito"
+
+Hay que saber esto antes de decidir: **el banco ve el crédito completo a nombre del dueño**, no el
+reparto privado. En su informe de deuda figuran los $11,8M y la cuota de $293.584, aunque la mitad la
+pague otra persona.
+
+- **Saldar su mitad sí ayuda**: baja el saldo a la mitad y la cuota que le exigen a él cae a $146.792,
+  lo que mejora su carga financiera de forma real.
+- **Pero mientras quede la otra mitad, sigue figurando como deuda suya.** Para quedar del todo limpio
+  solo hay tres caminos: que la parte familiar junte su mitad y se prepague todo junto, que tome un
+  crédito propio y le pague, o aceptar que esa mitad siga a su nombre hasta 2032 con una cuota chica.
+- **Para un crédito nuevo pesa igual o más**: no tener ningún atraso, tener las ventas declaradas y un
+  historial limpio. Pagar antes no reemplaza eso.
+
+### Los seguros: decisión con fecha límite
+
+La ejecutiva del banco le dijo al dueño que **puede dar de baja los seguros, pero solo en el primer
+mes, al pagar la primera cuota** — o sea, la ventana es **ahora**. Ojo: la cláusula quinta del contrato
+dice que revocarlos exige un seguro externo equivalente o pagar el crédito. **Hay que confirmar con la
+ejecutiva cuál manda, y por escrito.**
+
+Lo que cubre cada uno (páginas 7-9 del contrato):
+
+| Seguro | Prima | Qué paga | Lectura |
+|---|---|---|---|
+| Desgravamen + hospitalización (Metlife) | $439.638 | Muerte: **toda la deuda**. Hospitalización: cuotas según los días | Protege a la familia, que comparte la deuda. **El de más valor** |
+| Incapacidad temporal (Cardif) | $986.392 | **Máximo 4 cuotas** ($1.174.336), una por cada 30 días sin poder trabajar | **La prima es el 84% de lo máximo que puede pagar**, y solo si la incapacidad dura 4 meses. El de peor relación costo/beneficio |
+| Invalidez (Metlife) | $318.397 | Invalidez permanente de 50% o más: **toda la deuda** | Barato para lo que cubre (un evento catastrófico) |
+
+Si se dan de baja, la prima no usada debería devolverse — idealmente **abonada al capital**, lo que
+bajaría la deuda de golpe (hasta ~$1,7M si son los tres) y dejaría la cuota cerca de la de referencia
+sin seguros ($244.964, **$48.620 menos al mes**). Solo el de incapacidad temporal serían ~$0,96M.
+
+**Preguntas para la ejecutiva, esta semana:**
+
+1. ¿Cuál es la fecha límite exacta para darlos de baja?
+2. ¿Se pueden dar de baja **uno por uno** (por ejemplo, solo el de incapacidad temporal)?
+3. La prima no usada, ¿se abona al capital o se devuelve en efectivo? ¿A cuánto queda la cuota?
+4. ¿Aplica la cláusula quinta (seguro externo obligatorio)? Pedir la respuesta **por escrito**.
+
+> **Aviso:** esto es análisis con los números del contrato, no asesoría financiera ni de seguros
+> profesional. La decisión sobre los seguros —en particular el de desgravamen, que protege a la
+> familia— es del dueño.
+
+### Pendiente del dueño
+
+1. ~~Confirmar que se pagó la primera cuota~~ — **pagada el 10-09-2026 y registrada en el POS** el
+   11-09-2026 (gasto vinculado al fijo, por transferencia BancoEstado, sin tocar la caja física).
+2. ~~Decir dónde está el $10M~~ — **$5M mercadería + $5M préstamo familiar a medias**.
+3. **Seguros: hablar con la ejecutiva antes de que se cierre la ventana** (preguntas de arriba).
+4. ~~Confirmar la fecha del BCI~~ — **20-05-2027**, confirmada con el comprobante.
+5. **Abrir la cuenta aparte del fondo** y definir el aporte mensual (~$400.000 para julio 2027;
+   ~$520.000 para llegar en mayo).
+6. Pendiente de foto: el **certificado FOGAPE** (define si el prepago cobra comisión).
 
 ---
 
