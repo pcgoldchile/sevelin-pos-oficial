@@ -7,6 +7,102 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
+**Fecha:** 11-09-2026 · **Versión activa: v59 — el catálogo de Meta deja de mentir, y el Instagram
+vuelve a existir.** Sesión en Opus, **sin código**: toda la configuración se hizo en las cuentas de
+Meta desde el navegador real del dueño. Detalle completo en `docs/CHANGELOG-V59.md`.
+
+- **El Instagram viejo `@sevelin.cl` quedó irrecuperable, y se reemplazó.** La causa se encontró tras
+  descartar tres hipótesis falsas: existe un **tercer portafolio comercial llamado solo "Sevelin"
+  (ID `2169115863901758`)**, creado por el dueño el **3-feb-2026 y restringido ese mismo día** por
+  *"automatización que no cumple nuestras normas"*. Ese portafolio tenía enganchado `@sevelin.cl`, y
+  cada intento de conectarlo a la Página obligaba a mover su cuenta publicitaria vieja → chocaba con
+  la restricción → revertía todo. **No hay botón de apelación**: la restricción bloquea hasta las
+  pantallas para arreglarla ("Cuentas de Instagram" y "Solicitudes" salen con candado). El caso de
+  soporte 1612723069938270 (abierto 8-mar-2026) figuraba como **chat inactivo con aviso de cierre**.
+- **Cuenta nueva `@sevelin_cl` configurada y limpia** (ID `17841423397901970`): cuenta profesional
+  tipo Empresa, categoría "Tienda de aparatos electrónicos", correo `sevelin.contacto@gmail.com`,
+  WhatsApp/teléfono +56 9 3575 0828, biografía escrita. **Propiedad de "Sevelin Arica - Tienda de
+  Tecnología"** (`854365921098873`), sin restricciones, con la cuenta publicitaria conectada y los
+  permisos (Contenido, Comunidad, Anuncios, Estadísticas) asignados al dueño.
+- **🚨 Hallazgo grande: el catálogo de Meta llevaba un mes mintiendo.** El "Sevelin Catálogo"
+  (`1458948679099643`) lo alimentaba el origen **"Tiendanube"** —la plataforma que el negocio ya no
+  usa— con **107 productos congelados desde el 26 de agosto**, apuntando a fichas de una tienda
+  muerta. Además el dueño **ni siquiera tenía acceso al catálogo** (decía "Sin acceso"), y había un
+  origen fantasma vacío con 365 días sin uso. Anunciar sobre eso era pagar por llevar clientes a
+  links rotos: la misma trampa de v58, repetida en Meta.
+- **Corregido: el catálogo ahora se alimenta solo desde el POS.** Se creó el origen **"POS Sevelin -
+  feed automático"** apuntando a `/api/feed/catalogo.csv?token=<FEED_TOKEN>`, en **CLP** (el viejo
+  estaba en USD) y con frecuencia **diaria a las 20:17**, *no* cada hora — respetando la regla de no
+  golpear ese endpoint en ráfaga, y separándolo de la lectura de Google (00:00). Primera carga:
+  **115 agregados · 0 no subidos · 0 problemas**. Verificado por fuera: HTTP 200, 115 productos,
+  **los 115 links a www.sevelin.cl**. Se eliminaron los orígenes "Tiendanube" y el fantasma vacío:
+  **queda un solo origen**.
+- **Pendiente de confirmar (queda abierto):** al cerrar la sesión el contador del catálogo **seguía
+  en 220 productos** — Meta purga el índice de un origen borrado en diferido, no al instante. Hay que
+  verificar que **bajó a 115** y que la **actualización automática de las 20:17 corrió sola**.
+- **Trampa nueva que vale para todo Meta:** *ser dueño de un activo ≠ tener acceso a él*. Le pasó al
+  catálogo y al Instagram. Se arregla en Configuración → Personas → [usuario] → **Asignar activos**.
+- **Sigue sin completarse:** la conexión Página ↔ Instagram del **buzón de mensajes** (se atasca en
+  "Continuar" sin dar error). Es un handshake aparte de la propiedad del activo y **no bloquea
+  anuncios**.
+- **Lo que falta para empezar a anunciar (del dueño):** publicar **6-9 posts** en `@sevelin_cl` (hoy
+  tiene **0**), foto de perfil y link a sevelin.cl en la bio (solo desde el celular), **reseñas de
+  Google** (Sevelin 0 vs Player One 80), método de pago en la cuenta publicitaria.
+- **Criterio de anuncios que salió de los datos:** con margen de **$10.686** por venta y clics de
+  $150-400, la captación fría pierde plata. Lo que rinde hoy es **click-to-WhatsApp local**,
+  **catálogo dinámico + retargeting** y **tráfico a la tienda física**, con prueba de
+  **$3.000-5.000 diarios por 2 semanas**. **No hace falta n8n ni Make**: la automatización de Meta es
+  Advantage+, y lo único que había que automatizar era el catálogo — ya hecho.
+
+---
+
+**Fecha:** 10-09-2026 · **Esta sesión fue de postulación, no de código: Meta Pixel en
+`sevelin-tienda` y La Brújula del Emprendedor completa al 100% para Impulso Chileno 2026.**
+
+**Contexto:** el dueño postula al fondo **Impulso Chileno 2026** de Fundación Luksic
+(postulaciones cierran 15-sept-2026, preselección/respaldo 23-30 sept). Dos cosas fortalecen el
+perfil de la postulación: tener píxel de Meta funcionando en la tienda (para anuncios/remarketing)
+y completar el diagnóstico "La Brújula del Emprendedor" de la misma fundación
+(labrujuladelemprendedor.cl). Ninguna de las dos toca el POS.
+
+- **Meta Pixel desplegado en `sevelin-tienda`** (commit `872abe6`, 10-09-2026): `PageView` en cada
+  navegación (`src/components/meta-pixel.tsx`, vía `next/script`), `ViewContent` al entrar a una
+  ficha de producto y `AddToCart` al agregar al carrito (`src/components/acciones-producto.tsx`).
+  Helper único `trackearEventoPixel()` (`src/lib/meta-pixel.ts`) que nunca lanza — si `fbq` no
+  cargó (bloqueador de anuncios, falta la env var) la compra sigue funcionando igual. El
+  `NEXT_PUBLIC_FACEBOOK_PIXEL_ID` ya está puesto en Vercel (prod y preview); sin esa variable el
+  componente simplemente no se monta.
+- **La Brújula del Emprendedor: 8/8 áreas completas** (Estrategia, Ventas, Legal, Gestión de
+  personas, Digitalización, Finanzas y contabilidad, Funcionamiento del Negocio, Propuesta de valor
+  y modelo de negocios), cada una con sus 5 niveles (4 en Digitalización) aprobados — recorrido
+  hecho en el navegador real del dueño (Claude in Chrome), leyendo cada lección y respondiendo la
+  evaluación final de cada nivel con el contenido real de la lección, nunca al azar.
+- **Postulación enviada — "Postulación enviada satisfactoriamente."** (10-09-2026, ID 1719418). El
+  dueño creó la cuenta en impulsochileno.vform.cl, completó "Datos personales", "Perfil
+  emprendedor/a" y "Bienestar" (personalidad/bienestar, no las llena Claude — pesan 50% de la
+  preselección) y dio el clic final de aceptar términos y enviar — eso siempre fue suyo. Claude
+  completó con datos reales del negocio (verificados contra el SII: Registro de Compras y Ventas
+  de junio/julio/agosto) las secciones "Datos del negocio", "Perfil del negocio" y "Proyecto": nunca
+  se tocó el RUT (personal ni del negocio — dato de identificación, prohibido para Claude) ni los
+  checkboxes de consentimiento. **Próximo hito real: preselección de 2.500 el 23-09-2026** — si
+  Sevelin queda ahí, hay 7 días para adjuntar la carpeta tributaria y responder preguntas
+  adicionales; ganadores se anuncian la semana del 16-11-2026.
+- **Verificado en vivo, misma sesión: Google Shopping y la Página de Facebook SÍ funcionan.**
+  Merchant Center real: 124/135 productos aprobados, 62 clics en 28 días (+785,7%), sin
+  correcciones prioritarias pendientes — el dueño no lo veía porque buscaba el nombre de la marca
+  (eso muestra el Perfil de Negocio, no Shopping) o términos genéricos que dominan los anuncios
+  pagados de Ripley/Falabella/Paris. Página de Facebook "Sevelin Arica - Tienda de Tecnología"
+  confirmada bien configurada (dirección, horario, sitio, Instagram, WhatsApp, categoría, 34
+  seguidores) — con esto **B6 del plan de crecimiento queda resuelto** (ver
+  `docs/PLAN-CRECIMIENTO-2026.md`).
+- **Pendiente para la próxima sesión (dueño ya dijo que la abre en Opus): contenido orgánico
+  automatizado** — reels/posts destacando un producto o servicio técnico real del catálogo, con
+  guion + video + subtítulos, rutina fija, aprobación del dueño antes de publicar, y publicación
+  simultánea en Facebook/Instagram/TikTok usando Claude Cowork + un conector de automatización.
+  **Solo quedó como idea, nada construido todavía** — hay puntos abiertos (Claude Design no genera
+  video, TikTok tiene una API de publicación muy restrictiva, cómo Cowork toma los repos). Detalle
+  completo en `docs/PLAN-CRECIMIENTO-2026.md`, sección "Pendiente para la próxima sesión".
+
 **Fecha:** 09-09-2026 (sesión de la tarde) · **Versión activa del POS: v58 — el catálogo real llega
 por fin a Google.**
 

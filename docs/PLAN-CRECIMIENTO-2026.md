@@ -7,6 +7,47 @@
 > **Fecha de creación:** 07-09-2026 · **Base:** POS v50 + tienda v38 · **Autor:** sesión de Claude Code.
 > **Estado de partida verificado**, no asumido: ver "Verificaciones hechas al escribir este plan".
 
+> ## 🎬 Pendiente para la próxima sesión (en Opus) — contenido orgánico automatizado
+>
+> El dueño pidió diseñar (no construir todavía) un sistema que:
+> 1. Destaca un producto o servicio técnico real del catálogo cada cierto tiempo, con **rutina fija**
+>    (para que los seguidores sepan cuándo esperar contenido nuevo: producto, servicio, novedades).
+> 2. Formato **Reel con guion armado + video con subtítulos** (puede ser animación), hecho con una
+>    app externa o con Claude Design — **Claude Design hace diseño estático multi-artboard, NO genera
+>    video**; esto hay que aclararlo y resolverlo antes de prometerlo.
+> 3. **Todo sale del POS** (texto ya revisado por el dueño); si se genera contenido nuevo, **requiere
+>    su aprobación antes de publicarse** — nunca autopublicar sin revisión humana.
+> 4. Publicación simultánea en **Facebook, Instagram, TikTok** (y otros si conviene), usando **Claude
+>    Cowork** para las rutinas/calendario y algún conector de automatización para publicar.
+>
+> **Puntos a resolver antes de diseñar la arquitectura** (por eso se marcó para Opus):
+> - Generación real de video: no hay herramienta de video en este entorno — evaluar con qué app
+>   externa se integra (API) o si el dueño la opera a mano con guion que Claude prepara.
+> - TikTok tiene una API de publicación mucho más restrictiva que Meta (revisión de app, verificación
+>   de negocio) — puede no ser automatizable de entrada.
+> - Meta Graph API sí permite publicar programado en una **Página** (nunca en perfil personal, viola
+>   los términos) — ya existe la Página (ver B6 resuelto abajo).
+> - Cómo encaja "Claude Cowork" (pestaña aparte de Claude Desktop, no es esta sesión de Claude Code)
+>   con los repos `sevelin-pos-oficial` y `sevelin-tienda` — sin confirmar todavía, ver conversación.
+> - Diseñar antes de construir: es un sistema nuevo con varias integraciones externas, no una
+>   automatización más de las que ya están en la Fase 4.
+>
+> **✅ DISEÑADO EL 10-09-2026 — ver `docs/DISENO-CONTENIDO-ORGANICO.md`.** Las tres dudas quedaron
+> resueltas con evidencia (Claude Design no hace video; TikTok publica en privado hasta pasar
+> auditoría; las tareas programadas de Cowork no pueden atarse a una carpeta local, así que Cowork
+> queda descartado como motor). El diseño elegido: el POS produce el paquete (guion, copys, link con
+> UTM, fotos) con aprobación del dueño, y la publicación simultánea se hace con una herramienta que
+> ya tiene su app aprobada. Falta construirlo.
+
+> ## 💰 Actualización 10-09-2026 — postulación a fondo Impulso Chileno 2026
+>
+> Fuera de las fases de este plan, pero relevante para financiar la Fase que exige capital (ver
+> §1.6, "el cuello es capital, no marketing"): el dueño postula a **Impulso Chileno 2026**
+> (Fundación Luksic, cierra 15-sept-2026). Dos requisitos del perfil ya quedaron resueltos:
+> **Meta Pixel** funcionando en `sevelin-tienda` (`PageView`/`ViewContent`/`AddToCart`) y **La
+> Brújula del Emprendedor completa al 100%** (8 áreas, todos los niveles). Detalle en el SNAPSHOT
+> del 10-09-2026. La postulación misma (cuenta y envío del formulario) la hace el dueño.
+
 > ## ⚡ Actualización 07-09-2026 (misma fecha, más tarde)
 >
 > La **Fase 1 está construida y corriendo** — panel Finanzas → 🧠 Inteligencia, ver
@@ -186,10 +227,10 @@ con **[B]** los que bloquean el plan de crecimiento.
 |---|---|---|---|
 | B1 | **Flow en producción**: credenciales productivas + `FLOW_API_BASE=https://www.flow.cl/api` en Vercel. Además, `obtenerEstadoPagoFlow()` nunca se probó con un pago real completado. | Dueño (cuenta) + Claude (código/verificación) | Fases 2-6 completas |
 | B2 | **Verificar dominio propio en Resend** (2-3 registros DNS en `sevelin.cl`). Sin esto, cero email marketing y los correos de pedido a clientes reales fallan en silencio. | Dueño | Fase 3 completa |
-| B3 | **Meta Pixel ID** (Events Manager) + **Catálogo de Meta Commerce** (no existe) + **ID y label de conversión de Google Ads**. | Dueño (cuentas) + Claude (integración) | Fases 5 y 6 |
+| B3 | ~~**Meta Pixel ID**~~ — **RESUELTO 10-09-2026**: Pixel desplegado en `sevelin-tienda` (`PageView`/`ViewContent`/`AddToCart`, commit `872abe6`). ~~Conectar el feed al **Catálogo de Meta Commerce**~~ — **RESUELTO 11-09-2026 (v59)**: el catálogo se alimenta del feed del POS, en CLP, con actualización diaria (115 productos, 0 errores); se eliminó el origen Tiendanube que lo tenía congelado desde el 26-ago apuntando a la tienda muerta. Ver `CHANGELOG-V59.md`. **Falta solo**: ID y label de conversión de Google Ads. | Dueño (cuentas) + ~~Claude (integración)~~ (hecho) | Fases 5 y 6 |
 | B4 | **Costos reales faltantes** — 21 productos activos del catálogo en $0 (auditoría de la Fase 1, ya listados en el panel Inteligencia). | ~~Claude audita~~ (hecho), dueño llena | Fases 4, 5, 6 |
 | **B5** | ~~**No se registra quién compra.**~~ — **CAPTURA CONSTRUIDA 07-09-2026 (v52)**: campo "WhatsApp del cliente" en el POS y en editar venta, teléfono normalizado, link a `wa.me` en el detalle y recompra real en el panel. **Lo que falta ahora es usarlo**: cargar el teléfono en cada venta. Sin datos cargados, la herramienta no sirve. | ~~Claude construye~~ (hecho) · **dueño lo usa en cada venta** | **Objetivos 2 y 5 completos** |
-| **B6** | **Todo el negocio cuelga de una cuenta PERSONAL de Facebook.** Si Meta la restringe, las ventas caen a cero de un día para otro. Migrar a Página + Business Manager es además lo que desbloquea B3 (Pixel y catálogo de Commerce). | Dueño | Continuidad del negocio + fases 3, 5, 6 |
+| **B6** | ~~**Todo el negocio cuelga de una cuenta PERSONAL de Facebook.**~~ — **RESUELTO 10-09-2026**: Página "Sevelin Arica - Tienda de Tecnología" creada y configurada (dirección, horario, sitio web, Instagram, WhatsApp, categoría "Tienda de computación", 34 seguidores). Verificado en vivo. **Falta**: usarla activamente (publicar ahí, no solo en el perfil personal) y terminar de armar el Business Manager para B3. | ~~Dueño~~ (hecho) | Continuidad del negocio + fases 3, 5, 6 |
 
 ### 2.2 Del dueño, de la sesión v50 (los 5 que ya tenías anotados)
 1. **+1 de stock al Adaptador HDMI a VGA (id 104)** — lo descontó el pago sandbox. Lo haces tú en el POS.
@@ -624,7 +665,7 @@ SERVITEC ARICA 3,6 (92).
 | 0 — Destrabar la caja | **A medio destrabar** | 07-09-2026 | — | **La tienda cobra plata real por Khipu** (transferencia, sin límite de monto). **09-09-2026: Flow apagado** — apuntaba al sandbox, así que "tarjeta" era un pago de prueba que dejaba el pedido PAGADO sin plata. El dueño **postula a Transbank directo** (2,08%/2,80% vs 3,44% de Flow). Falta eso y el DNS de Resend: se puede vender, pero solo por transferencia y sin que llegue ningún correo |
 | 1 — Verdad de los datos | **Construida** | 07-09-2026 | 07-09-2026 (panel) | Panel Finanzas → Inteligencia en producción, ver `CHANGELOG-V51.md`. Queda que el dueño llene los 21 costos |
 | 2 — Oferta y precio | **Empezada** | 08-09-2026 | — | Ya hay datos: cajones, capital dormido y concentración medidos. **Precio diferenciado por medio de pago: construido, probado y APAGADO** (`sevelin-tienda/docs/PLAN-PRECIOS-DIFERENCIADOS.md`) — se decidió absorber la comisión con Transbank en vez de traspasarla. Sigue bloqueada de fondo por B4 (**19 costos en $0**, 10 de ellos con stock): sin costo real no hay decisión de precio que valga |
-| 3 — Blindar el canal que vende | **Empezada** | 07-09-2026 | — | **Reescrita.** "Dejar de publicar a mano" **hecho** (v53: feed de catálogo para Meta y Google, 99 productos listos). Lo demás depende de B6 (Página + Business Manager) y B3 |
+| 3 — Blindar el canal que vende | **Empezada** | 07-09-2026 | — | **Reescrita.** "Dejar de publicar a mano" **hecho y ahora automático** (v53 el feed; **v59** lo enchufó al Catálogo de Meta con actualización diaria). B6 y B3 resueltos. Falta: Instagram `@sevelin_cl` con contenido (hoy 0 posts) y reseñas de Google |
 | 4 — Conversión y recuperación | **Desbloqueada** | 07-09-2026 | — | **B2 (Resend) YA ESTABA RESUELTO** — verificado el 09-09-2026 contra Vercel: `RESEND_API_KEY`/`FROM`/`REPLY_TO` en producción hace 7 días y correos entregándose a clientes reales. El plan decía lo contrario por no haberlo remedido. Vivo hoy: confirmación de pedido, carrito abandonado y entrega, **los tres con foto de producto**. El aviso de garantía (v55) quedó **descartado por el dueño**, ver automatización #4 |
 | 5 — Competencia | Lista para empezar | — | — | Lista de competidores ya cargada en §5.1 |
 | 6 — Monetización | Por empezar | — | — | Depende de Fase 2 |
