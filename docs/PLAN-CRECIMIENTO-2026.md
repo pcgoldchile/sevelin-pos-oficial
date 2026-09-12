@@ -39,6 +39,21 @@
 > UTM, fotos) con aprobación del dueño, y la publicación simultánea se hace con una herramienta que
 > ya tiene su app aprobada. Falta construirlo.
 
+> ## 🛠️ Actualización 12-09-2026 — la tienda web se pone al día (v60)
+>
+> Sesión larga de código en los dos repos. Lo que cambia para el plan:
+>
+> - **Las ventas web ya entran al Historial del POS.** Antes descontaban stock sin registrar la
+>   venta: el margen, el punto de equilibrio y el informe semanal venían cortos. **Los números de
+>   §1.7 y del control mensual ahora sí incluyen lo que se vende online.**
+> - **Tres ganchos nuevos para no perder al que ya quería comprar:** aviso de pocas unidades,
+>   "Por llegar" con reserva pagada, y lista de espera para avisar cuando algo vuelve.
+> - **Tarjetas gráficas: se decidió NO competir por precio.** SIPOONLINE vende al público a lo que
+>   le cuesta a Sevelin. Refuerza lo que ya dice §1.8: el margen está en el servicio técnico, no en
+>   pelear precio de componentes.
+> - Fase 3 avanza sola: la tienda dejó de tener agujeros que hacían perder ventas en el último paso
+>   (pago a medias sin forma de retomarlo, página congelada tras pagar, reseña que nunca se pedía).
+
 > ## 💳 Actualización 11-09-2026 — el crédito BancoEstado entra al plan
 >
 > El dueño entregó el contrato en papel (fotos de las páginas 3-6, 10, 17-20 y 29 de 34). Es un
@@ -1190,7 +1205,7 @@ SERVITEC ARICA 3,6 (92).
 | 0 — Destrabar la caja | **A medio destrabar** | 07-09-2026 | — | **La tienda cobra plata real por Khipu** (transferencia, sin límite de monto). **09-09-2026: Flow apagado** — apuntaba al sandbox, así que "tarjeta" era un pago de prueba que dejaba el pedido PAGADO sin plata. El dueño **postula a Transbank directo** (2,08%/2,80% vs 3,44% de Flow). Falta eso y el DNS de Resend: se puede vender, pero solo por transferencia y sin que llegue ningún correo |
 | 1 — Verdad de los datos | **Construida** | 07-09-2026 | 07-09-2026 (panel) | Panel Finanzas → Inteligencia en producción, ver `CHANGELOG-V51.md`. Queda que el dueño llene los 21 costos |
 | 2 — Oferta y precio | **Empezada** | 08-09-2026 | — | Ya hay datos: cajones, capital dormido y concentración medidos. **Precio diferenciado por medio de pago: construido, probado y APAGADO** (`sevelin-tienda/docs/PLAN-PRECIOS-DIFERENCIADOS.md`) — se decidió absorber la comisión con Transbank en vez de traspasarla. Sigue bloqueada de fondo por B4 (**19 costos en $0**, 10 de ellos con stock): sin costo real no hay decisión de precio que valga |
-| 3 — Blindar el canal que vende | **Empezada** | 07-09-2026 | — | **Reescrita.** "Dejar de publicar a mano" **hecho y ahora automático** (v53 el feed; **v59** lo enchufó al Catálogo de Meta con actualización diaria). B6 y B3 resueltos. Falta: Instagram `@sevelin_cl` con contenido (hoy 0 posts) y reseñas de Google |
+| 3 — Blindar el canal que vende | **Empezada** | 07-09-2026 | — | **Reescrita.** "Dejar de publicar a mano" **hecho y ahora automático** (v53 el feed; **v59** lo enchufó al Catálogo de Meta con actualización diaria). B6 y B3 resueltos. Falta: Instagram `@sevelin.cl` con contenido (hoy 0 posts) y reseñas de Google. La tienda quedó sin agujeros de conversión (v60) |
 | 4 — Conversión y recuperación | **Desbloqueada** | 07-09-2026 | — | **B2 (Resend) YA ESTABA RESUELTO** — verificado el 09-09-2026 contra Vercel: `RESEND_API_KEY`/`FROM`/`REPLY_TO` en producción hace 7 días y correos entregándose a clientes reales. El plan decía lo contrario por no haberlo remedido. Vivo hoy: confirmación de pedido, carrito abandonado y entrega, **los tres con foto de producto**. El aviso de garantía (v55) quedó **descartado por el dueño**, ver automatización #4 |
 | 5 — Competencia | Lista para empezar | — | — | Lista de competidores ya cargada en §5.1 |
 | 6 — Monetización | Por empezar | — | — | Depende de Fase 2 |

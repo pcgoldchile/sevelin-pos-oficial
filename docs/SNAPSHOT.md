@@ -7,6 +7,43 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
+**Fecha:** 12-09-2026 · **Versión activa: v60 — el stock deja de mentir y las ventas web aparecen
+en el historial.** Sesión larga en Opus, con cambios en **los dos repos**. Detalle en
+`docs/CHANGELOG-V60.md`.
+
+- 🔴 **LO MÁS IMPORTANTE: las ventas de sevelin.cl no llegaban al POS.** Un pedido pagado descontaba
+  stock y nada más — la venta no existía en el Historial, ni en la utilidad, ni en el margen, ni en
+  el punto de equilibrio, ni en el informe semanal. **Los números con los que se decide estaban
+  cortos** y el descuadre crecía con cada venta online. Lo notó el dueño. Arreglado con
+  `POST /api/interno/registrar-venta-web` (sql/41), idempotente por `ventas.pedido_web_numero`, que
+  el webhook llama tras ajustar stock. La venta de la balanza se registró retroactivamente.
+- 🔒 **La URL del pedido era adivinable** (`/pedido/WEB-000009`, correlativo). Ahora es
+  `token_publico`, 32 hex aleatorios (supabase/26). Además la página **se actualiza sola** mientras
+  el pago se confirma (antes se quedaba congelada pidiendo recargar, y el cliente se iba creyendo
+  que falló) y la invitación a reseñar pasó de un `window.open()` que los navegadores bloqueaban a
+  un modal que sí aparece.
+- 🚚 **"Por llegar"**: productos en camino, con sección propia (`/por-llegar`), reserva pagando el
+  100%, fecha **estimada**, **devolución total si no llega**, y lista de espera para quien prefiere
+  solo que le avisen. Se marca en el POS y **desmarcarlo dispara los correos**.
+- ⚡ **Aviso de pocas unidades** calculado con el stock real, con interruptor por producto en el POS.
+- 📅 **Retiro agendado** opcional + recordatorio automático a las 8 AM, y el **horario real entró al
+  sistema** (lunes a domingo, 11-13 y 14-20). Antes el código asumía semana hábil y mandaba al lunes
+  los despachos del sábado.
+- 📏 **Las medidas se guardan aparte y firmadas** (sql/43): antes cualquier edición de precio las
+  marcaba como "medidas hoy". **Hay 54 productos con peso sin firma que el dueño debe revisar** — la
+  lista priorizada quedó en el chat de la sesión.
+- 📸 **El Instagram vuelve a llamarse `@sevelin.cl`.** El dueño decidió el 12-09-2026 renombrar la
+  cuenta restringida a otro nombre y pasar la nueva (`@sevelin_cl`, creada el 11-09) a `@sevelin.cl`.
+  **En el sitio y en todo texto nuevo se escribe siempre `@sevelin.cl`**; las menciones a
+  `@sevelin_cl` en el bloque de v59 más abajo son historia de cómo se llegó acá, no el nombre actual.
+- Otros: crear cuenta desde el checkout, retomar un pago de Khipu a medias, carrusel controlable,
+  Azapa y Lluta apagados con interruptor, términos y FAQ al día.
+- **Tarjetas gráficas: no se tocaron los precios, a propósito.** SIPOONLINE vende al público al
+  mismo precio que le cuesta a Sevelin (y más barato en la RTX 5060). Bajar el margen sería vender a
+  pérdida. La salida no es precio: es otro proveedor, o vender servicio junto al producto.
+
+---
+
 **Fecha:** 11-09-2026 · **Versión activa: v59 — el catálogo de Meta deja de mentir, y el Instagram
 vuelve a existir.** Sesión en Opus, **sin código**: toda la configuración se hizo en las cuentas de
 Meta desde el navegador real del dueño. Detalle completo en `docs/CHANGELOG-V59.md`.

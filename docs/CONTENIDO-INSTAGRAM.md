@@ -1,4 +1,4 @@
-# Contenido para @sevelin_cl — arranque
+# Contenido para @sevelin.cl — arranque
 
 > Escrito el 11-09-2026. Los productos y precios salieron del POS ese día; **verifica stock y precio
 > antes de publicar**, porque cambian.
