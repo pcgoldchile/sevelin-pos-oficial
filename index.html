@@ -4964,6 +4964,24 @@
       </div>
 
       <div class="grid grid-3" style="margin-top:12px;">
+        <div class="field" style="position:relative;">
+          <label>Producto del catálogo (opcional)</label>
+          <input type="text" id="encargoProductoBuscar" placeholder="Buscar por nombre o SKU..." autocomplete="off">
+          <div id="encargoProductoSugerencias" class="suggestions-box"></div>
+        </div>
+        <div class="field">
+          <label>Cantidad</label>
+          <input type="number" id="encargoCantidad" min="1" step="1" value="1">
+        </div>
+        <div class="field admin-only">
+          <label>Costo total ($) — para la utilidad</label>
+          <input type="number" id="encargoCostoTotal" min="0" step="1" placeholder="Si hay producto, se toma del catálogo">
+        </div>
+      </div>
+      <p class="modal-hint" id="encargoProductoSeleccionado" style="display:none;"></p>
+      <p class="modal-hint">Los abonos suman al saldo de Finanzas el día que se reciben. Al completar el 100% se registra la venta en el historial. Si es un producto con stock, el stock baja al entregarlo o al terminar de pagar.</p>
+
+      <div class="grid grid-3" style="margin-top:12px;">
         <div class="field">
           <label>Monto Total ($) *</label>
           <input type="number" id="encargoMontoTotal" min="0" step="1" placeholder="0">

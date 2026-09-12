@@ -3408,10 +3408,11 @@ app.get('/api/reportes/contador', auth(true), async (req, res) => {
    y las mermas no descuentan porque no es dinero que salió. */
 async function calcularEfectivoEsperado(fecha, fondoInicial) {
   const { data: ventasRaw } = await db.from('ventas')
-    .select('id, total, metodo_pago, metodo_pago_final, pago_mixto')
+    .select('id, total, metodo_pago, metodo_pago_final, pago_mixto, encargo_id')
     .eq('fecha', fecha).eq('estado', 'PAGADA');
 
-  const ventas = ventasRaw || [];
+  // La venta de un encargo no trae plata nueva: entró abono por abono (sql/46).
+  const ventas = (ventasRaw || []).filter(v => !v.encargo_id);
   const ids = ventas.map(v => v.id);
 
   let pagos = [];
@@ -3446,7 +3447,11 @@ async function calcularEfectivoEsperado(fecha, fondoInicial) {
   const inyEfectivo = (inyRaw || [])
     .filter(i => esEfectivo(i.metodo)).reduce((a, i) => a + num(i.monto), 0);
 
-  return num(fondoInicial) + ventasEfectivo + inyEfectivo - gastosEfectivo;
+  // Abonos de encargos recibidos en efectivo ese día (sql/46).
+  const abonosEfectivo = (await abonosEntreFechas(fecha, fecha))
+    .filter(a => esEfectivo(a.metodo_pago)).reduce((s, a) => s + num(a.monto), 0);
+
+  return num(fondoInicial) + ventasEfectivo + inyEfectivo + abonosEfectivo - gastosEfectivo;
 }
 
 /* ---------- Arqueo de caja ----------
@@ -3550,7 +3555,7 @@ app.get('/api/balance', auth(true), async (req, res) => {
     // (ver definición del helper), reintenta sola antes de devolver un
     // balance vacío o a medio calcular.
     const { data: ventasRaw } = await consultarConReintento(() => db.from('ventas')
-      .select('id, fecha, total, costo_total, utilidad, comision_pos, tipo_dte, metodo_pago, metodo_pago_final, pago_mixto, estado')
+      .select('id, fecha, total, costo_total, utilidad, comision_pos, tipo_dte, metodo_pago, metodo_pago_final, pago_mixto, estado, encargo_id')
       .gte('fecha', desde).lte('fecha', hasta).eq('estado', 'PAGADA'));
 
     const ventas = ventasRaw || [];
@@ -3595,10 +3600,23 @@ app.get('/api/balance', auth(true), async (req, res) => {
     pagos.forEach(p => { (pagosPorVenta[p.venta_id] = pagosPorVenta[p.venta_id] || []).push(p); });
 
     ventas.forEach(v => {
+      // Venta de encargo: su plata ya entró como abonos, se suman abajo (sql/46).
+      if (v.encargo_id) return;
       const desglose = pagosPorVenta[v.id];
       if (v.pago_mixto && desglose?.length) desglose.forEach(p => sumar(p.metodo, p.monto));
       else sumar(v.metodo_pago_final || v.metodo_pago, v.total);
     });
+
+    /* Por medio de pago y caja son vistas de PLATA RECIBIDA: los abonos del
+       período entran por su medio el día que llegaron. Ingresos y utilidad
+       (arriba) siguen contando la venta del encargo al completarse. */
+    const abonosPeriodo = await abonosEntreFechas(desde, hasta);
+    abonosPeriodo.forEach(a => sumar(a.metodo_pago || 'Efectivo', a.monto));
+    const totalAbonosPeriodo = abonosPeriodo.reduce((s, a) => s + num(a.monto), 0);
+    const comisionesAbonosPeriodo = abonosPeriodo.reduce((s, a) => s + num(a.comision_pos), 0);
+    const ventasEncargoPeriodo = ventas.filter(v => v.encargo_id);
+    const ingresosEncargo = ventasEncargoPeriodo.reduce((s, v) => s + num(v.total), 0);
+    const comisionesEncargo = ventasEncargoPeriodo.reduce((s, v) => s + num(v.comision_pos), 0);
 
     const ventasEfectivo = Object.entries(porMedio)
       .filter(([m]) => esEfectivo(m))
@@ -3691,7 +3709,9 @@ app.get('/api/balance', auth(true), async (req, res) => {
     const cajaFisica = fondoInicial + ventasEfectivo + inyeccionesEfectivo - gastosEfectivo;
 
     // Flujo líquido: todo el dinero disponible, en cualquier forma
-    const flujoLiquido = ingresos + totalInyecciones - totalGastos - comisiones;
+    // Con abonos en vez de la venta del encargo: es plata recibida (sql/46).
+    const flujoLiquido = (ingresos - ingresosEncargo + totalAbonosPeriodo) + totalInyecciones - totalGastos
+                       - (comisiones - comisionesEncargo + comisionesAbonosPeriodo);
 
     res.json({
       periodo: { desde, hasta },
@@ -3723,6 +3743,7 @@ app.get('/api/balance', auth(true), async (req, res) => {
       inyeccionesEfectivo,
       cajaFisica,
       flujoLiquido,
+      abonosEncargos: totalAbonosPeriodo,
       metaGastosFijos,
       gastosFijos: fijos,
       inyecciones,
@@ -4146,13 +4167,16 @@ app.get('/api/finanzas/proyeccion', auth(true), async (req, res) => {
     const desde = inicio.toISOString().slice(0, 10);
 
     const [{ data: ventasRaw }, { data: gastosRaw }] = await Promise.all([
-      db.from('ventas').select('fecha, total, comision_pos')
+      db.from('ventas').select('fecha, total, comision_pos, encargo_id')
         .gte('fecha', desde).lte('fecha', hasta).eq('estado', 'PAGADA'),
       db.from('compras').select('fecha, costo_total, metodo_pago, origen')
         .gte('fecha', desde).lte('fecha', hasta + 'T23:59:59')
     ]);
 
-    const ventas = ventasRaw || [];
+    /* Proyección de caja: ingresan los abonos el día que llegan, no la
+       venta del encargo al completarse (sql/46). */
+    const abonosHistorico = (await abonosEntreFechas(desde, hasta)).map(a => ({ fecha: a.dia, total: num(a.monto) }));
+    const ventas = (ventasRaw || []).filter(v => !v.encargo_id).concat(abonosHistorico);
     // Las mermas no son dinero que salió del bolsillo: es stock perdido
     const gastos = (gastosRaw || []).filter(g => g.origen !== 'MERMA');
 
@@ -4431,11 +4455,12 @@ app.post('/api/caja/cerrar', auth(), async (req, res) => {
      - egresos. Todo se recalcula en el servidor: el cliente no manda
      cifras que afecten el arqueo, solo el efectivo que contó. */
   const { data: ventasCaja } = await db.from('ventas')
-    .select('total, metodo_pago, metodo_pago_final, estado')
+    .select('total, metodo_pago, metodo_pago_final, estado, encargo_id')
     .eq('caja_id', caja.id).eq('estado', 'PAGADA');
 
   let ventasEfectivo = 0;
   (ventasCaja || []).forEach(v => {
+    if (v.encargo_id) return; // su plata entró como abonos (sql/46)
     const m = v.metodo_pago_final || v.metodo_pago;
     if (esEfectivo(m)) ventasEfectivo += num(v.total);
   });
@@ -4444,7 +4469,12 @@ app.post('/api/caja/cerrar', auth(), async (req, res) => {
   let ingresos = 0, egresos = 0;
   (movs || []).forEach(m => { if (m.tipo === 'INGRESO') ingresos += num(m.monto); else egresos += num(m.monto); });
 
-  const esperado = num(caja.fondo_inicial) + ventasEfectivo + ingresos - egresos;
+  // Abonos de encargos recibidos en efectivo durante este turno (sql/46).
+  const { data: abonosTurno } = await db.from('encargo_abonos').select('monto, metodo_pago').eq('caja_id', caja.id);
+  const abonosEfectivo = (abonosTurno || [])
+    .filter(a => esEfectivo(a.metodo_pago)).reduce((s, a) => s + num(a.monto), 0);
+
+  const esperado = num(caja.fondo_inicial) + ventasEfectivo + abonosEfectivo + ingresos - egresos;
   const diferencia = contado - esperado;
 
   const { data, error } = await consultarConReintento(() => db.from('cajas_diarias').update({
@@ -4464,16 +4494,18 @@ app.post('/api/caja/cerrar', auth(), async (req, res) => {
     return enviarErrorBD(res, error);
   }
 
-  res.json({ ...data, detalle: { fondo_inicial: num(caja.fondo_inicial), ventasEfectivo, ingresos, egresos, esperado, contado, diferencia } });
+  res.json({ ...data, detalle: { fondo_inicial: num(caja.fondo_inicial), ventasEfectivo, abonosEfectivo, ingresos, egresos, esperado, contado, diferencia } });
 });
 
 app.get('/api/finanzas/saldos', auth(true), async (req, res) => {
   try {
     // Solo ventas efectivamente cobradas (PAGADA) cuentan como dinero real
     const { data: ventasRaw } = await db.from('ventas')
-      .select('id, total, comision_pos, metodo_pago, metodo_pago_final, pago_mixto, estado')
+      .select('id, total, comision_pos, metodo_pago, metodo_pago_final, pago_mixto, estado, encargo_id')
       .eq('estado', 'PAGADA');
-    const ventas = ventasRaw || [];
+    // Las ventas de encargos se excluyen: su plata entra por los abonos,
+    // más abajo (sql/46). Contarlas acá la sumaría dos veces.
+    const ventas = (ventasRaw || []).filter(v => !v.encargo_id);
     const ids = ventas.map(v => v.id);
 
     let pagos = [];
@@ -4550,10 +4582,20 @@ app.get('/api/finanzas/saldos', auth(true), async (req, res) => {
       if (a.canal === 'BANCO') ajusteBanco += num(a.delta);
     });
 
-    const efectivo = fondoInicial + ventasEfectivo + inyEfectivo + traspAEfectivo + ajusteEfectivo
+    /* Abonos de encargos (sql/46): plata que entró el día que se recibió,
+       por su propio canal. Los de tarjeta pagan su comisión a la máquina. */
+    const { data: abonosRaw } = await db.from('encargo_abonos').select('monto, metodo_pago, comision_pos').limit(100000);
+    let abonosEfectivo = 0, abonosBanco = 0, comisionesAbonos = 0;
+    (abonosRaw || []).forEach(a => {
+      if (esEfectivo(a.metodo_pago)) abonosEfectivo += num(a.monto);
+      else abonosBanco += num(a.monto);
+      comisionesAbonos += num(a.comision_pos);
+    });
+
+    const efectivo = fondoInicial + ventasEfectivo + abonosEfectivo + inyEfectivo + traspAEfectivo + ajusteEfectivo
                    - gastosEfectivo - traspDeEfectivo;
-    const banco = ventasBanco + inyBanco + traspABanco + ajusteBanco
-                - gastosBanco - comisiones - traspDeBanco;
+    const banco = ventasBanco + abonosBanco + inyBanco + traspABanco + ajusteBanco
+                - gastosBanco - comisiones - comisionesAbonos - traspDeBanco;
 
     // Compromisos fijos activos, para las alertas de cobertura
     const { data: fijosRaw } = await db.from('gastos_fijos').select('*').eq('activo', true);
@@ -4569,9 +4611,10 @@ app.get('/api/finanzas/saldos', auth(true), async (req, res) => {
       detalle: {
         fondoInicial,
         ventasEfectivo, ventasBanco,
+        abonosEfectivo, abonosBanco,
         inyEfectivo, inyBanco,
         gastosEfectivo, gastosBanco,
-        comisiones,
+        comisiones, comisionesAbonos,
         traspAEfectivo, traspDeEfectivo, traspABanco, traspDeBanco,
         ajusteEfectivo, ajusteBanco
       },
@@ -5765,9 +5808,194 @@ function sanearEncargo(body = {}) {
       cliente_telefono: (body.cliente_telefono || '').trim() || null,
       descripcion,
       monto_total: total,
-      observaciones: (body.observaciones || '').trim() || null
+      observaciones: (body.observaciones || '').trim() || null,
+      // Producto del catálogo (opcional) y costo para la utilidad — sql/46.
+      producto_id: Number(body.producto_id) || null,
+      cantidad: Math.max(1, Math.round(num(body.cantidad) || 1)),
+      costo_total: Math.max(0, num(body.costo_total))
     }
   };
+}
+
+/* ---------- Abonos en Finanzas (sql/46) ----------
+   Un abono es plata que entró HOY: suma al saldo de su canal y al cierre de
+   su turno de caja. La venta que se registra al completar el 100% lleva
+   encargo_id, y las vistas de caja la excluyen para no contar dos veces la
+   misma plata. Las vistas de utilidad (Balance, Utilidades, informes) sí la
+   cuentan: ahí lo que importa es la venta y su costo. */
+
+// Día calendario de Chile de un timestamp (los abonos guardan timestamptz).
+function fechaChileDeTs(ts) {
+  return new Date(ts).toLocaleDateString('en-CA', { timeZone: 'America/Santiago' });
+}
+
+/* Abonos cuyo día en Chile cae entre `desde` y `hasta` (YYYY-MM-DD). Se
+   pide un día de margen a cada lado en UTC y se filtra con la fecha de
+   Chile: Chile cambia de -04 a -03 en el año y un rango fijo se equivocaría
+   justo en los abonos de la noche. */
+async function abonosEntreFechas(desde, hasta) {
+  const ini = new Date(desde + 'T00:00:00Z'); ini.setUTCDate(ini.getUTCDate() - 1);
+  const fin = new Date(hasta + 'T00:00:00Z'); fin.setUTCDate(fin.getUTCDate() + 2);
+  const { data, error } = await db.from('encargo_abonos')
+    .select('monto, metodo_pago, comision_pos, fecha, caja_id')
+    .gte('fecha', ini.toISOString()).lt('fecha', fin.toISOString())
+    .limit(100000);
+  if (error) throw new Error(error.message);
+  return (data || [])
+    .map(a => ({ ...a, dia: fechaChileDeTs(a.fecha) }))
+    .filter(a => a.dia >= desde && a.dia <= hasta);
+}
+
+// Turno de caja abierto en este momento (o null): el abono queda en ese turno.
+async function cajaAbiertaId() {
+  const { data } = await db.from('cajas_diarias').select('id').eq('estado', 'abierta').limit(1).maybeSingle();
+  return data?.id || null;
+}
+
+async function insertarAbono(encargoId, monto, metodoPago, nota) {
+  const metodo = metodoPago || 'Efectivo';
+  return db.from('encargo_abonos').insert([{
+    encargo_id: encargoId,
+    monto,
+    metodo_pago: metodo,
+    nota,
+    caja_id: await cajaAbiertaId(),
+    // La máquina cobra su comisión por cada pasada de tarjeta, abono incluido.
+    comision_pos: calcularComisionPos(metodo, monto)
+  }]);
+}
+
+/* Descuenta el stock del producto del encargo UNA sola vez: al entregarlo o
+   al completar el pago, lo que pase primero. Un producto de stock ilimitado
+   o de Pedidos por Encargo no tiene stock que descontar.
+
+   La marca stock_descontado se toma ANTES de descontar, con un update
+   condicional: si dos acciones llegan juntas, solo una gana. Si el
+   descuento falla (no alcanza el stock), se devuelve la marca y se avisa
+   sin frenar la entrega ni el pago: esa plata o ese equipo ya se movieron. */
+async function descontarStockDeEncargo(encargo) {
+  if (!encargo?.producto_id || encargo.stock_descontado) return null;
+
+  const { data: prod } = await db.from('productos')
+    .select('id, nombre, stock_ilimitado, es_pedido_encargo').eq('id', encargo.producto_id).maybeSingle();
+  if (!prod) return null;
+
+  const { data: tomado } = await db.from('encargos')
+    .update({ stock_descontado: true })
+    .eq('id', encargo.id).eq('stock_descontado', false)
+    .select('id');
+  if (!tomado || tomado.length === 0) return null;
+
+  if (prod.stock_ilimitado || prod.es_pedido_encargo) return null;
+
+  try {
+    await descontarStockNoLotes([{ producto_id: prod.id, cantidad: Math.max(1, num(encargo.cantidad)) }]);
+    return null;
+  } catch (err) {
+    await db.from('encargos').update({ stock_descontado: false }).eq('id', encargo.id);
+    return `No se pudo descontar el stock de "${prod.nombre}": ${err.message}`;
+  }
+}
+
+/* Registra la venta de un encargo que llegó al 100%. Idempotente por el
+   índice único ventas.encargo_id: si ya existe, devuelve la misma.
+   No descuenta stock por su cuenta — eso lo hace descontarStockDeEncargo(). */
+async function registrarVentaDeEncargo(encargoId) {
+  const { data: e } = await db.from('encargos').select('*').eq('id', encargoId).maybeSingle();
+  if (!e || e.estado !== 'PAGADO') return null;
+
+  const { data: ya } = await db.from('ventas').select('id').eq('encargo_id', e.id).maybeSingle();
+  if (ya) {
+    if (!e.venta_id) await db.from('encargos').update({ venta_id: ya.id }).eq('id', e.id);
+    return ya.id;
+  }
+
+  let prod = null;
+  if (e.producto_id) {
+    const { data } = await db.from('productos')
+      .select('id, nombre, sku, condicion, meses_garantia, categoria_web').eq('id', e.producto_id).maybeSingle();
+    prod = data || null;
+  }
+
+  const { data: abonos } = await db.from('encargo_abonos').select('metodo_pago, comision_pos').eq('encargo_id', e.id);
+  const metodos = [...new Set((abonos || []).map(a => a.metodo_pago || 'Efectivo'))];
+  const comision = (abonos || []).reduce((a, x) => a + num(x.comision_pos), 0);
+
+  const cantidad = Math.max(1, num(e.cantidad));
+  const total = num(e.monto_total);
+  const linea = {
+    producto_id: prod?.id || null,
+    nombre: prod?.nombre || String(e.descripcion || 'Encargo').slice(0, 200),
+    cantidad,
+    costo_unitario: num(e.costo_total) / cantidad,
+    precio_unitario: total / cantidad,
+    subtotal: total,
+    sku: prod?.sku || null,
+    es_servicio: prod?.categoria_web === 'Servicios Técnicos',
+    condicion: prod?.condicion || null,
+    // Un encargo suelto (sin producto) no hereda los 6 meses de un producto
+    // nuevo: la garantía de algo fuera del catálogo se pacta aparte.
+    meses_garantia: prod ? (prod.meses_garantia ?? 6) : 0,
+  };
+
+  const cabecera = {
+    fecha: fechaHoyChile(),
+    hora: horaChileActual(),
+    vendida_en: new Date().toISOString(),
+    cliente: e.cliente_nombre,
+    cliente_telefono: normalizarTelefonoChile(e.cliente_telefono),
+    // Informativo: la plata ya entró por encargo_abonos con su medio real.
+    metodo_pago: metodos.length === 1 ? metodos[0] : 'Abonos',
+    metodo_pago_final: metodos.length === 1 ? metodos[0] : 'Abonos',
+    estado: 'PAGADA',
+    fecha_pago: new Date().toISOString(),
+    tipo_dte: null,
+    ...totalizar([linea], 0),
+    descuento_tipo: null,
+    descuento_valor: 0,
+    // La comisión real ya se descontó abono por abono; se repite acá solo
+    // para que la utilidad neta de la venta la considere.
+    comision_pos: comision,
+    pago_mixto: false,
+    impreso: false,
+    ...construirDatosEnvio({ tipo_entrega: 'retiro' }),
+    origen_pago: 'encargo',
+    encargo_id: e.id,
+  };
+
+  const { data: venta, error } = await db.from('ventas').insert([cabecera]).select().single();
+  if (error) {
+    if (/duplicate key|encargo_id/i.test(error.message)) {
+      const { data: otra } = await db.from('ventas').select('id').eq('encargo_id', e.id).maybeSingle();
+      return otra?.id || null;
+    }
+    throw new Error(error.message);
+  }
+
+  const { error: errItems } = await db.from('venta_items').insert([{ ...linea, venta_id: venta.id }]);
+  if (errItems) {
+    await db.from('ventas').delete().eq('id', venta.id);
+    throw new Error(errItems.message);
+  }
+
+  await db.from('encargos').update({ venta_id: venta.id }).eq('id', e.id);
+  return venta.id;
+}
+
+/* Después de cada abono: si quedó pagado, venta + stock. Nunca lanza: el
+   abono ya está guardado y no se puede "deshacer" por un error acá. */
+async function cerrarEncargoSiCorresponde(encargo) {
+  const avisos = [];
+  if (encargo?.estado !== 'PAGADO') return avisos;
+  try {
+    await registrarVentaDeEncargo(encargo.id);
+  } catch (err) {
+    console.error('[ENCARGO] no se pudo registrar la venta:', err.message);
+    avisos.push('El pago quedó registrado, pero no se pudo crear la venta en el historial. Avísale al administrador.');
+  }
+  const avisoStock = await descontarStockDeEncargo(encargo);
+  if (avisoStock) avisos.push(avisoStock);
+  return avisos;
 }
 
 app.get('/api/encargos', auth(), async (req, res) => {
@@ -5787,14 +6015,32 @@ app.get('/api/encargos/:id', auth(), async (req, res) => {
   const { data: abonos } = await db.from('encargo_abonos')
     .select('*').eq('encargo_id', req.params.id).order('id');
 
-  res.json({ ...encargo, abonos: abonos || [] });
+  let producto = null;
+  if (encargo.producto_id) {
+    const { data } = await db.from('productos').select('id, nombre, sku, stock, stock_ilimitado').eq('id', encargo.producto_id).maybeSingle();
+    producto = data || null;
+  }
+
+  res.json({ ...encargo, abonos: abonos || [], producto });
 });
 
+// Costo del encargo: si no lo escribieron y hay producto, el del catálogo.
+async function resolverCostoEncargo(datos) {
+  if (!datos.producto_id) return datos;
+  const { data: prod } = await db.from('productos')
+    .select('id, costo_unitario, archivado').eq('id', datos.producto_id).maybeSingle();
+  if (!prod) return { ...datos, producto_id: null };
+  if (!datos.costo_total) datos.costo_total = num(prod.costo_unitario) * datos.cantidad;
+  return datos;
+}
+
 app.post('/api/encargos', auth(), async (req, res) => {
-  const { datos, error: errValidacion } = sanearEncargo(req.body);
+  const { datos: crudos, error: errValidacion } = sanearEncargo(req.body);
   if (errValidacion) return enviarError(res, 400, errValidacion);
+  const datos = await resolverCostoEncargo(crudos);
 
   const abonoInicial = num(req.body?.abono_inicial);
+  if (abonoInicial < 0) return enviarError(res, 400, 'El abono no puede ser negativo');
   if (abonoInicial > datos.monto_total) return enviarError(res, 400, 'El abono no puede superar el monto total');
 
   const registro = {
@@ -5808,23 +6054,45 @@ app.post('/api/encargos', auth(), async (req, res) => {
   if (error) return enviarErrorBD(res, error);
 
   if (abonoInicial > 0) {
-    await db.from('encargo_abonos').insert([{
-      encargo_id: encargo.id,
-      monto: abonoInicial,
-      metodo_pago: req.body?.metodo_pago || 'Efectivo',
-      nota: 'Abono inicial'
-    }]);
+    const { error: errAbono } = await insertarAbono(encargo.id, abonoInicial, req.body?.metodo_pago, 'Abono inicial');
+    if (errAbono) {
+      // Sin el abono guardado, el encargo diría "abonado" con plata que
+      // Finanzas no ve. Se deshace entero en vez de quedar a medias.
+      await db.from('encargos').delete().eq('id', encargo.id);
+      return enviarErrorBD(res, errAbono);
+    }
   }
 
-  res.status(201).json(encargo);
+  const avisos = await cerrarEncargoSiCorresponde(encargo);
+  res.status(201).json({ ...encargo, avisos });
 });
 
 app.put('/api/encargos/:id', auth(), async (req, res) => {
-  const { datos, error: errValidacion } = sanearEncargo(req.body);
+  const { datos: crudos, error: errValidacion } = sanearEncargo(req.body);
   if (errValidacion) return enviarError(res, 400, errValidacion);
 
   const { data: actual, error: errActual } = await db.from('encargos').select('*').eq('id', req.params.id).single();
   if (errActual) return enviarError(res, 404, 'Encargo no encontrado');
+
+  // Con la venta ya registrada, cambiar el total o el producto dejaría el
+  // historial contando otra cosa. Solo se permiten los datos de contacto.
+  if (actual.venta_id) {
+    const { data, error } = await db.from('encargos').update({
+      cliente_nombre: crudos.cliente_nombre,
+      cliente_rut: crudos.cliente_rut,
+      cliente_telefono: crudos.cliente_telefono,
+      observaciones: crudos.observaciones
+    }).eq('id', req.params.id).select().single();
+    if (error) return enviarErrorBD(res, error);
+    return res.json(data);
+  }
+
+  // El producto no se cambia después de descontar su stock.
+  if (actual.stock_descontado) {
+    crudos.producto_id = actual.producto_id;
+    crudos.cantidad = actual.cantidad;
+  }
+  const datos = await resolverCostoEncargo(crudos);
 
   const abonado = num(actual.monto_abonado);
   if (datos.monto_total < abonado) {
@@ -5839,7 +6107,10 @@ app.put('/api/encargos/:id', auth(), async (req, res) => {
 
   const { data, error } = await db.from('encargos').update(cambios).eq('id', req.params.id).select().single();
   if (error) return enviarErrorBD(res, error);
-  res.json(data);
+
+  // Bajar el total hasta lo ya abonado también completa el encargo.
+  const avisos = await cerrarEncargoSiCorresponde(data);
+  res.json({ ...data, avisos });
 });
 
 /* Registrar un abono: suma al total abonado y recalcula saldo y estado */
@@ -5856,12 +6127,7 @@ app.post('/api/encargos/:id/abono', auth(), async (req, res) => {
     return enviarError(res, 400, 'El abono supera el saldo pendiente');
   }
 
-  const { error: errAbono } = await db.from('encargo_abonos').insert([{
-    encargo_id: encargo.id,
-    monto,
-    metodo_pago: req.body?.metodo_pago || 'Efectivo',
-    nota: (req.body?.nota || '').trim() || null
-  }]);
+  const { error: errAbono } = await insertarAbono(encargo.id, monto, req.body?.metodo_pago, (req.body?.nota || '').trim() || null);
   if (errAbono) return enviarErrorBD(res, errAbono);
 
   const { data, error } = await db.from('encargos').update({
@@ -5872,11 +6138,37 @@ app.post('/api/encargos/:id/abono', auth(), async (req, res) => {
 
   if (error) return enviarErrorBD(res, error);
 
+  const avisos = await cerrarEncargoSiCorresponde(data);
   const { data: abonos } = await db.from('encargo_abonos').select('*').eq('encargo_id', encargo.id).order('id');
-  res.json({ ...data, abonos: abonos || [], ultimo_abono: monto });
+  res.json({ ...data, abonos: abonos || [], ultimo_abono: monto, avisos });
+});
+
+/* Marcar la entrega. Independiente del pago ("depende del caso", dueño
+   12-09-2026): se puede entregar con saldo pendiente. Descuenta el stock
+   del producto si todavía no se había descontado. */
+app.post('/api/encargos/:id/entregar', auth(), async (req, res) => {
+  const { data: encargo, error } = await db.from('encargos').select('*').eq('id', req.params.id).single();
+  if (error) return enviarError(res, 404, 'Encargo no encontrado');
+  if (encargo.entregado_en) return enviarError(res, 400, 'Este encargo ya figura como entregado');
+
+  const { data, error: errUpd } = await db.from('encargos').update({
+    entregado_en: new Date().toISOString(),
+    entregado_nota: (req.body?.nota || '').trim() || null
+  }).eq('id', encargo.id).select().single();
+  if (errUpd) return enviarErrorBD(res, errUpd);
+
+  const avisoStock = await descontarStockDeEncargo(data);
+  res.json({ ...data, avisos: avisoStock ? [avisoStock] : [] });
 });
 
 app.delete('/api/encargos/:id', auth(true), async (req, res) => {
+  /* Un encargo con plata recibida no se borra: sus abonos ya están en los
+     saldos y en los cierres de caja, y borrarlo (cascada) cambiaría hacia
+     atrás cifras que ya se usaron. Se corrige editándolo. */
+  const { data: actual } = await db.from('encargos').select('monto_abonado, venta_id').eq('id', req.params.id).maybeSingle();
+  if (actual && (num(actual.monto_abonado) > 0 || actual.venta_id)) {
+    return enviarError(res, 400, 'Este encargo tiene abonos registrados en Finanzas y no se puede eliminar. Corrígelo editándolo.');
+  }
   const { error } = await db.from('encargos').delete().eq('id', req.params.id);
   if (error) return enviarErrorBD(res, error);
   res.json({ ok: true });

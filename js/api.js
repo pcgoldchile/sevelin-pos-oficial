@@ -240,6 +240,8 @@ const API = {
     crear: (e) => apiRequest('/encargos', { method: 'POST', body: e }),
     actualizar: (id, e) => apiRequest(`/encargos/${id}`, { method: 'PUT', body: e }),
     abonar: (id, datos) => apiRequest(`/encargos/${id}/abono`, { method: 'POST', body: datos }),
+    // Marca la entrega (independiente del pago) y descuenta stock si corresponde — sql/46.
+    entregar: (id, datos) => apiRequest(`/encargos/${id}/entregar`, { method: 'POST', body: datos || {} }),
     eliminar: (id) => apiRequest(`/encargos/${id}`, { method: 'DELETE' })
   },
 

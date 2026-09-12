@@ -11,6 +11,8 @@ let editandoEncargoId = null;
 let filtroEstadoEncargo = '';
 let otVinculada = null;
 let encargoAbonando = null;
+// Producto del catálogo vinculado al encargo (opcional) — sql/46.
+let productoEncargo = null;
 
 const ICO_VER_ENCARGO = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
 const ICO_EDITAR_ENCARGO = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
@@ -42,6 +44,11 @@ const elEncargoMetodoPago = document.getElementById('encargoMetodoPago');
 const elEncargoSaldoTexto = document.getElementById('encargoSaldoTexto');
 const elEncargoSaldoBox = document.getElementById('encargoSaldoBox');
 const elEncargoObservaciones = document.getElementById('encargoObservaciones');
+const elEncargoProductoBuscar = document.getElementById('encargoProductoBuscar');
+const elEncargoProductoSugerencias = document.getElementById('encargoProductoSugerencias');
+const elEncargoProductoSeleccionado = document.getElementById('encargoProductoSeleccionado');
+const elEncargoCantidad = document.getElementById('encargoCantidad');
+const elEncargoCostoTotal = document.getElementById('encargoCostoTotal');
 const elBtnNuevoEncargo = document.getElementById('btnNuevoEncargo');
 const elBtnCancelarEncargo = document.getElementById('btnCancelarEncargo');
 const elBtnGuardarEncargo = document.getElementById('btnGuardarEncargo');
@@ -94,6 +101,16 @@ function setupEncargosEventListeners() {
     document.addEventListener('click', (e) => {
       if (elEncargoSugerenciasOT && e.target !== elEncargoBuscarOT && !elEncargoSugerenciasOT.contains(e.target)) {
         elEncargoSugerenciasOT.classList.remove('show');
+      }
+    });
+  }
+
+  // Buscador de producto del catálogo
+  if (elEncargoProductoBuscar) {
+    elEncargoProductoBuscar.addEventListener('input', buscarProductoParaEncargo);
+    document.addEventListener('click', (e) => {
+      if (elEncargoProductoSugerencias && e.target !== elEncargoProductoBuscar && !elEncargoProductoSugerencias.contains(e.target)) {
+        elEncargoProductoSugerencias.classList.remove('show');
       }
     });
   }
@@ -176,10 +193,11 @@ function renderEncargosTabla(lista) {
       <td class="num strong">${fmtCLP(e.monto_total)}</td>
       <td class="num" style="color:var(--green); font-weight:600;">${fmtCLP(e.monto_abonado)}</td>
       <td class="num" style="color:${pagado ? 'var(--text-muted)' : 'var(--red)'}; font-weight:700;">${fmtCLP(e.saldo)}</td>
-      <td>${badgeEstadoEncargo(e.estado)}</td>
+      <td>${badgeEstadoEncargo(e.estado)}${e.entregado_en ? '<br><small style="color:var(--green);">📦 Entregado</small>' : ''}</td>
       <td>
         <div class="cell-actions">
           ${pagado ? '' : `<button class="btn btn-green btn-sm" data-abonar="${e.id}" title="Registrar abono">💵 Abonar</button>`}
+          ${e.entregado_en ? '' : `<button class="btn btn-outline btn-sm" data-entregar="${e.id}" title="Marcar como entregado al cliente">📦 Entregar</button>`}
           <button class="btn btn-outline btn-sm" data-ticket="${e.id}" title="Imprimir comprobante de abono">🖨️</button>
           <button class="btn btn-icon btn-icon-view" data-ver="${e.id}" title="Ver detalle">${ICO_VER_ENCARGO}</button>
           <button class="btn btn-icon btn-icon-edit" data-editar="${e.id}" title="Editar encargo">${ICO_EDITAR_ENCARGO}</button>
@@ -193,6 +211,9 @@ function renderEncargosTabla(lista) {
 
   elEncargosTableBody.querySelectorAll('button[data-abonar]').forEach(btn => {
     btn.addEventListener('click', () => abrirModalAbono(buscar(btn.dataset.abonar)));
+  });
+  elEncargosTableBody.querySelectorAll('button[data-entregar]').forEach(btn => {
+    btn.addEventListener('click', () => entregarEncargo(buscar(btn.dataset.entregar)));
   });
   elEncargosTableBody.querySelectorAll('button[data-ticket]').forEach(btn => {
     btn.addEventListener('click', () => imprimirComprobanteEncargo(buscar(btn.dataset.ticket)));
@@ -225,6 +246,11 @@ function abrirModalEncargo(encargo = null) {
     if (elEncargoDescripcion) elEncargoDescripcion.value = encargo.descripcion || '';
     if (elEncargoMontoTotal) elEncargoMontoTotal.value = encargo.monto_total || 0;
     if (elEncargoObservaciones) elEncargoObservaciones.value = encargo.observaciones || '';
+    if (elEncargoCantidad) elEncargoCantidad.value = encargo.cantidad || 1;
+    if (elEncargoCostoTotal) elEncargoCostoTotal.value = Number(encargo.costo_total) || '';
+    const prod = encargo.producto_id && Array.isArray(productsList)
+      ? productsList.find(p => String(p.id) === String(encargo.producto_id)) : null;
+    seleccionarProductoEncargo(encargo.producto_id ? (prod || { id: encargo.producto_id, nombre: 'Producto #' + encargo.producto_id }) : null, false);
 
     // El abono inicial solo existe al crear: después se registran por separado
     if (elEncargoAbonoInicial) { elEncargoAbonoInicial.value = encargo.monto_abonado || 0; elEncargoAbonoInicial.disabled = true; }
@@ -246,6 +272,9 @@ function abrirModalEncargo(encargo = null) {
     if (elEncargoAbonoInicial) { elEncargoAbonoInicial.value = ''; elEncargoAbonoInicial.disabled = false; }
     if (elEncargoMetodoPago) elEncargoMetodoPago.disabled = false;
     if (elEncargoOTSeleccionada) elEncargoOTSeleccionada.style.display = 'none';
+    if (elEncargoCantidad) elEncargoCantidad.value = 1;
+    if (elEncargoCostoTotal) elEncargoCostoTotal.value = '';
+    seleccionarProductoEncargo(null, false);
   }
 
   actualizarSaldoEncargo();
@@ -257,6 +286,7 @@ function cerrarModalEncargo() {
   if (elModalEncargo) elModalEncargo.classList.remove('show');
   editandoEncargoId = null;
   otVinculada = null;
+  productoEncargo = null;
 }
 
 function actualizarSaldoEncargo() {
@@ -358,6 +388,10 @@ async function guardarEncargo() {
     descripcion: elEncargoDescripcion.value.trim(),
     monto_total: total,
     observaciones: elEncargoObservaciones?.value.trim() || null,
+    producto_id: productoEncargo?.id || null,
+    cantidad: Math.max(1, Number(elEncargoCantidad?.value) || 1),
+    // Vacío = el servidor toma el costo del catálogo si hay producto.
+    costo_total: Number(elEncargoCostoTotal?.value) || 0,
     abono_inicial: editandoEncargoId ? 0 : abono,
     metodo_pago: elEncargoMetodoPago?.value || 'Efectivo'
   };
@@ -370,6 +404,7 @@ async function guardarEncargo() {
     else encargo = await API.encargos.crear(payload);
 
     showToast(editandoEncargoId ? 'Encargo actualizado' : 'Encargo registrado', 'ok');
+    mostrarAvisosEncargo(encargo);
     cerrarModalEncargo();
     await cargarEncargos();
 
@@ -393,6 +428,85 @@ async function eliminarEncargo(id) {
     cargarEncargos();
   } catch (err) {
     showToast(err.message || 'No se pudo eliminar el encargo', 'err');
+  }
+}
+
+/* ---------- Producto del catálogo (opcional, sql/46) ---------- */
+async function buscarProductoParaEncargo() {
+  if (!elEncargoProductoSugerencias) return;
+  const q = (elEncargoProductoBuscar.value || '').trim().toLowerCase();
+  if (q.length < 2) { elEncargoProductoSugerencias.classList.remove('show'); return; }
+
+  let productos = Array.isArray(productsList) ? productsList : [];
+  if (productos.length === 0) {
+    try { productos = await API.productos.listar(); } catch (_) { productos = []; }
+  }
+
+  const encontrados = productos.filter(p => !p.archivado && (
+    (p.nombre || '').toLowerCase().includes(q) || (p.sku || '').toLowerCase().includes(q)
+  )).slice(0, 8);
+
+  if (encontrados.length === 0) { elEncargoProductoSugerencias.classList.remove('show'); return; }
+
+  elEncargoProductoSugerencias.innerHTML = encontrados.map(p => `
+    <div class="suggestion-item" data-producto="${p.id}">
+      <span>${escHtml(p.nombre)}</span>
+      <span>${p.stock_ilimitado || p.es_pedido_encargo ? 'sin stock propio' : 'stock ' + (Number(p.stock) || 0)} · ${fmtCLP(p.precio_unitario)}</span>
+    </div>`).join('');
+  elEncargoProductoSugerencias.classList.add('show');
+
+  elEncargoProductoSugerencias.querySelectorAll('.suggestion-item').forEach(item => {
+    item.addEventListener('click', () => {
+      seleccionarProductoEncargo(encontrados.find(p => String(p.id) === item.dataset.producto), true);
+      elEncargoProductoSugerencias.classList.remove('show');
+    });
+  });
+}
+
+// completar=true: al elegirlo recién, rellena descripción y total si están vacíos.
+function seleccionarProductoEncargo(producto, completar) {
+  productoEncargo = producto || null;
+  if (elEncargoProductoBuscar) elEncargoProductoBuscar.value = '';
+  if (!elEncargoProductoSeleccionado) return;
+
+  if (!productoEncargo) { elEncargoProductoSeleccionado.style.display = 'none'; return; }
+
+  if (completar) {
+    if (elEncargoDescripcion && !elEncargoDescripcion.value.trim()) elEncargoDescripcion.value = productoEncargo.nombre || '';
+    if (elEncargoMontoTotal && !Number(elEncargoMontoTotal.value)) {
+      elEncargoMontoTotal.value = (Number(productoEncargo.precio_unitario) || 0) * (Number(elEncargoCantidad?.value) || 1);
+      actualizarSaldoEncargo();
+    }
+  }
+
+  elEncargoProductoSeleccionado.style.display = 'block';
+  elEncargoProductoSeleccionado.innerHTML = `Producto: <b>${escHtml(productoEncargo.nombre || '')}</b> · <a href="#" id="quitarProductoEncargo">quitar</a>`;
+  document.getElementById('quitarProductoEncargo')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    seleccionarProductoEncargo(null, false);
+  });
+}
+
+function mostrarAvisosEncargo(respuesta) {
+  (respuesta?.avisos || []).forEach(aviso => showToast(aviso, 'err'));
+}
+
+async function entregarEncargo(encargo) {
+  if (!encargo) return;
+  const saldo = Number(encargo.saldo) || 0;
+  const pregunta = saldo > 0
+    ? `${encargo.cliente_nombre} todavía debe ${fmtCLP(saldo)}. ¿Marcar igual como entregado?`
+    : `¿Marcar como entregado a ${encargo.cliente_nombre}?`;
+  if (!confirm(pregunta)) return;
+  const nota = prompt('Nota de entrega (opcional): quién retiró, condiciones, etc.') || '';
+
+  try {
+    const r = await API.encargos.entregar(encargo.id, { nota });
+    showToast('Encargo marcado como entregado', 'ok');
+    mostrarAvisosEncargo(r);
+    await cargarEncargos();
+  } catch (err) {
+    showToast(err.message || 'No se pudo marcar la entrega', 'err');
   }
 }
 
@@ -464,7 +578,8 @@ async function confirmarAbono() {
       nota: elAbonoNota?.value.trim() || null
     });
 
-    showToast(actualizado.estado === 'PAGADO' ? 'Encargo pagado por completo' : 'Abono registrado', 'ok');
+    showToast(actualizado.estado === 'PAGADO' ? 'Encargo pagado por completo · venta registrada en el historial' : 'Abono registrado', 'ok');
+    mostrarAvisosEncargo(actualizado);
     cerrarModalAbono();
     await cargarEncargos();
 
@@ -500,6 +615,8 @@ async function verDetalleEncargo(id) {
         ${encargo.cliente_telefono ? `<p><b>Teléfono:</b> ${escHtml(encargo.cliente_telefono)}</p>` : ''}
       </div>
       <p style="margin-bottom:12px;">${escHtml(encargo.descripcion || '')}</p>
+      ${encargo.producto ? `<p class="modal-hint"><b>Producto:</b> ${escHtml(encargo.producto.nombre)} × ${Number(encargo.cantidad) || 1}${encargo.stock_descontado ? ' · stock descontado' : ''}</p>` : ''}
+      <p class="modal-hint"><b>Entrega:</b> ${encargo.entregado_en ? `entregado el ${tsAChile(encargo.entregado_en)}${encargo.entregado_nota ? ' · ' + escHtml(encargo.entregado_nota) : ''}` : 'pendiente'}${encargo.venta_id ? ' · <b>venta registrada en el historial</b>' : ''}</p>
       ${encargo.observaciones ? `<p class="modal-hint">${escHtml(encargo.observaciones)}</p>` : ''}
 
       <span class="section-label" style="margin-top:14px;">Abonos recibidos</span>
