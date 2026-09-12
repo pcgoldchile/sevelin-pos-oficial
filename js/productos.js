@@ -93,6 +93,8 @@ const elProdCategoriaWeb = document.getElementById('prodCategoriaWeb');
 const elProdStockUmbralWeb = document.getElementById('prodStockUmbralWeb');
 const elProdEtiquetaWeb = document.getElementById('prodEtiquetaWeb');
 const elProdUrgenciaStockWeb = document.getElementById('prodUrgenciaStockWeb');
+const elProdPorLlegar = document.getElementById('prodPorLlegar');
+const elProdFechaLlegada = document.getElementById('prodFechaLlegada');
 const elProdMetaTitulo = document.getElementById('prodMetaTitulo');
 const elProdMetaTituloContador = document.getElementById('prodMetaTituloContador');
 const elProdMetaDescripcion = document.getElementById('prodMetaDescripcion');
@@ -1123,6 +1125,8 @@ function abrirModalProducto(producto = null) {
     // Los productos creados antes de sql/40 no traen el campo; el default
     // de la base es true, así que undefined debe leerse como activado.
     if (elProdUrgenciaStockWeb) elProdUrgenciaStockWeb.checked = producto.urgencia_stock_web !== false;
+    if (elProdPorLlegar) elProdPorLlegar.checked = !!producto.por_llegar;
+    if (elProdFechaLlegada) elProdFechaLlegada.value = producto.fecha_llegada_estimada || '';
     if (elProdMetaTitulo) elProdMetaTitulo.value = producto.meta_titulo_web || '';
     if (elProdMetaDescripcion) elProdMetaDescripcion.value = producto.meta_descripcion_web || '';
     actualizarContadoresSeo();
@@ -1169,6 +1173,8 @@ function abrirModalProducto(producto = null) {
     if (elProdStockUmbralWeb) elProdStockUmbralWeb.value = '';
     if (elProdEtiquetaWeb) elProdEtiquetaWeb.value = '';
     if (elProdUrgenciaStockWeb) elProdUrgenciaStockWeb.checked = true;
+    if (elProdPorLlegar) elProdPorLlegar.checked = false;
+    if (elProdFechaLlegada) elProdFechaLlegada.value = '';
     if (elProdMetaTitulo) elProdMetaTitulo.value = '';
     if (elProdMetaDescripcion) elProdMetaDescripcion.value = '';
     actualizarContadoresSeo();
@@ -1333,6 +1339,8 @@ function construirPayloadProducto() {
     stock_umbral_web: elProdStockUmbralWeb?.value.trim() ? Number(elProdStockUmbralWeb.value) : null,
     etiqueta_web: elProdEtiquetaWeb?.value || null,
     urgencia_stock_web: elProdUrgenciaStockWeb ? elProdUrgenciaStockWeb.checked : true,
+    por_llegar: elProdPorLlegar ? elProdPorLlegar.checked : false,
+    fecha_llegada_estimada: elProdFechaLlegada?.value || null,
     meta_titulo_web: elProdMetaTitulo?.value.trim() || null,
     meta_descripcion_web: elProdMetaDescripcion?.value.trim() || null,
     // Una sola descripción para todo (ya no hay campo aparte para la web):

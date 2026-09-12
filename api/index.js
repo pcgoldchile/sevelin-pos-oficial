@@ -743,6 +743,9 @@ const CAMPOS_PRODUCTO = [
   // sql/40-urgencia-stock-web.sql. El texto y el número los calcula la
   // tienda con el stock real; acá solo se permite o se silencia.
   'urgencia_stock_web',
+  // "Por llegar" — ver sql/42-por-llegar.sql. Apagar por_llegar es lo que
+  // marca "ya llegó" y dispara los avisos a quienes estaban esperando.
+  'por_llegar', 'fecha_llegada_estimada',
   // Módulo Garantías — ver sql/31-garantias.sql.
   'condicion', 'meses_garantia',
   /* Marca del fabricante (sql/38). Se usa como `brand` en el feed de
@@ -852,6 +855,13 @@ function sanearProducto(body = {}) {
   // otra cosa (manipulación directa del payload) se descarta en vez de
   // dejar que la base rechace todo el guardado por el check constraint.
   if (p.urgencia_stock_web !== undefined) p.urgencia_stock_web = !!p.urgencia_stock_web;
+  if (p.por_llegar !== undefined) p.por_llegar = !!p.por_llegar;
+  if (p.fecha_llegada_estimada !== undefined) {
+    // Sin fecha no se rechaza el producto: "por llegar" sin fecha es
+    // válido (llega cuando llega) y la tienda lo dice así.
+    const f = String(p.fecha_llegada_estimada || '').trim();
+    p.fecha_llegada_estimada = /^\d{4}-\d{2}-\d{2}$/.test(f) ? f : null;
+  }
   if (p.etiqueta_web !== undefined) {
     p.etiqueta_web = ['NOVEDAD', 'TENDENCIA', 'OFERTA'].includes(p.etiqueta_web) ? p.etiqueta_web : null;
   }
