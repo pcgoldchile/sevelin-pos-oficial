@@ -139,6 +139,11 @@ function retiroAgendadoPedidoWeb(p) {
     weekday: 'short', day: 'numeric', month: 'short'
   });
   const franja = p.retiro_bloque ? ` · ${escHtml(p.retiro_bloque)}` : '';
+  // Servicio técnico pagado en línea: la fecha es cuándo TRAE su equipo, no
+  // cuándo retira (sevelin-tienda/supabase/32-entrega-equipo-servicio.sql).
+  if (p.agenda_tipo === 'ENTREGA_EQUIPO') {
+    return `<br><small style="color:var(--cyan);">🔧 Trae su equipo el ${escHtml(f)}${franja}</small>`;
+  }
   return `<br><small style="color:var(--cyan);">📅 Pasa el ${escHtml(f)}${franja}</small>`;
 }
 

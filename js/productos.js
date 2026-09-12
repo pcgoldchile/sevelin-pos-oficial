@@ -86,6 +86,7 @@ const elDropzoneFotos = document.getElementById('dropzoneFotos');
 const elAvisoPublicacionIncompleta = document.getElementById('avisoPublicacionIncompleta');
 const elProdPublicadoWeb = document.getElementById('prodPublicadoWeb');
 const elProdEsEncargo = document.getElementById('prodEsEncargo');
+const elProdPrecioAConsultar = document.getElementById('prodPrecioAConsultar');
 const elProdCondicion = document.getElementById('prodCondicion');
 const elProdMesesGarantia = document.getElementById('prodMesesGarantia');
 const elProdPrecioWeb = document.getElementById('prodPrecioWeb');
@@ -1122,6 +1123,7 @@ function abrirModalProducto(producto = null) {
     establecerDescripcion(producto.descripcion || producto.descripcion_web || '');
     if (elProdPublicadoWeb) elProdPublicadoWeb.checked = !!producto.publicado_web;
     if (elProdEsEncargo) elProdEsEncargo.checked = !!producto.es_pedido_encargo;
+    if (elProdPrecioAConsultar) elProdPrecioAConsultar.checked = !!producto.precio_a_consultar;
     if (elProdCondicion) elProdCondicion.value = producto.condicion || 'nuevo';
     if (elProdMesesGarantia) elProdMesesGarantia.value = producto.meses_garantia ?? 6;
     if (elProdPrecioWeb) elProdPrecioWeb.value = producto.precio_web ?? '';
@@ -1337,6 +1339,8 @@ function construirPayloadProducto() {
     // aparte, foto por foto, con API.productos.subirImagen/quitarImagen. ---
     publicado_web: !!(elProdPublicadoWeb && elProdPublicadoWeb.checked),
     es_pedido_encargo: !!(elProdEsEncargo && elProdEsEncargo.checked),
+    // Ver sql/45-precio-a-consultar.sql: la tienda lo cotiza, no lo vende.
+    precio_a_consultar: !!(elProdPrecioAConsultar && elProdPrecioAConsultar.checked),
     // --- Módulo Garantías (ver sql/31-garantias.sql) ---
     condicion: elProdCondicion?.value || 'nuevo',
     meses_garantia: elProdMesesGarantia?.value.trim() ? Number(elProdMesesGarantia.value) : 6,

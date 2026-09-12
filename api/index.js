@@ -739,6 +739,9 @@ const CAMPOS_PRODUCTO = [
   'publicado_web', 'precio_web', 'descripcion_web', 'categoria_web', 'subcategoria_web',
   // Pedidos por Encargo (dropshipping/retiro en tienda) — ver sql/30-pedidos-por-encargo.sql.
   'es_pedido_encargo',
+  // Precio base que depende del equipo: la tienda no lo vende en línea, solo
+  // lo cotiza por WhatsApp — ver sql/45-precio-a-consultar.sql.
+  'precio_a_consultar',
   // categoria_id (Fase "Página Web → Categorías"): FK interna del POS, no se
   // sincroniza a la tienda (el trigger solo usa categoria_web). stock_umbral_web:
   // NULL = usa el default de la tienda (+5); ver sql/23-categorias-web-y-umbral-stock.sql.
@@ -840,6 +843,7 @@ function sanearProducto(body = {}) {
   // --- Controles de la tienda web ---
   if (body.publicado_web !== undefined) p.publicado_web = !!body.publicado_web;
   if (body.es_pedido_encargo !== undefined) p.es_pedido_encargo = !!body.es_pedido_encargo;
+  if (body.precio_a_consultar !== undefined) p.precio_a_consultar = !!body.precio_a_consultar;
   // precio_web vacío/0 = NULL a propósito: "usa el precio normal del POS"
   // (ver sql/21-imagenes-web.sql). Un 0 real congelaría el producto gratis.
   if (p.precio_web !== undefined) {

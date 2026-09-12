@@ -7,9 +7,22 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
-**Fecha:** 12-09-2026 · **Versión activa: v60 — el stock deja de mentir y las ventas web aparecen
-en el historial.** Sesión larga en Opus, con cambios en **los dos repos**. Detalle en
-`docs/CHANGELOG-V60.md`.
+**Fecha:** 12-09-2026 · **Versión activa: v61 — servicios técnicos: fichas reales, precio a
+consultar y "trae tu equipo".** Detalle en `docs/CHANGELOG-V61.md`.
+
+- 🛠️ **27 servicios técnicos con ficha real** (13 reescritas + 14 nuevos). 9 nuevos siguen **ocultos**:
+  270-273 esperan que el dueño valide el "incluye" propuesto; 274-278 son de precio variable y se
+  publican marcados como precio a consultar.
+- 💬 **Precio a consultar** (sql/45 + web 31): "Desde" + "Cotizar por WhatsApp", y el checkout lo
+  rechaza en el servidor.
+- 🔧 **Carrito solo de servicios**: única opción "Traes tu equipo al local", día obligatorio,
+  recordatorio el día antes, y el panel Pedidos Web lo muestra (web 32, `agenda_tipo`).
+- 🛡️ Fichas de servicio ya no prometen "6 meses de garantía": la de mano de obra se consulta.
+- ⏳ **Pendiente del dueño:** aprobar propuesta de carrito mixto (servicio + producto) y del QR de
+  entrega segura del equipo. El botón "Generar con IA" del POS sigue roto.
+
+**Versión anterior: v60 — el stock deja de mentir y las ventas web aparecen en el historial.**
+Detalle en `docs/CHANGELOG-V60.md`.
 
 - 🔴 **LO MÁS IMPORTANTE: las ventas de sevelin.cl no llegaban al POS.** Un pedido pagado descontaba
   stock y nada más — la venta no existía en el Historial, ni en la utilidad, ni en el margen, ni en
