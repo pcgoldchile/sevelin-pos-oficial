@@ -6255,7 +6255,9 @@ app.post('/api/interno/registrar-venta-web', authSync, async (req, res) => {
         precio_unitario: precio,
         subtotal: precio * cantidad,
         sku: i.sku || prod.sku || null,
-        es_servicio: false,
+        // La tienda marca los servicios técnicos desde el carrito mixto
+        // (12-09-2026). Sin esto el Balance los contaba como productos.
+        es_servicio: !!i.es_servicio,
         condicion: prod.condicion || null,
         meses_garantia: prod.meses_garantia ?? 6,
       };

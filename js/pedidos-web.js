@@ -142,7 +142,14 @@ function retiroAgendadoPedidoWeb(p) {
   // Servicio técnico pagado en línea: la fecha es cuándo TRAE su equipo, no
   // cuándo retira (sevelin-tienda/supabase/32-entrega-equipo-servicio.sql).
   if (p.agenda_tipo === 'ENTREGA_EQUIPO') {
-    return `<br><small style="color:var(--cyan);">🔧 Trae su equipo el ${escHtml(f)}${franja}</small>`;
+    /* Pedido mixto ("un pedido, un pago, dos entregas"): si además hay
+       productos y se retiran, es la misma visita; si se despachan, el método
+       de envío de al lado es solo de los productos. */
+    const hayProductos = (p.items || []).some(it => !it.es_servicio);
+    const extra = hayProductos
+      ? (p.metodo_envio === 'RETIRO' ? ' y retira sus productos' : ' · 📦 productos por envío')
+      : '';
+    return `<br><small style="color:var(--cyan);">🔧 Trae su equipo${extra} el ${escHtml(f)}${franja}</small>`;
   }
   return `<br><small style="color:var(--cyan);">📅 Pasa el ${escHtml(f)}${franja}</small>`;
 }
