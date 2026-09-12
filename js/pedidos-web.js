@@ -127,6 +127,21 @@ function badgeEstadoPedidoWeb(estado) {
 
    Un pedido sin pago confirmado no muestra medio: todavía no pagó con
    nada, y mostrar "Khipu" ahí haría creer que sí. */
+/* Cuándo dijo el cliente que pasaría a retirar. Sin esto, el dato que
+   deja en el checkout no lo ve nadie y no sirve de nada: la gracia es
+   poder dejar el pedido preparado para ese día.
+
+   Es una estimación suya, no una cita — puede aparecer otro día, y el
+   panel no debe hacer creer lo contrario. */
+function retiroAgendadoPedidoWeb(p) {
+  if (!p.retiro_fecha) return '';
+  const f = new Date(`${p.retiro_fecha}T12:00:00`).toLocaleDateString('es-CL', {
+    weekday: 'short', day: 'numeric', month: 'short'
+  });
+  const franja = p.retiro_bloque ? ` · ${escHtml(p.retiro_bloque)}` : '';
+  return `<br><small style="color:var(--cyan);">📅 Pasa el ${escHtml(f)}${franja}</small>`;
+}
+
 function badgeMedioPagoPedidoWeb(p) {
   if (['CREADO', 'FALLIDO', 'EXPIRADO'].includes(p.estado)) {
     return '<span style="color:var(--text-muted);">—</span>';
@@ -176,7 +191,7 @@ function renderPedidosWebTabla(lista) {
       <td>${tsAChile(p.creado_en)}</td>
       <td>${escHtml(p.cliente_nombre || '—')}</td>
       <td>${badgeMedioPagoPedidoWeb(p)}</td>
-      <td>${escHtml(p.metodo_envio || '—')}${tracking}</td>
+      <td>${escHtml(p.metodo_envio || '—')}${retiroAgendadoPedidoWeb(p)}${tracking}</td>
       <td class="num">${fmtCLP(p.total)}</td>
       <td>${badgeEstadoPedidoWeb(p.estado)}</td>
       <td style="text-align:right;">${accion}</td>
