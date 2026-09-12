@@ -79,6 +79,9 @@ const API = {
     listarBorradores: () => apiRequest('/productos?borradores=1'),
     crear: (p) => apiRequest('/productos', { method: 'POST', body: p }),
     actualizar: (id, p) => apiRequest(`/productos/${id}`, { method: 'PUT', body: p }),
+    // Medidas y peso van por su propia ruta (sql/43): el guardado normal
+    // ya no las toca, y ésta exige el nombre de quien midió.
+    guardarMedidas: (id, medidas) => apiRequest(`/productos/${id}/medidas`, { method: 'PUT', body: medidas }),
     eliminar: (id) => apiRequest(`/productos/${id}`, { method: 'DELETE' }),
     // Operaciones masivas: exigen reconfirmar el PIN de administrador
     eliminarTodos: (pin) => apiRequest('/productos/todos', { method: 'DELETE', body: { pin } }),

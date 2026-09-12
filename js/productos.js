@@ -94,7 +94,10 @@ const elProdStockUmbralWeb = document.getElementById('prodStockUmbralWeb');
 const elProdEtiquetaWeb = document.getElementById('prodEtiquetaWeb');
 const elProdUrgenciaStockWeb = document.getElementById('prodUrgenciaStockWeb');
 const elProdPorLlegar = document.getElementById('prodPorLlegar');
+const elProdMedidoPor = document.getElementById('prodMedidoPor');
+const elBtnGuardarMedidas = document.getElementById('btnGuardarMedidas');
 const elProdFechaLlegada = document.getElementById('prodFechaLlegada');
+const elProdStockPorLlegar = document.getElementById('prodStockPorLlegar');
 const elProdMetaTitulo = document.getElementById('prodMetaTitulo');
 const elProdMetaTituloContador = document.getElementById('prodMetaTituloContador');
 const elProdMetaDescripcion = document.getElementById('prodMetaDescripcion');
@@ -202,6 +205,7 @@ function setupProductosEventListeners() {
   if (elBtnCancelarProducto) elBtnCancelarProducto.addEventListener('click', cerrarModalProducto);
   if (elBtnVolverProductos) elBtnVolverProductos.addEventListener('click', cerrarModalProducto);
   if (elBtnGuardarProducto) elBtnGuardarProducto.addEventListener('click', guardarProducto);
+  if (elBtnGuardarMedidas) elBtnGuardarMedidas.addEventListener('click', guardarMedidasProducto);
   document.getElementById('btnDescargarTodasFotos')?.addEventListener('click', descargarTodasFotosProducto);
   if (elBtnGenerarSeoIA) elBtnGenerarSeoIA.addEventListener('click', generarSeoConIA);
   if (elProdMetaTitulo) elProdMetaTitulo.addEventListener('input', actualizarContadoresSeo);
@@ -1109,8 +1113,9 @@ function abrirModalProducto(producto = null) {
     if (elProdProfundidad) elProdProfundidad.value = producto.profundidad_cm || 0;
     if (elProdMedidasActualizado) {
       elProdMedidasActualizado.textContent = producto.medidas_actualizado_en
-        ? `Última actualización de medidas y peso: ${tsAChile(producto.medidas_actualizado_en)}`
-        : 'Última actualización de medidas y peso: sin registro previo.';
+        ? `Medido el ${tsAChile(producto.medidas_actualizado_en)}`
+          + (producto.medidas_actualizado_por ? ` por ${producto.medidas_actualizado_por}` : ' (sin firma)')
+        : 'Sin registro de medición: estas medidas pueden ser estimadas.';
     }
     // Una sola descripción: si el producto viene de antes de este cambio y
     // solo tenía escrita la "web", se usa esa como punto de partida.
@@ -1126,7 +1131,10 @@ function abrirModalProducto(producto = null) {
     // de la base es true, así que undefined debe leerse como activado.
     if (elProdUrgenciaStockWeb) elProdUrgenciaStockWeb.checked = producto.urgencia_stock_web !== false;
     if (elProdPorLlegar) elProdPorLlegar.checked = !!producto.por_llegar;
+    // El nombre se escribe en cada medición: no se arrastra del producto anterior.
+    if (elProdMedidoPor) elProdMedidoPor.value = '';
     if (elProdFechaLlegada) elProdFechaLlegada.value = producto.fecha_llegada_estimada || '';
+    if (elProdStockPorLlegar) elProdStockPorLlegar.value = producto.stock_por_llegar ?? 0;
     if (elProdMetaTitulo) elProdMetaTitulo.value = producto.meta_titulo_web || '';
     if (elProdMetaDescripcion) elProdMetaDescripcion.value = producto.meta_descripcion_web || '';
     actualizarContadoresSeo();
@@ -1174,7 +1182,9 @@ function abrirModalProducto(producto = null) {
     if (elProdEtiquetaWeb) elProdEtiquetaWeb.value = '';
     if (elProdUrgenciaStockWeb) elProdUrgenciaStockWeb.checked = true;
     if (elProdPorLlegar) elProdPorLlegar.checked = false;
+    if (elProdMedidoPor) elProdMedidoPor.value = '';
     if (elProdFechaLlegada) elProdFechaLlegada.value = '';
+    if (elProdStockPorLlegar) elProdStockPorLlegar.value = 0;
     if (elProdMetaTitulo) elProdMetaTitulo.value = '';
     if (elProdMetaDescripcion) elProdMetaDescripcion.value = '';
     actualizarContadoresSeo();
@@ -1320,10 +1330,8 @@ function construirPayloadProducto() {
     stock_ilimitado: !!(elProdStockIlimitado && elProdStockIlimitado.checked),
     // Interruptor de costos por lote (PEPS). Apagado salvo que el admin lo marque.
     usa_lotes: !!(elProdUsaLotes && elProdUsaLotes.checked),
-    peso_kg: Number(elProdPeso?.value) || 0,
-    alto_cm: Number(elProdAlto?.value) || 0,
-    ancho_cm: Number(elProdAncho?.value) || 0,
-    profundidad_cm: Number(elProdProfundidad?.value) || 0,
+    // peso/medidas NO van acá: se guardan con "📏 Guardar medidas", que pide
+    // el nombre de quien midió (ver guardarMedidasProducto más abajo).
     descripcion: elProdDescripcion?.value.trim() || null,
     // --- Tienda web (e-commerce Fase 0). imagen_urls NO va acá: se sube
     // aparte, foto por foto, con API.productos.subirImagen/quitarImagen. ---
@@ -1341,6 +1349,7 @@ function construirPayloadProducto() {
     urgencia_stock_web: elProdUrgenciaStockWeb ? elProdUrgenciaStockWeb.checked : true,
     por_llegar: elProdPorLlegar ? elProdPorLlegar.checked : false,
     fecha_llegada_estimada: elProdFechaLlegada?.value || null,
+    stock_por_llegar: Number(elProdStockPorLlegar?.value) || 0,
     meta_titulo_web: elProdMetaTitulo?.value.trim() || null,
     meta_descripcion_web: elProdMetaDescripcion?.value.trim() || null,
     // Una sola descripción para todo (ya no hay campo aparte para la web):
@@ -1351,6 +1360,47 @@ function construirPayloadProducto() {
     // crearBorradorProducto() lo enciende, sobrescribiendo esto después.
     es_borrador: false
   };
+}
+
+/* Guarda SOLO las medidas, firmadas. Ruta propia (PUT
+   /api/productos/:id/medidas): el botón "Guardar" del producto ya no las
+   toca, porque el formulario las mandaba siempre y cualquier corrección
+   de precio marcaba el producto como medido ese día.
+
+   Exige producto ya creado: un producto nuevo se guarda primero y se mide
+   después, para que la firma quede sobre algo que existe. */
+async function guardarMedidasProducto() {
+  if (!editingProductId) {
+    showToast('Guarda el producto primero, después registra sus medidas', 'err');
+    return;
+  }
+  const quien = (elProdMedidoPor?.value || '').trim();
+  if (quien.length < 2) {
+    showToast('Escribe tu nombre para registrar quién tomó las medidas', 'err');
+    elProdMedidoPor?.focus();
+    return;
+  }
+
+  if (elBtnGuardarMedidas) elBtnGuardarMedidas.disabled = true;
+  try {
+    const actualizado = await API.productos.guardarMedidas(editingProductId, {
+      medido_por: quien,
+      peso_kg: elProdPeso?.value ?? '',
+      alto_cm: elProdAlto?.value ?? '',
+      ancho_cm: elProdAncho?.value ?? '',
+      profundidad_cm: elProdProfundidad?.value ?? '',
+    });
+    if (elProdMedidasActualizado) {
+      elProdMedidasActualizado.textContent =
+        `Medido el ${tsAChile(actualizado.medidas_actualizado_en)} por ${actualizado.medidas_actualizado_por}`;
+    }
+    showToast('Medidas registradas', 'ok');
+    await cargarProductos();
+  } catch (err) {
+    showToast(err.message || 'No se pudieron guardar las medidas', 'err');
+  } finally {
+    if (elBtnGuardarMedidas) elBtnGuardarMedidas.disabled = false;
+  }
 }
 
 async function guardarProducto() {

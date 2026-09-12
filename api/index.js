@@ -715,7 +715,13 @@ app.get('/api/health', (_req, res) => res.json({
    ============================================================ */
 const CAMPOS_PRODUCTO = [
   'sku', 'codigo_barras', 'nombre', 'costo_unitario', 'precio_unitario', 'stock',
-  'requiere_sn', 'peso_kg', 'alto_cm', 'ancho_cm', 'profundidad_cm', 'descripcion',
+  /* peso_kg/alto_cm/ancho_cm/profundidad_cm YA NO van acá: se guardan solo
+     por PUT /api/productos/:id/medidas, que exige el nombre de quien midió
+     (sql/43). Antes el formulario los mandaba siempre, aunque nadie los
+     tocara, y cada corrección de precio marcaba el producto como "medido
+     hoy" — el registro decía que alguien lo pesó un día en que solo se
+     editó el nombre. */
+  'requiere_sn', 'descripcion',
   'stock_minimo', 'alerta_stock', 'es_repuesto', 'stock_ilimitado', 'usa_lotes',
   // Controles de la tienda web (e-commerce Fase 0). imagen_urls NO va acá:
   // se administra aparte con POST /api/productos/:id/imagen (append/quitar
@@ -745,7 +751,7 @@ const CAMPOS_PRODUCTO = [
   'urgencia_stock_web',
   // "Por llegar" — ver sql/42-por-llegar.sql. Apagar por_llegar es lo que
   // marca "ya llegó" y dispara los avisos a quienes estaban esperando.
-  'por_llegar', 'fecha_llegada_estimada',
+  'por_llegar', 'fecha_llegada_estimada', 'stock_por_llegar',
   // Módulo Garantías — ver sql/31-garantias.sql.
   'condicion', 'meses_garantia',
   /* Marca del fabricante (sql/38). Se usa como `brand` en el feed de
@@ -817,13 +823,9 @@ function sanearProducto(body = {}) {
 
   // Cada vez que se toca el stock queda registrada la fecha del cambio
   if (p.stock !== undefined) p.stock_actualizado_en = new Date().toISOString();
-  // Mismo criterio para medidas y peso — un solo timestamp para las 4
-  // juntas (se editan como grupo en "Medidas y envío", ver sql/36-medidas-
-  // actualizado-en.sql). No compara contra el valor anterior: se registra
-  // apenas cualquiera de los cuatro campos viene en el guardado.
-  if (['peso_kg', 'alto_cm', 'ancho_cm', 'profundidad_cm'].some(k => p[k] !== undefined)) {
-    p.medidas_actualizado_en = new Date().toISOString();
-  }
+  /* El timestamp de medidas ya no se toca acá. Lo pone únicamente
+     PUT /api/productos/:id/medidas, junto con el nombre de quien midió —
+     ver sql/43-medidas-por-separado.sql. */
   ['sku', 'descripcion', 'marca'].forEach(k => {
     if (p[k] !== undefined) {
       const t = String(p[k]).trim();
@@ -856,6 +858,7 @@ function sanearProducto(body = {}) {
   // dejar que la base rechace todo el guardado por el check constraint.
   if (p.urgencia_stock_web !== undefined) p.urgencia_stock_web = !!p.urgencia_stock_web;
   if (p.por_llegar !== undefined) p.por_llegar = !!p.por_llegar;
+  if (p.stock_por_llegar !== undefined) p.stock_por_llegar = Math.max(0, Math.round(num(p.stock_por_llegar)));
   if (p.fecha_llegada_estimada !== undefined) {
     // Sin fecha no se rechaza el producto: "por llegar" sin fecha es
     // válido (llega cuando llega) y la tienda lo dice así.
@@ -1500,6 +1503,59 @@ app.delete('/api/productos/:id/lotes/:loteId', auth(true), async (req, res) => {
   }
 
   res.json({ ok: true, unidades_retiradas: num(lote.cantidad) });
+});
+
+/* Medidas y peso: ruta propia, separada del guardado del producto.
+   ------------------------------------------------------------
+   POR QUÉ APARTE (pedido del dueño, 12-09-2026)
+   El formulario manda siempre los cuatro campos, aunque nadie los toque.
+   Cuando compartían ruta con el resto, corregir un precio marcaba el
+   producto como "medido hoy" y el registro dejaba de servir. Y no es un
+   dato cosmético: el peso y el volumen deciden cuánto cuesta cada
+   despacho, así que una medida mal puesta se paga en todos los envíos.
+
+   POR QUÉ SE PIDE EL NOMBRE ESCRITO Y NO EL USUARIO DE LA SESIÓN
+   En el mostrador varias personas trabajan con la misma cuenta de
+   administrador. El usuario logueado diría "admin" siempre, que es tanto
+   como no decir nada. Escribir el nombre obliga a hacerse cargo. */
+app.put('/api/productos/:id/medidas', auth(true), async (req, res) => {
+  const quien = String(req.body?.medido_por || '').trim();
+  if (quien.length < 2) {
+    return enviarError(res, 400, 'Escribe tu nombre para registrar quién tomó las medidas');
+  }
+  if (quien.length > 60) return enviarError(res, 400, 'El nombre es demasiado largo');
+
+  /* Cada medida es opcional por separado: es normal saber el peso y no
+     tener las tres dimensiones, o al revés. Lo que no se manda no se
+     toca; mandar vacío la borra a propósito (corregir un dato inventado
+     dejándolo en blanco es una acción válida). */
+  const cambios = {};
+  for (const campo of ['peso_kg', 'alto_cm', 'ancho_cm', 'profundidad_cm']) {
+    if (req.body?.[campo] === undefined) continue;
+    const crudo = req.body[campo];
+    if (crudo === null || String(crudo).trim() === '') {
+      cambios[campo] = null;
+      continue;
+    }
+    const valor = num(crudo);
+    if (valor < 0) return enviarError(res, 400, `${campo} no puede ser negativo`);
+    // Tope de cordura: 300 kg / 300 cm. Un tecleo de más (18 en vez de 1,8)
+    // multiplica por diez el costo de envío calculado y nadie lo nota.
+    if (valor > 300) return enviarError(res, 400, `${campo} parece un error de tecleo (${valor})`);
+    cambios[campo] = valor || null;
+  }
+
+  if (Object.keys(cambios).length === 0) {
+    return enviarError(res, 400, 'No enviaste ninguna medida');
+  }
+
+  cambios.medidas_actualizado_en = new Date().toISOString();
+  cambios.medidas_actualizado_por = quien;
+
+  const { data, error } = await db.from('productos')
+    .update(cambios).eq('id', req.params.id).select().single();
+  if (error) return enviarErrorBD(res, error);
+  res.json(data);
 });
 
 app.put('/api/productos/:id', auth(true), async (req, res) => {

@@ -2146,6 +2146,21 @@
             </div>
           </div>
           <p class="modal-hint" id="prodMedidasActualizado" style="margin-top:10px;">Última actualización de medidas y peso: —</p>
+
+          <!-- Las medidas se guardan APARTE del resto del producto (sql/43):
+               antes el formulario las mandaba siempre y cualquier corrección
+               de precio las marcaba como "medidas hoy". Acá se firman. -->
+          <div class="field" style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border);">
+            <label>¿Quién tomó estas medidas?</label>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <input type="text" id="prodMedidoPor" maxlength="60" placeholder="Tu nombre"
+                     style="flex:1; min-width:180px;">
+              <button type="button" class="btn btn-outline" id="btnGuardarMedidas">📏 Guardar medidas</button>
+            </div>
+            <p class="subtitle">El peso y el tamaño deciden cuánto cuesta cada despacho, así que se
+              guardan por separado y con nombre. <strong>El botón "Guardar" de abajo no toca las
+              medidas</strong> — solo este las registra.</p>
+          </div>
         </div>
 
         <!-- ---------- Descripción ---------- -->
@@ -2303,6 +2318,11 @@
               <p class="subtitle">Se puede reservar pagando el 100% aunque no haya stock. Cuando
                 llegue, <strong>desmarca esta casilla</strong>: eso avisa por correo a todos los que
                 lo estaban esperando.</p>
+              <label style="margin-top:8px;">¿Cuántas unidades vienen?</label>
+              <input type="number" id="prodStockPorLlegar" min="0" step="1" placeholder="0">
+              <p class="subtitle">Es el tope de lo que se puede reservar cuando no queda stock.
+                <strong>Si todavía tienes unidades en tienda, el cliente solo puede comprar esas</strong>
+                — nunca se vende lo que no va a existir.</p>
               <label style="margin-top:8px;">Fecha estimada de llegada</label>
               <input type="date" id="prodFechaLlegada">
               <p class="subtitle">Se muestra siempre como <strong>estimada</strong>, en la ficha y en
