@@ -92,6 +92,7 @@ const elProdPrecioWeb = document.getElementById('prodPrecioWeb');
 const elProdCategoriaWeb = document.getElementById('prodCategoriaWeb');
 const elProdStockUmbralWeb = document.getElementById('prodStockUmbralWeb');
 const elProdEtiquetaWeb = document.getElementById('prodEtiquetaWeb');
+const elProdUrgenciaStockWeb = document.getElementById('prodUrgenciaStockWeb');
 const elProdMetaTitulo = document.getElementById('prodMetaTitulo');
 const elProdMetaTituloContador = document.getElementById('prodMetaTituloContador');
 const elProdMetaDescripcion = document.getElementById('prodMetaDescripcion');
@@ -1119,6 +1120,9 @@ function abrirModalProducto(producto = null) {
     if (elProdPrecioWeb) elProdPrecioWeb.value = producto.precio_web ?? '';
     if (elProdStockUmbralWeb) elProdStockUmbralWeb.value = producto.stock_umbral_web ?? '';
     if (elProdEtiquetaWeb) elProdEtiquetaWeb.value = producto.etiqueta_web || '';
+    // Los productos creados antes de sql/40 no traen el campo; el default
+    // de la base es true, así que undefined debe leerse como activado.
+    if (elProdUrgenciaStockWeb) elProdUrgenciaStockWeb.checked = producto.urgencia_stock_web !== false;
     if (elProdMetaTitulo) elProdMetaTitulo.value = producto.meta_titulo_web || '';
     if (elProdMetaDescripcion) elProdMetaDescripcion.value = producto.meta_descripcion_web || '';
     actualizarContadoresSeo();
@@ -1164,6 +1168,7 @@ function abrirModalProducto(producto = null) {
     if (elProdPrecioWeb) elProdPrecioWeb.value = '';
     if (elProdStockUmbralWeb) elProdStockUmbralWeb.value = '';
     if (elProdEtiquetaWeb) elProdEtiquetaWeb.value = '';
+    if (elProdUrgenciaStockWeb) elProdUrgenciaStockWeb.checked = true;
     if (elProdMetaTitulo) elProdMetaTitulo.value = '';
     if (elProdMetaDescripcion) elProdMetaDescripcion.value = '';
     actualizarContadoresSeo();
@@ -1327,6 +1332,7 @@ function construirPayloadProducto() {
     subcategoria_web,
     stock_umbral_web: elProdStockUmbralWeb?.value.trim() ? Number(elProdStockUmbralWeb.value) : null,
     etiqueta_web: elProdEtiquetaWeb?.value || null,
+    urgencia_stock_web: elProdUrgenciaStockWeb ? elProdUrgenciaStockWeb.checked : true,
     meta_titulo_web: elProdMetaTitulo?.value.trim() || null,
     meta_descripcion_web: elProdMetaDescripcion?.value.trim() || null,
     // Una sola descripción para todo (ya no hay campo aparte para la web):

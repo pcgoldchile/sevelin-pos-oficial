@@ -739,6 +739,10 @@ const CAMPOS_PRODUCTO = [
   'categoria_id', 'stock_umbral_web',
   // NOVEDAD/TENDENCIA/OFERTA — ver sql/28-etiqueta-web.sql.
   'etiqueta_web',
+  // Interruptor del aviso de pocas unidades en la tienda — ver
+  // sql/40-urgencia-stock-web.sql. El texto y el número los calcula la
+  // tienda con el stock real; acá solo se permite o se silencia.
+  'urgencia_stock_web',
   // Módulo Garantías — ver sql/31-garantias.sql.
   'condicion', 'meses_garantia',
   /* Marca del fabricante (sql/38). Se usa como `brand` en el feed de
@@ -847,6 +851,7 @@ function sanearProducto(body = {}) {
   // Etiqueta destacada: solo una de las 3 opciones válidas o NULL — cualquier
   // otra cosa (manipulación directa del payload) se descarta en vez de
   // dejar que la base rechace todo el guardado por el check constraint.
+  if (p.urgencia_stock_web !== undefined) p.urgencia_stock_web = !!p.urgencia_stock_web;
   if (p.etiqueta_web !== undefined) {
     p.etiqueta_web = ['NOVEDAD', 'TENDENCIA', 'OFERTA'].includes(p.etiqueta_web) ? p.etiqueta_web : null;
   }
