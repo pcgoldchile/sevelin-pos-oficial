@@ -296,93 +296,145 @@ excedente del negocio y de ingresos personales nuevos del dueño que empiezan en
 completo en mayo de 2027 (~$11,34M) solo es posible si la parte familiar también junta su mitad** —
 eso ya no depende del negocio.
 
-### La ruta de prepago, mes a mes (definida el 11-09-2026)
+### Primero la deuda de corto plazo, después el prepago (11-09-2026, noche)
 
-**De dónde sale el fondo, sin tocar el capital de trabajo.** Desde octubre de 2026 el arriendo pasa a
-pagarse a la misma parte familiar que comparte el crédito, y **la mitad de la cuota de esa parte se
-descuenta del arriendo**; además el dueño suma un ingreso personal nuevo. Resultado: **salen $296.792
-menos al mes de su bolsillo, sin cambiar nada en el negocio**. Ese es el aporte base del fondo. A eso
-se suman ~$1,5M de liquidar stock dormido (octubre-diciembre) y los $179.289 que libera el BCI desde
-junio de 2027.
+Apareció un compromiso que no estaba en el plan y que cambia el orden de los primeros meses: **un
+préstamo personal de $2.000.000 a un familiar, a devolver en dos partes**. La primera mitad ya se
+devolvió (02-09-2026, por transferencia) y **la segunda vence en octubre de 2026**.
 
-**El mecanismo justo (esto es lo importante).** El crédito se trata como **dos sub-créditos iguales**
-de $5.920.578, cada uno con su cuota de $146.792 y plazo a junio de 2032:
+Esta deuda **no cobra intereses, pero tiene la prioridad más alta**. La razón no es financiera: una
+deuda familiar no se cobra con intereses, se cobra con la relación. Y a diferencia del banco, no
+admite renegociar sin costo personal. Va primero.
 
-- La parte familiar **nunca cambia**: paga $146.792 al mes hasta 2032, pase lo que pase.
-- Cada prepago del dueño se hace **pidiendo rebaja de cuota, nunca de plazo**. Como la cuota es
-  proporcional al saldo y el plazo no se mueve, **la cuota de la otra parte se mantiene intacta en
-  $146.792 y solo baja la del dueño**, en la misma proporción en que baja su saldo.
-- Si se pidiera rebaja de plazo, el crédito terminaría antes para los dos y la parte familiar se
-  ahorraría intereses con plata del dueño. **Por eso siempre rebaja de cuota.**
-- Cuando el sub-crédito del dueño llega a cero, la cuota total queda en $146.792 y la sigue pagando la
-  otra parte hasta 2032.
-- **Poner el acuerdo por escrito**, aunque sea una hoja: saldo de cada uno, y actualizarlo en cada
-  prepago. El banco solo ve un crédito y un deudor; el reparto existe únicamente entre las partes.
+**Octubre es el mes apretado del año:**
 
-**La proyección** (aporte base $296.792/mes + $500.000 mensuales de stock dormido en oct-nov-dic +
-$179.289 desde junio 2027; prepagos cuando el fondo llega al 10% del saldo, que es el mínimo del
-contrato):
+| Concepto | Monto |
+|---|---|
+| Gastos fijos del mes | $1.109.873 |
+| Devolución del préstamo familiar | $1.000.000 |
+| **Total a cubrir** | **$2.109.873** |
 
-| Mes | Fondo | Prepago | Le queda de su mitad | Su cuota desde ahí |
+Cubrir eso solo con las ventas de octubre exigiría facturar **$8.439.492** con el margen de
+septiembre (25%) — no va a pasar; agosto, que fue el mejor mes, hizo $4,9M. **Pero no tiene que salir
+de octubre.** Ya hay $600.000 en mano de un abono recibido el 02-09-2026, así que **faltan $400.000 y
+hay 45 días para juntarlos: unos $8.900 al día**, o dos o tres productos del stock dormido. Visto así,
+deja de ser un problema y pasa a ser una tarea.
+
+**Fecha recomendada para el pago: lunes 26 de octubre de 2026.** El razonamiento:
+
+- El día 1 salen los gastos fijos ($637.000 entre arriendo, sueldos, luz e internet).
+- El **10 de octubre cae sábado**, así que la cuota del banco se paga el viernes 9 a más tardar.
+- El 20 vence el BCI.
+- Pagando el 26 ya están cubiertos los tres vencimientos, se sabe cómo vino el mes, se aprovechan las
+  ventas del fin de semana anterior, y **quedan cinco días de colchón** antes de que el 1 de noviembre
+  vuelvan a salir los gastos fijos. Pagar antes del 20 es apostar; pagar el 30 o 31 es quedar sin
+  respaldo para el arranque de noviembre.
+
+> **Regla que queda:** el dinero del pago se aparta en la cuenta del fondo **a medida que entra**, no
+> se junta el día 25. Si el 20 de octubre no están los $1.000.000 completos, se avisa al familiar
+> antes de la fecha, no después. Avisar tarde cuesta más que pagar tarde.
+
+### La ruta de prepago, rearmada (sin fecha obligatoria)
+
+**El cambio de criterio.** El plan anterior apuntaba a saldar la mitad propia junto con el término del
+BCI (mayo 2027). El dueño observó —con razón— que **esa fecha no compra nada**: mientras la otra mitad
+del crédito siga viva, el banco lo sigue viendo como deudor del total. Si terminar antes no lo deja
+limpio, **no hay premio por apurarse**, y forzar el calendario solo sirve para exprimir la caja.
+
+Entonces la pregunta deja de ser *"¿cuándo termino?"* y pasa a ser **"¿dónde rinde más cada peso?"**:
+
+- **Prepagar rinde 1,58% mensual garantizado, o sea ~20,7% al año, sin riesgo.** Ese es el piso.
+- **Mercadería que rota de verdad rinde más** (25-30% de margen en un mes). Pero mercadería que se
+  duerme rinde negativo: los $2.425.541 de stock dormido cuestan ~$40.000 al mes solo en intereses.
+- **La reserva de emergencia no rinde nada, y es la que evita el desastre.** Un atraso activa la
+  cláusula de aceleración: el banco puede exigir el total.
+
+**El orden correcto, entonces:**
+
+1. Reserva intacta: **2 cuotas ($587.168) + un mes de compras de mercadería**.
+2. **La deuda familiar de octubre.**
+3. **Dar de baja los seguros** — es el prepago más barato que existe, porque no exige poner plata.
+4. Mercadería que se sabe que rota (no la que "podría" venderse).
+5. **Prepago con lo que sobre**, en bloques de al menos el 10% del saldo, y siempre pidiendo
+   **rebaja de cuota, nunca rebaja de plazo** (ver el mecanismo justo más abajo).
+
+**Las tres rutas posibles**, simuladas con el calendario real del crédito:
+
+| Ruta | Qué supone | Su mitad queda saldada | Paga en total | Ahorro |
 |---|---|---|---|---|
-| oct-26 | $796.792 | — | $5.872.896 | $145.610 |
-| **nov-26** | $0 | **$1.593.584** | $4.230.833 | **$104.897** |
-| dic-26 | $796.792 | — | $4.154.865 | $103.014 |
-| **ene-27** | $0 | **$1.093.584** | $2.984.041 | **$73.985** |
-| feb-27 | $296.792 | — | $2.887.202 | $71.584 |
-| mar-27 | $593.584 | — | $2.788.742 | $69.143 |
-| **abr-27** | $0 | **$890.376** | $1.798.257 | **$44.585** |
-| may-27 | $296.792 | — | $1.681.568 | $41.692 |
-| **jun-27** | $0 | **$772.873** | $790.053 | **$19.588** |
-| jul-27 | $476.081 | — | $656.486 | $16.277 |
-| **ago-27** | $431.478 | **$520.684** | **$0 ✅** | **$0** |
+| **Sin prepagar** | nada cambia | junio 2032 | $10.275.440 | — |
+| **A — Prudente** | $250.000/mes de stock dormido (nov-abr), sin tocar los seguros | **octubre 2027** | $6.914.033 | $3.361.407 |
+| **B — Con seguros de baja** | lo mismo, más ~$1.700.000 abonados al capital en noviembre | **agosto 2027** | $5.900.853 | **$4.374.587** |
+| **C — B + $200.000/mes del excedente** | el negocio aporta $200.000 mensuales | **mayo 2027** | $5.784.274 | $4.491.166 |
 
-**Resultado: su mitad queda saldada en agosto de 2027**, tres meses después del BCI. Pagaría
-**$6.709.568** en total (12 cuotas + $4.871.101 de prepagos + $76.963 de comisiones) en vez de los
-**$10.275.440** que le costaría su mitad llegando hasta 2032: **ahorro de $3.565.872**.
+**Lo que hay que leer en esa tabla:** el préstamo familiar atrasa la meta **dos meses** (de agosto a
+octubre de 2027) — el dueño lo intuyó y es exactamente eso. **Pero dar de baja los seguros recupera
+esos dos meses y además hace pagar $1.013.180 menos.** La gestión que menos esfuerzo cuesta es la que
+más rinde, y tiene fecha de vencimiento: es una llamada a la ejecutiva.
 
-Y hay dos palancas que pueden adelantarlo aún más: **dar de baja los seguros** (hasta ~$1,7M menos de
-deuda, la mitad de eso a su favor) y **cada peso extra de excedente del negocio**. Nótese que la cuota
-propia va bajando en cada prepago: esa diferencia debe ir al fondo, no al consumo.
+**El mecanismo justo con la otra parte (esto no cambia).** El crédito se trata como **dos sub-créditos
+iguales** de $5.920.578, cada uno con cuota de $146.792 y plazo a junio de 2032:
 
-**El piso que no se cruza:** nunca prepagar si la caja queda con menos de 2 cuotas de reserva
-($587.168) más un mes de compras de mercadería. El fondo se llena con stock dormido y excedente, no
-con el capital que hace girar la tienda.
+- La otra parte **nunca cambia**: paga $146.792 al mes hasta 2032, pase lo que pase.
+- Cada prepago del dueño se pide como **rebaja de cuota, jamás rebaja de plazo**. Como la cuota es
+  proporcional al saldo y el plazo no se mueve, **solo baja la cuota del dueño**.
+- Si se pidiera rebaja de plazo, el crédito terminaría antes para los dos y la otra parte se ahorraría
+  intereses pagados por el dueño. Por eso: **siempre rebaja de cuota.**
+- **El acuerdo va por escrito**, con el saldo de cada parte, actualizado en cada prepago y en cada
+  abono. El banco solo ve un crédito y un deudor; el reparto existe únicamente entre las partes.
+
+**Regla nueva sobre los abonos que llegan de la otra parte:** cuando la otra parte abona por fuera (en
+efectivo, no por el descuento del arriendo), **ese dinero baja su deuda, no la del dueño**, y hay que
+anotarlo. Y el mecanismo tiene que ser **uno solo por mes**: o paga en efectivo, o se descuenta del
+arriendo. Nunca los dos — eso sería cobrarle dos veces, y es el error que rompe los acuerdos de
+familia.
 
 ### Cómo se controla cada mes
 
-Rutina fija, **el día 11 de cada mes** (al día siguiente de pagar la cuota):
+Rutina fija, **el día 11 de cada mes** (al día siguiente de que venza la cuota):
 
 1. El dueño paga la cuota entre el 5 y el 8, y la **registra en el POS** (Finanzas → Gastos fijos).
-2. Abre una sesión y escribe **"control mensual"**, con dos datos que el POS no puede saber:
-   **saldo del fondo de prepago** y **saldo del crédito** según la app del banco.
+2. Abre una sesión y escribe **"control mensual"**, con tres datos que el POS no puede saber:
+   **saldo del fondo**, **saldo del crédito** según la app del banco, y **si la otra parte abonó**.
 3. Del POS se leen solos: ventas del mes, margen, gastos fijos pagados, stock dormido restante.
-4. La respuesta siempre contesta lo mismo: ¿va adelantado o atrasado contra la tabla de arriba?,
-   ¿alcanza para un prepago este mes (fondo ≥ 10% del saldo)?, ¿cuánto falta para saldar su mitad?
-5. Cada prepago se anota en la tabla de control de abajo, con el saldo nuevo de cada parte.
+4. La respuesta contesta siempre lo mismo: ¿va adelantado o atrasado contra la ruta elegida?,
+   ¿alcanza para un prepago (fondo ≥ 10% del saldo)?, ¿cuánto falta para saldar su mitad?
+5. Cada prepago y cada abono se anota en la tabla de control, con el saldo nuevo de cada parte.
 
 **Tabla de control (se completa mes a mes):**
 
-| Mes | Fondo objetivo | Fondo real | Prepago hecho | Saldo su mitad | Saldo parte familiar |
+| Mes | Hito del mes | Fondo real | Prepago / abono | Saldo su mitad | Saldo otra parte |
 |---|---|---|---|---|---|
-| sep-26 | — | — | — | $5.920.578 | $5.920.578 |
-| oct-26 | $796.792 | | | | |
-| nov-26 | prepago $1.593.584 | | | | |
-| dic-26 | $796.792 | | | | |
+| sep-26 | cuota 1 pagada · abono recibido | — | abono $600.000 | $5.920.578 | $5.920.578 |
+| oct-26 | **devolución familiar $1.000.000 (día 26)** | | | | |
+| nov-26 | baja de seguros (si se logra) | | | | |
+| dic-26 | | | | | |
 
-### Sobre "pagarlo todo para acceder a otro crédito"
+### Sobre quedar limpio ante el banco
 
-Hay que saber esto antes de decidir: **el banco ve el crédito completo a nombre del dueño**, no el
-reparto privado. En su informe de deuda figuran los $11,8M y la cuota de $293.584, aunque la mitad la
-pague otra persona.
+Conviene tener esto claro, porque es la pregunta de fondo: **el banco ve el crédito completo a nombre
+del dueño**, no el reparto privado. En su informe de deuda figuran los $11,8M y la cuota de $293.584,
+aunque la mitad la pague otra persona. Prepagar su mitad no lo borra de ahí.
 
-- **Saldar su mitad sí ayuda**: baja el saldo a la mitad y la cuota que le exigen a él cae a $146.792,
-  lo que mejora su carga financiera de forma real.
-- **Pero mientras quede la otra mitad, sigue figurando como deuda suya.** Para quedar del todo limpio
-  solo hay tres caminos: que la parte familiar junte su mitad y se prepague todo junto, que tome un
-  crédito propio y le pague, o aceptar que esa mitad siga a su nombre hasta 2032 con una cuota chica.
-- **Para un crédito nuevo pesa igual o más**: no tener ningún atraso, tener las ventas declaradas y un
-  historial limpio. Pagar antes no reemplaza eso.
+Lo que sí cambia, y sí sirve:
+
+- **La carga financiera baja de verdad.** Un crédito con saldo de $3M y cuota exigible de $146.792
+  pesa mucho menos en una evaluación que uno de $11,8M con cuota de $293.584. No desaparece, pero
+  deja de ser el problema principal.
+- **Lo que más pesa para un crédito nuevo no es el saldo: es el comportamiento.** Cero atrasos,
+  ventas declaradas al SII y antigüedad del negocio. Eso se construye **pagando puntual, no pagando
+  antes**. Un negocio con dos años de ventas declaradas y sin una sola mora consigue financiamiento
+  aunque tenga deuda vigente.
+- Para salir del todo solo hay tres caminos: que la otra parte tome un crédito propio y pague,
+  que el dueño prepague también la mitad ajena, o aceptar que esa mitad siga a su nombre hasta 2032
+  con una cuota chica.
+
+**Sobre prepagar también la mitad ajena.** Es tentador y financieramente es la mejor jugada que existe
+en este tablero: cambia una deuda al 26,36% CAE por un préstamo familiar al 0%. **Pero traslada todo
+el riesgo al dueño**: si después no le pagan, se comió $5,9M sin recurso. Hoy los abonos llegan de
+forma irregular. **Regla: no prepagar la mitad ajena hasta que la otra parte sostenga doce meses
+seguidos de abonos puntuales.** Si eso ocurre, se vuelve a evaluar — y ahí sí sería la decisión
+correcta.
 
 ### Los seguros: decisión con fecha límite
 
@@ -421,9 +473,13 @@ sin seguros ($244.964, **$48.620 menos al mes**). Solo el de incapacidad tempora
 2. ~~Decir dónde está el $10M~~ — **$5M mercadería + $5M préstamo familiar a medias**.
 3. **Seguros: hablar con la ejecutiva antes de que se cierre la ventana** (preguntas de arriba).
 4. ~~Confirmar la fecha del BCI~~ — **20-05-2027**, confirmada con el comprobante.
-5. **Abrir la cuenta aparte del fondo** y definir el aporte mensual (~$400.000 para julio 2027;
-   ~$520.000 para llegar en mayo).
+5. **Abrir la cuenta aparte del fondo.** Sirve para dos cosas a la vez: juntar los $400.000 que
+   faltan para la devolución de octubre y, desde noviembre, el fondo de prepago.
 6. Pendiente de foto: el **certificado FOGAPE** (define si el prepago cobra comisión).
+7. **Devolución del préstamo familiar: $1.000.000 el lunes 26 de octubre de 2026.** Apartar el dinero
+   a medida que entra, no juntarlo el día 25.
+8. **Dejar por escrito el saldo de la otra parte** y la regla de un solo mecanismo de pago por mes
+   (efectivo o descuento del arriendo, nunca ambos).
 
 ---
 
