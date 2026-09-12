@@ -119,11 +119,29 @@ function badgeEstadoPedidoWeb(estado) {
   return `<span class="badge ${info.clase}">${info.txt}</span>`;
 }
 
+/* Con qué pagó el cliente. Importa para cuadrar contra la cartola: Khipu
+   es una transferencia que llega a la cuenta con su comisión descontada,
+   y el link de pago (tarjeta, enviado a mano por WhatsApp) llega por otra
+   vía y con otro costo. Antes la columna no existía y había que abrir el
+   pedido para saberlo.
+
+   Un pedido sin pago confirmado no muestra medio: todavía no pagó con
+   nada, y mostrar "Khipu" ahí haría creer que sí. */
+function badgeMedioPagoPedidoWeb(p) {
+  if (['CREADO', 'FALLIDO', 'EXPIRADO'].includes(p.estado)) {
+    return '<span style="color:var(--text-muted);">—</span>';
+  }
+  const metodo = String(p.metodo_pago || '').toUpperCase();
+  if (metodo === 'KHIPU') return '<span class="badge badge-soft">🏦 Khipu</span>';
+  if (metodo === 'FLOW') return '<span class="badge badge-soft">💳 Flow</span>';
+  return '<span class="badge badge-soft">' + escHtml(p.metodo_pago || 'Otro') + '</span>';
+}
+
 function renderPedidosWebTabla(lista) {
   if (!elPedidosWebTableBody) return;
 
   if (!lista || lista.length === 0) {
-    elPedidosWebTableBody.innerHTML = '<tr class="empty-row"><td colspan="7">No hay pedidos para este filtro.</td></tr>';
+    elPedidosWebTableBody.innerHTML = '<tr class="empty-row"><td colspan="8">No hay pedidos para este filtro.</td></tr>';
     return;
   }
 
@@ -157,6 +175,7 @@ function renderPedidosWebTabla(lista) {
       <td>${escHtml(p.numero_pedido)}${badgeEncargo}</td>
       <td>${tsAChile(p.creado_en)}</td>
       <td>${escHtml(p.cliente_nombre || '—')}</td>
+      <td>${badgeMedioPagoPedidoWeb(p)}</td>
       <td>${escHtml(p.metodo_envio || '—')}${tracking}</td>
       <td class="num">${fmtCLP(p.total)}</td>
       <td>${badgeEstadoPedidoWeb(p.estado)}</td>

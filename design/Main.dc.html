@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&display=swap');
+    body { margin: 0; font-family: 'Chakra Petch', 'Segoe UI', system-ui, sans-serif; }
+    a { color: #22d3ee; } a:hover { color: #67e8f9; }
+  </style>
+</helmet>
+
+<div style="width: 1080px; height: 1080px; position: relative; background: #0b1220; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+
+  <!-- Trama hexagonal sutil, el mismo recurso del sitio -->
+  <svg width="1080" height="1080" viewBox="0 0 1080 1080" style="position: absolute; inset: 0;" aria-hidden="true">
+    <defs>
+      <pattern id="hexA" width="104" height="180" patternUnits="userSpaceOnUse" patternTransform="translate(12 0)">
+        <path d="M52 0 L104 30 L104 90 L52 120 L0 90 L0 30 Z" fill="none" stroke="#22d3ee" stroke-width="1.1" opacity="0.11" />
+        <path d="M52 120 L104 150 L104 210 L52 240 L0 210 L0 150 Z" fill="none" stroke="#22d3ee" stroke-width="1.1" opacity="0.11" />
+      </pattern>
+      <radialGradient id="vigA" cx="50%" cy="42%" r="62%">
+        <stop offset="0%" stop-color="#123043" stop-opacity="0.95" />
+        <stop offset="100%" stop-color="#0b1220" stop-opacity="0" />
+      </radialGradient>
+    </defs>
+    <rect width="1080" height="1080" fill="url(#hexA)" />
+    <rect width="1080" height="1080" fill="url(#vigA)" />
+  </svg>
+
+  <!-- Zona segura del recorte circular de Instagram -->
+  <div style="position: absolute; width: 1080px; height: 1080px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.08);"></div>
+
+  <!-- Isotipo: S angular construida con trazos de circuito -->
+  <svg width="620" height="620" viewBox="0 0 200 200" style="position: relative; z-index: 2; filter: drop-shadow(0 0 26px rgba(34, 211, 238, 0.42));" role="img" aria-label="Isotipo Sevelin">
+    <g fill="none" stroke="#22d3ee" stroke-width="21" stroke-linecap="square" stroke-linejoin="miter">
+      <path d="M150 46 L74 46 L56 64 L56 82 L128 82" />
+      <path d="M144 118 L72 118 L72 136 L54 154 L50 154" />
+    </g>
+    <path d="M128 82 L144 82 L144 118 L128 118 Z" fill="#22d3ee" />
+    <circle cx="150" cy="46" r="13" fill="#22d3ee" />
+    <circle cx="50" cy="154" r="13" fill="#e879f9" />
+  </svg>
+
+</div>
+</x-dc>
+</body>
+</html>

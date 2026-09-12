@@ -1,0 +1,26 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1080, "h": 1080, "title": "A · Núcleo" },
+    { "file": "OpcionB.dc.html", "x": 1200, "y": 0, "w": 1080, "h": 1080, "title": "B · Pulso" },
+    { "file": "OpcionC.dc.html", "x": 2400, "y": 0, "w": 1080, "h": 1080, "title": "C · Wordmark" },
+    { "file": "OpcionD.dc.html", "x": 3600, "y": 0, "w": 1080, "h": 1080, "title": "D · Señal" },
+    { "file": "Pruebas.dc.html", "x": 0, "y": 1320, "w": 1560, "h": 1180, "title": "Prueba a tamaño real" }
+  ],
+  "annotations": [
+    {
+      "id": "brief",
+      "x": 1700,
+      "y": 1320,
+      "w": 460,
+      "text": "Cuatro caminos distintos, no cuatro versiones del mismo.\n\nA · Núcleo — la S dibujada como circuito. Descriptiva de \"tecnología\" sin decirlo.\n\nB · Pulso — el rayo que ya usas en \"SISTEMA EN LÍNEA\". Habla de energía y electrónica.\n\nC · Wordmark — la S tipográfica del logo actual. La más continua con lo que ya tienes.\n\nD · Señal — el punto cian que precede a SEVELIN, convertido en marca. La más legible en chico, la menos literal."
+    },
+    {
+      "id": "nota-32",
+      "x": 1700,
+      "y": 1820,
+      "w": 460,
+      "text": "Mira primero la columna de 32 px. Ahí es donde la mayoría de la gente va a ver tu logo: al lado de cada comentario y en las notificaciones."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}

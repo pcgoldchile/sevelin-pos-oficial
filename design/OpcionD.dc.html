@@ -1,0 +1,34 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600&display=swap');
+    body { margin: 0; font-family: 'Chakra Petch', 'Segoe UI', system-ui, sans-serif; }
+    a { color: #22d3ee; } a:hover { color: #67e8f9; }
+  </style>
+</helmet>
+
+<div style="width: 1080px; height: 1080px; position: relative; background: #0b1220; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+
+  <!-- El bullet cian que precede al wordmark, convertido en la marca entera -->
+  <svg width="760" height="760" viewBox="0 0 200 200" style="position: relative; z-index: 2;" role="img" aria-label="Isotipo Sevelin punto de conexión">
+    <g style="filter: drop-shadow(0 0 30px rgba(34, 211, 238, 0.40));">
+      <circle cx="100" cy="100" r="74" fill="none" stroke="#164e63" stroke-width="3" />
+      <path d="M100 26 A74 74 0 0 1 174 100" fill="none" stroke="#22d3ee" stroke-width="11" stroke-linecap="round" />
+      <path d="M100 174 A74 74 0 0 1 26 100" fill="none" stroke="#22d3ee" stroke-width="11" stroke-linecap="round" opacity="0.55" />
+      <circle cx="100" cy="100" r="38" fill="#22d3ee" />
+      <circle cx="100" cy="100" r="38" fill="none" stroke="#0b1220" stroke-width="0" />
+      <circle cx="174" cy="100" r="11" fill="#e879f9" />
+    </g>
+  </svg>
+
+</div>
+</x-dc>
+</body>
+</html>

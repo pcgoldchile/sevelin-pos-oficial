@@ -5837,6 +5837,126 @@ app.post('/api/interno/ajustar-stock', authSync, async (req, res) => {
   }
 });
 
+/* Registra en el POS la venta que nació en sevelin.cl.
+   ------------------------------------------------------------
+   HALLAZGO DEL 12-09-2026 QUE ESTE ENDPOINT CIERRA
+   Un pedido pagado en la tienda llamaba a /api/interno/ajustar-stock y
+   nada más: el stock bajaba y la venta no existía en ninguna parte. O sea
+   el inventario registraba la salida y el Historial de Ventas, la
+   utilidad, el margen, el ticket promedio y el punto de equilibrio se
+   quedaban todos cortos. Lo notó el dueño porque la venta de la balanza
+   no le aparecía en el historial del día.
+
+   POR QUÉ NO SE REUSA POST /api/ventas
+   Esa ruta descuenta stock como parte de su trabajo (BIZ-02 atómico), y
+   acá el stock YA se descontó en la llamada anterior del mismo webhook.
+   Pasar por ahí lo descontaría dos veces. Este endpoint hace lo mismo
+   PERO sin tocar stock, y lo dice en una línea para que nadie "arregle"
+   la omisión más adelante.
+
+   IDEMPOTENTE: las pasarelas reintentan sus notificaciones. El candado es
+   el índice único de ventas.pedido_web_numero (sql/41) — si la venta ya
+   existe se devuelve la misma en vez de crear otra, y el reintento
+   termina en 200 como si nada.
+
+   El costo sale del catálogo al momento de registrar. Los productos con
+   lotes (PEPS) no consumen capas acá: el flujo web nunca las tocó, porque
+   /api/interno/ajustar-stock solo descuenta los productos sin lotes.
+   Queda igual que antes de este cambio, no es una regresión nueva. */
+app.post('/api/interno/registrar-venta-web', authSync, async (req, res) => {
+  const numeroPedido = String(req.body?.numero_pedido || '').trim();
+  const items = Array.isArray(req.body?.items) ? req.body.items : [];
+  if (!numeroPedido) return enviarError(res, 400, 'Falta numero_pedido');
+  if (items.length === 0) return enviarError(res, 400, 'Falta items');
+
+  try {
+    const { data: yaExiste } = await db.from('ventas')
+      .select('id, numero_orden').eq('pedido_web_numero', numeroPedido).maybeSingle();
+    if (yaExiste) return res.json({ ok: true, ya_registrada: true, venta_id: yaExiste.id });
+
+    // Costo real desde el catálogo: el pedido trae el precio de venta,
+    // nunca el costo (ese dato no sale del POS y no debe salir).
+    const ids = items.map(i => Number(i.producto_pos_id)).filter(Boolean);
+    const { data: productos } = await db.from('productos')
+      .select('id, nombre, sku, costo_unitario, condicion, meses_garantia').in('id', ids);
+    const porId = new Map((productos || []).map(p => [p.id, p]));
+
+    const lineas = items.map(i => {
+      const prod = porId.get(Number(i.producto_pos_id)) || {};
+      const cantidad = Math.max(1, num(i.cantidad));
+      const precio = Math.max(0, num(i.precio_web));
+      return {
+        producto_id: prod.id || null,
+        nombre: i.nombre || prod.nombre || 'Producto',
+        cantidad,
+        costo_unitario: num(prod.costo_unitario),
+        precio_unitario: precio,
+        subtotal: precio * cantidad,
+        sku: i.sku || prod.sku || null,
+        es_servicio: false,
+        condicion: prod.condicion || null,
+        meses_garantia: prod.meses_garantia ?? 6,
+      };
+    });
+
+    const totales = totalizar(lineas, 0);
+    const fecha = fechaHoyChile();
+    const cabecera = {
+      fecha,
+      hora: horaChileActual(),
+      vendida_en: new Date().toISOString(),
+      cliente: (req.body?.cliente || '').trim() || 'Cliente web',
+      cliente_telefono: normalizarTelefonoChile(req.body?.cliente_telefono),
+      cliente_correo: (req.body?.cliente_correo || '').trim().toLowerCase() || null,
+      // Khipu es una transferencia bancaria: el cliente autoriza el pago
+      // desde su banco. Se guarda como tal para que cuadre con la cartola.
+      metodo_pago: (req.body?.metodo_pago || 'Transferencia'),
+      estado: 'PAGADA',
+      fecha_pago: new Date().toISOString(),
+      metodo_pago_final: (req.body?.metodo_pago || 'Transferencia'),
+      tipo_dte: null,
+      ...totales,
+      descuento_tipo: null,
+      descuento_valor: 0,
+      comision_pos: 0,
+      pago_mixto: false,
+      impreso: false,
+      // Mismo normalizador que las ventas de caja: retiro deja el envío
+      // como 'entregado' (no hay nada que despachar) y despacho lo deja
+      // 'pendiente' para que aparezca en la logística del POS.
+      ...construirDatosEnvio(req.body),
+      origen_pago: 'web',
+      // La comisión de la pasarela la calcula la tienda, que es la que
+      // sabe con cuál se cobró. Sin esto el margen de las ventas web se
+      // vería mejor de lo que es.
+      comision_pasarela: Math.max(0, num(req.body?.comision_pasarela)),
+      pedido_web_numero: numeroPedido,
+    };
+
+    const { data: venta, error } = await db.from('ventas').insert([cabecera]).select().single();
+    if (error) {
+      // Carrera entre dos reintentos simultáneos del webhook: el índice
+      // único hizo su trabajo. No es un fallo que deba reintentarse.
+      if (/duplicate key|pedido_web_numero/i.test(error.message)) {
+        return res.json({ ok: true, ya_registrada: true });
+      }
+      throw new Error(error.message);
+    }
+
+    const { error: errItems } = await db.from('venta_items')
+      .insert(lineas.map(l => ({ ...l, venta_id: venta.id })));
+    if (errItems) {
+      await db.from('ventas').delete().eq('id', venta.id);
+      throw new Error(errItems.message);
+    }
+
+    res.status(201).json({ ok: true, venta_id: venta.id, numero_orden: venta.numero_orden });
+  } catch (err) {
+    console.error('[VENTA WEB] no se pudo registrar:', err.message);
+    enviarError(res, 500, err.message || 'No se pudo registrar la venta web');
+  }
+});
+
 /* Panel "Pedidos Web" (Fase 5, README sección 2.1): lectura + cambio de
    estado de despacho de los pedidos que llegan de sevelin-tienda. Usa
    `dbWeb` (Supabase Web), NUNCA `db` (Supabase del POS) — son proyectos

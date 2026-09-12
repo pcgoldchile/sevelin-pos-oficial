@@ -1,0 +1,51 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&display=swap');
+    body { margin: 0; font-family: 'Chakra Petch', 'Segoe UI', system-ui, sans-serif; }
+    a { color: #22d3ee; } a:hover { color: #67e8f9; }
+  </style>
+</helmet>
+
+<div style="width: 1080px; height: 1080px; position: relative; background: #0b1220; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 26px;">
+
+  <svg width="1080" height="1080" viewBox="0 0 1080 1080" style="position: absolute; inset: 0;" aria-hidden="true">
+    <defs>
+      <linearGradient id="scanC" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#22d3ee" stop-opacity="0.10" />
+        <stop offset="55%" stop-color="#0b1220" stop-opacity="0" />
+        <stop offset="100%" stop-color="#e879f9" stop-opacity="0.09" />
+      </linearGradient>
+    </defs>
+    <rect width="1080" height="1080" fill="url(#scanC)" />
+  </svg>
+
+  <!-- Corchetes HUD: el mismo recurso que enmarca el hero de sevelin.cl -->
+  <svg width="1080" height="1080" viewBox="0 0 1080 1080" style="position: absolute; inset: 0; z-index: 1;" aria-hidden="true">
+    <g fill="none" stroke="#22d3ee" stroke-width="7" opacity="0.5">
+      <path d="M250 322 L250 262 L310 262" />
+      <path d="M830 322 L830 262 L770 262" />
+      <path d="M250 758 L250 818 L310 818" />
+      <path d="M830 758 L830 818 L770 818" />
+    </g>
+  </svg>
+
+  <!-- Monograma tipográfico: la S del wordmark, no una S dibujada -->
+  <div style="position: relative; z-index: 2; display: flex; align-items: flex-start; gap: 18px;">
+    <span style="font-size: 430px; font-weight: 700; line-height: 0.78; color: #22d3ee; letter-spacing: -0.01em; text-shadow: 0 0 34px rgba(34, 211, 238, 0.45);">S</span>
+    <span style="width: 30px; height: 30px; border-radius: 50%; background: #e879f9; margin-top: 46px; box-shadow: 0 0 22px rgba(232, 121, 249, 0.6);"></span>
+  </div>
+
+  <div style="position: relative; z-index: 2; font-size: 52px; font-weight: 500; letter-spacing: 0.42em; color: #67e8f9; text-indent: 0.42em;">SEVELIN</div>
+
+</div>
+</x-dc>
+</body>
+</html>
