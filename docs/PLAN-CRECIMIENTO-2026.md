@@ -334,60 +334,117 @@ deja de ser un problema y pasa a ser una tarea.
 > se junta el día 25. Si el 20 de octubre no están los $1.000.000 completos, se avisa al familiar
 > antes de la fecha, no después. Avisar tarde cuesta más que pagar tarde.
 
-### La ruta de prepago, rearmada (sin fecha obligatoria)
+### La ruta, medida en intereses y no en fechas (11-09-2026, revisión final)
 
-**El cambio de criterio.** El plan anterior apuntaba a saldar la mitad propia junto con el término del
-BCI (mayo 2027). El dueño observó —con razón— que **esa fecha no compra nada**: mientras la otra mitad
-del crédito siga viva, el banco lo sigue viendo como deudor del total. Si terminar antes no lo deja
-limpio, **no hay premio por apurarse**, y forzar el calendario solo sirve para exprimir la caja.
+**El objetivo quedó definido con precisión.** No es terminar en una fecha: la otra parte prefiere el
+plazo largo y va a pagar su mitad, así que el plazo no es un problema a resolver. Lo único que hay
+que minimizar es **cuánto interés le saca el banco al dueño por SU mitad**. Ese número es:
 
-Entonces la pregunta deja de ser *"¿cuándo termino?"* y pasa a ser **"¿dónde rinde más cada peso?"**:
+> **$4.354.862.** Su mitad son $5.920.578 de capital, y en 70 cuotas de $146.792 devuelve
+> $10.275.440. **Por cada $100 que debe, devuelve $174.**
 
-- **Prepagar rinde 1,58% mensual garantizado, o sea ~20,7% al año, sin riesgo.** Ese es el piso.
-- **Mercadería que rota de verdad rinde más** (25-30% de margen en un mes). Pero mercadería que se
-  duerme rinde negativo: los $2.425.541 de stock dormido cuestan ~$40.000 al mes solo en intereses.
-- **La reserva de emergencia no rinde nada, y es la que evita el desastre.** Un atraso activa la
-  cláusula de aceleración: el banco puede exigir el total.
+**Lo más importante de todo este análisis:** el valor de un prepago depende casi por completo de
+**cuándo** se hace, no de cuánto. El mismo millón:
 
-**El orden correcto, entonces:**
-
-1. Reserva intacta: **2 cuotas ($587.168) + un mes de compras de mercadería**.
-2. **La deuda familiar de octubre.**
-3. **Dar de baja los seguros** — es el prepago más barato que existe, porque no exige poner plata.
-4. Mercadería que se sabe que rota (no la que "podría" venderse).
-5. **Prepago con lo que sobre**, en bloques de al menos el 10% del saldo, y siempre pidiendo
-   **rebaja de cuota, nunca rebaja de plazo** (ver el mecanismo justo más abajo).
-
-**Las tres rutas posibles**, simuladas con el calendario real del crédito:
-
-| Ruta | Qué supone | Su mitad queda saldada | Paga en total | Ahorro |
+| Prepagado en… | Cuotas por delante | Interés que borra | Menos comisión | **Neto** |
 |---|---|---|---|---|
-| **Sin prepagar** | nada cambia | junio 2032 | $10.275.440 | — |
-| **A — Prudente** | $250.000/mes de stock dormido (nov-abr), sin tocar los seguros | **octubre 2027** | $6.914.033 | $3.361.407 |
-| **B — Con seguros de baja** | lo mismo, más ~$1.700.000 abonados al capital en noviembre | **agosto 2027** | $5.900.853 | **$4.374.587** |
-| **C — B + $200.000/mes del excedente** | el negocio aporta $200.000 mensuales | **mayo 2027** | $5.784.274 | $4.491.166 |
+| **nov-2026** | 68 | $1.903.743 | $15.800 | **$1.887.943** |
+| may-2027 | 62 | $1.643.072 | $15.800 | $1.627.272 |
+| nov-2027 | 56 | $1.405.801 | $15.800 | $1.390.001 |
+| may-2028 | 50 | $1.189.830 | $15.800 | $1.174.030 |
+| may-2029 | 38 | $814.312 | $15.800 | $798.512 |
+| may-2030 | 26 | $503.188 | $15.800 | $487.388 |
 
-**Lo que hay que leer en esa tabla:** el préstamo familiar atrasa la meta **dos meses** (de agosto a
-octubre de 2027) — el dueño lo intuyó y es exactamente eso. **Pero dar de baja los seguros recupera
-esos dos meses y además hace pagar $1.013.180 menos.** La gestión que menos esfuerzo cuesta es la que
-más rinde, y tiene fecha de vencimiento: es una llamada a la ejecutiva.
+**Un millón prepagado en noviembre de 2026 vale casi cuatro veces más que el mismo millón en 2030.**
+Por eso el primer prepago es el que decide casi todo el resultado, y por eso no hay que esperar a
+tener "la plata suficiente": hay que prepagar apenas se junte el mínimo del 10%.
 
-**El mecanismo justo con la otra parte (esto no cambia).** El crédito se trata como **dos sub-créditos
-iguales** de $5.920.578, cada uno con cuota de $146.792 y plazo a junio de 2032:
+**Las rutas, ordenadas por lo único que importa:**
 
-- La otra parte **nunca cambia**: paga $146.792 al mes hasta 2032, pase lo que pase.
-- Cada prepago del dueño se pide como **rebaja de cuota, jamás rebaja de plazo**. Como la cuota es
-  proporcional al saldo y el plazo no se mueve, **solo baja la cuota del dueño**.
-- Si se pidiera rebaja de plazo, el crédito terminaría antes para los dos y la otra parte se ahorraría
-  intereses pagados por el dueño. Por eso: **siempre rebaja de cuota.**
-- **El acuerdo va por escrito**, con el saldo de cada parte, actualizado en cada prepago y en cada
-  abono. El banco solo ve un crédito y un deudor; el reparto existe únicamente entre las partes.
+| Ruta | Qué agrega | Termina | Paga | **Interés** | Se ahorra |
+|---|---|---|---|---|---|
+| **0 — No hacer nada** | — | jun-2032 | $10.275.440 | **$4.354.862** | — |
+| **1 — Solo el flujo personal** | $296.792/mes | oct-2028 | $7.145.163 | **$1.224.585** | $3.130.277 |
+| **2 — + dar de baja los seguros** | ~$850.000 al capital | ago-2027 | $6.070.333 | **$999.755** | $3.355.107 |
+| **3 — + liquidar stock dormido** | ~$1.600.000 en 4 meses | mar-2027 | $5.813.333 | **$742.755** | $3.612.107 |
+| **4 — + servicio técnico** | +$150.000/mes de margen | ene-2027 | $5.734.670 | **$664.092** | $3.690.770 |
 
-**Regla nueva sobre los abonos que llegan de la otra parte:** cuando la otra parte abona por fuera (en
-efectivo, no por el descuento del arriendo), **ese dinero baja su deuda, no la del dueño**, y hay que
-anotarlo. Y el mecanismo tiene que ser **uno solo por mes**: o paga en efectivo, o se descuenta del
-arriendo. Nunca los dos — eso sería cobrarle dos veces, y es el error que rompe los acuerdos de
-familia.
+**Y acá está el respiro:** de la Ruta 0 a la Ruta 1 se ahorran **$3.130.277**. De la Ruta 1 a la
+Ruta 4, solo **$560.493** más. Es decir, **el 85% del ahorro total viene simplemente de empezar**,
+usando plata que el dueño ya va a tener de todas formas desde octubre. Las rutas 2, 3 y 4 son mejora,
+no supervivencia. **No hace falta ningún heroísmo, ni exprimir el negocio, ni dejar la tienda sin
+stock.** Hace falta no dejar la plata quieta.
+
+### Lo que dicen los números reales del negocio (medidos, no estimados)
+
+Antes de comprometer un peso a cualquier ruta, esto es lo que el POS dice de verdad:
+
+| Período | Ventas | Margen | % |
+|---|---|---|---|
+| Agosto (mes completo) | $4.909.000 | $1.543.140 | 31,4% |
+| Septiembre (11 días) | $1.445.000 | $356.718 | 24,7% |
+| **Septiembre proyectado a 30 días** | **$3.940.909** | **$973.405** | 24,7% |
+
+Contra gastos fijos de $1.109.873:
+
+- **Agosto dejó $433.267 de excedente.**
+- **Septiembre va camino a cerrar en rojo: −$136.468.** Y eso es antes de comisiones de medios de
+  pago e IVA, así que en realidad es peor.
+
+> **Conclusión incómoda pero necesaria: hoy el negocio no genera excedente confiable.** Por eso la
+> ruta se apoya en el flujo personal (que sí es seguro) y en liquidar stock que ya está comprado —
+> **no** en un excedente operativo que un mes aparece y al otro no. Cualquier plan que dependiera de
+> que el negocio ponga $300.000 al mes sería una fantasía con los números actuales.
+
+### La palanca real: el servicio técnico
+
+El margen por categoría, con todas las ventas del sistema:
+
+| Categoría | Ventas | Margen | **%** |
+|---|---|---|---|
+| **Servicios Técnicos** | $115.000 | $115.000 | **100,0%** |
+| Accesorios Móviles | $15.000 | $9.792 | 65,3% |
+| Cables y Adaptadores | $125.000 | $60.662 | 48,5% |
+| Hogar y Estilo de Vida | $378.000 | $154.544 | 40,9% |
+| Herramientas | $141.000 | $55.600 | 39,4% |
+| Computadores | $300.000 | $108.020 | 36,0% |
+| Energía Portátil | $540.000 | $184.502 | 34,2% |
+| Almacenamiento | $69.000 | $18.877 | 27,4% |
+| Periféricos | $153.000 | $39.776 | 26,0% |
+| Audio | $160.000 | $38.746 | 24,2% |
+| Componentes PC | $982.000 | $208.152 | 21,2% |
+| **Monitores** | **$1.905.000** | $210.986 | **11,1%** |
+
+**Los dos hallazgos que cambian la estrategia:**
+
+1. **Los monitores son el 30% de la facturación y solo el 11% del margen.** $1.905.000 vendidos para
+   ganar $210.986. Para mover ese tercio del negocio hay que comprar monitores con plata del crédito
+   (que cuesta 1,58% al mes), guardarlos, y arriesgar que se duerman — y hoy hay 6 monitores
+   dormidos. **Es la categoría que más capital consume y menos deja.**
+
+2. **El servicio técnico deja 100% de margen y está prácticamente sin usar.** Seis servicios en 40
+   días —$115.000, el 1,8% de las ventas— repartidos en cuatro tipos: mantenimiento preventivo
+   ($40.000), formateo ($15.000), ensamblado ($25.000) y diagnóstico ($10.000). Ticket promedio
+   **$19.167, sin costo asociado**. El módulo de Órdenes de Trabajo del POS está construido y **nunca
+   se ha usado: cero OT registradas.**
+
+**Lo que eso significa en plata:**
+
+| Si el servicio técnico llegara a… | Margen mensual | Para ganar lo mismo con monitores habría que vender |
+|---|---|---|
+| 2 por semana (9 al mes) | **$164.836** | $1.485.011 |
+| 1 por día hábil (22 al mes) | **$421.674** | $3.798.865 |
+
+> **Este es el punto donde el negocio y el crédito se tocan.** El servicio técnico **no inmoviliza un
+> peso de mercadería**: no hay que comprarlo, ni guardarlo, ni rezar para que rote. Cada peso de
+> margen que entra por servicio es un peso que **no necesitó capital del crédito para existir**.
+> Llegar a un servicio por día hábil equivale, en margen, a vender $3,8 millones en monitores —
+> más de lo que la tienda facturó en su mejor mes, y sin comprar nada.
+
+**La decisión estratégica que se desprende:** no se trata de dejar de vender monitores, sino de
+**dejar de crecer por el lado de los monitores**. El capital que hoy se repondría en monitores se
+queda quieto o va al fondo de prepago, y el crecimiento se busca por el lado del servicio técnico,
+que no lo necesita. Cómo conseguir esos servicios está en §1.8.
 
 ### Cómo se controla cada mes
 
@@ -480,6 +537,130 @@ sin seguros ($244.964, **$48.620 menos al mes**). Solo el de incapacidad tempora
    a medida que entra, no juntarlo el día 25.
 8. **Dejar por escrito el saldo de la otra parte** y la regla de un solo mecanismo de pago por mes
    (efectivo o descuento del arriendo, nunca ambos).
+
+---
+
+## 1.8 Hacerse conocido en Arica: contenido y anuncios (11-09-2026)
+
+> Esta sección responde una pregunta concreta del dueño: cómo llamar la atención de la gente de
+> Arica para que **traigan servicio técnico** —que es lo que más margen deja— y de paso para que
+> compren productos.
+
+### El cálculo que decide todo: ¿conviene pagar anuncios?
+
+Antes de elegir plataforma, hay que saber si la publicidad paga o no. Con los números reales de
+§1.7 y un costo por clic estimado de $300 para búsquedas locales en Arica (mercado chico, poca
+competencia) y una conversión de clic a contacto del 10%, el costo de conseguir un cliente es del
+orden de **$3.000**:
+
+| Qué se anuncia | Margen que deja una venta | Costo de conseguirla | **Resultado** |
+|---|---|---|---|
+| **Un servicio técnico** | **$19.167** (100% de margen) | ~$3.000 | **Deja $16.167 limpios** |
+| Un monitor de $85.000 | $9.435 (11,1% de margen) | ~$3.000 | Deja $6.435 — y hubo que comprar el monitor |
+| Un cable de $5.000 | $2.425 (48,5%) | ~$3.000 | **Pierde plata** |
+
+**La conclusión es contundente y hay que respetarla:**
+
+> **Anunciar servicio técnico es rentable aunque la publicidad salga tres veces más cara de lo
+> estimado. Anunciar productos de bajo ticket es quemar plata.**
+
+Si el primer peso de publicidad se hubiera gastado en monitores —que es lo que más se vende y lo que
+uno instintivamente anunciaría— habría sido un error caro. **El servicio técnico es lo único que
+aguanta publicidad pagada con los márgenes actuales.**
+
+### El orden correcto (y por qué este orden)
+
+El error más común es partir pagando. Acá el orden va de lo gratis y permanente a lo pagado y
+temporal, porque **lo gratis mejora el rendimiento de lo pagado**: un anuncio que lleva a un perfil
+vacío y sin reseñas convierte mucho peor.
+
+#### Paso 1 — Google Business Profile y reseñas (gratis, y es lo más importante)
+
+Cuando alguien en Arica escribe *"servicio técnico computadores Arica"* o *"formatear notebook
+Arica"*, Google muestra **primero el mapa con tres negocios**. Aparecer ahí no cuesta nada y capta a
+quien ya decidió comprar. Para servicio técnico local, esto rinde más que cualquier otra cosa.
+
+- Perfil completo: horario, teléfono, sitio web, categoría "Servicio de reparación de computadoras"
+  (además de la de tienda), fotos reales del local y del taller.
+- **Publicar los servicios con precio** dentro del perfil: diagnóstico $10.000, formateo $15.000,
+  mantenimiento $40.000.
+- **Reseñas: es la palanca más fuerte y la más barata.** El link ya existe:
+  `https://g.page/r/CZzFra1V3A9aEAE/review`. Hay que pedirlas **en el momento de la entrega**, con
+  el cliente presente y contento, mostrándole el QR o mandándole el link por WhatsApp ahí mismo.
+  Pedirla dos días después por mensaje casi nunca funciona.
+- **Meta concreta: 10 reseñas antes de gastar el primer peso en publicidad.**
+
+#### Paso 2 — Instagram y Facebook orgánicos (gratis)
+
+Contenido y publicaciones listas para copiar: **`docs/CONTENIDO-INSTAGRAM.md`**. Los productos de
+las primeras nueve publicaciones se eligieron entre el stock que nunca se ha vendido, porque
+publicarlos es a la vez hacer contenido y liquidar el lastre que financia el fondo de prepago.
+
+Para servicio técnico, el formato que mejor funciona es el **"antes y después"**: un equipo sucio o
+lento, y después funcionando. Es el contenido que más se comparte de un taller, no cuesta nada
+producirlo, y demuestra capacidad en vez de afirmarla.
+
+**Ritmo: 3 publicaciones por semana, sostenidas.** La constancia importa más que el volumen.
+
+#### Paso 3 — Google Ads de búsqueda, solo para servicio técnico (pagado)
+
+**Recién cuando haya 10 reseñas y el perfil de Instagram tenga contenido.**
+
+Por qué Google antes que Meta: **Google atiende demanda que ya existe, Meta la interrumpe.** Quien
+escribe "reparar notebook Arica" ya tiene el problema y está buscando quién se lo resuelve. Esa
+persona convierte mucho mejor que alguien a quien se le aparece un anuncio mientras mira fotos.
+
+- **Solo campaña de Búsqueda.** No Display, no Performance Max al principio: gastan el presupuesto
+  en impresiones que no convierten.
+- **Segmentación geográfica: Arica y Parinacota, radio acotado.** Esto es crítico — sin esto el
+  presupuesto se va en clics de Santiago que jamás van a llevar un equipo.
+- **Palabras a comprar** (concordancia de frase): *servicio técnico computadores Arica · reparación
+  notebook Arica · formatear computador Arica · mi notebook no enciende · cambio pasta térmica
+  Arica · recuperar datos disco duro Arica*.
+- **Palabras negativas desde el primer día**: *gratis, curso, tutorial, cómo, empleo, trabajo,
+  usado, vendo*. Sin esto se paga por gente que busca aprender a arreglarlo solo.
+- **Presupuesto de partida: $2.000 al día (~$60.000 al mes).** Con eso se esperan ~200 clics y
+  ~20 contactos al mes. Si convierte la mitad, son 10 servicios = **~$190.000 de margen contra
+  $60.000 de gasto**.
+- **Horario**: solo en horario de atención. Un clic a las 3 AM no lo contesta nadie.
+
+> **Regla de caja, no negociable:** este gasto **no sale del fondo de prepago ni del capital de
+> trabajo**. Sale del margen que genere el propio servicio técnico. El primer mes se financia con el
+> excedente de agosto, y desde ahí se autofinancia o se apaga.
+
+#### Paso 4 — Meta Ads (pagado, al final)
+
+El catálogo ya está conectado y sano (116 productos, sin errores). Eso habilita dos cosas que **sí**
+valen la pena en Meta, y ninguna es "anunciar un monitor a desconocidos":
+
+1. **Remarketing de catálogo** — mostrarle el producto a quien ya lo miró en sevelin.cl. El Pixel ya
+   está instalado y midiendo. Es la campaña más rentable de Meta porque le habla a gente que ya
+   mostró interés.
+2. **Campañas de alcance local para la marca** — que la gente de Arica sepa que Sevelin existe.
+   Esto no se mide en ventas directas y no hay que evaluarlo así.
+
+**Lo que NO hay que hacer en Meta:** campañas de venta directa de productos de bajo margen a público
+frío. El cálculo de arriba explica por qué.
+
+**Falta para poder anunciar:** método de pago en la cuenta publicitaria, y el ID de conversión de
+Google Ads (pendiente B3).
+
+### Qué medir, y cuándo decidir
+
+| Cuándo | Qué mirar | Qué decidir |
+|---|---|---|
+| Cada semana | Cuántos WhatsApp llegaron y de dónde venían | Si el contenido está trayendo gente |
+| A los 30 días del orgánico | Visitas al perfil, clics al link, **guardados** (no "me gusta") | Qué producto publicar más |
+| A los 30 días de Google Ads | Costo por contacto y servicios cerrados | Subir presupuesto, cambiar palabras, o apagar |
+| Cada mes | **% de ventas que fue servicio técnico** (hoy 1,8%) | Es el indicador que más importa de todos |
+
+**El número que hay que perseguir es uno solo: subir el servicio técnico del 1,8% de las ventas a
+un 15-20%.** Eso cambia el margen del negocio completo sin requerir un peso más de capital, y es lo
+que hace que el crédito se pueda pagar sin ahogar la operación.
+
+**Lo que hay que anotar a mano:** cuando llegue un cliente, preguntarle *"¿cómo supo de nosotros?"*
+y anotarlo junto al teléfono en el POS. Ninguna plataforma mide al que vio el Instagram y llegó
+caminando — y en Arica, esos son muchos.
 
 ---
 
