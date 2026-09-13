@@ -106,3 +106,20 @@ complete el pago, la utilidad saldrá inflada si no se le carga el costo antes (
 - **Entrega:** exige el **QR vigente** o el **carnet del titular con el RUT registrado**, y siempre nombre y RUT de quien retira. El código se usa una vez. Sin RUT registrado solo sirve el QR.
 - **Probado:** doble de Supabase (23 verificaciones) y jsdom (13). En producción, la tienda consulta al POS y responde bien a un código inexistente.
 - **No verificado:** que el correo con el QR llegue de verdad. Hay que crear la primera OT real con un correo propio.
+
+## 8. Salud registra los errores reales · Generar con IA arreglado · reintento ante cortes
+
+- **Por qué fallaba "Generar con IA":** `gemini-flash-latest` está saturado. En pruebas reales respondió 1 de 9 veces, y el resto "high demand" tras 14–30 s. `gemini-flash-lite-latest` respondió 5 de 5 (~1 s).
+- **Cómo quedó:**
+  - Usa primero flash-lite y cae a flash-latest como respaldo.
+  - Cada intento tiene tope de tiempo.
+  - Los mensajes salen en español.
+  - Quita "Sevelin" si el modelo lo agrega.
+  - Las versiones fijas 2.0 y 2.5 ya están retiradas por Google: se usan solo alias.
+- **Error 500 en Pedidos Web (12-09-2026, 22:50 Chile):** fue un "Gateway Timeout" de Supabase Web en una sola consulta, durante un incidente de Supabase ("Partially Degraded Service"). No tuvo que ver con la zona horaria: el reloj del PC y el de Vercel coincidían al segundo. Pedidos Web ahora reintenta ante cortes pasajeros (`esErrorTransitorio`).
+- **Registro de errores (sql/48 + tienda supabase/33):**
+  - **POS:** registra todo 5xx con su detalle técnico, más las fallas de correos de pedido y del QR.
+  - **Tienda:** registra todo lo que pasa por `console.error` del servidor, más los errores no controlados (`instrumentation.ts`).
+  - **Página Web → Salud → "Errores recientes":** agrupa ambos lados, con período (24 h / 7 / 30 días) y botón Limpiar.
+  - **Protección:** llaves y tokens enmascarados; se conserva 30 días.
+- **No cubre:** errores que ocurren solo en el navegador (JavaScript del lado del cliente) ni caídas de red del PC del dueño, que nunca llegan al servidor.
