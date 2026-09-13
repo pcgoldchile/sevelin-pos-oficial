@@ -18,8 +18,10 @@ consultar y "trae tu equipo".** Detalle en `docs/CHANGELOG-V61.md`.
 - 🔧 **Carrito solo de servicios**: única opción "Traes tu equipo al local", día obligatorio,
   recordatorio el día antes, y el panel Pedidos Web lo muestra (web 32, `agenda_tipo`).
 - 🛡️ Fichas de servicio ya no prometen "6 meses de garantía": la de mano de obra se consulta.
-- ⏳ **Pendiente del dueño:** aprobar propuesta de carrito mixto (servicio + producto) y del QR de
-  entrega segura del equipo. El botón "Generar con IA" del POS sigue roto.
+- 💵 **Los abonos ahora entran a Finanzas** (sql/46): al saldo el día que llegan, venta única al 100%, sin doble conteo. Encargos pueden ser productos; entrega independiente del pago.
+- 🛒 **Carrito mixto**: un pedido, un pago, dos entregas.
+- 🔐 **QR de retiro seguro en las OT** (sql/47): QR por correo/WhatsApp, entrega solo con QR vigente o carnet del titular.
+- ⏳ **Pendiente:** cargar el costo del PC Gamer (encargo #2); probar el correo del QR con la primera OT real; el botón "Generar con IA" sigue roto.
 
 **Versión anterior: v60 — el stock deja de mentir y las ventas web aparecen en el historial.**
 Detalle en `docs/CHANGELOG-V60.md`.

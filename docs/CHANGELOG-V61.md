@@ -65,3 +65,44 @@ garantía de mano de obra depende del servicio y del estado del equipo, y que se
 - POS: `node --check`, chequeos de funciones e ids duplicados vacíos.
 - **No verificado:** el correo de recordatorio llegando de verdad (depende del cron en Vercel) ni el
   diseño visual final (sin capturas en este entorno).
+
+---
+
+## 5. 🔴 Los abonos no existían para Finanzas (sql/46)
+
+**Hallazgo al revisar el abono del PC Gamer** ($400.000; se abonaron $150.000 por transferencia).
+Un abono se guardaba en `encargo_abonos` y no llegaba a ninguna parte: ni al saldo de
+Efectivo/Banco, ni al cierre de caja, ni a la proyección. Además, al completar el pago no se
+registraba ninguna venta.
+
+Regla que decidió el dueño:
+- Cada abono suma a su canal **el día que llega**. Esto aplica a saldos, arqueo, cierre de turno, proyección y Balance por medio de pago. Los abonos con tarjeta descuentan su comisión.
+- Al llegar al 100% se registra **una sola venta** con su costo (`ventas.encargo_id`, índice único), que cuenta en Utilidades.
+- Las vistas de caja excluyen esa venta para **no contar dos veces la misma plata**.
+- El encargo puede ser un **producto del catálogo** (con cantidad y costo). Si es algo suelto, el costo se escribe a mano.
+- La **entrega es independiente del pago** ("depende del caso"). El stock de un producto con stock propio baja al entregar o al pagar, lo que pase primero, una sola vez.
+- Un encargo con abonos ya no se puede eliminar: al borrarlo se perdía plata ya registrada.
+
+⚠️ **El PC Gamer (encargo #2) quedó con costo $0 y su abono inicial sin turno de caja.** Cuando se
+complete el pago, la utilidad saldrá inflada si no se le carga el costo antes (editar el encargo).
+
+## 6. Carrito mixto: un pedido, un pago, dos entregas
+
+- **Envío:** con productos y servicios juntos, se cotiza solo con los productos. Los servicios siempre se traen al local.
+- **Fecha:** el día en que el cliente trae el equipo es obligatorio con cualquier servicio. Si retira sus productos, es la misma visita.
+- **Datos del pedido:** `ItemPedido.es_servicio` separa los bloques en el checkout, en el correo de confirmación, en el recordatorio y en Pedidos Web.
+- **Balance:** `registrar-venta-web` ahora marca los servicios, que antes se contaban como productos.
+
+## 7. QR de retiro seguro en las Órdenes de Trabajo (sql/47)
+
+- **Código:** cada OT recibe un código aleatorio de 32 caracteres hexadecimales (`token_retiro`).
+- **Correo:** al crear la OT, la tienda envía el QR por correo (`/api/pos/notificar-qr-retiro`).
+- **Comprobante:** el cliente lo puede reenviar desde `/retiro/<código>` (página sin indexar, que consulta al POS en cada visita).
+- **En la orden hay tres botones:**
+  - 💬 Enviar por WhatsApp: botón manual, gratis.
+  - ✉️ Reenviar correo.
+  - ♻️ Generar QR nuevo: el anterior deja de servir.
+- **Retirar con QR:** escanea el código y abre la entrega. El escáner ahora lee QR.
+- **Entrega:** exige el **QR vigente** o el **carnet del titular con el RUT registrado**, y siempre nombre y RUT de quien retira. El código se usa una vez. Sin RUT registrado solo sirve el QR.
+- **Probado:** doble de Supabase (23 verificaciones) y jsdom (13). En producción, la tienda consulta al POS y responde bien a un código inexistente.
+- **No verificado:** que el correo con el QR llegue de verdad. Hay que crear la primera OT real con un correo propio.
