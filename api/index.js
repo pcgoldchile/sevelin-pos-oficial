@@ -1839,7 +1839,7 @@ app.delete('/api/productos/:id', auth(true), async (req, res) => {
    Devuelve el Set de producto_id que la función SQL ya descontó, para
    que ajustarStock() no los vuelva a tocar más abajo (mismo patrón que
    la marca item._fifo de aplicarCostosFifo). */
-async function descontarStockNoLotes(items) {
+async function descontarStockNoLotes(items, clave = null) {
   const lista = Array.isArray(items) ? items : [];
 
   // Solo productos por id, no reservados en OT. Se agrupa por producto
@@ -1853,10 +1853,18 @@ async function descontarStockNoLotes(items) {
   }
   if (pedidoPorProducto.size === 0) return new Set();
 
+  /* Ordenado por id: con clave de cobro (sql/50) la base compara este
+     arreglo con el del intento anterior, y el orden tiene que ser estable. */
   const p_items = [...pedidoPorProducto.entries()]
-    .map(([producto_id, cantidad]) => ({ producto_id, cantidad }));
+    .map(([producto_id, cantidad]) => ({ producto_id: Number(producto_id), cantidad }))
+    .sort((a, b) => a.producto_id - b.producto_id);
 
-  const { data, error } = await db.rpc('descontar_stock_venta', { p_items });
+  /* Con clave, descontar es idempotente: se puede reintentar ante un corte
+     de Supabase sin descontar dos veces. Sin clave (llamadas antiguas), no se
+     reintenta: un timeout no dice si Postgres alcanzó a descontar. */
+  const { data, error } = clave
+    ? await consultarConReintento(() => db.rpc('descontar_stock_venta_idem', { p_items, p_clave: clave }))
+    : await db.rpc('descontar_stock_venta', { p_items });
   if (error) throw new Error(error.message);
 
   // Solo quedan en la respuesta los producto_id que la función realmente
@@ -2363,8 +2371,42 @@ app.get('/api/ventas/:id', auth(), async (req, res) => {
   });
 });
 
+/* Clave de cobro (sql/50): la genera el POS y la repite en los reintentos
+   del mismo carrito. Solo letras, números y guiones, hasta 80 caracteres. */
+function claveIdempotenciaValida(valor) {
+  const t = String(valor || '').trim();
+  return /^[A-Za-z0-9-]{8,80}$/.test(t) ? t : null;
+}
+
 app.post('/api/ventas', auth(), async (req, res) => {
+  const clave = claveIdempotenciaValida(req.body?.clave_idempotencia);
+  let stockDescontadoConClave = false;
+  let ventaGuardada = false;
+
+  // De paso, devuelve el stock de cobros abandonados tras un corte (sql/50).
+  // No bloquea ni falla la venta si no resulta.
+  if (clave) db.rpc('limpiar_descuentos_huerfanos').then(() => {}, () => {});
+
   try {
+    /* Reintento de un cobro que ya quedó guardado (el corte fue DESPUÉS de
+       guardar): se responde con la venta existente, sin tocar nada más. */
+    let ventaExistente = null;
+    if (clave) {
+      const { data: previa, error: errPrevia } = await consultarConReintento(() =>
+        db.from('ventas').select('*').eq('clave_idempotencia', clave).maybeSingle());
+      if (errPrevia) throw new Error(errPrevia.message);
+      if (previa) {
+        const { data: itemsPrevios, error: errIt } = await consultarConReintento(() =>
+          db.from('venta_items').select('*').eq('venta_id', previa.id));
+        if (errIt) throw new Error(errIt.message);
+        if ((itemsPrevios || []).length) {
+          const envio = await registrarEnvioDeVenta(previa, req.body);
+          return res.status(200).json({ ...previa, items: itemsPrevios, ya_registrada: true, envio_aviso: envio.aviso || null });
+        }
+        ventaExistente = previa;   // quedó la cabecera sin detalle: se completa abajo
+      }
+    }
+
     const items = await normalizarItems(req.body?.items, req.usuario.rol);
 
     /* BIZ-02: se comprueba el stock Y se descuenta en una sola llamada
@@ -2372,15 +2414,17 @@ app.post('/api/ventas', auth(), async (req, res) => {
        SQL lanza una excepción, no descuenta nada y la venta se rechaza
        con 400: la base queda intacta. Los productos con lotes se validan
        y descuentan aparte, dentro de aplicarCostosFifo. */
-    const yaDescontados = await descontarStockNoLotes(items);
+    const yaDescontados = await descontarStockNoLotes(items, clave);
+    if (clave) stockDescontadoConClave = true;
     items.forEach(it => {
-      if (it.producto_id && yaDescontados.has(it.producto_id)) it._stockAtomico = true;
+      if (it.producto_id && yaDescontados.has(Number(it.producto_id))) it._stockAtomico = true;
     });
 
     /* PEPS: consume las capas y corrige el costo de cada línea ANTES de
        totalizar, para que la utilidad guardada sea la real. Los productos
-       sin lotes pasan de largo sin cambios. */
-    const { consumos } = await aplicarCostosFifo(items);
+       sin lotes pasan de largo sin cambios. Si la cabecera ya existía (se
+       está completando un cobro cortado), no se vuelve a consumir. */
+    const { consumos } = ventaExistente ? { consumos: [] } : await aplicarCostosFifo(items);
 
     // Descuento sobre el total (no por ítem) — ver calcularDescuentoMonto().
     // Sin tipo válido, es como si no hubiera descuento (venta de siempre).
@@ -2443,20 +2487,34 @@ app.post('/api/ventas', auth(), async (req, res) => {
       origen_pago: (req.body?.origen_pago || 'presencial'),
       comision_pasarela: Math.max(0, num(req.body?.comision_pasarela)),
       // Turno de caja activo, si hay uno abierto (se resuelve abajo)
-      caja_id: req.body?.caja_id ? Number(req.body.caja_id) : null
+      caja_id: req.body?.caja_id ? Number(req.body.caja_id) : null,
+      clave_idempotencia: clave
     };
 
     // En una venta mixta el método de cabecera queda como "Mixto"
     if (pagosMixtos) cabecera.metodo_pago = 'Mixto';
 
-    const { data: venta, error } = await consultarConReintento(() => db.from('ventas').insert([cabecera]).select().single());
-    if (error) {
-      if (esErrorJwtTransitorio(error.message)) {
-        console.warn('[VENTAS] Supabase rechazó la llave por reloj/JWT tras reintentar:', error.message);
-        return enviarError(res, 503, 'La base de datos no respondió a tiempo. Intenta cobrar de nuevo en unos segundos.');
+    /* Sin clave NO se reintenta el insert: un timeout no dice si la fila
+       quedó guardada y reintentar podía duplicar la venta. Con clave, el
+       índice único lo impide y un "duplicado" significa "ya se guardó". */
+    let venta = ventaExistente;
+    if (!venta) {
+      const insertar = () => db.from('ventas').insert([cabecera]).select().single();
+      let { data, error } = clave ? await consultarConReintento(insertar) : await insertar();
+      if (error && clave && /duplicate key|23505|clave_idempotencia/i.test(`${error.code} ${error.message}`)) {
+        ({ data, error } = await consultarConReintento(() =>
+          db.from('ventas').select('*').eq('clave_idempotencia', clave).single()));
       }
-      throw new Error(error.message);
+      if (error) {
+        if (esErrorJwtTransitorio(error.message)) {
+          console.warn('[VENTAS] Supabase rechazó la llave por reloj/JWT tras reintentar:', error.message);
+          return enviarError(res, 503, 'La base de datos no respondió a tiempo. Intenta cobrar de nuevo en unos segundos.');
+        }
+        throw new Error(error.message);
+      }
+      venta = data;
     }
+    ventaGuardada = true;
 
     /* _fifo y _stockAtomico son marcas internas de este proceso: no
        existen como columna, así que se quitan antes de insertar o
@@ -2468,8 +2526,13 @@ app.post('/api/ventas', auth(), async (req, res) => {
       .select();
 
     if (errItems) {
+      /* Un corte acá no dice si el detalle quedó guardado. Con clave se deja
+         la cabecera tal cual: el reintento la encuentra y completa (o ve que
+         ya estaba completa). Sin clave, se mantiene lo de siempre. */
+      if (clave && esErrorTransitorio(errItems.message)) throw new Error(errItems.message);
       // Evita dejar una venta huérfana si falla el detalle
       await db.from('ventas').delete().eq('id', venta.id);
+      ventaGuardada = false;
       throw new Error(errItems.message);
     }
 
@@ -2490,10 +2553,138 @@ app.post('/api/ventas', auth(), async (req, res) => {
     // descuenta cuando la orden pasa a ENTREGADO.
     await ajustarStock(items, -1);
 
-    res.status(201).json({ ...venta, items });
+    // Costo del despacho (sql/50). Nunca anula la venta: si falla, avisa.
+    const envio = await registrarEnvioDeVenta(venta, req.body);
+
+    res.status(201).json({ ...venta, items, envio_aviso: envio.aviso || null });
   } catch (err) {
-    enviarError(res, 400, err.message || 'No se pudo registrar la venta');
+    const mensaje = err.message || 'No se pudo registrar la venta';
+
+    /* Corte de Supabase: con clave, el reintento es seguro — se dice así,
+       claro, en vez del "Gateway Timeout" pelado de antes. */
+    if (esErrorTransitorio(mensaje)) {
+      if (res.locals) res.locals.detalleError = `Venta: ${mensaje}`;
+      return enviarError(res, 503, clave
+        ? 'Supabase no respondió a tiempo. Vuelve a apretar "Registrar venta": no se va a cobrar ni descontar stock dos veces.'
+        : 'Supabase no respondió a tiempo. Revisa el historial antes de volver a cobrar.');
+    }
+
+    /* Error definitivo (sin stock, dato inválido…): si se alcanzó a
+       descontar con clave y la venta NO quedó, se devuelve el stock. */
+    if (clave && stockDescontadoConClave && !ventaGuardada) {
+      const { error: errRev } = await db.rpc('revertir_descuento_venta', { p_clave: clave });
+      if (errRev) console.error('[VENTAS] no se pudo devolver el stock del cobro fallido:', errRev.message);
+    }
+    enviarError(res, 400, mensaje);
   }
+});
+
+/* ============================================================
+   ENVÍO DE UNA VENTA (sql/50)
+   ------------------------------------------------------------
+   Guarda quién llevó el pedido, cuánto costó, cómo se pagó, km y sector.
+   Si hubo costo, lo deja como gasto ("Envíos / Despachos"); si salió del
+   cajón con la caja abierta, también como egreso del turno para que el
+   cierre cuadre. Una fila por venta: un reintento no la duplica.
+   Devuelve { aviso } si algo no se pudo guardar — la venta ya está hecha
+   y no se anula por esto.
+   ============================================================ */
+const REPARTIDORES = { indrive: 'InDrive', padre: 'Padre', otro: 'Otro', sin_costo: 'Sin costo' };
+
+async function registrarEnvioDeVenta(venta, body) {
+  const e = body?.envio;
+  if (!e || venta?.tipo_entrega !== 'despacho') return {};
+  const repartidor = Object.keys(REPARTIDORES).includes(e.repartidor) ? e.repartidor : null;
+  if (!repartidor) return {};
+
+  try {
+    const { data: previo } = await db.from('envios').select('id').eq('venta_id', venta.id).maybeSingle();
+    if (previo) return {};
+
+    const costo = repartidor === 'sin_costo' ? 0 : Math.max(0, Math.round(num(e.costo)));
+    const desdeCaja = costo > 0 && e.pago === 'caja';
+    const metodo = costo > 0 ? (desdeCaja ? 'Efectivo' : 'Transferencia') : null;
+    const detalle = String(e.repartidor_detalle || '').trim().slice(0, 80) || null;
+    const km = num(e.km) > 0 ? Math.round(num(e.km) * 10) / 10 : null;
+    const sector = String(e.sector || '').trim().replace(/\s+/g, ' ').slice(0, 60) || null;
+    const quien = repartidor === 'otro' && detalle ? detalle : REPARTIDORES[repartidor];
+    const avisos = [];
+
+    let compraId = null;
+    if (costo > 0) {
+      const { datos, error: errVal } = await sanearCompra({
+        clasificacion: 'Envíos / Despachos',
+        costo_total: costo,
+        proveedor: quien,
+        metodo_pago: metodo,
+        descripcion: `Envío venta #${venta.numero_orden || venta.id}${sector ? ' · ' + sector : ''}${km ? ' · ' + km + ' km' : ''}`
+      });
+      if (errVal) avisos.push(`el gasto no se registró (${errVal})`);
+      else {
+        const { data: compra, error: errC } = await db.from('compras').insert([datos]).select('id').single();
+        if (errC) avisos.push('el gasto no se registró');
+        else compraId = compra.id;
+      }
+    }
+
+    let movId = null;
+    if (desdeCaja) {
+      const { data: caja } = await db.from('cajas_diarias').select('id').eq('estado', 'abierta').limit(1).maybeSingle();
+      if (caja) {
+        const { data: mov, error: errM } = await db.from('caja_movimientos').insert([{
+          caja_id: caja.id, tipo: 'EGRESO', monto: costo, concepto: `Envío ${quien} · venta #${venta.numero_orden || venta.id}`
+        }]).select('id').single();
+        if (errM) avisos.push('no se descontó del turno de caja');
+        else movId = mov.id;
+      } else {
+        avisos.push('no hay caja abierta: no se descontó del turno');
+      }
+    }
+
+    const { error: errE } = await db.from('envios').insert([{
+      venta_id: venta.id,
+      repartidor,
+      repartidor_detalle: detalle,
+      costo,
+      metodo_pago: metodo,
+      desde_caja: desdeCaja,
+      km,
+      sector,
+      direccion: venta.direccion_envio || null,
+      compra_id: compraId,
+      caja_movimiento_id: movId
+    }]);
+    if (errE) avisos.push('el detalle del envío no se guardó');
+
+    return avisos.length ? { aviso: `Venta registrada, pero ${avisos.join(' y ')}. Anótalo a mano en Gastos.` } : {};
+  } catch (err) {
+    console.error('[ENVÍOS] no se pudo registrar el envío:', err.message);
+    return { aviso: 'Venta registrada, pero el envío no se guardó. Anótalo a mano en Gastos.' };
+  }
+}
+
+/* Para el paso de entrega: sectores ya usados (autocompletar) y el promedio
+   de InDrive por km, para saber al tiro si un viaje está caro. */
+app.get('/api/envios/resumen', auth(), async (req, res) => {
+  const { data, error } = await db.from('envios')
+    .select('repartidor, costo, km, sector').order('creado_en', { ascending: false }).limit(500);
+  if (error) return enviarErrorBD(res, error);
+  const filas = data || [];
+
+  const sectores = [...new Set(filas.map(f => f.sector).filter(Boolean))].slice(0, 50);
+  const conKm = filas.filter(f => f.repartidor === 'indrive' && num(f.km) > 0 && num(f.costo) > 0);
+  const totalKm = conKm.reduce((a, f) => a + num(f.km), 0);
+  const totalCosto = conKm.reduce((a, f) => a + num(f.costo), 0);
+
+  res.json({
+    sectores,
+    indrive: {
+      viajes: conKm.length,
+      costoPorKm: totalKm > 0 ? Math.round(totalCosto / totalKm) : null,
+      costoPromedio: conKm.length ? Math.round(totalCosto / conKm.length) : null
+    },
+    totalEnvios: filas.length
+  });
 });
 
 /* Importación de ventas externas (respaldo JSON o planilla).
@@ -2937,7 +3128,14 @@ async function sanearCompra(body = {}) {
       url_comprobante: (body.url_comprobante || '').trim() || null,
       // Vínculo opcional con un gasto fijo (req. 4). Solo lo trae el pago
       // de un gasto fijo; las compras normales lo dejan en null.
-      gasto_fijo_id: body.gasto_fijo_id ? Number(body.gasto_fijo_id) : null
+      gasto_fijo_id: body.gasto_fijo_id ? Number(body.gasto_fijo_id) : null,
+      /* sql/49: FALSE = ya estaba descontado del saldo (pagado antes o
+         cubierto por un reajuste). Solo se toca si el cliente lo manda: el
+         modal normal de Gastos no lo conoce y un PUT desde ahí no debe
+         devolverle el descuento a un gasto que se marcó así. */
+      ...(body.afecta_saldo !== undefined
+        ? { afecta_saldo: !(body.afecta_saldo === false || body.afecta_saldo === 'false') }
+        : {})
     }
   };
 }
@@ -3513,11 +3711,12 @@ async function calcularEfectivoEsperado(fecha, fondoInicial) {
   });
 
   const { data: gastosRaw } = await db.from('compras')
-    .select('costo_total, metodo_pago, origen')
+    .select('costo_total, metodo_pago, origen, afecta_saldo')
     .gte('fecha', fecha).lte('fecha', fecha + 'T23:59:59');
 
+  // afecta_saldo=false (sql/49): esa plata no salió del cajón ese día
   const gastosEfectivo = (gastosRaw || [])
-    .filter(g => esEfectivo(g.metodo_pago) && g.origen !== 'MERMA')
+    .filter(g => esEfectivo(g.metodo_pago) && g.origen !== 'MERMA' && g.afecta_saldo !== false)
     .reduce((a, g) => a + num(g.costo_total), 0);
 
   const { data: inyRaw } = await db.from('inyecciones_capital')
@@ -3703,7 +3902,7 @@ app.get('/api/balance', auth(true), async (req, res) => {
 
     // --- Gastos del período ---
     const { data: gastosRaw } = await db.from('compras')
-      .select('id, fecha, clasificacion, costo_total, origen, metodo_pago, tiene_factura, iva_credito')
+      .select('id, fecha, clasificacion, costo_total, origen, metodo_pago, tiene_factura, iva_credito, afecta_saldo')
       .gte('fecha', desde).lte('fecha', hasta + 'T23:59:59');
 
     const gastos = gastosRaw || [];
@@ -3723,7 +3922,7 @@ app.get('/api/balance', auth(true), async (req, res) => {
        cuando el arriendo se pagaba por transferencia.
        Las mermas no salen del cajón: son stock perdido, no dinero. */
     const gastosEfectivo = gastos
-      .filter(g => esEfectivo(g.metodo_pago) && g.origen !== 'MERMA')
+      .filter(g => esEfectivo(g.metodo_pago) && g.origen !== 'MERMA' && g.afecta_saldo !== false)
       .reduce((a, g) => a + num(g.costo_total), 0);
 
     // Agrupación por familia contable
@@ -3789,7 +3988,11 @@ app.get('/api/balance', auth(true), async (req, res) => {
 
     // Flujo líquido: todo el dinero disponible, en cualquier forma
     // Con abonos en vez de la venta del encargo: es plata recibida (sql/46).
-    const flujoLiquido = (ingresos - ingresosEncargo + totalAbonosPeriodo) + totalInyecciones - totalGastos
+    // Los gastos con afecta_saldo=false (sql/49) ya estaban descontados: no vuelven a restar
+    const gastosQueMuevenSaldo = gastos
+      .filter(g => g.afecta_saldo !== false)
+      .reduce((a, g) => a + num(g.costo_total), 0);
+    const flujoLiquido = (ingresos - ingresosEncargo + totalAbonosPeriodo) + totalInyecciones - gastosQueMuevenSaldo
                        - (comisiones - comisionesEncargo + comisionesAbonosPeriodo);
 
     res.json({
@@ -4619,11 +4822,13 @@ app.get('/api/finanzas/saldos', auth(true), async (req, res) => {
 
     // Gastos (compras). Las mermas no son salida de dinero.
     const { data: gastosRaw } = await db.from('compras')
-      .select('costo_total, origen, metodo_pago').limit(100000);
+      .select('costo_total, origen, metodo_pago, afecta_saldo').limit(100000);
     const gastos = gastosRaw || [];
     let gastosEfectivo = 0, gastosBanco = 0;
     gastos.forEach(g => {
       if (g.origen === 'MERMA') return;
+      // sql/49: gasto que ya estaba descontado (pago previo o reajuste)
+      if (g.afecta_saldo === false) return;
       if (esEfectivo(g.metodo_pago)) gastosEfectivo += num(g.costo_total);
       else gastosBanco += num(g.costo_total);
     });
@@ -4768,6 +4973,135 @@ app.get('/api/finanzas/gastos-fijos-mes', auth(true), async (req, res) => {
   } catch (e) {
     enviarError(res, 500, e.message || 'No se pudo calcular el checklist de gastos fijos');
   }
+});
+
+/* ============================================================
+   RECORDATORIO DEL F29 (sql/49)
+   ------------------------------------------------------------
+   El F29 de un mes se declara y paga hasta el día 20 del mes siguiente
+   (contribuyente con facturación electrónica). Si el 20 cae sábado o
+   domingo, corre al lunes. Los feriados NO se corren acá: la fecha es
+   referencial y así se muestra.
+
+   El POS no lee el SII: un período queda pendiente hasta que el dueño lo
+   marca como presentado. Se revisan los períodos desde F29_PRIMER_PERIODO
+   (el primero sin presentar cuando se construyó esto) para que un mes que
+   se pasó sin declarar no desaparezca solo al cambiar de mes.
+   ============================================================ */
+const F29_PRIMER_PERIODO = '2026-08';
+const MESES_ES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
+  'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+function vencimientoF29(periodo) {
+  const [a, m] = periodo.split('-').map(Number);
+  // Mes siguiente al período, día 20 (en UTC para no depender del huso)
+  const d = new Date(Date.UTC(m === 12 ? a + 1 : a, m === 12 ? 0 : m, 20));
+  const dow = d.getUTCDay();
+  if (dow === 6) d.setUTCDate(22);
+  if (dow === 0) d.setUTCDate(21);
+  return d.toISOString().slice(0, 10);
+}
+
+function periodosF29Hasta(hoyISO) {
+  const [a, m] = hoyISO.split('-').map(Number);
+  const ultimo = m === 1 ? `${a - 1}-12` : `${a}-${String(m - 1).padStart(2, '0')}`;
+  const lista = [];
+  let [pa, pm] = F29_PRIMER_PERIODO.split('-').map(Number);
+  let guardia = 0;
+  while (guardia++ < 36) {
+    const p = `${pa}-${String(pm).padStart(2, '0')}`;
+    if (p > ultimo) break;
+    lista.push(p);
+    pm++; if (pm === 13) { pm = 1; pa++; }
+  }
+  return lista;
+}
+
+function diasEntre(desdeISO, hastaISO) {
+  return Math.round((Date.parse(hastaISO + 'T00:00:00Z') - Date.parse(desdeISO + 'T00:00:00Z')) / 86400000);
+}
+
+app.get('/api/finanzas/f29-estado', auth(true), async (req, res) => {
+  try {
+    const hoy = fechaHoyChile();
+    const periodos = periodosF29Hasta(hoy);
+    const { data: presentadosRaw, error } = await db.from('f29_presentaciones').select('*').in('periodo', periodos.length ? periodos : ['0000-00']);
+    if (error) return enviarErrorBD(res, error);
+    const presentados = new Set((presentadosRaw || []).map(p => p.periodo));
+
+    const pendientes = periodos.filter(p => !presentados.has(p)).map(p => {
+      const [a, m] = p.split('-').map(Number);
+      const vence = vencimientoF29(p);
+      const dias = diasEntre(hoy, vence);
+      return {
+        periodo: p,
+        nombre: `${MESES_ES[m - 1]} ${a}`,
+        vence,
+        diasRestantes: dias,
+        nivel: dias < 0 ? 'atrasado' : dias <= 2 ? 'urgente' : dias <= 7 ? 'pronto' : 'normal'
+      };
+    });
+
+    res.json({ hoy, pendientes, presentados: presentadosRaw || [] });
+  } catch (e) {
+    enviarError(res, 500, e.message || 'No se pudo calcular el estado del F29');
+  }
+});
+
+/* Marca un período como presentado. Si viene un monto y registrar_gasto,
+   deja además el pago en Gastos (clasificación de Impuestos) — el dueño
+   paga el F29 y se le olvida registrarlo. Si el período ya tenía un gasto
+   vinculado, no crea otro. */
+app.post('/api/finanzas/f29-presentado', auth(true), async (req, res) => {
+  try {
+    const periodo = String(req.body?.periodo || '').trim();
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(periodo)) return enviarError(res, 400, 'Período inválido (formato AAAA-MM)');
+    const monto = Math.round(num(req.body?.monto_pagado));
+    if (monto < 0) return enviarError(res, 400, 'El monto pagado no puede ser negativo');
+    const notas = String(req.body?.notas || '').trim() || null;
+
+    const { data: previo } = await db.from('f29_presentaciones').select('*').eq('periodo', periodo).maybeSingle();
+    let compraId = previo?.compra_id || null;
+
+    if (req.body?.registrar_gasto && monto > 0 && !compraId) {
+      const { data: clasif } = await db.from('compra_clasificaciones')
+        .select('nombre').ilike('nombre', 'Impuestos%').eq('activo', true).limit(1);
+      const clasificacion = clasif?.[0]?.nombre;
+      if (!clasificacion) return enviarError(res, 400, 'No existe una clasificación de gastos que empiece con "Impuestos"');
+
+      const [a, m] = periodo.split('-');
+      const { datos, error: errVal } = await sanearCompra({
+        clasificacion,
+        costo_total: monto,
+        proveedor: 'SII',
+        metodo_pago: req.body?.metodo_pago || 'Transferencia',
+        descripcion: `F29 período ${m}-${a}`
+      });
+      if (errVal) return enviarError(res, 400, errVal);
+      const { data: compra, error: errCompra } = await db.from('compras').insert([datos]).select('id').single();
+      if (errCompra) return enviarErrorBD(res, errCompra);
+      compraId = compra.id;
+    }
+
+    const { data, error } = await db.from('f29_presentaciones').upsert([{
+      periodo,
+      presentado_en: new Date().toISOString(),
+      monto_pagado: monto,
+      compra_id: compraId,
+      notas
+    }]).select().single();
+    if (error) return enviarErrorBD(res, error);
+    res.json(data);
+  } catch (e) {
+    enviarError(res, 500, e.message || 'No se pudo marcar el F29');
+  }
+});
+
+// Desmarcar (se marcó por error). El gasto que se haya registrado se queda: se borra en Gastos.
+app.delete('/api/finanzas/f29-presentado/:periodo', auth(true), async (req, res) => {
+  const { error } = await db.from('f29_presentaciones').delete().eq('periodo', req.params.periodo);
+  if (error) return enviarErrorBD(res, error);
+  res.json({ ok: true });
 });
 
 /* ============================================================

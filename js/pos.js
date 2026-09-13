@@ -9,6 +9,7 @@
 let cart = [];
 let productoSeleccionado = null;
 let ultimaVentaRegistrada = null;
+let claveCobroEnCurso = null;   // sql/50: se repite en los reintentos del mismo cobro
 
 // Descuento del carrito actual — 'MONTO' ($) o 'PORCENTAJE' (%). El monto
 // real siempre lo vuelve a calcular el servidor al confirmar la venta
@@ -794,7 +795,18 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
   // El backend calcula total, costo_total y utilidad a partir de los ítems,
   // y deja la venta en PENDIENTE si el método es "Por Pagar".
   const descuento = obtenerDescuentoActual();
+
+  /* Clave de cobro (sql/50): la misma en todos los reintentos de este
+     carrito, así un corte de Supabase nunca duplica la venta ni descuenta
+     el stock dos veces. Se renueva recién cuando la venta queda registrada. */
+  if (!claveCobroEnCurso) {
+    claveCobroEnCurso = (window.crypto && typeof window.crypto.randomUUID === 'function')
+      ? window.crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+  }
+
   const venta = await API.ventas.crear({
+    clave_idempotencia: claveCobroEnCurso,
     fecha: elPosFecha?.value || todayISO(),
     hora: horaPersonalizada,
     tipo_dte: datosPago.tipoDte || 'SIN DTE',
@@ -823,7 +835,11 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
   });
 
   ultimaVentaRegistrada = venta;
-  showToast(venta.estado === 'PENDIENTE' ? 'Venta registrada como PENDIENTE de pago' : 'Venta registrada con éxito', 'ok');
+  claveCobroEnCurso = null;
+  showToast(venta.estado === 'PENDIENTE' ? 'Venta registrada como PENDIENTE de pago'
+    : venta.ya_registrada ? 'La venta ya había quedado registrada: no se duplicó' : 'Venta registrada con éxito', 'ok');
+  // El envío nunca anula la venta; si algo de su registro falló, se avisa aparte
+  if (venta.envio_aviso) setTimeout(() => showToast(venta.envio_aviso, 'err'), 1500);
 
   cart = [];
   if (elPosDescuentoValor) elPosDescuentoValor.value = '';

@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%F0%9F%9B%92%3C/text%3E%3C/svg%3E">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sistema POS - Sevelin</title>
@@ -190,6 +191,11 @@
            panel "Pedidos Web" que abre ya es solo para admin. -->
       <button id="btnNotificaciones" class="btn-notificaciones admin-only" title="Pedidos web pendientes">
         🔔 Notificaciones <span id="badgeNotificaciones" class="badge-notificaciones">(0)</span>
+      </button>
+      <!-- Recordatorio del F29 (sql/49): solo aparece si hay un período sin
+           marcar como presentado. Lo pinta js/notificaciones.js. -->
+      <button id="btnF29" class="btn-notificaciones btn-f29 admin-only" title="F29 pendiente" hidden>
+        🧾 <span id="textoF29">F29</span>
       </button>
       <span id="syncBadge" class="sync-badge sync-pending">⏳ Conectando…</span>
     </div>
@@ -2679,6 +2685,7 @@
                 <option value="7" selected>Últimos 7 días</option>
                 <option value="30">Últimos 30 días</option>
               </select>
+              <button class="btn btn-outline btn-sm" id="btnCopiarErroresSalud" title="Copia todos los errores con su detalle completo">📋 Copiar</button>
               <button class="btn btn-outline btn-sm" id="btnLimpiarErroresSalud">🧹 Limpiar</button>
             </div>
           </div>
@@ -3393,6 +3400,18 @@
         equilibrio debe seguir usando el valor habitual.
       </p>
 
+      <!-- sql/49: el gasto cuenta en la utilidad y en el checklist, pero no
+           vuelve a restar del saldo porque esa plata ya se había descontado. -->
+      <label class="sn-toggle" style="width:fit-content; margin-top:10px;">
+        <input type="checkbox" id="pagarFijoNoAfectaSaldo">
+        Ya estaba descontado: no mover el saldo
+      </label>
+      <p class="modal-hint">
+        Márcalo si lo <strong>pagaste antes y no lo registraste</strong>, y ya cuadraste la caja o el
+        banco con un reajuste. Queda como pagado y cuenta en la utilidad, pero no vuelve a
+        restar plata del saldo.
+      </p>
+
       <div class="modal-foot">
         <button class="btn btn-ghost" id="btnCancelarPagarFijo">Cancelar</button>
         <button class="btn btn-primary" id="btnConfirmarPagarFijo">💸 Registrar gasto</button>
@@ -3692,6 +3711,48 @@
           <label for="entregaNotas">Notas de despacho</label>
           <input type="text" id="entregaNotas" placeholder="Ej: entregar en conserjería, llamar antes" maxlength="200">
         </div>
+
+        <!-- Costo real del despacho (sql/50): queda como gasto y, si sale del
+             cajón, como egreso del turno. Ver registrarEnvioDeVenta(). -->
+        <div class="field">
+          <label>¿Quién lo lleva?</label>
+          <div class="entrega-tipo-toggle envio-chips">
+            <button type="button" class="entrega-tipo-btn activo" data-envio-repartidor="indrive">🚗 InDrive</button>
+            <button type="button" class="entrega-tipo-btn" data-envio-repartidor="padre">👨 Mi padre</button>
+            <button type="button" class="entrega-tipo-btn" data-envio-repartidor="otro">Otro</button>
+            <button type="button" class="entrega-tipo-btn" data-envio-repartidor="sin_costo">Sin costo</button>
+          </div>
+        </div>
+        <div class="field" id="envioDetalleCampo" style="display:none;">
+          <label for="envioDetalle">¿Quién?</label>
+          <input type="text" id="envioDetalle" placeholder="Ej: Uber, Starken, amigo" maxlength="80">
+        </div>
+        <div id="envioCostoCampos">
+          <div class="grid grid-2">
+            <div class="field">
+              <label for="envioCosto">Costo del envío</label>
+              <input type="number" id="envioCosto" min="0" step="100" placeholder="Ej: 3500" inputmode="numeric">
+            </div>
+            <div class="field">
+              <label for="envioKm">Km (opcional)</label>
+              <input type="number" id="envioKm" min="0" step="0.1" placeholder="Ej: 4.2" inputmode="decimal">
+            </div>
+          </div>
+          <p class="modal-hint" id="envioHintKm"></p>
+          <div class="field">
+            <label>¿Cómo lo pagas?</label>
+            <div class="entrega-tipo-toggle">
+              <button type="button" class="entrega-tipo-btn activo" data-envio-pago="caja">💵 Efectivo de la caja</button>
+              <button type="button" class="entrega-tipo-btn" data-envio-pago="transferencia">🏦 Transferencia</button>
+            </div>
+          </div>
+        </div>
+        <div class="field">
+          <label for="envioSector">Sector / población</label>
+          <input type="text" id="envioSector" list="envioSectoresLista" placeholder="Ej: Chinchorro, Azapa, centro" maxlength="60">
+          <datalist id="envioSectoresLista"></datalist>
+        </div>
+        <p class="modal-hint">Si todavía no sabes el costo, déjalo vacío: la venta se registra igual, pero ese envío no queda en el registro.</p>
       </div>
 
       <div class="field">
@@ -5423,6 +5484,45 @@
   </div>
 
   <!-- MODAL: CONFIRMAR CON PIN DE ADMINISTRADOR (acciones destructivas) -->
+  <!-- Recordatorio del F29 (sql/49) — ver js/notificaciones.js -->
+  <div id="modalF29" class="modal-overlay">
+    <div class="modal-box modal-sm">
+      <h2>🧾 F29 pendiente</h2>
+      <p class="modal-hint" id="f29Resumen">—</p>
+
+      <p class="modal-hint">
+        Entra al SII → <strong>Impuestos mensuales → Declarar IVA (F29)</strong>, revisa la propuesta y
+        preséntala. El POS no lee el SII: cuando termines, márcalo aquí para apagar el recordatorio.
+        La fecha es referencial (no considera feriados).
+      </p>
+
+      <div class="field">
+        <label for="f29Monto">Monto pagado (0 si no hubo pago)</label>
+        <input type="number" id="f29Monto" min="0" step="1" placeholder="0">
+      </div>
+
+      <label class="sn-toggle" style="width:fit-content;">
+        <input type="checkbox" id="f29RegistrarGasto" checked>
+        Registrar también el pago en Gastos (Impuestos)
+      </label>
+
+      <div class="field" style="margin-top:10px;">
+        <label for="f29Metodo">Medio de pago</label>
+        <select id="f29Metodo">
+          <option value="Transferencia">Transferencia</option>
+          <option value="Tarjeta Débito">Tarjeta Débito</option>
+          <option value="Tarjeta Crédito">Tarjeta Crédito</option>
+          <option value="Efectivo">Efectivo · sale del cajón</option>
+        </select>
+      </div>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarF29">Después</button>
+        <button class="btn btn-primary" id="btnConfirmarF29">✅ Ya lo presenté</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modalConfirmarPin" class="modal-overlay">
     <div class="modal-box" style="max-width: 460px;">
       <div class="icon-success" style="font-size:40px;">🛑</div>

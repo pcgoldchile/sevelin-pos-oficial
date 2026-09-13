@@ -666,6 +666,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('btnCancelarEntrega')?.addEventListener('click', cancelarEntregaVenta);
   document.getElementById('btnConfirmarEntrega')?.addEventListener('click', confirmarEntregaVenta);
+
+  // Envío (sql/50): quién lo lleva y cómo se paga
+  document.querySelectorAll('[data-envio-repartidor]').forEach(btn => {
+    btn.addEventListener('click', () => seleccionarRepartidorEnvio(btn.dataset.envioRepartidor));
+  });
+  document.querySelectorAll('[data-envio-pago]').forEach(btn => {
+    btn.addEventListener('click', () => seleccionarPagoEnvio(btn.dataset.envioPago));
+  });
+  document.getElementById('envioCosto')?.addEventListener('input', actualizarHintEnvio);
+  document.getElementById('envioKm')?.addEventListener('input', actualizarHintEnvio);
 });
 
 function seleccionarTipoEntrega(tipo) {
@@ -674,6 +684,76 @@ function seleccionarTipoEntrega(tipo) {
     b.classList.toggle('activo', b.dataset.entregaTipo === entregaTipo));
   const campos = document.getElementById('entregaCamposDespacho');
   if (campos) campos.style.display = entregaTipo === 'despacho' ? 'block' : 'none';
+
+  /* Un despacho casi siempre viene pagado por transferencia antes de salir
+     (dueño, 13-09-2026); el retiro, en la tienda. Es solo el valor por
+     defecto: se puede cambiar abajo. */
+  const origen = document.getElementById('entregaOrigenPago');
+  if (origen) {
+    origen.value = entregaTipo === 'despacho' ? 'transferencia' : 'presencial';
+    origen.dispatchEvent(new Event('change'));
+  }
+}
+
+/* ---------- Envío: quién lo lleva, costo, km y sector (sql/50) ---------- */
+let envioRepartidor = 'indrive';
+let envioPago = 'caja';
+let envioResumen = null;   // promedio de InDrive por km y sectores ya usados
+
+function seleccionarRepartidorEnvio(valor) {
+  envioRepartidor = ['indrive', 'padre', 'otro', 'sin_costo'].includes(valor) ? valor : 'indrive';
+  document.querySelectorAll('[data-envio-repartidor]').forEach(b =>
+    b.classList.toggle('activo', b.dataset.envioRepartidor === envioRepartidor));
+  const detalle = document.getElementById('envioDetalleCampo');
+  if (detalle) detalle.style.display = envioRepartidor === 'otro' ? 'block' : 'none';
+  const costo = document.getElementById('envioCostoCampos');
+  if (costo) costo.style.display = envioRepartidor === 'sin_costo' ? 'none' : 'block';
+  actualizarHintEnvio();
+}
+
+function seleccionarPagoEnvio(valor) {
+  envioPago = valor === 'transferencia' ? 'transferencia' : 'caja';
+  document.querySelectorAll('[data-envio-pago]').forEach(b =>
+    b.classList.toggle('activo', b.dataset.envioPago === envioPago));
+}
+
+/* "InDrive promedio $850/km (12 viajes) · este viaje: $833/km" — para
+   decidir en el momento si aceptar la tarifa. Sin datos, no dice nada. */
+function actualizarHintEnvio() {
+  const hint = document.getElementById('envioHintKm');
+  if (!hint) return;
+  const costo = Number(document.getElementById('envioCosto')?.value) || 0;
+  const km = Number(document.getElementById('envioKm')?.value) || 0;
+  const prom = envioResumen?.indrive;
+  const partes = [];
+  if (envioRepartidor === 'indrive' && prom?.costoPorKm) {
+    partes.push(`InDrive promedio: ${fmtCLP(prom.costoPorKm)}/km (${prom.viajes} viaje${prom.viajes === 1 ? '' : 's'})`);
+  }
+  if (costo > 0 && km > 0) {
+    const esteKm = Math.round(costo / km);
+    let comparacion = '';
+    if (envioRepartidor === 'indrive' && prom?.costoPorKm) {
+      const dif = Math.round(((esteKm - prom.costoPorKm) / prom.costoPorKm) * 100);
+      comparacion = dif > 10 ? ` · ${dif}% más caro` : dif < -10 ? ` · ${Math.abs(dif)}% más barato` : ' · en el promedio';
+    }
+    partes.push(`este viaje: ${fmtCLP(esteKm)}/km${comparacion}`);
+  }
+  hint.textContent = partes.join(' · ');
+}
+
+async function cargarResumenEnvios() {
+  try {
+    envioResumen = await API.envios.resumen();
+    const lista = document.getElementById('envioSectoresLista');
+    if (lista) {
+      lista.innerHTML = (envioResumen?.sectores || [])
+        .map(s => `<option value="${escHtml(s)}"></option>`).join('');
+    }
+    actualizarHintEnvio();
+  } catch (err) {
+    // Sin resumen el paso funciona igual: solo no hay autocompletar ni promedio
+    console.error('No se pudo cargar el resumen de envíos:', err.message || err);
+  }
 }
 
 /* Abre el paso de entrega y devuelve una promesa con los datos elegidos.
@@ -691,6 +771,13 @@ function pedirDatosEntrega() {
   set('entregaComision', '');
   const campoCom = document.getElementById('entregaComisionCampo');
   if (campoCom) campoCom.style.display = 'none';
+  set('envioDetalle', '');
+  set('envioCosto', '');
+  set('envioKm', '');
+  set('envioSector', '');
+  seleccionarRepartidorEnvio('indrive');
+  seleccionarPagoEnvio('caja');
+  cargarResumenEnvios();
 
   modal.classList.add('show');
   setTimeout(() => document.getElementById('btnConfirmarEntrega')?.focus(), 60);
@@ -707,6 +794,20 @@ function confirmarEntregaVenta() {
   if (entregaTipo === 'despacho') {
     datos.direccion_envio = (document.getElementById('entregaDireccion')?.value || '').trim() || null;
     datos.notas_despacho = (document.getElementById('entregaNotas')?.value || '').trim() || null;
+
+    /* Envío (sql/50). Sin costo anotado (y sin marcar "Sin costo") no se
+       manda: la venta sigue igual y ese viaje no ensucia el promedio. */
+    const costo = Number(document.getElementById('envioCosto')?.value) || 0;
+    if (envioRepartidor === 'sin_costo' || costo > 0) {
+      datos.envio = {
+        repartidor: envioRepartidor,
+        repartidor_detalle: (document.getElementById('envioDetalle')?.value || '').trim() || null,
+        costo: envioRepartidor === 'sin_costo' ? 0 : costo,
+        pago: envioPago,
+        km: Number(document.getElementById('envioKm')?.value) || null,
+        sector: (document.getElementById('envioSector')?.value || '').trim() || null
+      };
+    }
   }
   document.getElementById('modalEntrega')?.classList.remove('show');
   const r = entregaResolver; entregaResolver = null;

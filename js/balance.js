@@ -924,6 +924,8 @@ function abrirModalPagarFijo(gasto) {
 
   const chkPlantilla = document.getElementById('pagarFijoActualizarPlantilla');
   if (chkPlantilla) chkPlantilla.checked = false;
+  const chkNoSaldo = document.getElementById('pagarFijoNoAfectaSaldo');
+  if (chkNoSaldo) chkNoSaldo.checked = false;
 
   marcarChipsFijo('pagarFijoMontoChips', document.querySelector('#pagarFijoMontoChips .chip[data-monto="igual"]'));
   marcarChipsFijo('pagarFijoFechaChips', document.querySelector('#pagarFijoFechaChips .chip[data-fecha="hoy"]'));
@@ -1037,7 +1039,9 @@ async function confirmarPagoGastoFijo() {
       costo_total: monto,
       descripcion,
       // Vínculo para el checklist del mes (req. 4): marca este fijo como pagado
-      gasto_fijo_id: gastoFijoPagando.id
+      gasto_fijo_id: gastoFijoPagando.id,
+      // sql/49: ya estaba descontado (pago previo o reajuste) → no mueve el saldo
+      afecta_saldo: !document.getElementById('pagarFijoNoAfectaSaldo')?.checked
     });
 
     // Solo si el usuario lo pidió: un cambio permanente, no el de un mes

@@ -255,6 +255,12 @@ h2 { color: var(--text-100); font-weight: 700; letter-spacing: -.01em; }
     background: var(--tint-red); color: var(--red); border-color: rgba(239, 68, 68, .45);
     animation: pulso-notificacion 2s ease-in-out infinite;
 }
+/* Recordatorio del F29: el display de arriba le ganaría al atributo hidden */
+.btn-f29[hidden] { display: none; }
+.btn-f29.f29-pronto   { background: var(--tint-amber, rgba(245, 158, 11, .15)); color: var(--gold, #f59e0b); border-color: rgba(245, 158, 11, .45); }
+.btn-f29.f29-urgente,
+.btn-f29.f29-atrasado { background: var(--tint-red); color: var(--red); border-color: rgba(239, 68, 68, .45);
+                        animation: pulso-notificacion 2s ease-in-out infinite; }
 @keyframes pulso-notificacion {
     0%, 100% { opacity: 1; }
     50% { opacity: .65; }
@@ -3624,6 +3630,9 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
     background: rgba(34,197,94,.10);
     color: var(--green);
 }
+/* Envío (sql/50): 4 opciones en una fila, que se parten en 2 en pantallas angostas */
+.envio-chips { flex-wrap: wrap; }
+.envio-chips .entrega-tipo-btn { flex: 1 1 calc(25% - 8px); min-width: 110px; padding: 10px 6px; }
 .entrega-comision-fila { display: flex; gap: 8px; align-items: center; }
 .entrega-comision-fila input { flex: 1; }
 

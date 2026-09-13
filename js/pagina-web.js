@@ -566,6 +566,8 @@ async function cargarSaludSistema() {
 /* ---------- Errores recientes (sql/48) ----------
    Lo que antes solo quedaba en los logs de Vercel (que se borran en una
    hora): qué falló, dónde, cuántas veces y cuándo fue la última. */
+let erroresSaludActuales = [];   // lo último cargado, para el botón Copiar
+
 async function cargarErroresSalud() {
   const tbody = document.getElementById('saludErroresBody');
   const resumen = document.getElementById('saludErroresResumen');
@@ -575,6 +577,7 @@ async function cargarErroresSalud() {
   try {
     const r = await API.saludSistema.errores(dias);
     const grupos = r.grupos || [];
+    erroresSaludActuales = grupos;
     const total = grupos.reduce((a, g) => a + (Number(g.veces) || 0), 0);
     if (resumen) {
       resumen.textContent = (r.avisos || []).length
@@ -593,8 +596,44 @@ async function cargarErroresSalud() {
         <td class="num strong">${Number(g.veces) || 1}</td>
       </tr>`).join('');
   } catch (err) {
+    erroresSaludActuales = [];
     tbody.innerHTML = '<tr class="empty-row"><td colspan="4">No se pudo cargar el registro de errores</td></tr>';
   }
+}
+
+/* Copia los errores cargados como texto plano, con el detalle COMPLETO (la
+   tabla lo corta en 300 caracteres), listo para pegarlo en un chat. */
+async function copiarErroresSalud() {
+  const grupos = erroresSaludActuales || [];
+  if (!grupos.length) { showToast('No hay errores para copiar', 'err'); return; }
+
+  const dias = document.getElementById('saludErroresDias')?.value || 7;
+  const lineas = [`Errores recientes de Sevelin (últimos ${dias} día(s)) — ${grupos.length} tipo(s)`, ''];
+  grupos.forEach((g, i) => {
+    lineas.push(`${i + 1}. [${g.origen}] ${[g.metodo, g.ruta].filter(Boolean).join(' ') || '—'}${g.estado_http ? ' · HTTP ' + g.estado_http : ''}`);
+    lineas.push(`   Qué falló: ${g.mensaje}`);
+    if (g.detalle) lineas.push(`   Detalle: ${g.detalle}`);
+    lineas.push(`   Veces: ${Number(g.veces) || 1} · última: ${tsAChile(g.ultima)}${g.veces > 1 ? ' · primera: ' + tsAChile(g.primera) : ''}`);
+    lineas.push('');
+  });
+  const texto = lineas.join('\n');
+
+  try {
+    await navigator.clipboard.writeText(texto);
+  } catch (_) {
+    // Sin permiso de portapapeles (o navegador viejo): método clásico
+    const area = document.createElement('textarea');
+    area.value = texto;
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    const ok = document.execCommand && document.execCommand('copy');
+    area.remove();
+    if (!ok) { showToast('No se pudo copiar automáticamente', 'err'); return; }
+  }
+  showToast(`${grupos.length} tipo(s) de error copiados`, 'ok');
 }
 
 async function limpiarErroresSalud() {
@@ -611,6 +650,7 @@ async function limpiarErroresSalud() {
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('saludErroresDias')?.addEventListener('change', cargarErroresSalud);
   document.getElementById('btnLimpiarErroresSalud')?.addEventListener('click', limpiarErroresSalud);
+  document.getElementById('btnCopiarErroresSalud')?.addEventListener('click', copiarErroresSalud);
 });
 
 /* ---------- "Visitando ahora": se refresca solo cada 20s ----------

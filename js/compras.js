@@ -435,6 +435,7 @@ function renderComprasTabla(listaOriginal) {
       <td>
         <span class="badge ${claseBadgeClasificacion(c)}">${escHtml(c.clasificacion)}</span>
         ${c.origen === 'MERMA' ? '<br><small style="color:var(--text-muted);">📉 generado por merma</small>' : ''}
+        ${c.afecta_saldo === false ? '<br><small style="color:var(--text-muted);" title="Ya estaba descontado: cuenta en la utilidad pero no resta del saldo">⚖️ no mueve el saldo</small>' : ''}
       </td>
       <td class="num strong">${fmtCLP(c.costo_total)}</td>
       <td>${marcaDocumento(c.url_documento, 'Factura / Boleta', c.id, 'url_documento')}</td>

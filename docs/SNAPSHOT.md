@@ -7,7 +7,60 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
-**Fecha:** 12-09-2026 · **Versión activa: v61 — servicios técnicos: fichas reales, precio a
+**Fecha:** 13-09-2026 · **Sesión sin versión nueva del POS** — costo de un encargo cargado, un bug de
+categoría corregido en `sevelin-tienda`, la ficha de producto de la tienda reordenada varias veces a
+pedido del dueño (terminó: foto + botón fijos al hacer scroll, aviso de stock baja normal, visor
+ampliado con carrusel al hacer clic en la foto), y un badge de contraste corregido en el POS.
+
+- 💰 **Costo del PC Gamer cargado** (encargo #2, Nicolás Reyes): `$315.000` (el dueño lo confirmó
+  distinto al estimado de $400.000 de la sesión anterior). Con la venta en $400.000, la utilidad de
+  ese encargo queda en $85.000 en vez de salir inflada.
+- 🐛 **"Periféricos" duplicado en la tienda, corregido:** un producto (`Mouse RGB - 307812 Cinco
+  Tech`) tenía la categoría guardada con codificación rota (`Perif�ricos`) en `productos_web` — eso
+  generaba un segundo filtro fantasma en `/productos`. Corregido con un `UPDATE` de una fila. Se creó
+  además la subcategoría **"Otros Periféricos"** para el presentador láser, que no calzaba en
+  Mouse/Teclados/Mandos/Combos.
+- 🎨 **Badge de "stock bajo" en la tabla de productos del POS, contraste corregido dos veces:**
+  usaba fondo rojo translúcido que sobre el tema oscuro quedaba casi negro sobre negro con el número
+  ilegible; el primer arreglo (ámbar) chocaba con el amarillo propio del emoji ⚠️. Quedó en **fondo
+  azul sólido + texto blanco** (`css/styles.css`).
+- 🛒 **Ficha de producto de `sevelin-tienda`, varias vueltas hasta el diseño final** (todo en
+  `src/app/productos/[sku]/page.tsx` + `src/components/galeria-producto.tsx` y los avisos de
+  stock/pago): terminó en que **la foto y "Agregar al carrito" quedan fijos** (`sticky`) mientras se
+  hace scroll, y **"Última unidad"/"Quedan X unidades" baja normal** con el resto de la ficha — es lo
+  opuesto de como quedó primero (se probaron 4 combinaciones distintas antes de la que el dueño
+  confirmó). El punto de corte para el diseño de escritorio bajó de `lg` (1024px) a `md` (768px): con
+  1024px, cualquier ventana de escritorio no maximizada caía al diseño de una sola columna sin nada
+  fijo. Se corrigió además que 3 avisos (stock crítico, "viene en camino", "avísame cuando llegue")
+  tenían fondo semitransparente que dejaba ver el contenido de atrás cuando quedaban fijos sobre él.
+  **Nuevo: visor ampliado con carrusel** al hacer clic en la foto (flechas, miniaturas, teclado,
+  Escape) — antes solo se podía cambiar de foto con las miniaturas, sin verla más grande. La foto
+  además tiene tope de altura (max-h 420px): sin eso, en pantallas anchas era tan alta que el botón
+  de compra quedaba fuera de la pantalla al entrar a la ficha.
+- ✅ **Las dos preguntas abiertas se resolvieron en la sesión siguiente (Opus, 13-09-2026):** sueldos
+  movidos al **día 15** (el día 1 se comía toda la utilidad de los días 21-31) y el checkbox quedó
+  construido en **v62**.
+
+**Versión activa del POS: v63 — cobro seguro ante cortes de Supabase + registro de envíos.** Detalle
+en `docs/CHANGELOG-V63.md`. Migración `sql/50` ya aplicada en producción.
+
+- 🛡️ Reintentar un cobro ya no duplica la venta ni descuenta stock dos veces (`clave_idempotencia`).
+  Los "Gateway Timeout" del 12/13-09 fueron de Supabase sa-east-1 (POS y tienda a la vez), no del código.
+- 🚚 Paso de entrega: quién lleva el pedido (InDrive / padre / otro), costo, km, cómo se pagó (caja o
+  transferencia) y sector → tabla `envios` + gasto "Envíos / Despachos" + egreso del turno si sale del
+  cajón. Aviso en vivo del costo por km contra el promedio de InDrive.
+- 📋 Botón Copiar en Salud → Errores recientes.
+
+**Versión anterior: v62 — gasto que no mueve el saldo + recordatorio del F29.** Detalle en
+`docs/CHANGELOG-V62.md`. Migración `sql/49` ya aplicada en producción.
+
+- ⚖️ Pagar un gasto fijo con **"Ya estaba descontado: no mover el saldo"**: cuenta en utilidad y
+  checklist, no resta de caja/banco (`compras.afecta_saldo`).
+- 🧾 Botón **F29** en el header mientras haya un período sin marcar como presentado; al marcarlo
+  registra el pago en Gastos (Impuestos). **F29 de agosto 2026 aún sin presentar** (vence 21-09).
+- 📄 `docs/RUTA-COWORK-METRICOOL.md`: Cowork sí sirve para contenido — Metricool tiene conector oficial.
+
+**Versión anterior: v61 — servicios técnicos: fichas reales, precio a
 consultar y "trae tu equipo".** Detalle en `docs/CHANGELOG-V61.md`.
 
 - 🛠️ **27 servicios técnicos con ficha real** (13 reescritas + 14 nuevos). 9 nuevos siguen **ocultos**:
@@ -26,12 +79,20 @@ consultar y "trae tu equipo".** Detalle en `docs/CHANGELOG-V61.md`.
 - 🚫 **Una OT nunca se cobra desde el POS** (se quitó "Cobrar en POS" a propósito, decisión del dueño).
 
 **⏳ PENDIENTES PARA LA PRÓXIMA SESIÓN (en orden):**
-1. **Cargar el costo del PC Gamer** (encargo #2, Nicolás Reyes, $400.000). Hoy tiene costo $0: al completar el pago, la utilidad saldrá inflada.
-2. **Probar el correo del QR** creando la primera OT real con un correo propio (no se ha visto llegar uno de verdad). Revisar Salud si no llega.
-3. **Revisar el "incluye" de los servicios 270-273** (PS3, mandos PS3/PS4, impresora): ya están publicados, pero el contenido lo propuso Claude.
-4. **Fotos:** los 14 servicios nuevos (265-278) y #86/#118 no tienen foto.
-5. **Mirar Salud** los primeros días: confirmar que la tienda registra sus errores en producción (no se forzó un error real).
-6. Pendientes anteriores que siguen abiertos: SKU faltante en productos, costos en $0 y stock dormido (ver memoria del dueño).
+1. **Decidir el día de pago de Carlos y Alejandro.** El dueño preguntó si el día 1 está bien o si
+   conviene otro día, y pidió revisar el estado financiero real (balance, ingresos, gastos) antes de
+   responder. **Esto avisa Opus antes de empezar** (es análisis + decisión de negocio, no ejecución).
+   Quedó sin responder al cerrar esta sesión — el dueño solo dijo que quería cerrar el chat.
+2. **Definir el caso de uso del checkbox de Gastos Fijos** ("que un gasto no actualice el balance"):
+   antes de construirlo hace falta saber para qué exactamente lo necesita (¿gastos pagados fuera de
+   la caja del POS, con plata que no pasa por ahí? ¿otro caso?). Hoy el balance se recalcula siempre
+   sumando `compras` por `método_pago` — no existe ninguna bandera para excluir una fila, así que
+   implementarlo es una columna nueva + tocar varios puntos donde se suma el balance.
+3. **Probar el correo del QR** creando la primera OT real con un correo propio (no se ha visto llegar uno de verdad). Revisar Salud si no llega.
+4. **Revisar el "incluye" de los servicios 270-273** (PS3, mandos PS3/PS4, impresora): ya están publicados, pero el contenido lo propuso Claude.
+5. **Fotos:** los 14 servicios nuevos (265-278) y #86/#118 no tienen foto (el dueño dijo que sigue subiéndolas).
+6. **Mirar Salud** los primeros días: confirmar que la tienda registra sus errores en producción (no se forzó un error real).
+7. Pendientes anteriores que siguen abiertos: SKU faltante en productos, costos en $0 y stock dormido (ver memoria del dueño).
 
 **Trampa descubierta:** actualizar varios productos en una sola sentencia SQL perdió 2 de 4 sincronizaciones a la tienda. Por SQL, de a uno, y comparar después contra `productos_web`.
 

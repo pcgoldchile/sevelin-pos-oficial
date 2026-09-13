@@ -133,6 +133,12 @@ const API = {
     auditoriaEnvio: () => apiRequest('/productos/auditoria-envio')
   },
 
+  /* ---------- Envíos de despacho (sql/50) ---------- */
+  envios: {
+    // Sectores ya usados y promedio de InDrive por km, para el paso de entrega
+    resumen: () => apiRequest('/envios/resumen', { silencioso: true })
+  },
+
   ventas: {
     /* `producto` filtra por nombre, SKU o número de serie de los ítems.
        Lo resuelve el servidor: el navegador solo tiene la cabecera de
@@ -386,6 +392,10 @@ const API = {
     historialAjustes: (canal) => apiRequest('/finanzas/ajustes-saldo' + (canal ? `?canal=${canal}` : '')),
     // req.4 — checklist de gastos fijos del mes (pagados vs pendientes)
     gastosFijosMes: () => apiRequest('/finanzas/gastos-fijos-mes'),
+    // Recordatorio del F29 (sql/49): períodos pendientes y marcar presentado
+    f29Estado: () => apiRequest('/finanzas/f29-estado', { silencioso: true }),
+    f29Marcar: (datos) => apiRequest('/finanzas/f29-presentado', { method: 'POST', body: datos }),
+    f29Desmarcar: (periodo) => apiRequest(`/finanzas/f29-presentado/${encodeURIComponent(periodo)}`, { method: 'DELETE' }),
 
     /* ---- Submódulo Utilidades (migración 27) ----
        El informe llega con TODAS las capas por separado (comisiones,
