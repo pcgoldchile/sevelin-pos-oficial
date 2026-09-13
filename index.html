@@ -2665,6 +2665,32 @@
             </table>
           </div>
         </div>
+
+        <!-- Errores reales del POS y de la tienda (sql/48 + tienda supabase/33) -->
+        <div class="card" style="margin-top:16px;">
+          <div class="card-head">
+            <div>
+              <h2>Errores recientes</h2>
+              <p class="subtitle" id="saludErroresResumen">Fallas de servidor, bases de datos, correos e integraciones, del POS y de sevelin.cl. Iguales se agrupan.</p>
+            </div>
+            <div class="row-actions" style="gap:8px;">
+              <select id="saludErroresDias" class="hist-select" title="Período">
+                <option value="1">Últimas 24 h</option>
+                <option value="7" selected>Últimos 7 días</option>
+                <option value="30">Últimos 30 días</option>
+              </select>
+              <button class="btn btn-outline btn-sm" id="btnLimpiarErroresSalud">🧹 Limpiar</button>
+            </div>
+          </div>
+          <div class="table-wrapper" style="margin-top:8px;">
+            <table class="data-table">
+              <thead><tr><th>Última vez</th><th>Dónde</th><th>Qué falló</th><th class="num">Veces</th></tr></thead>
+              <tbody id="saludErroresBody">
+                <tr class="empty-row"><td colspan="4">Cargando…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
     </section>

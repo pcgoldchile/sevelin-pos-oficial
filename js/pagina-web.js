@@ -560,7 +560,58 @@ async function cargarSaludSistema() {
     if (tbody) tbody.innerHTML = '<tr class="empty-row"><td colspan="3">No se pudo cargar</td></tr>';
     showToast(err.message || 'No se pudo cargar la salud del sistema', 'err');
   }
+  cargarErroresSalud();
 }
+
+/* ---------- Errores recientes (sql/48) ----------
+   Lo que antes solo quedaba en los logs de Vercel (que se borran en una
+   hora): qué falló, dónde, cuántas veces y cuándo fue la última. */
+async function cargarErroresSalud() {
+  const tbody = document.getElementById('saludErroresBody');
+  const resumen = document.getElementById('saludErroresResumen');
+  if (!tbody) return;
+  const dias = document.getElementById('saludErroresDias')?.value || 7;
+  tbody.innerHTML = '<tr class="empty-row"><td colspan="4">Cargando…</td></tr>';
+  try {
+    const r = await API.saludSistema.errores(dias);
+    const grupos = r.grupos || [];
+    const total = grupos.reduce((a, g) => a + (Number(g.veces) || 0), 0);
+    if (resumen) {
+      resumen.textContent = (r.avisos || []).length
+        ? '⚠️ ' + r.avisos.join(' ')
+        : (total ? `${total} error(es) en ${grupos.length} tipo(s) · iguales se agrupan.` : 'Fallas de servidor, bases de datos, correos e integraciones, del POS y de sevelin.cl.');
+    }
+    if (!grupos.length) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="4">✅ Sin errores registrados en este período</td></tr>';
+      return;
+    }
+    tbody.innerHTML = grupos.map(g => `
+      <tr>
+        <td>${tsAChile(g.ultima)}${g.veces > 1 ? `<br><small style="color:var(--text-muted);">desde ${tsAChile(g.primera)}</small>` : ''}</td>
+        <td><span class="badge ${g.origen === 'TIENDA' ? 'badge-blue' : 'badge-gold'}">${escHtml(g.origen)}</span><br><small style="color:var(--text-muted);">${escHtml([g.metodo, g.ruta].filter(Boolean).join(' ') || '—')}${g.estado_http ? ' · ' + escHtml(String(g.estado_http)) : ''}</small></td>
+        <td style="max-width:520px; white-space:normal; word-break:break-word;">${escHtml(g.mensaje)}${g.detalle ? `<br><small style="color:var(--text-muted);">${escHtml(String(g.detalle).slice(0, 300))}</small>` : ''}</td>
+        <td class="num strong">${Number(g.veces) || 1}</td>
+      </tr>`).join('');
+  } catch (err) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="4">No se pudo cargar el registro de errores</td></tr>';
+  }
+}
+
+async function limpiarErroresSalud() {
+  if (!confirm('¿Borrar todo el registro de errores del POS y de la tienda? Úsalo después de revisar y corregir lo que aparece.')) return;
+  try {
+    await API.saludSistema.limpiarErrores();
+    showToast('Registro de errores limpio', 'ok');
+    cargarErroresSalud();
+  } catch (err) {
+    showToast(err.message || 'No se pudo limpiar el registro', 'err');
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('saludErroresDias')?.addEventListener('change', cargarErroresSalud);
+  document.getElementById('btnLimpiarErroresSalud')?.addEventListener('click', limpiarErroresSalud);
+});
 
 /* ---------- "Visitando ahora": se refresca solo cada 20s ----------
    Trae las métricas completas de nuevo (mismo endpoint liviano, un solo

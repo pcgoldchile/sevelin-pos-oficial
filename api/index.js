@@ -199,8 +199,53 @@ app.use(cors({
 
 /* ---------- Utilidades ---------- */
 const num = v => Number(v) || 0;
-const enviarError = (res, code, msg, extra) =>
-  res.status(code).json({ error: msg, ...(extra || {}) });
+/* Los 5xx quedan en registro_errores (sql/48) para el panel Salud, con el
+   detalle técnico real (res.locals.detalleError) y no el mensaje genérico
+   que ve el usuario. Se espera el registro antes de responder (con tope de
+   1,5 s): en serverless, lo que queda corriendo después de responder puede
+   cortarse. Solo los errores pagan esa espera. */
+const enviarError = (res, code, msg, extra) => {
+  const responder = () => res.status(code).json({ error: msg, ...(extra || {}) });
+  if (code < 500) return responder();
+  const req = res.req || {};
+  registrarErrorSalud({
+    ruta: String(req.originalUrl || req.url || '').split('?')[0] || null,
+    metodo: req.method || null,
+    estado_http: code,
+    mensaje: res.locals?.detalleError || msg,
+  }).finally(responder);
+};
+
+/* ---------- Registro de errores para Salud (sql/48) ---------- */
+// Nunca llega a la base una llave, un token ni una contraseña de conexión.
+function enmascararSecretos(texto) {
+  return String(texto ?? '')
+    .replace(/([?&](key|apikey|api_key|token|secret)=)[^&\s"']+/gi, '$1***')
+    .replace(/Bearer\s+[A-Za-z0-9._\-]+/gi, 'Bearer ***')
+    .replace(/eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]+/g, '***jwt***')
+    .replace(/(postgres(ql)?:\/\/[^:\s]+:)[^@\s]+@/gi, '$1***@');
+}
+
+/* Nunca lanza ni tarda más de 1,5 s: registrar un error no puede provocar
+   otro, ni demorar la respuesta. Cada tanto borra lo de más de 30 días. */
+async function registrarErrorSalud({ origen = 'POS', ruta = null, metodo = null, estado_http = null, mensaje, detalle = null }) {
+  try {
+    const fila = {
+      origen,
+      ruta: ruta ? String(ruta).slice(0, 200) : null,
+      metodo: metodo ? String(metodo).slice(0, 10) : null,
+      estado_http: Number.isFinite(Number(estado_http)) ? Number(estado_http) : null,
+      mensaje: enmascararSecretos(mensaje || 'Error sin mensaje').slice(0, 500),
+      detalle: detalle ? enmascararSecretos(typeof detalle === 'string' ? detalle : JSON.stringify(detalle)).slice(0, 2000) : null,
+    };
+    const insercion = db.from('registro_errores').insert([fila]);
+    await Promise.race([insercion, esperar(1500)]);
+    if (Math.random() < 0.02) {
+      const limite = new Date(Date.now() - 30 * 86400000).toISOString();
+      db.from('registro_errores').delete().lt('creado_en', limite).then(() => {}, () => {});
+    }
+  } catch (_) { /* el registro es un extra: jamás rompe la respuesta */ }
+}
 
 /* Responde un 500 genérico al cliente ante un error de Supabase/PostgREST,
    sin reenviar `error.message` crudo — el detalle real (nombres de tabla,
@@ -216,6 +261,8 @@ const enviarError = (res, code, msg, extra) =>
    yendo directo: ese mensaje SÍ está pensado para mostrarse. */
 function enviarErrorBD(res, error, contexto) {
   console.error(`[POS]${contexto ? ' ' + contexto + ':' : ''} error de base de datos —`, error?.message || error);
+  // Para Salud: el detalle real queda en el registro, nunca en la respuesta.
+  if (res.locals) res.locals.detalleError = `Base de datos${contexto ? ' (' + contexto + ')' : ''}: ${error?.message || error}`;
   return enviarError(res, 500, 'Error interno al consultar la base de datos. Intenta de nuevo en unos segundos.');
 }
 
@@ -249,13 +296,21 @@ const esperar = (ms) => new Promise(r => setTimeout(r, ms));
 function esErrorJwtTransitorio(mensaje) {
   return /jwt/i.test(mensaje || '') && /(future|iat|clock)/i.test(mensaje || '');
 }
+/* Cortes pasajeros de Supabase/red: vale la pena reintentar. Se vio el
+   12-09-2026 ("Gateway Timeout" en Pedidos Web, en medio de un incidente
+   de Supabase): la misma consulta respondía bien segundos antes y después. */
+function esErrorTransitorio(mensaje) {
+  return esErrorJwtTransitorio(mensaje) ||
+    /gateway time-?out|bad gateway|service unavailable|fetch failed|econnreset|etimedout|socket hang up|upstream/i.test(mensaje || '');
+}
+
 async function consultarConReintento(construirQuery, intentos = 3, esperaMs = 400) {
   let ultimoError = null;
   for (let i = 0; i < intentos; i++) {
     const { data, error } = await construirQuery();
     if (!error) return { data, error: null };
     ultimoError = error;
-    if (!esErrorJwtTransitorio(error.message) || i === intentos - 1) break;
+    if (!esErrorTransitorio(error.message) || i === intentos - 1) break;
     await esperar(esperaMs);
   }
   return { data: null, error: ultimoError };
@@ -1186,17 +1241,19 @@ Reglas:
   descrito arriba, invita a comprar sin exagerar ni inventar.
 - No repitas "Sevelin" en el texto (ya aparece aparte en el resultado de Google).`;
 
-  try {
-    // Alias que Google mantiene apuntando al flash vigente — evita que el
-    // botón se rompa de nuevo cuando retiren la próxima versión fija (ver
-    // CHANGELOG: gemini-2.0-flash quedó fuera de servicio el 09-09-2026).
-    const modelo = 'gemini-flash-latest';
-    const respuesta = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+  /* MODELOS, EN ORDEN (12-09-2026)
+     El botón fallaba porque gemini-flash-latest, el modelo estrella de
+     Google, vive saturado: en 9 pruebas reales respondió 1 vez y el resto
+     "high demand" tras 14–30 s. gemini-flash-lite-latest respondió 5 de 5,
+     casi siempre en ~1 s, y para un título de 60 caracteres alcanza.
+     Los dos son ALIAS: Google los mueve al modelo vigente, así no se rompen
+     cuando retira una versión fija (ya pasó con 2.0 y 2.5).
+     Cada intento tiene tope de tiempo: el botón nunca queda colgado. */
+  const MODELOS_SEO = [
+    { modelo: 'gemini-flash-lite-latest', topeMs: 10000 },
+    { modelo: 'gemini-flash-latest', topeMs: 12000 },
+  ];
+  const cuerpoGemini = JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
             temperature: 0.4,
@@ -1210,31 +1267,53 @@ Reglas:
               required: ['meta_titulo', 'meta_descripcion']
             }
           }
-        })
+  });
+
+  const fallas = [];
+  for (const { modelo, topeMs } of MODELOS_SEO) {
+    try {
+      const respuesta = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey}`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: cuerpoGemini, signal: AbortSignal.timeout(topeMs) }
+      );
+      const datos = await respuesta.json().catch(() => ({}));
+      if (!respuesta.ok) {
+        fallas.push(`${modelo}: HTTP ${respuesta.status} ${datos?.error?.message || ''}`.trim());
+        // Llave inválida o pedido mal armado: otro modelo no lo arregla.
+        if ([400, 401, 403].includes(respuesta.status)) break;
+        continue;
       }
-    );
+      const texto = datos?.candidates?.[0]?.content?.parts?.[0]?.text;
+      let resultado = null;
+      try { resultado = texto ? JSON.parse(texto) : null; } catch { resultado = null; }
+      if (!resultado?.meta_titulo) { fallas.push(`${modelo}: respuesta vacía o ilegible`); continue; }
 
-    const datos = await respuesta.json();
-    if (!respuesta.ok) {
-      const mensaje = datos?.error?.message || `Gemini respondió ${respuesta.status}`;
-      return enviarError(res, 502, `No se pudo generar el SEO: ${mensaje}`);
+      /* El prompt pide no repetir la marca (Google ya la muestra aparte), pero
+         el modelo liviano a veces la agrega igual: 'Cambio de Pantalla | Sevelin'. */
+      const sinMarca = (t) => String(t || '')
+        .replace(/\s*[|\-–—:]\s*Sevelin\b/gi, '')          // "… | Sevelin"
+        .replace(/\ben Sevelin(?=\s+\p{L})/giu, 'en')       // "en Sevelin Arica" → "en Arica"
+        .replace(/\s*\ben Sevelin\b/gi, '')                 // "Visítanos en Sevelin." → "Visítanos."
+        .replace(/\bSevelin\b\s*/gi, '')
+        .replace(/\s{2,}/g, ' ')
+        .replace(/\s+([.,;:!?])/g, '$1')
+        .trim();
+      return res.json({
+        meta_titulo: sinMarca(resultado.meta_titulo).slice(0, 70),
+        meta_descripcion: sinMarca(resultado.meta_descripcion).slice(0, 200),
+        modelo
+      });
+    } catch (err) {
+      fallas.push(`${modelo}: ${err.name === 'TimeoutError' ? `sin respuesta en ${topeMs / 1000} s` : err.message}`);
     }
-
-    const texto = datos?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!texto) return enviarError(res, 502, 'Gemini no devolvió ningún resultado.');
-
-    let resultado;
-    try { resultado = JSON.parse(texto); }
-    catch { return enviarError(res, 502, 'Gemini devolvió una respuesta que no se pudo interpretar.'); }
-
-    res.json({
-      meta_titulo: String(resultado.meta_titulo || '').trim().slice(0, 70),
-      meta_descripcion: String(resultado.meta_descripcion || '').trim().slice(0, 200)
-    });
-  } catch (err) {
-    console.error('[generar-seo] Error llamando a Gemini:', err.message || err);
-    enviarError(res, 502, 'No se pudo contactar el servicio de IA. Intenta de nuevo en unos segundos.');
   }
+
+  console.error('[generar-seo] Gemini falló:', fallas.join(' | '));
+  if (res.locals) res.locals.detalleError = `Gemini (Generar con IA): ${fallas.join(' | ')}`;
+  const llaveMala = fallas.some(x => /HTTP (400|401|403)/.test(x));
+  enviarError(res, 502, llaveMala
+    ? 'Google rechazó la llave de Gemini. Revisa GEMINI_API_KEY en Vercel. El SEO se puede escribir a mano.'
+    : 'Google está saturado en este momento y no respondió. Intenta en un minuto, o escribe el SEO a mano.');
 });
 
 /* Importación masiva (CSV / Excel de Tiendanube)
@@ -5076,10 +5155,15 @@ async function enviarCorreoQrRetiro(ot) {
       }),
     });
     const cuerpo = await resp.json().catch(() => ({}));
-    if (!resp.ok) return { enviado: false, motivo: cuerpo.error || `La tienda respondió ${resp.status}` };
-    return { enviado: !!cuerpo.enviado, motivo: cuerpo.enviado ? null : 'El proveedor de correo no confirmó el envío' };
+    if (!resp.ok || !cuerpo.enviado) {
+      const motivo = !resp.ok ? (cuerpo.error || `La tienda respondió ${resp.status}`) : 'El proveedor de correo no confirmó el envío';
+      await registrarErrorSalud({ ruta: 'correo QR de retiro', mensaje: `${ot.numero_ot}: ${motivo}` });
+      return { enviado: false, motivo };
+    }
+    return { enviado: true, motivo: null };
   } catch (err) {
     console.error('[OT] no se pudo pedir el correo del QR:', err.message);
+    await registrarErrorSalud({ ruta: 'correo QR de retiro', mensaje: `${ot.numero_ot}: no se pudo contactar a la tienda (${err.message})` });
     return { enviado: false, motivo: 'No se pudo contactar a la tienda para enviar el correo' };
   }
 }
@@ -6482,20 +6566,23 @@ app.post('/api/interno/registrar-venta-web', authSync, async (req, res) => {
 const ESTADOS_DESPACHO_PEDIDO_WEB = ['PREPARANDO', 'ENVIADO', 'ENTREGADO', 'CANCELADO'];
 
 app.get('/api/pos/pedidos-web', auth(true), async (req, res) => {
-  let q = dbWeb.from('pedidos_web').select('*').order('creado_en', { ascending: false });
-  // Admite uno o varios estados separados por coma (ej. para el badge de
-  // notificaciones del header, que junta PAGADO + ERROR_STOCK_SIN_DESPACHO
-  // en una sola consulta) — ver js/notificaciones.js.
-  if (req.query.estado) {
-    const estados = String(req.query.estado).split(',').map(e => e.trim()).filter(Boolean);
-    q = estados.length > 1 ? q.in('estado', estados) : q.eq('estado', estados[0]);
-  }
-  // Filtro opcional por tipo de pedido — ver sql/30-pedidos-por-encargo.sql
-  // (POS) y supabase/18-pedidos-por-encargo.sql (tienda).
-  if (req.query.tipo) q = q.eq('tipo_pedido', String(req.query.tipo));
-
-  const { data, error } = await q;
-  if (error) return enviarErrorBD(res, error);
+  // consultarConReintento: un corte pasajero de Supabase Web ya no llega al
+  // panel como error rojo (se vio el 12-09-2026, "Gateway Timeout").
+  const { data, error } = await consultarConReintento(() => {
+    let q = dbWeb.from('pedidos_web').select('*').order('creado_en', { ascending: false });
+    // Admite uno o varios estados separados por coma (ej. para el badge de
+    // notificaciones del header, que junta PAGADO + ERROR_STOCK_SIN_DESPACHO
+    // en una sola consulta) — ver js/notificaciones.js.
+    if (req.query.estado) {
+      const estados = String(req.query.estado).split(',').map(e => e.trim()).filter(Boolean);
+      q = estados.length > 1 ? q.in('estado', estados) : q.eq('estado', estados[0]);
+    }
+    // Filtro opcional por tipo de pedido — ver sql/30-pedidos-por-encargo.sql
+    // (POS) y supabase/18-pedidos-por-encargo.sql (tienda).
+    if (req.query.tipo) q = q.eq('tipo_pedido', String(req.query.tipo));
+    return q;
+  });
+  if (error) return enviarErrorBD(res, error, 'Pedidos Web');
   res.json(data || []);
 });
 
@@ -6574,8 +6661,13 @@ app.put('/api/pos/pedidos-web/:id', auth(true), async (req, res) => {
       });
       const cuerpo = await resp.json().catch(() => ({}));
       correoEnviado = !!cuerpo.enviado;
+      // Un correo de pedido que no sale queda en Salud (sql/48).
+      if (!resp.ok || (!cuerpo.enviado && cuerpo.motivo !== 'sin_email')) {
+        await registrarErrorSalud({ ruta: 'correo de cancelación de pedido', mensaje: data.numero_pedido + ': ' + (cuerpo.error || (resp.ok ? 'el proveedor de correo no confirmó el envío' : 'la tienda respondió ' + resp.status)) });
+      }
     } catch (err) {
       console.error('[Pedidos Web] No se pudo notificar la cancelación al cliente:', req.params.id, ':', err.message);
+      await registrarErrorSalud({ ruta: 'correo de cancelación de pedido', mensaje: data.numero_pedido + ': no se pudo contactar a la tienda (' + err.message + ')' });
     }
   }
 
@@ -6592,8 +6684,13 @@ app.put('/api/pos/pedidos-web/:id', auth(true), async (req, res) => {
       });
       const cuerpo = await resp.json().catch(() => ({}));
       correoEnviado = !!cuerpo.enviado;
+      // Un correo de pedido que no sale queda en Salud (sql/48).
+      if (!resp.ok || (!cuerpo.enviado && cuerpo.motivo !== 'sin_email')) {
+        await registrarErrorSalud({ ruta: 'correo de entrega de pedido', mensaje: data.numero_pedido + ': ' + (cuerpo.error || (resp.ok ? 'el proveedor de correo no confirmó el envío' : 'la tienda respondió ' + resp.status)) });
+      }
     } catch (err) {
       console.error('[Pedidos Web] No se pudo notificar la entrega al cliente:', req.params.id, ':', err.message);
+      await registrarErrorSalud({ ruta: 'correo de entrega de pedido', mensaje: data.numero_pedido + ': no se pudo contactar a la tienda (' + err.message + ')' });
     }
   }
 
@@ -6712,6 +6809,60 @@ app.get('/api/salud-sistema', auth(true), (req, res) => {
   ];
 
   res.json(items);
+});
+
+/* Errores recientes para Salud: los del POS (su base) y los de la tienda
+   (la base web), agrupados por qué falló y dónde. Los números, correos y
+   códigos se normalizan para agrupar ("pedido WEB-000011" y "pedido
+   WEB-000012" son el mismo problema). */
+function claveAgrupacionError(e) {
+  const normal = String(e.mensaje || '')
+    .replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, '<correo>')
+    .replace(/\b[0-9a-f]{16,}\b/gi, '<código>')
+    .replace(/\d+/g, '#');
+  return [e.origen, e.ruta || '', normal].join('|');
+}
+
+app.get('/api/salud-sistema/errores', auth(true), async (req, res) => {
+  const dias = Math.min(30, Math.max(1, Math.round(num(req.query.dias) || 7)));
+  const desde = new Date(Date.now() - dias * 86400000).toISOString();
+  const traer = (cliente) => cliente.from('registro_errores').select('*')
+    .gte('creado_en', desde).order('creado_en', { ascending: false }).limit(1000);
+
+  const [pos, web] = await Promise.all([
+    traer(db).then(r => r, e => ({ error: e })),
+    SUPABASE_WEB_URL ? traer(dbWeb).then(r => r, e => ({ error: e })) : Promise.resolve({ data: [] }),
+  ]);
+
+  const grupos = new Map();
+  for (const e of [...(pos.data || []), ...(web.data || [])]) {
+    const k = claveAgrupacionError(e);
+    const g = grupos.get(k);
+    if (!g) grupos.set(k, { origen: e.origen, ruta: e.ruta, metodo: e.metodo, estado_http: e.estado_http, mensaje: e.mensaje, detalle: e.detalle, veces: 1, ultima: e.creado_en, primera: e.creado_en });
+    else { g.veces++; if (e.creado_en < g.primera) g.primera = e.creado_en; }
+  }
+
+  res.json({
+    dias,
+    grupos: [...grupos.values()].sort((a, b) => (a.ultima < b.ultima ? 1 : -1)),
+    // Si una de las dos bases no respondió, se dice: Salud no puede
+    // aparentar "sin errores" justo cuando la base está caída.
+    avisos: [
+      pos.error ? 'No se pudo leer el registro de errores del POS.' : null,
+      web.error ? 'No se pudo leer el registro de errores de la tienda.' : null,
+    ].filter(Boolean),
+  });
+});
+
+app.delete('/api/salud-sistema/errores', auth(true), async (req, res) => {
+  const limite = new Date(Date.now() + 60000).toISOString();
+  const [a, b] = await Promise.all([
+    db.from('registro_errores').delete().lt('creado_en', limite),
+    SUPABASE_WEB_URL ? dbWeb.from('registro_errores').delete().lt('creado_en', limite) : Promise.resolve({}),
+  ]);
+  if (a.error) return enviarErrorBD(res, a.error, 'limpiar registro de errores');
+  if (b.error) return enviarErrorBD(res, b.error, 'limpiar registro de errores de la tienda');
+  res.json({ ok: true });
 });
 
 /* Panel "Métricas" (Página Web → Métricas): totales generales del negocio
@@ -7928,6 +8079,7 @@ app.get('/api/pos/informe-semanal', auth(true), async (req, res) => {
 app.use('/api', (_req, res) => enviarError(res, 404, 'Endpoint no encontrado'));
 app.use((err, _req, res, _next) => {
   console.error('[POS] Error no controlado:', err.message, err.stack);
+  if (res.locals) res.locals.detalleError = `Error no controlado: ${err.message}`;
   enviarError(res, 500, 'Error interno del servidor');
 });
 

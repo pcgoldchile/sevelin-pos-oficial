@@ -299,6 +299,9 @@ const API = {
   // y cuentas de cliente, agregados de Supabase Web.
   saludSistema: {
     obtener: () => apiRequest('/salud-sistema'),
+    // Errores recientes del POS y de la tienda, agrupados (sql/48).
+    errores: (dias) => apiRequest(`/salud-sistema/errores?dias=${encodeURIComponent(dias || 7)}`),
+    limpiarErrores: () => apiRequest('/salud-sistema/errores', { method: 'DELETE' }),
   },
 
   metricasWeb: {
