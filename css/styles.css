@@ -981,11 +981,15 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
     border-radius: var(--radius-pill); font-size: 12.5px; font-weight: 700;
 }
 .stock-ok { background: var(--surface-soft); color: var(--text-300); }
-.stock-bajo { background: var(--tint-red); color: var(--red); border: 1px solid rgba(239, 68, 68, .45); }
+/* Fondo sólido azul (no el --tint-red translúcido: sobre fondo oscuro
+   quedaba casi negro sobre negro; el ámbar tampoco sirvió, chocaba con
+   el amarillo propio del emoji ⚠️) + texto blanco — distinto del rojo
+   de .stock-agotado para no confundir "queda poco" con "agotado". */
+.stock-bajo { background: #2563eb; color: #fff; border: 1px solid #1d4ed8; }
 /* !important a propósito: este badge se pisó una vez por una regla
    posterior con el mismo nombre de clase y quedó ilegible. */
 .stock-badge.stock-agotado { background: var(--red) !important; color: #fff !important; }
-.stock-badge.stock-bajo { color: #1a1200 !important; }
+.stock-badge.stock-bajo { background: #2563eb !important; color: #fff !important; }
 .stock-badge.stock-ok { color: #fff !important; }
 .stock-fecha { font-size: 11.5px; color: var(--text-muted); white-space: nowrap; }
 
