@@ -1,8 +1,9 @@
 // ==========================================
 // OT.JS - Servicio Técnico (Check-In / Check-Out)
 // ------------------------------------------
-// Wizard de 3 pasos, panel de órdenes, entrega con firma digital y
-// puente al POS para cobrar la reparación.
+// Wizard de 3 pasos, panel de órdenes y entrega con firma digital.
+// Una OT NO se cobra desde acá (decisión del dueño, 12-09-2026): el cobro
+// se hace aparte, como una venta normal del POS.
 // ==========================================
 
 let ordenesList = [];
@@ -53,7 +54,6 @@ const elBtnAgregarOtRepuesto = document.getElementById('btnAgregarOtRepuesto');
 const elOtRepuestosLista = document.getElementById('otRepuestosLista');
 const elOtRepuestosTotales = document.getElementById('otRepuestosTotales');
 const elBtnCerrarOtRepuestos = document.getElementById('btnCerrarOtRepuestos');
-const elBtnCobrarOtDesdeModal = document.getElementById('btnCobrarOtDesdeModal');
 
 const elModalOtNotas = document.getElementById('modalOtNotas');
 const elOtNotasId = document.getElementById('otNotasId');
@@ -155,11 +155,6 @@ function setupOtEventListeners() {
 
   if (elBtnCerrarOtRepuestos) elBtnCerrarOtRepuestos.addEventListener('click', () => elModalOtRepuestos?.classList.remove('show'));
   if (elBtnAgregarOtRepuesto) elBtnAgregarOtRepuesto.addEventListener('click', agregarRepuestoAOT);
-  if (elBtnCobrarOtDesdeModal) elBtnCobrarOtDesdeModal.addEventListener('click', () => {
-    const id = elOtRepuestosId?.value;
-    elModalOtRepuestos?.classList.remove('show');
-    if (id) cobrarEnPOS(id);
-  });
   if (elOtRepuestoBuscar) {
     elOtRepuestoBuscar.addEventListener('input', buscarRepuestoParaOT);
     document.addEventListener('click', (e) => {
@@ -525,7 +520,6 @@ function renderOrdenesTabla(lista) {
           ${pendiente ? `<button class="btn btn-green btn-sm" data-entregar="${o.id}" title="Check-Out / Entregar equipo">📦 Entregar</button>` : ''}
           <button class="btn btn-outline btn-sm" data-repuestos="${o.id}" title="Repuestos y mano de obra">🔩 Repuestos</button>
           <button class="btn btn-outline btn-sm" data-notas="${o.id}" title="Notas del taller (privadas)">🔒 Notas</button>
-          <button class="btn btn-outline btn-sm" data-cobrar="${o.id}" title="Cobrar la reparación en el POS">💵 Cobrar en POS</button>
           <button class="btn btn-icon btn-icon-view" data-ver="${o.id}" title="Ver e imprimir la orden">${ICO_VER_OT}</button>
           <button class="btn btn-icon btn-icon-del admin-only" data-eliminar="${o.id}" title="Eliminar orden">${ICO_ELIMINAR_OT}</button>
         </div>
@@ -547,9 +541,6 @@ function renderOrdenesTabla(lista) {
   });
   elOtTableBody.querySelectorAll('button[data-notas]').forEach(btn => {
     btn.addEventListener('click', () => abrirModalNotasOT(btn.dataset.notas));
-  });
-  elOtTableBody.querySelectorAll('button[data-cobrar]').forEach(btn => {
-    btn.addEventListener('click', () => cobrarEnPOS(btn.dataset.cobrar));
   });
   elOtTableBody.querySelectorAll('button[data-eliminar]').forEach(btn => {
     btn.addEventListener('click', () => eliminarOrden(btn.dataset.eliminar));
@@ -774,27 +765,6 @@ async function guardarNotasOT() {
   } finally {
     if (elBtnGuardarOtNotas) elBtnGuardarOtNotas.disabled = false;
   }
-}
-
-/* Puente al POS: vincula la OT a la venta en curso y baja al carrito los
-   repuestos y la mano de obra que aún no se han cobrado. El stock recién
-   se descuenta al finalizar la venta. */
-async function cobrarEnPOS(id) {
-  const ot = ordenesList.find(o => String(o.id) === String(id));
-  if (!ot) return;
-
-  let pendientes = [];
-  try {
-    const asignados = await API.ot.listarRepuestos(ot.id);
-    pendientes = (asignados || []).filter(r => !r.cobrado);
-  } catch (_) { pendientes = []; }
-
-  if (typeof precargarVentaDesdeOT === 'function') precargarVentaDesdeOT(ot, pendientes);
-
-  const btnPos = document.querySelector('.nav-btn[data-view="view-pos"]');
-  if (btnPos) btnPos.click();
-
-  showToast(`${ot.numero_ot} vinculada. Ingresa el servicio a cobrar.`, 'ok');
 }
 
 // ============================================================
