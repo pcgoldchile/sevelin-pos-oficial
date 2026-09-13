@@ -21,7 +21,19 @@ consultar y "trae tu equipo".** Detalle en `docs/CHANGELOG-V61.md`.
 - 💵 **Los abonos ahora entran a Finanzas** (sql/46): al saldo el día que llegan, venta única al 100%, sin doble conteo. Encargos pueden ser productos; entrega independiente del pago.
 - 🛒 **Carrito mixto**: un pedido, un pago, dos entregas.
 - 🔐 **QR de retiro seguro en las OT** (sql/47): QR por correo/WhatsApp, entrega solo con QR vigente o carnet del titular.
-- ⏳ **Pendiente:** cargar el costo del PC Gamer (encargo #2); probar el correo del QR con la primera OT real; el botón "Generar con IA" sigue roto.
+- 🩺 **Salud → "Errores recientes"** (sql/48 + web 33): errores reales del POS y la tienda, agrupados. **Primer lugar donde mirar ante un error.**
+- ✨ **Generar con IA arreglado:** usa `gemini-flash-lite-latest` con respaldo (el flash normal vive saturado).
+- 🚫 **Una OT nunca se cobra desde el POS** (se quitó "Cobrar en POS" a propósito, decisión del dueño).
+
+**⏳ PENDIENTES PARA LA PRÓXIMA SESIÓN (en orden):**
+1. **Cargar el costo del PC Gamer** (encargo #2, Nicolás Reyes, $400.000). Hoy tiene costo $0: al completar el pago, la utilidad saldrá inflada.
+2. **Probar el correo del QR** creando la primera OT real con un correo propio (no se ha visto llegar uno de verdad). Revisar Salud si no llega.
+3. **Revisar el "incluye" de los servicios 270-273** (PS3, mandos PS3/PS4, impresora): ya están publicados, pero el contenido lo propuso Claude.
+4. **Fotos:** los 14 servicios nuevos (265-278) y #86/#118 no tienen foto.
+5. **Mirar Salud** los primeros días: confirmar que la tienda registra sus errores en producción (no se forzó un error real).
+6. Pendientes anteriores que siguen abiertos: SKU faltante en productos, costos en $0 y stock dormido (ver memoria del dueño).
+
+**Trampa descubierta:** actualizar varios productos en una sola sentencia SQL perdió 2 de 4 sincronizaciones a la tienda. Por SQL, de a uno, y comparar después contra `productos_web`.
 
 **Versión anterior: v60 — el stock deja de mentir y las ventas web aparecen en el historial.**
 Detalle en `docs/CHANGELOG-V60.md`.
