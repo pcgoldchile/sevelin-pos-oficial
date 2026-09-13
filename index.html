@@ -730,6 +730,8 @@
           <div class="field">
             <input type="text" id="otBuscar" placeholder="Buscar por OT, cliente, RUT, modelo o S/N...">
           </div>
+          <button class="btn btn-green btn-sm" id="btnOtRetirarConQr" title="Escanear el QR de retiro que trae el cliente">📷 Retirar con QR</button>
+          <input type="hidden" id="otQrRetiroLeido">
           <button class="btn btn-outline btn-sm" id="btnOtRecargar">🔄 Actualizar</button>
         </div>
 
@@ -4725,6 +4727,23 @@
       <h2 id="otPreviewTitulo">Orden de Trabajo</h2>
       <p class="modal-hint">Imprimir es opcional: la orden ya quedó registrada.</p>
       <div id="otPreviewContenido" class="ot-preview"></div>
+
+      <!-- QR de retiro seguro (sql/47): lo recibe el dueño del equipo y decide a quién reenviarlo -->
+      <div id="otQrRetiroBloque" class="card" style="display:none; margin-top:14px; padding:14px;">
+        <span class="section-label">🔐 QR de retiro</span>
+        <div style="display:flex; gap:16px; align-items:center; flex-wrap:wrap;">
+          <div id="otQrRetiroImagen" style="width:132px; background:#fff; border-radius:8px; padding:4px;"></div>
+          <div style="flex:1; min-width:220px;">
+            <p class="modal-hint" id="otQrRetiroEstado">—</p>
+            <div class="row-actions" style="flex-wrap:wrap; gap:8px; margin-top:8px;">
+              <button class="btn btn-green btn-sm" id="btnOtQrWhatsapp">💬 Enviar por WhatsApp</button>
+              <button class="btn btn-outline btn-sm" id="btnOtQrCorreo">✉️ Reenviar por correo</button>
+              <button class="btn btn-outline btn-sm" id="btnOtQrNuevo">♻️ Generar QR nuevo</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="modal-foot">
         <button class="btn btn-ghost" id="btnCerrarOtPreview">Cerrar</button>
         <button class="btn btn-primary" id="btnImprimirOt">🖨️ Imprimir (Cliente + Taller)</button>
@@ -4739,14 +4758,31 @@
       <p class="modal-hint" id="otEntregaResumen">Orden —</p>
       <input type="hidden" id="otEntregaId">
 
-      <div class="grid grid-2" style="margin-top:18px;">
+      <!-- Verificación obligatoria (sql/47): QR vigente o carnet del titular -->
+      <span class="section-label" style="margin-top:14px;">¿Cómo verificas a quien retira? *</span>
+      <div class="row-actions" style="gap:14px; flex-wrap:wrap;">
+        <label class="check-item" style="margin:0;"><input type="radio" name="otVerificacion" id="otVerificacionQr" value="QR" checked> <span>📷 Trae el QR</span></label>
+        <label class="check-item" style="margin:0;"><input type="radio" name="otVerificacion" id="otVerificacionCarnet" value="CARNET"> <span>🪪 Es el titular con su carnet</span></label>
+      </div>
+      <div id="otVerificacionQrCampos" class="grid grid-2" style="margin-top:10px;">
         <div class="field">
-          <label>Nombre de quien retira</label>
-          <input type="text" id="otRetiraNombre" placeholder="Opcional">
+          <label>Código del QR</label>
+          <input type="text" id="otEntregaCodigo" placeholder="Escanea el QR del cliente" autocomplete="off">
+        </div>
+        <div class="field" style="align-self:end;">
+          <button class="btn btn-outline btn-sm" id="btnOtEntregaEscanear" type="button">📷 Escanear QR</button>
+        </div>
+      </div>
+      <p class="modal-hint" id="otVerificacionAviso" style="margin-top:6px;"></p>
+
+      <div class="grid grid-2" style="margin-top:12px;">
+        <div class="field">
+          <label>Nombre de quien retira *</label>
+          <input type="text" id="otRetiraNombre" placeholder="Nombre y apellido">
         </div>
         <div class="field">
-          <label>RUT de quien retira</label>
-          <input type="text" id="otRetiraRut" placeholder="Opcional">
+          <label>RUT de quien retira *</label>
+          <input type="text" id="otRetiraRut" placeholder="12.345.678-9">
         </div>
         <div class="field">
           <label>Meses de garantía</label>

@@ -5028,18 +5028,81 @@ app.get('/api/ot/:id', auth(), async (req, res) => {
   res.json(data);
 });
 
+/* ---------- QR de retiro seguro (sql/47) ----------
+   No siempre quien trae el equipo es quien lo retira. Cada OT tiene un
+   código aleatorio; su QR le llega al dueño del equipo y él decide a quién
+   reenviárselo. Al entregar se exige el QR vigente o el carnet del titular
+   con el RUT registrado. */
+function nuevoTokenRetiro() {
+  return crypto.randomBytes(16).toString('hex');
+}
+
+function urlRetiroOT(token) {
+  return `${URL_TIENDA_PUBLICA.replace(/\/+$/, '')}/retiro/${token}`;
+}
+
+// El QR trae la URL completa; también se acepta el código suelto tipeado.
+function extraerTokenRetiro(texto) {
+  const m = String(texto || '').match(/([0-9a-f]{32})/i);
+  return m ? m[1].toLowerCase() : null;
+}
+
+// "12.345.678-9" y "123456789" son el mismo RUT.
+function normalizarRut(rut) {
+  return String(rut || '').replace(/[^0-9kK]/g, '').toUpperCase().replace(/^0+/, '');
+}
+
+/* Pide a la tienda que mande el correo con el QR (el POS no tiene Resend ni
+   la plantilla). La URL se deriva de TIENDA_NOTIFICAR_ENTREGA_URL, mismo
+   patrón que pos-interno.ts en la tienda: una variable de entorno nueva que
+   alguien olvide configurar fallaría en silencio. Nunca lanza. */
+async function enviarCorreoQrRetiro(ot) {
+  if (!ot?.cliente_correo) return { enviado: false, motivo: 'La orden no tiene correo del cliente' };
+  if (!ot.token_retiro) return { enviado: false, motivo: 'La orden no tiene código de retiro' };
+  const url = String(TIENDA_NOTIFICAR_ENTREGA_URL || '').replace(/notificar-entrega\/?$/, 'notificar-qr-retiro');
+  if (!url || url === TIENDA_NOTIFICAR_ENTREGA_URL || !SYNC_SECRET) {
+    return { enviado: false, motivo: 'El envío de correos desde el POS no está configurado' };
+  }
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-sync-secret': SYNC_SECRET },
+      body: JSON.stringify({
+        correo: ot.cliente_correo,
+        nombre: ot.cliente_nombre,
+        numero_ot: ot.numero_ot,
+        dispositivo: [ot.dispositivo_categoria, ot.dispositivo_modelo].filter(Boolean).join(' '),
+        token: ot.token_retiro,
+      }),
+    });
+    const cuerpo = await resp.json().catch(() => ({}));
+    if (!resp.ok) return { enviado: false, motivo: cuerpo.error || `La tienda respondió ${resp.status}` };
+    return { enviado: !!cuerpo.enviado, motivo: cuerpo.enviado ? null : 'El proveedor de correo no confirmó el envío' };
+  } catch (err) {
+    console.error('[OT] no se pudo pedir el correo del QR:', err.message);
+    return { enviado: false, motivo: 'No se pudo contactar a la tienda para enviar el correo' };
+  }
+}
+
 app.post('/api/ot', auth(), async (req, res) => {
   const { datos, error: errValidacion } = sanearOT(req.body);
   if (errValidacion) return enviarError(res, 400, errValidacion);
 
   // numero_ot lo asigna el trigger de la base de datos (OT-000001, OT-000002…)
   const { data, error } = await db.from('ordenes_trabajo')
-    .insert([{ ...datos, estado: 'PENDIENTE' }])
+    .insert([{
+      ...datos,
+      estado: 'PENDIENTE',
+      token_retiro: nuevoTokenRetiro(),
+      token_retiro_generado_en: new Date().toISOString()
+    }])
     .select()
     .single();
 
   if (error) return enviarErrorBD(res, error);
-  res.status(201).json(data);
+
+  const correoQr = await enviarCorreoQrRetiro(data);
+  res.status(201).json({ ...data, url_retiro: urlRetiroOT(data.token_retiro), correo_qr: correoQr });
 });
 
 app.put('/api/ot/:id', auth(), async (req, res) => {
@@ -5051,11 +5114,94 @@ app.put('/api/ot/:id', auth(), async (req, res) => {
   res.json(data);
 });
 
-/* Check-Out: entrega del equipo con firma de quien retira */
+/* Genera un QR nuevo (se perdió, o se reenvió a quien no correspondía). El
+   anterior deja de servir en el mismo instante. También sirve para las OT
+   creadas antes de que existiera el QR. */
+app.post('/api/ot/:id/qr-retiro', auth(), async (req, res) => {
+  const { data: ot, error: errOT } = await db.from('ordenes_trabajo').select('*').eq('id', req.params.id).single();
+  if (errOT) return enviarError(res, 404, 'Orden de trabajo no encontrada');
+  if (ot.estado === 'ENTREGADO') return enviarError(res, 400, 'Esta orden ya fue entregada');
+
+  const { data, error } = await db.from('ordenes_trabajo').update({
+    token_retiro: nuevoTokenRetiro(),
+    token_retiro_generado_en: new Date().toISOString(),
+    token_retiro_usado_en: null
+  }).eq('id', ot.id).select().single();
+  if (error) return enviarErrorBD(res, error);
+
+  const correoQr = req.body?.enviar_correo === false ? null : await enviarCorreoQrRetiro(data);
+  res.json({ ...data, url_retiro: urlRetiroOT(data.token_retiro), correo_qr: correoQr });
+});
+
+// Reenvía por correo el QR vigente, sin cambiarlo.
+app.post('/api/ot/:id/enviar-qr', auth(), async (req, res) => {
+  const { data: ot, error } = await db.from('ordenes_trabajo').select('*').eq('id', req.params.id).single();
+  if (error) return enviarError(res, 404, 'Orden de trabajo no encontrada');
+  if (ot.estado === 'ENTREGADO') return enviarError(res, 400, 'Esta orden ya fue entregada');
+  const correoQr = await enviarCorreoQrRetiro(ot);
+  res.json({ ok: true, url_retiro: ot.token_retiro ? urlRetiroOT(ot.token_retiro) : null, correo_qr: correoQr });
+});
+
+// El POS escanea un QR: ¿de qué orden es? Solo sirve el código vigente.
+app.get('/api/ot/por-qr/:codigo', auth(), async (req, res) => {
+  const token = extraerTokenRetiro(req.params.codigo);
+  if (!token) return enviarError(res, 400, 'Ese código no es un QR de retiro de Sevelin');
+  const { data: ot } = await db.from('ordenes_trabajo').select('*').eq('token_retiro', token).maybeSingle();
+  if (!ot) return enviarError(res, 404, 'Este QR no corresponde a ninguna orden vigente (puede haber sido reemplazado por uno nuevo)');
+  if (ot.estado === 'ENTREGADO' || ot.token_retiro_usado_en) return enviarError(res, 400, `Este QR ya se usó: ${ot.numero_ot} fue entregada`);
+  res.json(ot);
+});
+
+/* Para la página pública /retiro/<código> de la tienda. Devuelve lo mínimo
+   para que quien tiene el link sepa qué va a retirar: nada de RUT,
+   teléfono, correo ni PIN del equipo. */
+app.get('/api/interno/retiro/:token', authSync, async (req, res) => {
+  const token = extraerTokenRetiro(req.params.token);
+  if (!token) return enviarError(res, 404, 'No encontrado');
+  const { data: ot } = await db.from('ordenes_trabajo')
+    .select('numero_ot, estado, cliente_nombre, dispositivo_categoria, dispositivo_modelo, token_retiro_usado_en')
+    .eq('token_retiro', token).maybeSingle();
+  if (!ot) return enviarError(res, 404, 'No encontrado');
+  res.json({
+    numero_ot: ot.numero_ot,
+    entregado: ot.estado === 'ENTREGADO' || !!ot.token_retiro_usado_en,
+    nombre: String(ot.cliente_nombre || '').trim().split(/\s+/)[0] || null,
+    dispositivo: [ot.dispositivo_categoria, ot.dispositivo_modelo].filter(Boolean).join(' ') || null,
+  });
+});
+
+/* Check-Out: entrega del equipo, SOLO con verificación (sql/47) */
 app.post('/api/ot/:id/entrega', auth(), async (req, res) => {
   const { data: ot, error: errOT } = await db.from('ordenes_trabajo').select('*').eq('id', req.params.id).single();
   if (errOT) return enviarError(res, 404, 'Orden de trabajo no encontrada');
   if (ot.estado === 'ENTREGADO') return enviarError(res, 400, 'Esta orden ya fue entregada');
+
+  const retiraNombre = String(req.body?.retira_nombre || '').trim();
+  const retiraRut = String(req.body?.retira_rut || '').trim();
+  if (!retiraNombre || !normalizarRut(retiraRut)) {
+    return enviarError(res, 400, 'Registra el nombre y el RUT de quien retira el equipo');
+  }
+
+  /* Dos pruebas posibles, decididas por el dueño: el QR vigente de ESTA
+     orden, o el carnet del titular con el mismo RUT registrado. Sin RUT
+     registrado no hay contra qué comparar el carnet: solo el QR. */
+  const verificacion = String(req.body?.verificacion || '').toUpperCase();
+  if (verificacion === 'QR') {
+    const token = extraerTokenRetiro(req.body?.codigo_retiro);
+    if (!token || !ot.token_retiro || token !== ot.token_retiro) {
+      return enviarError(res, 400, 'El QR no corresponde a esta orden, o fue reemplazado por uno nuevo');
+    }
+    if (ot.token_retiro_usado_en) return enviarError(res, 400, 'Este QR ya se usó');
+  } else if (verificacion === 'CARNET') {
+    if (!normalizarRut(ot.cliente_rut)) {
+      return enviarError(res, 400, 'Esta orden no tiene RUT del titular registrado: solo se puede entregar con el QR. Si se perdió, genera uno nuevo.');
+    }
+    if (normalizarRut(retiraRut) !== normalizarRut(ot.cliente_rut)) {
+      return enviarError(res, 400, 'El RUT del carnet no coincide con el del titular registrado en la orden');
+    }
+  } else {
+    return enviarError(res, 400, 'Verifica a quien retira: escanea su QR o revisa el carnet del titular');
+  }
 
   const firma = String(req.body?.retira_firma_base64 || '');
   if (firma.length > 400000) return enviarError(res, 413, 'La firma es demasiado pesada');
@@ -5066,20 +5212,27 @@ app.post('/api/ot/:id/entrega', auth(), async (req, res) => {
   const mesesGarantiaCrudo = num(req.body?.meses_garantia);
   const mesesGarantia = mesesGarantiaCrudo >= 0 ? Math.round(mesesGarantiaCrudo) : 6;
 
-  const { data, error } = await db.from('ordenes_trabajo')
+  // .eq('estado', 'PENDIENTE'): dos entregas simultáneas de la misma orden
+  // no pueden pasar las dos.
+  const ahora = new Date().toISOString();
+  const { data: filas, error } = await db.from('ordenes_trabajo')
     .update({
       estado: 'ENTREGADO',
-      fecha_entrega: new Date().toISOString(),
-      retira_nombre: (req.body?.retira_nombre || '').trim() || null,
-      retira_rut: (req.body?.retira_rut || '').trim() || null,
+      fecha_entrega: ahora,
+      retira_nombre: retiraNombre,
+      retira_rut: retiraRut,
       retira_firma_base64: firma || null,
-      meses_garantia: mesesGarantia
+      meses_garantia: mesesGarantia,
+      retiro_verificacion: verificacion,
+      token_retiro_usado_en: ahora
     })
     .eq('id', req.params.id)
-    .select()
-    .single();
+    .eq('estado', 'PENDIENTE')
+    .select();
 
   if (error) return enviarErrorBD(res, error);
+  const data = (filas || [])[0];
+  if (!data) return enviarError(res, 409, 'Esta orden ya fue entregada');
 
   /* ESTE es el momento en que el stock sale del inventario: al entregar.
      Se descuentan solo los repuestos/productos del catálogo que aún no se

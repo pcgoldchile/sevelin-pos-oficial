@@ -355,6 +355,10 @@ const API = {
     crear: (ot) => apiRequest('/ot', { method: 'POST', body: ot }),
     actualizar: (id, ot) => apiRequest(`/ot/${id}`, { method: 'PUT', body: ot }),
     entregar: (id, datos) => apiRequest(`/ot/${id}/entrega`, { method: 'POST', body: datos }),
+    // QR de retiro seguro (sql/47)
+    porQr: (codigo) => apiRequest(`/ot/por-qr/${encodeURIComponent(codigo)}`),
+    qrNuevo: (id) => apiRequest(`/ot/${id}/qr-retiro`, { method: 'POST', body: {} }),
+    enviarQr: (id) => apiRequest(`/ot/${id}/enviar-qr`, { method: 'POST', body: {} }),
     // Repuestos y mano de obra asignados a la orden
     listarRepuestos: (id) => apiRequest(`/ot/${id}/repuestos`),
     agregarRepuesto: (id, item) => apiRequest(`/ot/${id}/repuestos`, { method: 'POST', body: item }),

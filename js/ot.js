@@ -77,6 +77,20 @@ const elBtnLimpiarFirma = document.getElementById('btnLimpiarFirma');
 const elBtnCancelarOtEntrega = document.getElementById('btnCancelarOtEntrega');
 const elBtnConfirmarOtEntrega = document.getElementById('btnConfirmarOtEntrega');
 
+/* ---------- QR de retiro seguro (sql/47) ---------- */
+const URL_RETIRO_TIENDA = 'https://sevelin.cl/retiro/';
+const elBtnOtRetirarConQr = document.getElementById('btnOtRetirarConQr');
+const elOtQrRetiroBloque = document.getElementById('otQrRetiroBloque');
+const elOtQrRetiroImagen = document.getElementById('otQrRetiroImagen');
+const elOtQrRetiroEstado = document.getElementById('otQrRetiroEstado');
+const elBtnOtQrWhatsapp = document.getElementById('btnOtQrWhatsapp');
+const elBtnOtQrCorreo = document.getElementById('btnOtQrCorreo');
+const elBtnOtQrNuevo = document.getElementById('btnOtQrNuevo');
+const elOtEntregaCodigo = document.getElementById('otEntregaCodigo');
+const elBtnOtEntregaEscanear = document.getElementById('btnOtEntregaEscanear');
+const elOtVerificacionQrCampos = document.getElementById('otVerificacionQrCampos');
+const elOtVerificacionAviso = document.getElementById('otVerificacionAviso');
+
 document.addEventListener('DOMContentLoaded', () => {
   setupOtEventListeners();
   initFirmaCanvas();
@@ -126,6 +140,17 @@ function setupOtEventListeners() {
 
   if (elBtnCancelarOtEntrega) elBtnCancelarOtEntrega.addEventListener('click', cerrarModalEntrega);
   if (elBtnConfirmarOtEntrega) elBtnConfirmarOtEntrega.addEventListener('click', confirmarEntrega);
+
+  // QR de retiro seguro (sql/47)
+  if (elBtnOtRetirarConQr) elBtnOtRetirarConQr.addEventListener('click', () => abrirEscaner('otQrRetiroLeido'));
+  if (elBtnOtEntregaEscanear) elBtnOtEntregaEscanear.addEventListener('click', () => abrirEscaner('otEntregaCodigo'));
+  document.querySelectorAll('input[name="otVerificacion"]').forEach(r => r.addEventListener('change', () => actualizarVerificacionEntrega(true)));
+  if (elBtnOtQrWhatsapp) elBtnOtQrWhatsapp.addEventListener('click', enviarQrWhatsappOT);
+  if (elBtnOtQrCorreo) elBtnOtQrCorreo.addEventListener('click', reenviarQrCorreoOT);
+  if (elBtnOtQrNuevo) elBtnOtQrNuevo.addEventListener('click', generarQrNuevoOT);
+  document.addEventListener('escaner:codigo', (e) => {
+    if (e.detail?.inputId === 'otQrRetiroLeido') retirarOtConQr(e.detail.codigo);
+  });
   if (elBtnLimpiarFirma) elBtnLimpiarFirma.addEventListener('click', limpiarFirma);
 
   if (elBtnCerrarOtRepuestos) elBtnCerrarOtRepuestos.addEventListener('click', () => elModalOtRepuestos?.classList.remove('show'));
@@ -250,6 +275,7 @@ async function guardarCheckIn() {
     ultimaOTCreada = ot;
 
     showToast(`Check-In registrado: ${ot.numero_ot}`, 'ok');
+    avisarCorreoQr(ot.correo_qr, ot);
     limpiarFormularioOT();
     irAPasoOT(1);
     cargarOrdenes();
@@ -268,7 +294,131 @@ function mostrarPreviewOT(ot) {
   ultimaOTCreada = ot;
   if (elOtPreviewTitulo) elOtPreviewTitulo.textContent = `Orden de Trabajo ${ot.numero_ot}`;
   if (elOtPreviewContenido) elOtPreviewContenido.innerHTML = construirComprobanteOT(ot, 'VISTA PREVIA');
+  renderQrRetiroOT(ot);
   if (elModalOtPreview) elModalOtPreview.classList.add('show');
+}
+
+/* ============================================================
+   QR DE RETIRO SEGURO (sql/47)
+   El dueño del equipo recibe su QR y decide a quién reenviarlo. Al
+   entregar se exige el QR vigente o el carnet del titular.
+   ============================================================ */
+function renderQrRetiroOT(ot) {
+  if (!elOtQrRetiroBloque) return;
+  const botones = [elBtnOtQrWhatsapp, elBtnOtQrCorreo, elBtnOtQrNuevo];
+
+  if (!ot || ot.estado === 'ENTREGADO') {
+    const verificado = !!ot?.retiro_verificacion;
+    elOtQrRetiroBloque.style.display = verificado ? 'block' : 'none';
+    if (verificado) {
+      if (elOtQrRetiroImagen) elOtQrRetiroImagen.innerHTML = '';
+      if (elOtQrRetiroEstado) {
+        elOtQrRetiroEstado.innerHTML = `Entregado a <b>${escHtml(ot.retira_nombre || '—')}</b> (RUT ${escHtml(ot.retira_rut || '—')}), verificado con ${ot.retiro_verificacion === 'QR' ? 'QR' : 'carnet del titular'}.`;
+      }
+      botones.forEach(b => { if (b) b.style.display = 'none'; });
+    }
+    return;
+  }
+
+  elOtQrRetiroBloque.style.display = 'block';
+  botones.forEach(b => { if (b) b.style.display = ''; });
+
+  if (!ot.token_retiro) {
+    if (elOtQrRetiroImagen) elOtQrRetiroImagen.innerHTML = '';
+    if (elOtQrRetiroEstado) elOtQrRetiroEstado.textContent = 'Esta orden es anterior al QR de retiro. Genera uno para enviárselo al cliente.';
+    if (elBtnOtQrWhatsapp) elBtnOtQrWhatsapp.style.display = 'none';
+    if (elBtnOtQrCorreo) elBtnOtQrCorreo.style.display = 'none';
+    if (elBtnOtQrNuevo) elBtnOtQrNuevo.textContent = '🔐 Generar QR';
+    return;
+  }
+
+  if (elBtnOtQrNuevo) elBtnOtQrNuevo.textContent = '♻️ Generar QR nuevo';
+  if (elBtnOtQrCorreo) elBtnOtQrCorreo.disabled = !ot.cliente_correo;
+  if (elOtQrRetiroEstado) {
+    elOtQrRetiroEstado.innerHTML = `Vigente desde ${tsAChile(ot.token_retiro_generado_en)}.${ot.cliente_correo ? '' : ' <b>La orden no tiene correo:</b> envíalo por WhatsApp.'}<br>Quien retire deberá mostrarlo, o ser el titular con su carnet.`;
+  }
+  if (elOtQrRetiroImagen && typeof QRCode !== 'undefined') {
+    QRCode.toString(URL_RETIRO_TIENDA + ot.token_retiro, { type: 'svg', margin: 1, width: 124 }, (err, svg) => {
+      elOtQrRetiroImagen.innerHTML = err ? '' : svg;
+    });
+  }
+}
+
+function otDelPreview() {
+  if (!ultimaOTCreada) return null;
+  return ordenesList.find(o => String(o.id) === String(ultimaOTCreada.id)) || ultimaOTCreada;
+}
+
+function avisarCorreoQr(correoQr, ot) {
+  if (!correoQr) return;
+  if (correoQr.enviado) showToast(`QR de retiro enviado a ${ot.cliente_correo}`, 'ok');
+  else showToast(`QR de retiro NO enviado por correo: ${correoQr.motivo || 'sin detalle'}. Envíalo por WhatsApp desde la orden.`, 'err');
+}
+
+// "+56 9 1234 5678" → "56912345678"; un celular de 9 dígitos sin código → 56 delante.
+function telefonoWhatsappOT(tel) {
+  const d = String(tel || '').replace(/\D/g, '');
+  if (!d) return '';
+  return d.length === 9 ? '56' + d : d;
+}
+
+function mensajeQrWhatsappOT(ot) {
+  const nombre = String(ot.cliente_nombre || '').trim().split(/\s+/)[0] || '';
+  return [
+    `Hola${nombre ? ' ' + nombre : ''}, recibimos tu equipo en ${NEGOCIO_NOMBRE} (orden ${ot.numero_ot}).`,
+    '',
+    'Este es tu código para retirarlo:',
+    URL_RETIRO_TIENDA + ot.token_retiro,
+    '',
+    'Por tu seguridad, solo entregamos el equipo a quien muestre este código, o a ti con tu carnet. Si otra persona va a retirar, reenvíale este mensaje. No lo compartas con nadie más.'
+  ].join('\n');
+}
+
+// Botón manual (decisión del dueño): abre su WhatsApp con el mensaje listo.
+function enviarQrWhatsappOT() {
+  const ot = otDelPreview();
+  if (!ot?.token_retiro) return;
+  const tel = telefonoWhatsappOT(ot.cliente_telefono);
+  window.open(`https://wa.me/${tel}?text=${encodeURIComponent(mensajeQrWhatsappOT(ot))}`, '_blank', 'noopener');
+}
+
+async function reenviarQrCorreoOT() {
+  const ot = otDelPreview();
+  if (!ot) return;
+  try {
+    const r = await API.ot.enviarQr(ot.id);
+    avisarCorreoQr(r.correo_qr, ot);
+  } catch (err) {
+    showToast(err.message || 'No se pudo reenviar el correo', 'err');
+  }
+}
+
+async function generarQrNuevoOT() {
+  const ot = otDelPreview();
+  if (!ot) return;
+  if (ot.token_retiro && !confirm('¿Generar un QR nuevo? El QR anterior dejará de servir de inmediato.')) return;
+  try {
+    const nueva = await API.ot.qrNuevo(ot.id);
+    const i = ordenesList.findIndex(o => String(o.id) === String(ot.id));
+    if (i >= 0) ordenesList[i] = { ...ordenesList[i], ...nueva };
+    ultimaOTCreada = { ...ot, ...nueva };
+    renderQrRetiroOT(ultimaOTCreada);
+    showToast('QR nuevo generado: el anterior ya no sirve', 'ok');
+    avisarCorreoQr(nueva.correo_qr, ultimaOTCreada);
+  } catch (err) {
+    showToast(err.message || 'No se pudo generar el QR', 'err');
+  }
+}
+
+// Escanearon el QR desde "Retirar con QR": se abre la entrega de esa orden.
+async function retirarOtConQr(codigo) {
+  try {
+    const ot = await API.ot.porQr(codigo);
+    if (!ordenesList.some(o => String(o.id) === String(ot.id))) ordenesList.push(ot);
+    abrirModalEntrega(ot.id, codigo);
+  } catch (err) {
+    showToast(err.message || 'QR no válido', 'err');
+  }
 }
 
 /* Plantilla para pedirle los datos al cliente por WhatsApp y no frenar
@@ -650,7 +800,7 @@ async function cobrarEnPOS(id) {
 // ============================================================
 // CHECK-OUT (entrega con firma)
 // ============================================================
-function abrirModalEntrega(id) {
+function abrirModalEntrega(id, codigoQr) {
   const ot = ordenesList.find(o => String(o.id) === String(id));
   if (!ot) return;
 
@@ -659,8 +809,11 @@ function abrirModalEntrega(id) {
   if (elOtEntregaResumen) {
     elOtEntregaResumen.innerHTML = `<b>${escHtml(ot.numero_ot)}</b> · ${escHtml(ot.cliente_nombre || 'Cliente')} · ${escHtml(ot.dispositivo_modelo || 'Equipo')}`;
   }
-  if (elOtRetiraNombre) elOtRetiraNombre.value = ot.cliente_nombre || '';
-  if (elOtRetiraRut) elOtRetiraRut.value = ot.cliente_rut || '';
+  // Verificación (sql/47): parte en QR; si llegó escaneado, ya trae el código.
+  const radioQr = document.getElementById('otVerificacionQr');
+  if (radioQr) radioQr.checked = true;
+  if (elOtEntregaCodigo) elOtEntregaCodigo.value = codigoQr || '';
+  actualizarVerificacionEntrega(true);
   // La garantía del servicio siempre parte en 6 meses (pedido explícito
   // del dueño), editable acá mismo antes de confirmar la entrega.
   if (elOtEntregaMesesGarantia) elOtEntregaMesesGarantia.value = 6;
@@ -674,9 +827,41 @@ function cerrarModalEntrega() {
   otSeleccionadaEntrega = null;
 }
 
+function verificacionElegidaOT() {
+  return document.querySelector('input[name="otVerificacion"]:checked')?.value || 'QR';
+}
+
+/* QR: quien retira puede ser cualquiera; se anota su nombre y RUT.
+   CARNET: es el titular; se precargan sus datos para compararlos con el carnet. */
+function actualizarVerificacionEntrega(rellenar) {
+  const ot = otSeleccionadaEntrega;
+  const modo = verificacionElegidaOT();
+  if (elOtVerificacionQrCampos) elOtVerificacionQrCampos.style.display = modo === 'QR' ? '' : 'none';
+  if (elOtVerificacionAviso) {
+    elOtVerificacionAviso.innerHTML = modo === 'CARNET'
+      ? (ot?.cliente_rut
+        ? `Revisa que el carnet diga <b>${escHtml(ot.cliente_rut)}</b> (${escHtml(ot.cliente_nombre || '')}).`
+        : '<b>Esta orden no tiene RUT del titular:</b> solo se puede entregar con el QR. Si se perdió, genera uno nuevo desde la orden.')
+      : 'Escanea el QR que muestra quien retira y anota su nombre y RUT.';
+  }
+  if (!rellenar || !ot) return;
+  if (elOtRetiraNombre) elOtRetiraNombre.value = modo === 'CARNET' ? (ot.cliente_nombre || '') : '';
+  if (elOtRetiraRut) elOtRetiraRut.value = modo === 'CARNET' ? (ot.cliente_rut || '') : '';
+}
+
 async function confirmarEntrega() {
   const id = elOtEntregaId?.value;
   if (!id) return;
+
+  const verificacion = verificacionElegidaOT();
+  if (!elOtRetiraNombre?.value.trim() || !elOtRetiraRut?.value.trim()) {
+    showToast('Registra el nombre y el RUT de quien retira', 'err');
+    return;
+  }
+  if (verificacion === 'QR' && !elOtEntregaCodigo?.value.trim()) {
+    showToast('Escanea el QR de quien retira, o elige verificar con carnet', 'err');
+    return;
+  }
 
   if (elBtnConfirmarOtEntrega) elBtnConfirmarOtEntrega.disabled = true;
 
@@ -684,6 +869,8 @@ async function confirmarEntrega() {
     await API.ot.entregar(id, {
       retira_nombre: elOtRetiraNombre?.value.trim() || null,
       retira_rut: elOtRetiraRut?.value.trim() || null,
+      verificacion,
+      codigo_retiro: verificacion === 'QR' ? elOtEntregaCodigo?.value.trim() : null,
       meses_garantia: elOtEntregaMesesGarantia?.value.trim() ? Number(elOtEntregaMesesGarantia.value) : 6,
       retira_firma_base64: obtenerFirmaBase64()
     });

@@ -36,7 +36,9 @@ const elBtnLinterna = document.getElementById('btnLinterna');
 const elEscanerArchivo = document.getElementById('escanerArchivo');
 const elEscanerArchivoEstado = document.getElementById('escanerArchivoEstado');
 
-/* Formatos habituales de retail; se dejan fuera los QR por rendimiento */
+/* Formatos habituales de retail, más QR: el QR de retiro de las Órdenes de
+   Trabajo (sql/47) se escanea acá. La lectura es a pedido (se captura un
+   cuadro), así que sumar QR no pesa en el visor. */
 function formatosSoportados() {
   if (typeof Html5QrcodeSupportedFormats === 'undefined') return undefined;
   return [
@@ -47,7 +49,8 @@ function formatosSoportados() {
     Html5QrcodeSupportedFormats.CODE_128,
     Html5QrcodeSupportedFormats.CODE_39,
     Html5QrcodeSupportedFormats.ITF,
-    Html5QrcodeSupportedFormats.CODABAR
+    Html5QrcodeSupportedFormats.CODABAR,
+    Html5QrcodeSupportedFormats.QR_CODE
   ];
 }
 
