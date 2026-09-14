@@ -5059,6 +5059,11 @@ app.post('/api/finanzas/f29-presentado', auth(true), async (req, res) => {
     const monto = Math.round(num(req.body?.monto_pagado));
     if (monto < 0) return enviarError(res, 400, 'El monto pagado no puede ser negativo');
     const notas = String(req.body?.notas || '').trim() || null;
+    // Código 77 del F29: el crédito que pasa al mes siguiente (sql/51, semáforo de IVA)
+    const remanente = req.body?.remanente_siguiente;
+    if (remanente !== undefined && remanente !== null && remanente !== '' && !(num(remanente) >= 0)) {
+      return enviarError(res, 400, 'El remanente no puede ser negativo');
+    }
 
     const { data: previo } = await db.from('f29_presentaciones').select('*').eq('periodo', periodo).maybeSingle();
     let compraId = previo?.compra_id || null;
@@ -5091,6 +5096,12 @@ app.post('/api/finanzas/f29-presentado', auth(true), async (req, res) => {
       notas
     }]).select().single();
     if (error) return enviarErrorBD(res, error);
+    if (remanente !== undefined && remanente !== null && remanente !== '') {
+      const { error: errRem } = await db.from('iva_remanentes').upsert([{
+        periodo, monto: Math.round(num(remanente)), fuente: 'F29 presentado', actualizado_en: new Date().toISOString()
+      }]);
+      if (errRem) console.error('[F29] no se pudo guardar el remanente:', errRem.message);
+    }
     res.json(data);
   } catch (e) {
     enviarError(res, 500, e.message || 'No se pudo marcar el F29');
@@ -5102,6 +5113,455 @@ app.delete('/api/finanzas/f29-presentado/:periodo', auth(true), async (req, res)
   const { error } = await db.from('f29_presentaciones').delete().eq('periodo', req.params.periodo);
   if (error) return enviarErrorBD(res, error);
   res.json({ ok: true });
+});
+
+/* ============================================================
+   RCV DEL SII AUTOMÁTICO + SEMÁFORO DE IVA (sql/51)
+   ------------------------------------------------------------
+   Un robot entra al SII con el certificado digital del dueño y trae el
+   Registro de Compras y Ventas del mes. SOLO LECTURA: nunca acepta,
+   reclama ni declara nada.
+
+   El certificado vive únicamente en variables de entorno de Vercel, que
+   carga el dueño: SII_CERT_PFX_BASE64 (el .pfx en base64),
+   SII_CERT_PASSWORD y SII_RUT (con guion). Nunca se escribe en la base,
+   en el repo ni en un log.
+
+   Cómo entra (el mismo camino que usa el navegador con certificado):
+     1. POST herculesr.sii.cl/cgi_AUT2000/CAutInicio.cgi presentando el
+        certificado (TLS mutuo) → cookie TOKEN.
+     2. POST www4.sii.cl/consdcvinternetui/services/data/facadeService/<método>
+        con el TOKEN: getResumen (totales por tipo de documento) y
+        getDetalleCompraExport (las facturas, en el mismo formato del CSV
+        que se descarga a mano).
+   Es la API interna del portal, no una API pública documentada: si el SII
+   la cambia, la sincronización falla, queda en sii_sync y en Salud, y el
+   respaldo es subir el CSV del RCV a mano (usa el mismo lector).
+   ============================================================ */
+const https = require('https');
+let forge = null;
+try { forge = require('node-forge'); } catch (_) { /* sin forge se intenta con el .pfx directo */ }
+
+const SII_NOMBRES_DOC = {
+  29: 'Factura de inicio', 30: 'Factura', 32: 'Factura exenta', 33: 'Factura electrónica',
+  34: 'Factura exenta electrónica', 35: 'Boleta', 38: 'Boleta exenta', 39: 'Boleta electrónica',
+  41: 'Boleta exenta electrónica', 43: 'Liquidación factura', 45: 'Factura de compra',
+  46: 'Factura de compra electrónica', 48: 'Comprobante de pago electrónico', 55: 'Nota de débito',
+  56: 'Nota de débito electrónica', 60: 'Nota de crédito', 61: 'Nota de crédito electrónica',
+  110: 'Factura de exportación', 914: 'Declaración de ingreso (DIN)'
+};
+// Las notas de crédito restan del débito (venta) o del crédito (compra)
+const SII_DOC_RESTA = new Set([60, 61]);
+
+function siiConfigurado() {
+  return !!(process.env.SII_CERT_PFX_BASE64 && process.env.SII_CERT_PASSWORD && process.env.SII_RUT);
+}
+
+let siiCredencialesCache = null;
+function siiCredencialesTls() {
+  if (siiCredencialesCache) return siiCredencialesCache;
+  const pfx = Buffer.from(String(process.env.SII_CERT_PFX_BASE64 || '').replace(/\s+/g, ''), 'base64');
+  const passphrase = String(process.env.SII_CERT_PASSWORD || '');
+  if (!pfx.length) throw new Error('Falta el certificado del SII (SII_CERT_PFX_BASE64)');
+
+  /* Los .pfx que emiten las certificadoras chilenas suelen venir con
+     cifrado antiguo (RC2/3DES) que OpenSSL 3 —el de Node actual— rechaza
+     con "unsupported". node-forge lo abre en JavaScript puro y lo pasa a
+     PEM, que TLS sí acepta. */
+  if (forge) {
+    let p12;
+    try {
+      p12 = forge.pkcs12.pkcs12FromAsn1(forge.asn1.fromDer(pfx.toString('binary')), false, passphrase);
+    } catch (e) {
+      throw new Error(/mac|password|invalid/i.test(e.message)
+        ? 'La clave del certificado no coincide (SII_CERT_PASSWORD)'
+        : 'No se pudo leer el certificado .pfx: ' + e.message);
+    }
+    const bolsa = (tipo) => (p12.getBags({ bagType: tipo })[tipo] || []);
+    const llave = bolsa(forge.pki.oids.pkcs8ShroudedKeyBag)[0] || bolsa(forge.pki.oids.keyBag)[0];
+    const certs = bolsa(forge.pki.oids.certBag).filter(b => b.cert);
+    if (!llave || !certs.length) throw new Error('El .pfx no trae la llave privada o el certificado');
+    // El certificado de la persona es el que NO es de autoridad certificadora
+    const propio = certs.find(b => !(b.cert.getExtension('basicConstraints') || {}).cA) || certs[0];
+    siiCredencialesCache = {
+      tls: { key: forge.pki.privateKeyToPem(llave.key), cert: forge.pki.certificateToPem(propio.cert) },
+      vence: propio.cert.validity.notAfter ? propio.cert.validity.notAfter.toISOString().slice(0, 10) : null
+    };
+  } else {
+    siiCredencialesCache = { tls: { pfx, passphrase }, vence: null };
+  }
+  return siiCredencialesCache;
+}
+
+function siiHttp(url, { method = 'GET', headers = {}, body = null, tls = {}, timeoutMs = 25000 } = {}) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const reqSii = https.request({
+      hostname: u.hostname, path: u.pathname + u.search, method,
+      headers: { 'User-Agent': 'Mozilla/5.0 (SevelinPOS RCV)', ...headers, ...(body ? { 'Content-Length': Buffer.byteLength(body) } : {}) },
+      ...tls
+    }, (resp) => {
+      const trozos = [];
+      resp.on('data', c => trozos.push(c));
+      resp.on('end', () => resolve({ status: resp.statusCode, headers: resp.headers, body: Buffer.concat(trozos).toString('utf8') }));
+    });
+    reqSii.setTimeout(timeoutMs, () => reqSii.destroy(new Error(`El SII no respondió en ${Math.round(timeoutMs / 1000)} s`)));
+    reqSii.on('error', reject);
+    if (body) reqSii.write(body);
+    reqSii.end();
+  });
+}
+
+async function siiAutenticar(tls) {
+  const r = await siiHttp('https://herculesr.sii.cl/cgi_AUT2000/CAutInicio.cgi', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'referencia=' + encodeURIComponent('https://palena.sii.cl/cgi_dte/UPL/DTEauth?1'),
+    tls
+  });
+  const cookies = [].concat(r.headers['set-cookie'] || []);
+  for (const c of cookies) {
+    const m = /(?:^|;\s*)TOKEN=([^;]+)/i.exec(c);
+    if (m && m[1] && m[1] !== 'DEL') return m[1];
+  }
+  throw new Error(r.status >= 400
+    ? `El SII rechazó la conexión con el certificado (HTTP ${r.status})`
+    : 'El SII no aceptó el certificado: revisa que esté vigente y asociado a tu RUT en el SII');
+}
+
+async function siiFacade(metodo, data, token, tls) {
+  const r = await siiHttp(`https://www4.sii.cl/consdcvinternetui/services/data/facadeService/${metodo}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json; charset=utf-8', Accept: 'application/json', Cookie: `TOKEN=${token}` },
+    body: JSON.stringify({
+      metaData: {
+        namespace: `cl.sii.sdi.lob.diii.consdcv.data.api.interfaces.FacadeService/${metodo}`,
+        conversationId: token,
+        transactionId: crypto.randomUUID(),
+        page: null
+      },
+      data
+    }),
+    tls
+  });
+  if (r.status !== 200) throw new Error(`El SII respondió HTTP ${r.status} en ${metodo}`);
+  let json;
+  try { json = JSON.parse(r.body); } catch (_) { throw new Error(`El SII no devolvió datos legibles en ${metodo} (¿sesión vencida?)`); }
+  const estado = json?.respEstado;
+  if (estado && Number(estado.codRespuesta) !== 0 && estado.codRespuesta !== undefined) {
+    // "sin información" no es un error: el mes simplemente no tiene documentos
+    if (/no\s+(existe|hay|se encontr)|sin\s+(datos|informaci)/i.test(estado.msgeRespuesta || '')) return { ...json, data: [] };
+    throw new Error(`SII (${metodo}): ${estado.msgeRespuesta || 'código ' + estado.codRespuesta}`);
+  }
+  return json;
+}
+
+/* El resumen trae nombres de campo internos del SII (rsmnMntIVA, etc.).
+   Se buscan por patrón y no por nombre exacto, para aguantar variaciones. */
+function siiCampo(obj, patrones) {
+  const claves = Object.keys(obj || {});
+  for (const p of patrones) {
+    const k = claves.find(c => p.test(c));
+    if (k !== undefined) return obj[k];
+  }
+  return undefined;
+}
+function siiNumero(v) {
+  if (v === null || v === undefined || v === '') return 0;
+  if (typeof v === 'number') return v;
+  const limpio = String(v).replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, '');
+  const n = Number(limpio);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function siiParsearResumen(json, periodo, operacion, estado) {
+  const filas = Array.isArray(json?.data) ? json.data : [];
+  return filas.map(f => {
+    const tipo = Math.round(siiNumero(siiCampo(f, [/^rsmnTipoDocInteger$/i, /tipo_?doc/i])));
+    return {
+      periodo, operacion, estado,
+      tipo_doc: tipo,
+      nombre_doc: String(siiCampo(f, [/nombre.*tipo.*doc/i, /tipo.*doc.*nombre/i]) || SII_NOMBRES_DOC[tipo] || '').slice(0, 80) || null,
+      total_docs: Math.round(siiNumero(siiCampo(f, [/tot_?doc/i, /cant/i]))),
+      exento: siiNumero(siiCampo(f, [/mnt_?exe/i])),
+      neto: siiNumero(siiCampo(f, [/mnt_?neto$/i, /mnt_?neto/i])),
+      iva: siiNumero(siiCampo(f, [/^rsmnMntIVA$/i, /mnt_?iva(_?rec)?$/i])),
+      iva_no_recuperable: siiNumero(siiCampo(f, [/iva_?no_?rec/i])),
+      total: siiNumero(siiCampo(f, [/mnt_?total/i])),
+      actualizado_en: new Date().toISOString()
+    };
+  }).filter(f => f.tipo_doc > 0);
+}
+
+/* Lector del CSV del RCV (el que se descarga en el SII, separado por ";").
+   Lo usan el robot (getDetalleCompraExport devuelve estas mismas líneas) y
+   el botón "Subir CSV". Los encabezados se normalizan (sin tildes, sin
+   espacios, minúsculas) para no depender de mayúsculas ni acentos. */
+function siiParsearCsvRcv(texto, periodo, operacion, estado, fuente) {
+  const lineas = String(texto || '').replace(/^﻿/, '').split(/\r?\n/).filter(l => l.trim());
+  if (lineas.length < 2) return [];
+  const norm = s => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const cab = lineas[0].split(';').map(norm);
+  const col = (pred) => cab.findIndex(pred);
+  const iTipo = col(h => h === 'tipodoc');
+  const iRut = col(h => h.startsWith('rut'));
+  const iRazon = col(h => h.startsWith('razonsocial'));
+  const iFolio = col(h => h === 'folio');
+  const iFecha = col(h => h === 'fechadocto');
+  const iExe = col(h => h === 'montoexento');
+  const iNeto = col(h => h === 'montoneto');
+  const iIva = col(h => h === 'montoivarecuperable' || h === 'montoiva');
+  const iIvaNoRec = col(h => h === 'montoivanorecuperable');
+  const iTotal = col(h => h === 'montototal');
+  if (iTipo < 0 || iRut < 0 || iFolio < 0) {
+    throw new Error('El archivo no tiene el formato del RCV del SII (faltan las columnas Tipo Doc, RUT o Folio)');
+  }
+
+  const docs = [];
+  for (const linea of lineas.slice(1)) {
+    const c = linea.split(';');
+    const tipo = Math.round(siiNumero(c[iTipo]));
+    const folio = Math.round(siiNumero(c[iFolio]));
+    const rut = String(c[iRut] || '').trim().toUpperCase();
+    if (!tipo || !folio || !rut) continue;
+    let fecha = null;
+    const mf = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(String(c[iFecha] || '').trim());
+    if (mf) fecha = `${mf[3]}-${mf[2]}-${mf[1]}`;
+    else if (/^\d{4}-\d{2}-\d{2}/.test(String(c[iFecha] || ''))) fecha = String(c[iFecha]).slice(0, 10);
+    docs.push({
+      periodo, operacion, estado, tipo_doc: tipo, rut,
+      razon_social: iRazon >= 0 ? String(c[iRazon] || '').trim().slice(0, 150) || null : null,
+      folio, fecha_doc: fecha,
+      exento: iExe >= 0 ? siiNumero(c[iExe]) : 0,
+      neto: iNeto >= 0 ? siiNumero(c[iNeto]) : 0,
+      iva: iIva >= 0 ? siiNumero(c[iIva]) : 0,
+      iva_no_recuperable: iIvaNoRec >= 0 ? siiNumero(c[iIvaNoRec]) : 0,
+      total: iTotal >= 0 ? siiNumero(c[iTotal]) : 0,
+      fuente,
+      actualizado_en: new Date().toISOString()
+    });
+  }
+  return docs;
+}
+
+async function siiGuardarDocumentos(docs) {
+  let guardados = 0;
+  for (let i = 0; i < docs.length; i += 200) {
+    const trozo = docs.slice(i, i + 200);
+    const { error } = await consultarConReintento(() =>
+      db.from('sii_rcv_documentos').upsert(trozo, { onConflict: 'operacion,tipo_doc,rut,folio' }));
+    if (error) throw new Error('No se pudieron guardar los documentos del RCV: ' + error.message);
+    guardados += trozo.length;
+  }
+  return guardados;
+}
+
+// 'AAAAMM' del mes actual y del anterior (hora de Chile)
+function periodosRcvActuales() {
+  const [a, m] = fechaHoyChile().split('-').map(Number);
+  const actual = `${a}${String(m).padStart(2, '0')}`;
+  const anterior = m === 1 ? `${a - 1}12` : `${a}${String(m - 1).padStart(2, '0')}`;
+  return [anterior, actual];
+}
+
+async function sincronizarRcv(origen) {
+  const periodos = periodosRcvActuales();
+  let documentos = 0;
+  try {
+    if (!siiConfigurado()) throw new Error('Falta configurar el certificado del SII en Vercel (SII_CERT_PFX_BASE64, SII_CERT_PASSWORD, SII_RUT)');
+    const { tls } = siiCredencialesTls();
+    const token = await siiAutenticar(tls);
+    const [rut, dv] = String(process.env.SII_RUT).replace(/\./g, '').trim().split('-');
+    if (!rut || !dv) throw new Error('SII_RUT debe venir con guion, por ejemplo 12345678-9');
+
+    for (const periodo of periodos) {
+      const base = { rutEmisor: rut, dvEmisor: dv.toUpperCase(), ptributario: periodo };
+      const consultas = [
+        ...['REGISTRO', 'PENDIENTE', 'NO_INCLUIR', 'RECLAMADO'].map(estado => ({ operacion: 'COMPRA', estado })),
+        { operacion: 'VENTA', estado: 'REGISTRO' }
+      ];
+
+      // Resumen: se reemplaza completo por período/operación/estado
+      const resumenes = await Promise.all(consultas.map(async q => ({
+        ...q,
+        filas: siiParsearResumen(
+          await siiFacade('getResumen', { ...base, estadoContab: q.estado, operacion: q.operacion, busquedaInicial: true }, token, tls),
+          periodo, q.operacion, q.estado)
+      })));
+      for (const r of resumenes) {
+        await db.from('sii_rcv_resumen').delete().eq('periodo', periodo).eq('operacion', r.operacion).eq('estado', r.estado);
+        if (r.filas.length) {
+          const { error } = await db.from('sii_rcv_resumen').insert(r.filas);
+          if (error) throw new Error('No se pudo guardar el resumen del RCV: ' + error.message);
+        }
+      }
+
+      // Detalle de compras (las facturas), solo lo que suma o puede sumar crédito
+      for (const estado of ['REGISTRO', 'PENDIENTE']) {
+        const json = await siiFacade('getDetalleCompraExport',
+          { ...base, operacion: 'COMPRA', estadoContab: estado, codTipoDoc: '0' }, token, tls);
+        const texto = Array.isArray(json?.data) ? json.data.join('\n') : String(json?.data || '');
+        documentos += await siiGuardarDocumentos(siiParsearCsvRcv(texto, periodo, 'COMPRA', estado, 'robot'));
+      }
+    }
+
+    await db.from('sii_sync').insert([{ origen, ok: true, periodos: periodos.join(','), documentos, mensaje: null }]);
+    return { ok: true, periodos, documentos };
+  } catch (err) {
+    const mensaje = enmascararSecretos(err.message || String(err)).slice(0, 500);
+    await db.from('sii_sync').insert([{ origen, ok: false, periodos: periodos.join(','), documentos, mensaje }]);
+    registrarErrorSalud({ origen: 'POS', ruta: 'SII RCV', metodo: origen, mensaje: `Sincronización del RCV: ${mensaje}` });
+    return { ok: false, periodos, documentos, mensaje };
+  }
+}
+
+// Programado en vercel.json. Vercel manda "Authorization: Bearer <CRON_SECRET>".
+app.get('/api/cron/sii-rcv', async (req, res) => {
+  const secreto = process.env.CRON_SECRET;
+  if (!secreto || req.headers.authorization !== `Bearer ${secreto}`) return enviarError(res, 401, 'No autorizado');
+  if (!siiConfigurado()) return res.json({ ok: false, omitido: 'certificado no configurado' });
+  res.json(await sincronizarRcv('robot'));
+});
+
+// Botón "Sincronizar ahora". Con 2 minutos de espera entre intentos, para no martillar al SII.
+app.post('/api/finanzas/sii/sincronizar', auth(true), async (req, res) => {
+  const { data: ultima } = await db.from('sii_sync').select('creado_en').order('creado_en', { ascending: false }).limit(1).maybeSingle();
+  if (ultima && Date.now() - Date.parse(ultima.creado_en) < 2 * 60 * 1000) {
+    return enviarError(res, 429, 'Se sincronizó hace menos de 2 minutos. Espera un poco antes de volver a intentar.');
+  }
+  const r = await sincronizarRcv('manual');
+  if (!r.ok) return enviarError(res, 502, r.mensaje || 'No se pudo sincronizar con el SII');
+  res.json(r);
+});
+
+// Respaldo sin certificado: subir el CSV del RCV descargado desde el SII.
+app.post('/api/finanzas/sii/rcv-csv', auth(true), async (req, res) => {
+  const periodo = String(req.body?.periodo || '').replace('-', '');
+  const estado = ['REGISTRO', 'PENDIENTE'].includes(req.body?.estado) ? req.body.estado : 'REGISTRO';
+  if (!/^\d{6}$/.test(periodo)) return enviarError(res, 400, 'Indica el período del archivo (AAAA-MM)');
+  const texto = String(req.body?.csv || '');
+  if (texto.length > 3 * 1024 * 1024) return enviarError(res, 413, 'El archivo es demasiado grande');
+  try {
+    const docs = siiParsearCsvRcv(texto, periodo, 'COMPRA', estado, 'csv');
+    if (!docs.length) return enviarError(res, 400, 'El archivo no trae documentos');
+    const n = await siiGuardarDocumentos(docs);
+    await db.from('sii_sync').insert([{ origen: 'csv', ok: true, periodos: periodo, documentos: n, mensaje: null }]);
+    res.json({ ok: true, documentos: n });
+  } catch (err) {
+    enviarError(res, 400, err.message || 'No se pudo leer el archivo');
+  }
+});
+
+// Remanente del mes anterior (código 77 del F29), editable a mano
+app.put('/api/finanzas/iva-remanente/:periodo', auth(true), async (req, res) => {
+  const periodo = String(req.params.periodo || '');
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(periodo)) return enviarError(res, 400, 'Período inválido (AAAA-MM)');
+  const monto = Math.round(num(req.body?.monto));
+  if (!(monto >= 0)) return enviarError(res, 400, 'El remanente no puede ser negativo');
+  const { data, error } = await db.from('iva_remanentes')
+    .upsert([{ periodo, monto, fuente: String(req.body?.fuente || 'editado a mano').slice(0, 40), actualizado_en: new Date().toISOString() }])
+    .select().single();
+  if (error) return enviarErrorBD(res, error);
+  res.json(data);
+});
+
+/* El semáforo: ¿cuánto crédito me queda este mes antes de empezar a pagar IVA?
+   resultado = crédito del mes + remanente del mes anterior − débito del mes
+   Si el SII todavía no tiene las ventas del mes, el débito se estima con las
+   boletas registradas en el POS (y se dice). */
+async function calcularIvaMes(periodoAAAAMM) {
+  const periodo = /^\d{6}$/.test(periodoAAAAMM || '') ? periodoAAAAMM : periodosRcvActuales()[1];
+  const a = Number(periodo.slice(0, 4)), m = Number(periodo.slice(4));
+  const anterior = m === 1 ? `${a - 1}-12` : `${a}-${String(m - 1).padStart(2, '0')}`;
+  const signo = t => (SII_DOC_RESTA.has(Number(t)) ? -1 : 1);
+
+  const [{ data: resumen }, { data: docs }, { data: rem }, { data: ultimaSync }] = await Promise.all([
+    db.from('sii_rcv_resumen').select('*').eq('periodo', periodo),
+    db.from('sii_rcv_documentos').select('operacion, estado, tipo_doc, iva, rut, razon_social, folio, fecha_doc, total').eq('periodo', periodo).eq('operacion', 'COMPRA'),
+    db.from('iva_remanentes').select('*').eq('periodo', anterior).maybeSingle(),
+    db.from('sii_sync').select('*').order('creado_en', { ascending: false }).limit(1).maybeSingle()
+  ]);
+  const filas = resumen || [];
+  const documentos = docs || [];
+  const sumaIva = lista => Math.round(lista.reduce((s, f) => s + signo(f.tipo_doc) * num(f.iva), 0));
+
+  // Crédito: resumen del SII; si no hay (solo se subió CSV), desde los documentos
+  const compraReg = filas.filter(f => f.operacion === 'COMPRA' && f.estado === 'REGISTRO');
+  const docsReg = documentos.filter(d => d.estado === 'REGISTRO');
+  const credito = compraReg.length ? sumaIva(compraReg) : sumaIva(docsReg);
+  const fuenteCredito = compraReg.length ? 'sii' : (docsReg.length ? 'csv' : 'sin_datos');
+
+  const compraPend = filas.filter(f => f.operacion === 'COMPRA' && f.estado === 'PENDIENTE');
+  const docsPend = documentos.filter(d => d.estado === 'PENDIENTE');
+  const pendientesIva = compraPend.length ? sumaIva(compraPend) : sumaIva(docsPend);
+  const pendientesCantidad = compraPend.length ? compraPend.reduce((s, f) => s + (f.total_docs || 0), 0) : docsPend.length;
+
+  // Débito: resumen de ventas del SII; si no hay, estimado con las boletas del POS
+  const ventaReg = filas.filter(f => f.operacion === 'VENTA' && f.estado === 'REGISTRO');
+  let debito, fuenteDebito;
+  if (ventaReg.length) {
+    debito = sumaIva(ventaReg);
+    fuenteDebito = 'sii';
+  } else {
+    const desde = `${a}-${String(m).padStart(2, '0')}-01`;
+    const hasta = `${a}-${String(m).padStart(2, '0')}-31`;
+    const { data: ventasPos } = await db.from('ventas').select('total, tipo_dte')
+      .gte('fecha', desde).lte('fecha', hasta).eq('estado', 'PAGADA').in('tipo_dte', ['BOLETA', 'FACTURA']);
+    debito = Math.round((ventasPos || []).reduce((s, v) => s + num(v.total) - num(v.total) / 1.19, 0));
+    fuenteDebito = 'pos';
+  }
+
+  const remanente = rem ? num(rem.monto) : null;
+  const resultado = credito + (remanente || 0) - debito;
+  /* Amarillo = al ritmo de boletas de este mes, el crédito se acaba ANTES de
+     fin de mes. Es la señal que sirve para decidir (comprar con factura ya),
+     no un monto fijo: $50.000 de crédito es mucho un día 28 y nada un día 5. */
+  let nivel = 'verde';
+  let diasCobertura = null;
+  const hoy = fechaHoyChile();
+  const esMesActual = periodo === hoy.slice(0, 7).replace('-', '');
+  if (resultado < 0) {
+    nivel = 'rojo';
+  } else if (esMesActual) {
+    const diaHoy = Number(hoy.slice(8, 10));
+    const diasMes = new Date(a, m, 0).getDate();
+    const ritmoDiario = debito / Math.max(1, diaHoy);
+    if (ritmoDiario > 0) {
+      diasCobertura = Math.floor(resultado / ritmoDiario);
+      if (diasCobertura < diasMes - diaHoy) nivel = 'amarillo';
+    }
+  }
+
+  let vence = null;
+  if (siiConfigurado()) { try { vence = siiCredencialesTls().vence; } catch (_) { vence = null; } }
+
+  return {
+    periodo,
+    credito, fuenteCredito,
+    debito, fuenteDebito,
+    remanenteAnterior: remanente, remanentePeriodo: anterior, remanenteFuente: rem?.fuente || null,
+    resultado,
+    nivel,
+    diasCobertura,
+    ivaAPagarEstimado: resultado < 0 ? -resultado : 0,
+    // Cuánto más se puede vender con boleta antes de empezar a pagar IVA (precio con IVA)
+    ventasConBoletaHastaPagar: resultado > 0 ? Math.floor((resultado / 0.19) * 1.19) : 0,
+    pendientes: { cantidad: pendientesCantidad, iva: pendientesIva },
+    porTipo: filas.filter(f => f.estado === 'REGISTRO').map(f => ({ operacion: f.operacion, tipo_doc: f.tipo_doc, nombre: f.nombre_doc || SII_NOMBRES_DOC[f.tipo_doc] || String(f.tipo_doc), total_docs: f.total_docs, iva: num(f.iva) })),
+    facturasRecientes: documentos.filter(d => d.estado === 'REGISTRO' || d.estado === 'PENDIENTE')
+      .sort((x, y) => String(y.fecha_doc || '').localeCompare(String(x.fecha_doc || ''))).slice(0, 15),
+    configurado: siiConfigurado(),
+    certificadoVence: vence,
+    ultimaSync: ultimaSync || null
+  };
+}
+
+app.get('/api/finanzas/sii/iva', auth(true), async (req, res) => {
+  try {
+    res.json(await calcularIvaMes(String(req.query.periodo || '').replace('-', '')));
+  } catch (err) {
+    enviarError(res, 500, err.message || 'No se pudo calcular el IVA del mes');
+  }
 });
 
 /* ============================================================

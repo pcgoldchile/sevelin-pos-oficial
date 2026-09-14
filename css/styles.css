@@ -3944,3 +3944,23 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
 .intel-chip-nota { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; }
 
 #intelContenido.cargando { opacity: .5; pointer-events: none; }
+
+/* ============================================================
+   SEMÁFORO DE IVA DEL SII (sql/51) — Finanzas → Utilidades
+   ============================================================ */
+.iva-sii-semaforo {
+    display: flex; align-items: center; gap: 14px; margin: 12px 0 14px;
+    padding: 14px 16px; border-radius: var(--radius-sm); border: 1px solid var(--border);
+    background: var(--surface-soft);
+}
+.iva-sii-semaforo b { display: block; font-size: 16px; }
+.iva-sii-semaforo small { display: block; color: var(--text-300); margin-top: 2px; }
+.iva-sii-luz { flex: 0 0 auto; width: 16px; height: 16px; border-radius: 50%; background: var(--text-muted); }
+.iva-sii-semaforo.nivel-verde    { border-color: rgba(34, 197, 94, .45);  background: var(--tint-green); }
+.iva-sii-semaforo.nivel-verde .iva-sii-luz    { background: var(--green); box-shadow: 0 0 10px rgba(34, 197, 94, .7); }
+.iva-sii-semaforo.nivel-amarillo { border-color: rgba(245, 158, 11, .45); background: rgba(245, 158, 11, .12); }
+.iva-sii-semaforo.nivel-amarillo .iva-sii-luz { background: #f59e0b; box-shadow: 0 0 10px rgba(245, 158, 11, .7); }
+.iva-sii-semaforo.nivel-rojo     { border-color: rgba(239, 68, 68, .45);  background: var(--tint-red); }
+.iva-sii-semaforo.nivel-rojo .iva-sii-luz     { background: var(--red); box-shadow: 0 0 10px rgba(239, 68, 68, .7); }
+.iva-sii-detalle { margin-top: 10px; }
+.iva-sii-detalle summary { cursor: pointer; color: var(--text-300); font-size: 13px; }

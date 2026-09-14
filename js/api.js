@@ -395,6 +395,11 @@ const API = {
     // Recordatorio del F29 (sql/49): períodos pendientes y marcar presentado
     f29Estado: () => apiRequest('/finanzas/f29-estado', { silencioso: true }),
     f29Marcar: (datos) => apiRequest('/finanzas/f29-presentado', { method: 'POST', body: datos }),
+    // Semáforo de IVA con el RCV del SII (sql/51)
+    ivaSii: (periodo) => apiRequest('/finanzas/sii/iva' + (periodo ? `?periodo=${encodeURIComponent(periodo)}` : '')),
+    siiSincronizar: () => apiRequest('/finanzas/sii/sincronizar', { method: 'POST', body: {} }),
+    siiSubirCsv: (datos) => apiRequest('/finanzas/sii/rcv-csv', { method: 'POST', body: datos }),
+    ivaRemanenteGuardar: (periodo, monto) => apiRequest(`/finanzas/iva-remanente/${encodeURIComponent(periodo)}`, { method: 'PUT', body: { monto } }),
     f29Desmarcar: (periodo) => apiRequest(`/finanzas/f29-presentado/${encodeURIComponent(periodo)}`, { method: 'DELETE' }),
 
     /* ---- Submódulo Utilidades (migración 27) ----

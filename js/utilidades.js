@@ -182,6 +182,9 @@ async function cargarUtilidades() {
   const caja = document.getElementById('utilContenido');
   if (caja) caja.classList.add('cargando');
 
+  // El semáforo del SII va aparte: no espera ni frena al informe de utilidades
+  cargarIvaSii();
+
   try {
     utilInforme = await API.balance.utilidades(utilRango.desde, utilRango.hasta);
     utilRemanente = await API.balance.ivaRemanente(utilRango.hasta);
@@ -931,5 +934,174 @@ async function confirmarBorrarPeriodo() {
     showToast(err.message || 'No se pudo borrar el período', 'err');
   } finally {
     if (btn) btn.disabled = false;
+  }
+}
+
+
+/* ============================================================
+   SEMÁFORO DE IVA DEL MES CON EL RCV DEL SII (sql/51)
+   ------------------------------------------------------------
+   Responde una sola pregunta: ¿cuánto crédito me queda este mes antes de
+   empezar a pagar IVA? Los datos los trae el robot del POS cada mañana;
+   "Sincronizar ahora" y "Subir CSV" son para cuando no se quiere esperar
+   o el robot no pudo entrar al SII.
+   ============================================================ */
+let ivaSiiActual = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btnIvaSiiSincronizar')?.addEventListener('click', sincronizarIvaSii);
+  document.getElementById('btnIvaSiiCsv')?.addEventListener('click', () => document.getElementById('ivaSiiCsvArchivo')?.click());
+  document.getElementById('ivaSiiCsvArchivo')?.addEventListener('change', subirCsvIvaSii);
+  document.getElementById('ivaSiiEditarRemanente')?.addEventListener('click', (e) => { e.preventDefault(); editarRemanenteIvaSii(); });
+});
+
+async function cargarIvaSii() {
+  if (!esAdmin() || !document.getElementById('ivaSiiCard')) return;
+  try {
+    ivaSiiActual = await API.balance.ivaSii();
+    pintarIvaSii();
+  } catch (err) {
+    const estado = document.getElementById('ivaSiiEstado');
+    if (estado) estado.textContent = 'No se pudo calcular el IVA del mes: ' + (err.message || 'error');
+  }
+}
+
+function nombreMesIvaSii(periodoAAAAMM) {
+  const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  return `${meses[Number(periodoAAAAMM.slice(4)) - 1]} ${periodoAAAAMM.slice(0, 4)}`;
+}
+
+// "hace 3 h" — desde un timestamp ISO
+function haceCuantoIvaSii(iso) {
+  const min = Math.round((Date.now() - Date.parse(iso)) / 60000);
+  if (!Number.isFinite(min)) return '';
+  if (min < 1) return 'recién';
+  if (min < 60) return `hace ${min} min`;
+  if (min < 48 * 60) return `hace ${Math.round(min / 60)} h`;
+  return `hace ${Math.round(min / 1440)} días`;
+}
+
+function pintarIvaSii() {
+  const d = ivaSiiActual;
+  if (!d) return;
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+
+  // --- Estado de la conexión ---
+  const partes = [nombreMesIvaSii(d.periodo)];
+  if (!d.configurado) partes.push('⚠️ robot sin configurar: falta cargar el certificado en Vercel (mientras, puedes subir el CSV)');
+  if (d.ultimaSync) {
+    const origen = d.ultimaSync.origen === 'csv' ? 'CSV' : d.ultimaSync.origen === 'manual' ? 'a mano' : 'robot';
+    partes.push(d.ultimaSync.ok
+      ? `✅ actualizado ${haceCuantoIvaSii(d.ultimaSync.creado_en)} (${origen})`
+      : `❌ último intento ${haceCuantoIvaSii(d.ultimaSync.creado_en)}: ${d.ultimaSync.mensaje || 'falló'}`);
+  } else if (d.configurado) {
+    partes.push('todavía no se sincroniza');
+  }
+  if (d.certificadoVence) {
+    const dias = Math.round((Date.parse(d.certificadoVence + 'T00:00:00') - Date.now()) / 86400000);
+    if (dias <= 45) partes.push(`🔑 el certificado vence en ${dias} día(s)`);
+  }
+  set('ivaSiiEstado', partes.join(' · '));
+
+  // --- Semáforo ---
+  const caja = document.getElementById('ivaSiiSemaforo');
+  if (caja) caja.className = `iva-sii-semaforo nivel-${d.nivel}`;
+  if (d.fuenteCredito === 'sin_datos' && d.fuenteDebito === 'pos') {
+    set('ivaSiiTitular', 'Sin datos del SII todavía');
+    set('ivaSiiBajada', 'Cuando el robot sincronice (o subas el CSV) aparece cuánto crédito te queda. Mientras, el débito es una estimación con las boletas del POS.');
+    if (caja) caja.className = 'iva-sii-semaforo';
+  } else if (d.resultado >= 0) {
+    set('ivaSiiTitular', `Te quedan ${fmtCLP(d.resultado)} de crédito este mes`);
+    set('ivaSiiBajada', `Puedes vender unos ${fmtCLP(d.ventasConBoletaHastaPagar)} más con boleta antes de empezar a pagar IVA.`
+      + (d.nivel === 'amarillo'
+        ? ` Al ritmo de este mes se acaba en unos ${d.diasCobertura} día(s), antes de fin de mes: si vas a reponer stock, compra con factura ya.`
+        : ''));
+  } else {
+    set('ivaSiiTitular', `IVA a pagar estimado: ${fmtCLP(d.ivaAPagarEstimado)}`);
+    set('ivaSiiBajada', 'Tus ventas con boleta ya superaron el crédito del mes. Comprar con factura antes de fin de mes lo baja.');
+  }
+
+  // --- Cifras ---
+  set('ivaSiiDebito', fmtCLP(d.debito));
+  set('ivaSiiDebitoFuente', d.fuenteDebito === 'sii' ? 'Según el RCV del SII' : 'Estimado con las boletas del POS (el SII aún no lo informa)');
+  set('ivaSiiCredito', fmtCLP(d.credito));
+  set('ivaSiiCreditoFuente', d.fuenteCredito === 'sii' ? 'Facturas registradas en el SII'
+    : d.fuenteCredito === 'csv' ? 'Desde el CSV que subiste' : 'Sin datos del SII todavía');
+  set('ivaSiiRemanente', d.remanenteAnterior === null ? 'Sin dato' : fmtCLP(d.remanenteAnterior));
+
+  set('ivaSiiPendientes', d.pendientes && d.pendientes.cantidad
+    ? `⏳ ${d.pendientes.cantidad} factura(s) por aceptar en el SII con ${fmtCLP(d.pendientes.iva)} de IVA: todavía no suman crédito (el SII las acepta solas a los 8 días).`
+    : '');
+
+  // --- Facturas ---
+  const tbody = document.getElementById('ivaSiiFacturas');
+  if (tbody) {
+    const lista = d.facturasRecientes || [];
+    tbody.innerHTML = lista.length
+      ? lista.map(f => `
+        <tr>
+          <td>${escHtml(f.fecha_doc || '—')}</td>
+          <td>${escHtml(f.razon_social || f.rut)}<br><small style="color:var(--text-muted);">${escHtml(f.rut)}</small></td>
+          <td>${escHtml(String(f.tipo_doc))} · folio ${escHtml(String(f.folio))}</td>
+          <td>${f.estado === 'PENDIENTE' ? '<span class="badge badge-gold">Por aceptar</span>' : '<span class="badge badge-green">Registrada</span>'}</td>
+          <td class="num">${fmtCLP(f.iva)}</td>
+        </tr>`).join('')
+      : '<tr class="empty-row"><td colspan="5">Sin facturas recibidas este mes</td></tr>';
+  }
+}
+
+async function sincronizarIvaSii() {
+  const btn = document.getElementById('btnIvaSiiSincronizar');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Conectando con el SII…'; }
+  try {
+    const r = await API.balance.siiSincronizar();
+    showToast(`RCV actualizado: ${r.documentos} documento(s)`, 'ok');
+  } catch (err) {
+    showToast(err.message || 'No se pudo sincronizar con el SII', 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🔄 Sincronizar ahora'; }
+    cargarIvaSii();
+  }
+}
+
+async function subirCsvIvaSii(e) {
+  const archivo = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!archivo) return;
+
+  const sugerido = ivaSiiActual && ivaSiiActual.periodo
+    ? `${ivaSiiActual.periodo.slice(0, 4)}-${ivaSiiActual.periodo.slice(4)}`
+    : todayISO().slice(0, 7);
+  const periodo = prompt('¿De qué mes es este RCV de compras? (AAAA-MM)', sugerido);
+  if (!periodo) return;
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(periodo.trim())) { showToast('Escribe el mes como AAAA-MM, por ejemplo 2026-09', 'err'); return; }
+
+  try {
+    // El SII entrega el CSV en Latin-1: se lee así y, si no trae el encabezado, en UTF-8
+    const buffer = await archivo.arrayBuffer();
+    let texto = new TextDecoder('iso-8859-1').decode(buffer);
+    if (!/folio/i.test(texto.slice(0, 500))) texto = new TextDecoder('utf-8').decode(buffer);
+    const r = await API.balance.siiSubirCsv({ periodo: periodo.trim(), estado: 'REGISTRO', csv: texto });
+    showToast(`${r.documentos} documento(s) cargados desde el CSV`, 'ok');
+    cargarIvaSii();
+  } catch (err) {
+    showToast(err.message || 'No se pudo leer el CSV', 'err');
+  }
+}
+
+async function editarRemanenteIvaSii() {
+  const d = ivaSiiActual;
+  if (!d) return;
+  const valor = prompt(`Remanente de crédito fiscal que quedó de ${d.remanentePeriodo} (código 77 del F29):`,
+    d.remanenteAnterior === null ? '' : String(d.remanenteAnterior));
+  if (valor === null) return;
+  const monto = Number(String(valor).replace(/[^\d]/g, ''));
+  if (!Number.isFinite(monto)) { showToast('Escribe solo el número', 'err'); return; }
+  try {
+    await API.balance.ivaRemanenteGuardar(d.remanentePeriodo, monto);
+    showToast('Remanente actualizado', 'ok');
+    cargarIvaSii();
+  } catch (err) {
+    showToast(err.message || 'No se pudo guardar el remanente', 'err');
   }
 }

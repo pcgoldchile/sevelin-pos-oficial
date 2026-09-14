@@ -1161,6 +1161,58 @@
            ============================================================ -->
       <div class="panel-finanzas" data-panel-finanzas="utilidades">
 
+        <!-- Semáforo de IVA del mes con el RCV del SII (sql/51) — js/utilidades.js -->
+        <div class="card iva-sii" id="ivaSiiCard">
+          <div class="card-head">
+            <div>
+              <h2>🧾 IVA del mes según el SII</h2>
+              <p class="subtitle" id="ivaSiiEstado">Cargando…</p>
+            </div>
+            <div class="row-actions" style="gap:8px; flex-wrap:wrap;">
+              <button class="btn btn-outline btn-sm" id="btnIvaSiiSincronizar" title="Trae el RCV del SII ahora (el robot ya lo hace solo cada mañana)">🔄 Sincronizar ahora</button>
+              <button class="btn btn-outline btn-sm" id="btnIvaSiiCsv" title="Respaldo: sube el CSV del RCV descargado desde el SII">📄 Subir CSV del RCV</button>
+              <input type="file" id="ivaSiiCsvArchivo" accept=".csv,text/csv" hidden>
+            </div>
+          </div>
+
+          <div class="iva-sii-semaforo" id="ivaSiiSemaforo">
+            <span class="iva-sii-luz" id="ivaSiiLuz"></span>
+            <div>
+              <b id="ivaSiiTitular">—</b>
+              <small id="ivaSiiBajada"></small>
+            </div>
+          </div>
+
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <span class="kpi-label">IVA de tus ventas (débito)</span>
+              <b class="kpi-valor" id="ivaSiiDebito">$0</b>
+              <small class="kpi-detalle" id="ivaSiiDebitoFuente">—</small>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">IVA de tus compras (crédito)</span>
+              <b class="kpi-valor" id="ivaSiiCredito">$0</b>
+              <small class="kpi-detalle" id="ivaSiiCreditoFuente">—</small>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">Remanente del mes anterior</span>
+              <b class="kpi-valor" id="ivaSiiRemanente">$0</b>
+              <small class="kpi-detalle"><a href="#" id="ivaSiiEditarRemanente">✏️ Corregir</a> · código 77 del F29</small>
+            </div>
+          </div>
+
+          <p class="modal-hint" id="ivaSiiPendientes"></p>
+          <details class="iva-sii-detalle">
+            <summary>Ver facturas recibidas del mes</summary>
+            <div class="table-wrapper">
+              <table class="data-table">
+                <thead><tr><th>Fecha</th><th>Proveedor</th><th>Documento</th><th>Estado</th><th class="num">IVA</th></tr></thead>
+                <tbody id="ivaSiiFacturas"><tr class="empty-row"><td colspan="5">Sin datos todavía</td></tr></tbody>
+              </table>
+            </div>
+          </details>
+        </div>
+
         <div class="card">
           <div class="card-head">
             <div>
@@ -5499,6 +5551,12 @@
       <div class="field">
         <label for="f29Monto">Monto pagado (0 si no hubo pago)</label>
         <input type="number" id="f29Monto" min="0" step="1" placeholder="0">
+      </div>
+
+      <div class="field">
+        <label for="f29Remanente">Remanente para el período siguiente (código 77, opcional)</label>
+        <input type="number" id="f29Remanente" min="0" step="1" placeholder="Ej: 219227">
+        <p class="modal-hint">Es el crédito que te sobra para el mes que viene. Lo usa el semáforo de IVA de Finanzas → Utilidades.</p>
       </div>
 
       <label class="sn-toggle" style="width:fit-content;">

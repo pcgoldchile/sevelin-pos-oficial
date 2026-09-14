@@ -143,6 +143,8 @@ function abrirModalF29() {
 
   const monto = document.getElementById('f29Monto');
   if (monto) monto.value = '';
+  const remanente = document.getElementById('f29Remanente');
+  if (remanente) remanente.value = '';
   const chk = document.getElementById('f29RegistrarGasto');
   if (chk) chk.checked = true;
   const metodo = document.getElementById('f29Metodo');
@@ -166,7 +168,9 @@ async function confirmarF29Presentado() {
       periodo: f29PendienteActual.periodo,
       monto_pagado: monto,
       registrar_gasto: registrar,
-      metodo_pago: document.getElementById('f29Metodo')?.value || 'Transferencia'
+      metodo_pago: document.getElementById('f29Metodo')?.value || 'Transferencia',
+      // Código 77 (sql/51): vacío = no se toca el remanente guardado
+      remanente_siguiente: (document.getElementById('f29Remanente')?.value || '').trim() || null
     });
     showToast(registrar
       ? `F29 de ${f29PendienteActual.nombre} marcado y pago de ${fmtCLP(monto)} registrado en Gastos`

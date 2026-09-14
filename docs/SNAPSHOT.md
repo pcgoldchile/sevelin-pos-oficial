@@ -41,7 +41,15 @@ ampliado con carrusel al hacer clic en la foto), y un badge de contraste corregi
   movidos al **día 15** (el día 1 se comía toda la utilidad de los días 21-31) y el checkbox quedó
   construido en **v62**.
 
-**Versión activa del POS: v63 — cobro seguro ante cortes de Supabase + registro de envíos.** Detalle
+**Versión activa del POS: v64 — RCV del SII automático + semáforo de IVA del mes.** Detalle en
+`docs/CHANGELOG-V64.md`. Migración `sql/51` ya aplicada en producción.
+
+- 🧾 Robot diario (cron) que entra al SII con el certificado del dueño y trae el RCV; tarjeta en
+  Finanzas → Utilidades con cuánto crédito queda y si se acaba antes de fin de mes. Respaldo: subir CSV.
+- ⚠️ **Falta que el dueño cargue en Vercel** `SII_CERT_PFX_BASE64`, `SII_CERT_PASSWORD`, `SII_RUT` y
+  `CRON_SECRET`. La conexión real con su certificado no está verificada todavía.
+
+**Versión anterior: v63 — cobro seguro ante cortes de Supabase + registro de envíos.** Detalle
 en `docs/CHANGELOG-V63.md`. Migración `sql/50` ya aplicada en producción.
 
 - 🛡️ Reintentar un cobro ya no duplica la venta ni descuenta stock dos veces (`clave_idempotencia`).

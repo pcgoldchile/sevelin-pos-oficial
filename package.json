@@ -16,6 +16,7 @@
     "express": "^4.19.2",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
+    "node-forge": "^1.4.0",
     "sharp": "^0.33.5"
   },
   "engines": {
