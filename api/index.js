@@ -5478,6 +5478,34 @@ async function sincronizarRcv(origen) {
       const rf29 = await siiHttp(`https://www4.sii.cl/sifmConsultaInternet/index.html?rut=${rut}&dv=${dv.toUpperCase()}&ano=${anio}&form=29`, {
         headers: { Cookie: siiCookieHeader(sesion), Accept: 'text/html' }, tls
       });
+      // Segunda pista: la pantalla de la Propuesta F29, que parece moderna
+      // (como la del RCV) y podría exponer un servicio JSON consultable.
+      try {
+        const rProp = await siiHttp('https://www4.sii.cl/propuestaf29ui/', {
+          headers: { Cookie: siiCookieHeader(sesion), Accept: 'text/html' }, tls
+        });
+        const h2 = String(rProp.body || '');
+        const pistas = [...new Set([...h2.matchAll(/(?:src|href)\s*=\s*["']([^"']+\.js[^"']*)["']/gi)].map(m => m[1]))].slice(0, 10);
+        const candidatos = [];
+        for (const ruta of ['/propuestaf29ui/services/data/facadeService/getPropuesta',
+                            '/sifmDeclaracionesui/services/data/facadeService/getEstado']) {
+          const rc = await siiHttp('https://www4.sii.cl' + ruta, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json; charset=utf-8', Accept: 'application/json', Cookie: siiCookieHeader(sesion), Origin: 'https://www4.sii.cl' },
+            body: JSON.stringify({ metaData: { namespace: '', conversationId: sesion.token, transactionId: crypto.randomUUID(), page: null }, data: {} }),
+            tls
+          });
+          candidatos.push(`${ruta} → ${rc.status}`);
+        }
+        registrarErrorSalud({
+          origen: 'POS', ruta: 'SII F29 (diagnóstico 2)', metodo: 'GET', estado_http: rProp.status,
+          mensaje: `DIAGNOSTICO F29 propuesta: HTTP ${rProp.status}, ${h2.length} caracteres`,
+          detalle: enmascararSecretos(`JS: ${pistas.join(' | ')} || CANDIDATOS: ${candidatos.join(' | ')}`).slice(0, 2000)
+        });
+      } catch (e) {
+        registrarErrorSalud({ origen: 'POS', ruta: 'SII F29 (diagnóstico 2)', mensaje: `DIAGNOSTICO F29 propuesta falló: ${e.message}` });
+      }
+
       const html = String(rf29.body || '');
       // La página es un contenedor: los datos los pide por dentro. Se listan
       // las direcciones y los formularios que trae, para saber a cuál llamar.
