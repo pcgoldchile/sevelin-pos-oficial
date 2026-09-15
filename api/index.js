@@ -5468,66 +5468,6 @@ async function sincronizarRcv(origen) {
       }
     }
 
-    /* DIAGNÓSTICO TEMPORAL (15-09-2026): ¿se puede saber desde el SII si un
-       F29 ya está presentado, para apagar solo el aviso del header? La
-       Consulta Integral F29 (sifmConsultaInternet) pide la misma sesión que
-       el RCV. Acá solo se MIRA y se guarda un extracto de la respuesta en
-       Salud para escribir el lector con datos reales. No decide nada. */
-    try {
-      const anio = periodos[periodos.length - 1].slice(0, 4);
-      const rf29 = await siiHttp(`https://www4.sii.cl/sifmConsultaInternet/index.html?rut=${rut}&dv=${dv.toUpperCase()}&ano=${anio}&form=29`, {
-        headers: { Cookie: siiCookieHeader(sesion), Accept: 'text/html' }, tls
-      });
-      // Segunda pista: la pantalla de la Propuesta F29, que parece moderna
-      // (como la del RCV) y podría exponer un servicio JSON consultable.
-      try {
-        const rProp = await siiHttp('https://www4.sii.cl/propuestaf29ui/', {
-          headers: { Cookie: siiCookieHeader(sesion), Accept: 'text/html' }, tls
-        });
-        const h2 = String(rProp.body || '');
-        const pistas = [...new Set([...h2.matchAll(/(?:src|href)\s*=\s*["']([^"']+\.js[^"']*)["']/gi)].map(m => m[1]))].slice(0, 10);
-        // Se bajan los programas de la pantalla y se busca DENTRO cuáles son
-        // sus direcciones reales, en vez de adivinarlas.
-        const candidatos = [];
-        for (const js of pistas.filter(u => !/ruxitagent/i.test(u)).slice(0, 3)) {
-          const url = js.startsWith('http') ? js : 'https://www4.sii.cl' + (js.startsWith('/') ? js : '/propuestaf29ui/' + js);
-          try {
-            const rjs = await siiHttp(url, { headers: { Cookie: siiCookieHeader(sesion) }, tls, timeoutMs: 20000 });
-            const cuerpo = String(rjs.body || '');
-            const servicios = [...new Set([
-              ...[...cuerpo.matchAll(/["'`]([^"'`]*\/services\/data\/[^"'`]*)["'`]/g)].map(m => m[1]),
-              ...[...cuerpo.matchAll(/cl\.sii\.sdi\.lob\.[A-Za-z0-9.]+\/(\w+)/g)].map(m => m[0])
-            ])].slice(0, 12);
-            candidatos.push(`${url.split('/').pop()} (${cuerpo.length}): ${servicios.join(' , ') || 'sin pistas'}`);
-          } catch (e) { candidatos.push(`${url}: ${e.message}`); }
-        }
-        registrarErrorSalud({
-          origen: 'POS', ruta: 'SII F29 (diagnóstico 2)', metodo: 'GET', estado_http: rProp.status,
-          mensaje: `DIAGNOSTICO F29 propuesta: HTTP ${rProp.status}, ${h2.length} caracteres`,
-          detalle: enmascararSecretos(`JS: ${pistas.join(' | ')} || CANDIDATOS: ${candidatos.join(' | ')}`).slice(0, 2000)
-        });
-      } catch (e) {
-        registrarErrorSalud({ origen: 'POS', ruta: 'SII F29 (diagnóstico 2)', mensaje: `DIAGNOSTICO F29 propuesta falló: ${e.message}` });
-      }
-
-      const html = String(rf29.body || '');
-      // La página es un contenedor: los datos los pide por dentro. Se listan
-      // las direcciones y los formularios que trae, para saber a cuál llamar.
-      const rutas = [...new Set([
-        ...[...html.matchAll(/(?:action|src|href)\s*=\s*["']([^"']+)["']/gi)].map(m => m[1]),
-        ...[...html.matchAll(/open\s*\(\s*["'](?:GET|POST)["']\s*,\s*["']([^"']+)["']/gi)].map(m => m[1]),
-        ...[...html.matchAll(/["']([^"']*(?:cgi|servlet|\.cgi|Consulta|consulta)[^"']*)["']/g)].map(m => m[1])
-      ])].filter(u => u && !/^(#|javascript:)/i.test(u) && !/\.(css|png|jpg|gif|ico)$/i.test(u)).slice(0, 25);
-      const campos = [...new Set([...html.matchAll(/name\s*=\s*["']([^"']+)["']/gi)].map(m => m[1]))].slice(0, 15);
-      registrarErrorSalud({
-        origen: 'POS', ruta: 'SII F29 (diagnóstico)', metodo: 'GET', estado_http: rf29.status,
-        mensaje: `DIAGNOSTICO F29: HTTP ${rf29.status}, ${html.length} caracteres`,
-        detalle: enmascararSecretos(`RUTAS: ${rutas.join(' | ')} || CAMPOS: ${campos.join(', ')}`).slice(0, 3000)
-      });
-    } catch (e) {
-      registrarErrorSalud({ origen: 'POS', ruta: 'SII F29 (diagnóstico)', metodo: 'GET', mensaje: `DIAGNOSTICO F29 falló: ${e.message}` });
-    }
-
     const mensajeOk = avisos.length ? enmascararSecretos(`Con avisos: ${avisos.join(' | ')}`).slice(0, 500) : null;
     await db.from('sii_sync').insert([{ origen, ok: true, periodos: periodos.join(','), documentos, mensaje: mensajeOk }]);
     return { ok: true, periodos, documentos, avisos };
