@@ -49,6 +49,11 @@ ampliado con carrusel al hacer clic en la foto), y un badge de contraste corregi
 - ✅ **Conectado al SII real el 15-09-2026**: certificado cargado por el dueño en Vercel; el RCV de
   agosto cuadra al peso con la propuesta del F29 (ver `CHANGELOG-V64.md`).
 
+- 🔧 **15-09-2026 · marca "Es un servicio" en la ficha del producto** (`sql/52`, `productos.es_servicio`):
+  el POS lo vende como servicio aunque no esté en la tienda (servicios de uso interno, ej. desbloqueos
+  por modelo). Se marcaron los 27 de "Servicios Técnicos" + el desbloqueo Samsung A02s (id 290).
+  Nunca se deriva de `stock_ilimitado` (Rollos Térmicos y Disipador CPU son físicos).
+
 **Versión anterior: v63 — cobro seguro ante cortes de Supabase + registro de envíos.** Detalle
 en `docs/CHANGELOG-V63.md`. Migración `sql/50` ya aplicada en producción.
 

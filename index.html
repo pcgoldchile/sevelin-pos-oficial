@@ -2122,6 +2122,12 @@
             <input type="checkbox" id="prodStockIlimitado">
             <span>♾️ Stock ilimitado (para servicios o ítems sin inventario físico — no se descuenta al vender)</span>
           </label>
+          <!-- sql/52: al venderlo en el POS se marca solo "Es un servicio",
+               aunque el producto no esté publicado en la tienda. -->
+          <label class="check-item" style="margin-top:8px;">
+            <input type="checkbox" id="prodEsServicio">
+            <span>🔧 Es un servicio (mano de obra: en el POS se vende marcado como servicio, esté o no en la tienda)</span>
+          </label>
           <div class="grid grid-2" id="gridProdStockControl" style="margin-top:12px;">
             <div class="field">
               <label>Alerta de bajo stock cuando queden</label>

@@ -778,6 +778,7 @@ const CAMPOS_PRODUCTO = [
      editó el nombre. */
   'requiere_sn', 'descripcion',
   'stock_minimo', 'alerta_stock', 'es_repuesto', 'stock_ilimitado', 'usa_lotes',
+  'es_servicio',   // sql/52: servicio aunque no esté en la tienda
   // Controles de la tienda web (e-commerce Fase 0). imagen_urls NO va acá:
   // se administra aparte con POST /api/productos/:id/imagen (append/quitar
   // una foto a la vez), no reemplazando el arreglo completo en cada guardado.
@@ -865,6 +866,7 @@ function sanearProducto(body = {}) {
   if (body.alerta_stock !== undefined) p.alerta_stock = !!body.alerta_stock;
   if (body.es_repuesto !== undefined) p.es_repuesto = !!body.es_repuesto;
   if (body.stock_ilimitado !== undefined) p.stock_ilimitado = !!body.stock_ilimitado;
+  if (body.es_servicio !== undefined) p.es_servicio = !!body.es_servicio;
   /* usa_lotes solo cambia si el cliente lo manda explícitamente. Así una
      importación masiva o un PUT parcial jamás encienden los lotes por su
      cuenta: la única forma es el checkbox del modal de producto. */

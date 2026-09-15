@@ -72,6 +72,7 @@ const elProdSinAlertaStock = document.getElementById('prodSinAlertaStock');
 const elProdStockActualizado = document.getElementById('prodStockActualizado');
 const elProdMedidasActualizado = document.getElementById('prodMedidasActualizado');
 const elProdStockIlimitado = document.getElementById('prodStockIlimitado');
+const elProdEsServicio = document.getElementById('prodEsServicio');   // sql/52
 const elGridProdStockControl = document.getElementById('gridProdStockControl');
 const elProdPeso = document.getElementById('prodPeso');
 const elProdAlto = document.getElementById('prodAlto');
@@ -260,6 +261,15 @@ function setupProductosEventListeners() {
 
   if (elBtnValorizacion) elBtnValorizacion.addEventListener('click', abrirValorizacion);
   if (elProdStockIlimitado) elProdStockIlimitado.addEventListener('change', aplicarStockIlimitadoProductoUI);
+  /* Un servicio casi nunca tiene inventario: al marcarlo se sugiere stock
+     ilimitado. Solo al MARCAR y solo si no lo estaba — se puede desmarcar
+     después si un servicio sí consume algo con stock. */
+  if (elProdEsServicio) elProdEsServicio.addEventListener('change', () => {
+    if (elProdEsServicio.checked && elProdStockIlimitado && !elProdStockIlimitado.checked) {
+      elProdStockIlimitado.checked = true;
+      aplicarStockIlimitadoProductoUI();
+    }
+  });
   if (elBtnCerrarValorizacion) elBtnCerrarValorizacion.addEventListener('click', cerrarValorizacion);
   if (elModalValorizacion) {
     elModalValorizacion.addEventListener('click', (e) => { if (e.target === elModalValorizacion) cerrarValorizacion(); });
@@ -1102,6 +1112,7 @@ function abrirModalProducto(producto = null) {
     if (elProdStockMinimo) elProdStockMinimo.value = producto.stock_minimo ?? STOCK_MINIMO_POR_DEFECTO;
     if (elProdSinAlertaStock) elProdSinAlertaStock.checked = producto.alerta_stock === false;
     if (elProdStockIlimitado) elProdStockIlimitado.checked = !!producto.stock_ilimitado;
+    if (elProdEsServicio) elProdEsServicio.checked = !!producto.es_servicio;
     if (elProdUsaLotes) elProdUsaLotes.checked = !!producto.usa_lotes;
     if (elProdStockActualizado) {
       elProdStockActualizado.textContent = producto.stock_actualizado_en
@@ -1168,6 +1179,7 @@ function abrirModalProducto(producto = null) {
     // Un producto NUEVO siempre nace sin lotes: solo se activan a mano
     if (elProdUsaLotes) elProdUsaLotes.checked = false;
     if (elProdStockIlimitado) elProdStockIlimitado.checked = false;
+    if (elProdEsServicio) elProdEsServicio.checked = false;
     if (elProdStockActualizado) elProdStockActualizado.textContent = 'Última actualización de stock: se registrará al guardar.';
     if (elProdMedidasActualizado) elProdMedidasActualizado.textContent = 'Última actualización de medidas y peso: se registrará al guardar.';
     // Pedido explícito del dueño: un producto nuevo nace marcado para
@@ -1330,6 +1342,7 @@ function construirPayloadProducto() {
     stock_minimo: Number(elProdStockMinimo?.value) || 0,
     alerta_stock: !(elProdSinAlertaStock && elProdSinAlertaStock.checked),
     stock_ilimitado: !!(elProdStockIlimitado && elProdStockIlimitado.checked),
+    es_servicio: !!(elProdEsServicio && elProdEsServicio.checked),
     // Interruptor de costos por lote (PEPS). Apagado salvo que el admin lo marque.
     usa_lotes: !!(elProdUsaLotes && elProdUsaLotes.checked),
     // peso/medidas NO van acá: se guardan con "📏 Guardar medidas", que pide
