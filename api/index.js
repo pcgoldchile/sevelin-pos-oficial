@@ -5468,6 +5468,26 @@ async function sincronizarRcv(origen) {
       }
     }
 
+    /* DIAGNÓSTICO TEMPORAL (15-09-2026): ¿se puede saber desde el SII si un
+       F29 ya está presentado, para apagar solo el aviso del header? La
+       Consulta Integral F29 (sifmConsultaInternet) pide la misma sesión que
+       el RCV. Acá solo se MIRA y se guarda un extracto de la respuesta en
+       Salud para escribir el lector con datos reales. No decide nada. */
+    try {
+      const anio = periodos[periodos.length - 1].slice(0, 4);
+      const rf29 = await siiHttp(`https://www4.sii.cl/sifmConsultaInternet/index.html?rut=${rut}&dv=${dv.toUpperCase()}&ano=${anio}&form=29`, {
+        headers: { Cookie: siiCookieHeader(sesion), Accept: 'text/html' }, tls
+      });
+      const texto = siiResumenCuerpo(rf29.body);
+      registrarErrorSalud({
+        origen: 'POS', ruta: 'SII F29 (diagnóstico)', metodo: 'GET', estado_http: rf29.status,
+        mensaje: `DIAGNOSTICO F29: HTTP ${rf29.status}, ${String(rf29.body || '').length} caracteres`,
+        detalle: enmascararSecretos(texto).slice(0, 1800)
+      });
+    } catch (e) {
+      registrarErrorSalud({ origen: 'POS', ruta: 'SII F29 (diagnóstico)', metodo: 'GET', mensaje: `DIAGNOSTICO F29 falló: ${e.message}` });
+    }
+
     const mensajeOk = avisos.length ? enmascararSecretos(`Con avisos: ${avisos.join(' | ')}`).slice(0, 500) : null;
     await db.from('sii_sync').insert([{ origen, ok: true, periodos: periodos.join(','), documentos, mensaje: mensajeOk }]);
     return { ok: true, periodos, documentos, avisos };
