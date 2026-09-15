@@ -50,7 +50,18 @@ cuánto crédito le queda antes de empezar a pagar IVA, sin descargar ni pasarle
 - jsdom de la tarjeta (verde/amarillo/rojo, sin configurar, escape de la razón social, corregir remanente).
 - Suites de v62 y v63 re-ejecutadas: todo OK. `node --check`, colisiones de funciones e ids: vacías.
 
-## Lo que NO está verificado (y cómo se verifica)
+## Verificado contra el SII real (15-09-2026)
+- Primer intento: el SII aceptó el certificado, pero `getResumen` respondió **HTTP 500** (el robot solo
+  reenviaba la cookie TOKEN y consultaba en paralelo). Corregido en `8a11c7f`: todas las cookies de la
+  sesión, abrir la app del RCV antes de consultar, consultas en serie, sin `busquedaInicial`.
+- Segundo intento (cron lanzado con `vercel crons run`): **OK, 54 documentos** de agosto y septiembre.
+- Cuadra al peso con la propuesta del F29 de agosto: 520 = $475.517, 528 = $36.971, 535 (DIN, tipo 914)
+  = $2.479, 111 boletas = $550.997. Los nombres de campo de `getResumen` (`rsmnMntIVA`, etc.) calzaron.
+- Septiembre al 15-09: crédito $183.348 (189.094 − 5.746 de nota de crédito), débito $128.371
+  (25 boletas), remanente de agosto $219.227 → quedan **$274.204** de crédito; 1 factura por aceptar
+  (IVA $27.141).
+
+## Lo que quedaba por verificar (resuelto arriba)
 - **La conexión real con el certificado del dueño.** Los nombres de campo de `getResumen` son internos
   del SII y no están documentados: el lector los busca por patrón (`rsmnMntIVA`, etc.) y el detalle usa
   el formato del CSV, que sí es conocido. Se confirma el día que el dueño cargue el certificado y apriete

@@ -46,8 +46,8 @@ ampliado con carrusel al hacer clic en la foto), y un badge de contraste corregi
 
 - 🧾 Robot diario (cron) que entra al SII con el certificado del dueño y trae el RCV; tarjeta en
   Finanzas → Utilidades con cuánto crédito queda y si se acaba antes de fin de mes. Respaldo: subir CSV.
-- ⚠️ **Falta que el dueño cargue en Vercel** `SII_CERT_PFX_BASE64`, `SII_CERT_PASSWORD`, `SII_RUT` y
-  `CRON_SECRET`. La conexión real con su certificado no está verificada todavía.
+- ✅ **Conectado al SII real el 15-09-2026**: certificado cargado por el dueño en Vercel; el RCV de
+  agosto cuadra al peso con la propuesta del F29 (ver `CHANGELOG-V64.md`).
 
 **Versión anterior: v63 — cobro seguro ante cortes de Supabase + registro de envíos.** Detalle
 en `docs/CHANGELOG-V63.md`. Migración `sql/50` ya aplicada en producción.
