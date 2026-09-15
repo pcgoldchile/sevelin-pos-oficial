@@ -5486,16 +5486,20 @@ async function sincronizarRcv(origen) {
         });
         const h2 = String(rProp.body || '');
         const pistas = [...new Set([...h2.matchAll(/(?:src|href)\s*=\s*["']([^"']+\.js[^"']*)["']/gi)].map(m => m[1]))].slice(0, 10);
+        // Se bajan los programas de la pantalla y se busca DENTRO cuáles son
+        // sus direcciones reales, en vez de adivinarlas.
         const candidatos = [];
-        for (const ruta of ['/propuestaf29ui/services/data/facadeService/getPropuesta',
-                            '/sifmDeclaracionesui/services/data/facadeService/getEstado']) {
-          const rc = await siiHttp('https://www4.sii.cl' + ruta, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json; charset=utf-8', Accept: 'application/json', Cookie: siiCookieHeader(sesion), Origin: 'https://www4.sii.cl' },
-            body: JSON.stringify({ metaData: { namespace: '', conversationId: sesion.token, transactionId: crypto.randomUUID(), page: null }, data: {} }),
-            tls
-          });
-          candidatos.push(`${ruta} → ${rc.status}`);
+        for (const js of pistas.filter(u => !/ruxitagent/i.test(u)).slice(0, 3)) {
+          const url = js.startsWith('http') ? js : 'https://www4.sii.cl' + (js.startsWith('/') ? js : '/propuestaf29ui/' + js);
+          try {
+            const rjs = await siiHttp(url, { headers: { Cookie: siiCookieHeader(sesion) }, tls, timeoutMs: 20000 });
+            const cuerpo = String(rjs.body || '');
+            const servicios = [...new Set([
+              ...[...cuerpo.matchAll(/["'`]([^"'`]*\/services\/data\/[^"'`]*)["'`]/g)].map(m => m[1]),
+              ...[...cuerpo.matchAll(/cl\.sii\.sdi\.lob\.[A-Za-z0-9.]+\/(\w+)/g)].map(m => m[0])
+            ])].slice(0, 12);
+            candidatos.push(`${url.split('/').pop()} (${cuerpo.length}): ${servicios.join(' , ') || 'sin pistas'}`);
+          } catch (e) { candidatos.push(`${url}: ${e.message}`); }
         }
         registrarErrorSalud({
           origen: 'POS', ruta: 'SII F29 (diagnóstico 2)', metodo: 'GET', estado_http: rProp.status,
