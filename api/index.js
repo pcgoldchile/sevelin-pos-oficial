@@ -5478,11 +5478,19 @@ async function sincronizarRcv(origen) {
       const rf29 = await siiHttp(`https://www4.sii.cl/sifmConsultaInternet/index.html?rut=${rut}&dv=${dv.toUpperCase()}&ano=${anio}&form=29`, {
         headers: { Cookie: siiCookieHeader(sesion), Accept: 'text/html' }, tls
       });
-      const texto = siiResumenCuerpo(rf29.body);
+      const html = String(rf29.body || '');
+      // La página es un contenedor: los datos los pide por dentro. Se listan
+      // las direcciones y los formularios que trae, para saber a cuál llamar.
+      const rutas = [...new Set([
+        ...[...html.matchAll(/(?:action|src|href)\s*=\s*["']([^"']+)["']/gi)].map(m => m[1]),
+        ...[...html.matchAll(/open\s*\(\s*["'](?:GET|POST)["']\s*,\s*["']([^"']+)["']/gi)].map(m => m[1]),
+        ...[...html.matchAll(/["']([^"']*(?:cgi|servlet|\.cgi|Consulta|consulta)[^"']*)["']/g)].map(m => m[1])
+      ])].filter(u => u && !/^(#|javascript:)/i.test(u) && !/\.(css|png|jpg|gif|ico)$/i.test(u)).slice(0, 25);
+      const campos = [...new Set([...html.matchAll(/name\s*=\s*["']([^"']+)["']/gi)].map(m => m[1]))].slice(0, 15);
       registrarErrorSalud({
         origen: 'POS', ruta: 'SII F29 (diagnóstico)', metodo: 'GET', estado_http: rf29.status,
-        mensaje: `DIAGNOSTICO F29: HTTP ${rf29.status}, ${String(rf29.body || '').length} caracteres`,
-        detalle: enmascararSecretos(texto).slice(0, 1800)
+        mensaje: `DIAGNOSTICO F29: HTTP ${rf29.status}, ${html.length} caracteres`,
+        detalle: enmascararSecretos(`RUTAS: ${rutas.join(' | ')} || CAMPOS: ${campos.join(', ')}`).slice(0, 3000)
       });
     } catch (e) {
       registrarErrorSalud({ origen: 'POS', ruta: 'SII F29 (diagnóstico)', metodo: 'GET', mensaje: `DIAGNOSTICO F29 falló: ${e.message}` });
