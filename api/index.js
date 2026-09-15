@@ -5212,39 +5212,82 @@ function siiHttp(url, { method = 'GET', headers = {}, body = null, tls = {}, tim
   });
 }
 
+/* Sesión con el SII: el certificado (tls) + TODAS las cookies que va
+   entregando. Primera prueba real (15-09-2026): mandando solo TOKEN, el
+   login funcionó pero getResumen respondió HTTP 500 — el navegador reenvía
+   el juego completo de cookies de la sesión, y eso hace el robot ahora. */
+function siiGuardarCookies(sesion, headers) {
+  for (const c of [].concat(headers['set-cookie'] || [])) {
+    const par = String(c).split(';')[0];
+    const i = par.indexOf('=');
+    if (i <= 0) continue;
+    const nombre = par.slice(0, i).trim();
+    const valor = par.slice(i + 1).trim();
+    if (!valor || valor === 'DEL') sesion.cookies.delete(nombre);
+    else sesion.cookies.set(nombre, valor);
+  }
+}
+function siiCookieHeader(sesion) {
+  return [...sesion.cookies.entries()].map(([k, v]) => `${k}=${v}`).join('; ');
+}
+// Para el mensaje de error: lo que respondió el SII, sin HTML y corto
+function siiResumenCuerpo(body) {
+  return String(body || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 220);
+}
+
 async function siiAutenticar(tls) {
+  const sesion = { tls, cookies: new Map(), token: null };
   const r = await siiHttp('https://herculesr.sii.cl/cgi_AUT2000/CAutInicio.cgi', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: 'referencia=' + encodeURIComponent('https://palena.sii.cl/cgi_dte/UPL/DTEauth?1'),
     tls
   });
-  const cookies = [].concat(r.headers['set-cookie'] || []);
-  for (const c of cookies) {
-    const m = /(?:^|;\s*)TOKEN=([^;]+)/i.exec(c);
-    if (m && m[1] && m[1] !== 'DEL') return m[1];
+  siiGuardarCookies(sesion, r.headers);
+  sesion.token = sesion.cookies.get('TOKEN') || null;
+  if (!sesion.token) {
+    throw new Error(r.status >= 400
+      ? `El SII rechazó la conexión con el certificado (HTTP ${r.status})`
+      : 'El SII no aceptó el certificado: revisa que esté vigente y asociado a tu RUT en el SII');
   }
-  throw new Error(r.status >= 400
-    ? `El SII rechazó la conexión con el certificado (HTTP ${r.status})`
-    : 'El SII no aceptó el certificado: revisa que esté vigente y asociado a tu RUT en el SII');
+
+  // Abre la aplicación del RCV como lo haría el navegador: ahí el SII entrega
+  // las cookies propias de www4 que las consultas siguientes esperan.
+  try {
+    const app = await siiHttp('https://www4.sii.cl/consdcvinternetui/', {
+      headers: { Cookie: siiCookieHeader(sesion), Accept: 'text/html' }, tls
+    });
+    siiGuardarCookies(sesion, app.headers);
+  } catch (_) { /* si falla, se intenta igual con lo que hay */ }
+  return sesion;
 }
 
-async function siiFacade(metodo, data, token, tls) {
+async function siiFacade(metodo, data, sesion) {
   const r = await siiHttp(`https://www4.sii.cl/consdcvinternetui/services/data/facadeService/${metodo}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json; charset=utf-8', Accept: 'application/json', Cookie: `TOKEN=${token}` },
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      Accept: 'application/json, text/plain, */*',
+      Origin: 'https://www4.sii.cl',
+      Referer: 'https://www4.sii.cl/consdcvinternetui/',
+      Cookie: siiCookieHeader(sesion)
+    },
     body: JSON.stringify({
       metaData: {
         namespace: `cl.sii.sdi.lob.diii.consdcv.data.api.interfaces.FacadeService/${metodo}`,
-        conversationId: token,
+        conversationId: sesion.token,
         transactionId: crypto.randomUUID(),
         page: null
       },
       data
     }),
-    tls
+    tls: sesion.tls
   });
-  if (r.status !== 200) throw new Error(`El SII respondió HTTP ${r.status} en ${metodo}`);
+  siiGuardarCookies(sesion, r.headers);
+  if (r.status !== 200) {
+    const detalle = siiResumenCuerpo(r.body);
+    throw new Error(`El SII respondió HTTP ${r.status} en ${metodo}${detalle ? ` — ${detalle}` : ''}`);
+  }
   let json;
   try { json = JSON.parse(r.body); } catch (_) { throw new Error(`El SII no devolvió datos legibles en ${metodo} (¿sesión vencida?)`); }
   const estado = json?.respEstado;
@@ -5370,43 +5413,62 @@ async function sincronizarRcv(origen) {
   try {
     if (!siiConfigurado()) throw new Error('Falta configurar el certificado del SII en Vercel (SII_CERT_PFX_BASE64, SII_CERT_PASSWORD, SII_RUT)');
     const { tls } = siiCredencialesTls();
-    const token = await siiAutenticar(tls);
+    const sesion = await siiAutenticar(tls);
     const [rut, dv] = String(process.env.SII_RUT).replace(/\./g, '').trim().split('-');
     if (!rut || !dv) throw new Error('SII_RUT debe venir con guion, por ejemplo 12345678-9');
+
+    /* Una consulta a la vez (con varias en paralelo sobre la misma sesión el
+       SII puede responder 500). Solo las de REGISTRO son indispensables: si
+       PENDIENTE / NO_INCLUIR / RECLAMADO fallan, se sigue y se avisa. */
+    const avisos = [];
+    const indispensable = (operacion, estado) => estado === 'REGISTRO';
 
     for (const periodo of periodos) {
       const base = { rutEmisor: rut, dvEmisor: dv.toUpperCase(), ptributario: periodo };
       const consultas = [
-        ...['REGISTRO', 'PENDIENTE', 'NO_INCLUIR', 'RECLAMADO'].map(estado => ({ operacion: 'COMPRA', estado })),
-        { operacion: 'VENTA', estado: 'REGISTRO' }
+        { operacion: 'COMPRA', estado: 'REGISTRO' },
+        { operacion: 'VENTA', estado: 'REGISTRO' },
+        { operacion: 'COMPRA', estado: 'PENDIENTE' },
+        { operacion: 'COMPRA', estado: 'NO_INCLUIR' },
+        { operacion: 'COMPRA', estado: 'RECLAMADO' }
       ];
 
       // Resumen: se reemplaza completo por período/operación/estado
-      const resumenes = await Promise.all(consultas.map(async q => ({
-        ...q,
-        filas: siiParsearResumen(
-          await siiFacade('getResumen', { ...base, estadoContab: q.estado, operacion: q.operacion, busquedaInicial: true }, token, tls),
-          periodo, q.operacion, q.estado)
-      })));
-      for (const r of resumenes) {
-        await db.from('sii_rcv_resumen').delete().eq('periodo', periodo).eq('operacion', r.operacion).eq('estado', r.estado);
-        if (r.filas.length) {
-          const { error } = await db.from('sii_rcv_resumen').insert(r.filas);
+      for (const q of consultas) {
+        let filas;
+        try {
+          filas = siiParsearResumen(
+            await siiFacade('getResumen', { ...base, estadoContab: q.estado, operacion: q.operacion }, sesion),
+            periodo, q.operacion, q.estado);
+        } catch (e) {
+          if (indispensable(q.operacion, q.estado)) throw e;
+          avisos.push(`${periodo} ${q.operacion} ${q.estado}: ${e.message}`);
+          continue;
+        }
+        await db.from('sii_rcv_resumen').delete().eq('periodo', periodo).eq('operacion', q.operacion).eq('estado', q.estado);
+        if (filas.length) {
+          const { error } = await db.from('sii_rcv_resumen').insert(filas);
           if (error) throw new Error('No se pudo guardar el resumen del RCV: ' + error.message);
         }
       }
 
       // Detalle de compras (las facturas), solo lo que suma o puede sumar crédito
       for (const estado of ['REGISTRO', 'PENDIENTE']) {
-        const json = await siiFacade('getDetalleCompraExport',
-          { ...base, operacion: 'COMPRA', estadoContab: estado, codTipoDoc: '0' }, token, tls);
-        const texto = Array.isArray(json?.data) ? json.data.join('\n') : String(json?.data || '');
-        documentos += await siiGuardarDocumentos(siiParsearCsvRcv(texto, periodo, 'COMPRA', estado, 'robot'));
+        try {
+          const json = await siiFacade('getDetalleCompraExport',
+            { ...base, operacion: 'COMPRA', estadoContab: estado, codTipoDoc: '0' }, sesion);
+          const texto = Array.isArray(json?.data) ? json.data.join('\n') : String(json?.data || '');
+          documentos += await siiGuardarDocumentos(siiParsearCsvRcv(texto, periodo, 'COMPRA', estado, 'robot'));
+        } catch (e) {
+          // El detalle es un extra: el semáforo sale del resumen
+          avisos.push(`${periodo} detalle ${estado}: ${e.message}`);
+        }
       }
     }
 
-    await db.from('sii_sync').insert([{ origen, ok: true, periodos: periodos.join(','), documentos, mensaje: null }]);
-    return { ok: true, periodos, documentos };
+    const mensajeOk = avisos.length ? enmascararSecretos(`Con avisos: ${avisos.join(' | ')}`).slice(0, 500) : null;
+    await db.from('sii_sync').insert([{ origen, ok: true, periodos: periodos.join(','), documentos, mensaje: mensajeOk }]);
+    return { ok: true, periodos, documentos, avisos };
   } catch (err) {
     const mensaje = enmascararSecretos(err.message || String(err)).slice(0, 500);
     await db.from('sii_sync').insert([{ origen, ok: false, periodos: periodos.join(','), documentos, mensaje }]);
