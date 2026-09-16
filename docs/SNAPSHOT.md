@@ -7,7 +7,26 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
-**Fecha:** 13-09-2026 · **Sesión sin versión nueva del POS** — costo de un encargo cargado, un bug de
+**Fecha:** 16-09-2026 · **v65 publicada** — 13 fichas que mostraban el Markdown crudo (`###`, `**`) al
+cliente en sevelin.cl, arregladas y verificadas en vivo; y dos botones nuevos en el modal de producto
+para generar con IA la ficha de la tienda y la publicación de Facebook. Detalle en
+`docs/CHANGELOG-V65.md`. Migración de datos `sql/53` ya aplicada.
+
+- 🐛 **La causa NO era el checkbox de Markdown** (ese conversor funciona). Las 13 descripciones
+  estaban guardadas envueltas en un solo `<p>`, y la tienda no formatea nada que "ya traiga HTML".
+  El arreglo quitó solo ese `<p>`, sin cambiar una palabra del texto. 10 de las 13 eran **servicios
+  técnicos** — justo la línea de 100% de margen.
+- 🤖 **Botones "🛒 Generar ficha para la tienda" y "📣 Generar publicación para Facebook".** Los tres
+  prompts oficiales viven ahora en el servidor. Exigen información real: el endpoint devuelve 400 si
+  no hay ni specs pegadas ni Descripción escrita, porque un modelo con solo el nombre del producto
+  inventa características. Nada se guarda ni se publica solo.
+- ⚠️ **Falta la prueba real de cada botón contra Gemini** — en las pruebas está simulado.
+- 🧾 **Cowork "Sevelin Finanzas" probado y verificado:** respondió $274.204 de crédito de IVA y cuadra
+  al peso contra `sii_rcv_resumen` + `iva_remanentes`. Lo que le faltó decir: que el mes no ha
+  terminado, que el PPM se paga igual aunque el IVA dé cero, y que el RCV solo ve la venta con
+  documento (en septiembre, 66% de la venta es SIN DTE).
+
+**Sesión anterior — 13-09-2026, sin versión nueva del POS** — costo de un encargo cargado, un bug de
 categoría corregido en `sevelin-tienda`, la ficha de producto de la tienda reordenada varias veces a
 pedido del dueño (terminó: foto + botón fijos al hacer scroll, aviso de stock baja normal, visor
 ampliado con carrusel al hacer clic en la foto), y un badge de contraste corregido en el POS.
@@ -45,26 +64,56 @@ ampliado con carrusel al hacer clic en la foto), y un badge de contraste corregi
 
 **Del dueño:**
 1. **F29 de agosto — vence el lunes 21-09** (18 y 19 feriados). Pagar $3.625 de PPM, marcarlo en el
-   botón 🧾 del POS y anotar ahí el remanente código 77 ($219.227).
-2. **Cowork "Sevelin Finanzas"**: crear el proyecto, subir `docs/CONTEXTO-SEVELIN-COWORK.md`, pegar las
-   instrucciones y probar con "¿cuánto crédito de IVA me queda este mes?" (debe responder ~$274.000 y
-   decir cuándo sincronizó el robot). El conector de Supabase de solo lectura ya está conectado.
-3. **Aceptar la factura pendiente en el SII** ($169.990, IVA $27.141).
-4. **Acreditar actividades en el SII** (anotación del 02-09-2026): destraba facturas y notas de crédito.
-5. **19 costos en $0** y stock dormido.
+   botón 🧾 del POS y anotar ahí el remanente código 77 ($219.227). `f29_presentaciones` sigue
+   **vacía**: ningún período marcado todavía.
+2. **Aceptar la factura pendiente en el SII** ($169.990, IVA $27.141). Sigue en estado PENDIENTE.
+3. **Acreditar actividades en el SII** (anotación del 02-09-2026): destraba facturas y notas de
+   crédito. Es la que sostiene todo lo demás — hoy el 66% de la venta de septiembre es SIN DTE.
+4. **Anotar el WhatsApp del cliente en cada venta (B5).** El campo existe desde v52 y **no se está
+   usando**: agosto 0 de 135 ventas, septiembre 1 de 60. Sin esto no hay recompra, ni lista de
+   WhatsApp, ni Fase 3, aunque el código esté listo. Es gratis y toma 5 segundos por venta.
+5. **Stock dormido: 62 productos con $2.723.930 adentro** — el 54% de todo el inventario
+   ($5.064.377). Los tres mayores: Power Bank LinkOn (20 u., $324.500, comprado el 04-09 y cero
+   ventas), HP ProDesk 600 G1 (3 u., $226.200), RAM Hiksemi 8GB (3 u., $176.370).
+6. **Probar los dos botones nuevos de IA** (ficha y Facebook) contra Gemini de verdad — en las
+   pruebas estaba simulado.
+
+**Cerrados el 16-09-2026 (no volver a proponerlos):**
+- ✅ Cowork "Sevelin Finanzas": creado, probado y **verificado contra la base** (dio $274.204, cuadra
+  al peso). Corregir sus instrucciones para que mencione el PPM, que el mes no ha cerrado y que el
+  RCV solo ve la venta con documento.
+- ✅ Los 4 productos "sin SKU" (microSD 128GB, pasta Kronos, kit Opula, Air Duster): ya están
+  publicados, con foto y con costo. `productos.sku` en null es normal — el slug lo genera la tienda.
+- ✅ "19 costos en $0": quedan **2** productos físicos sin costo (Pilas Duracell AAA id 102 y Pendrive
+  Kingston DT70 id 134), **los dos con stock 0**. El resto que aparecía en $0 son servicios, donde el
+  costo $0 es correcto.
 
 **De construcción, cuando se pida:**
-- Cowork "Sevelin Contenido" + conector Metricool (ver `docs/RUTA-COWORK-METRICOOL.md`).
-- Publicar los 4 productos sin SKU (microSD 128GB, pasta Kronos, kit Opula, Air Duster).
+- Cowork "Sevelin Contenido" + conector Metricool (ver `docs/RUTA-COWORK-METRICOOL.md`). **Siguiente
+  en la fila** — el dueño lo pidió el 16-09.
 - Semáforo de IVA dentro del informe semanal (v57).
 - Cargar el costo de un envío después de la venta (hoy solo al cobrar).
+- Lista de "stock dormido con capital atrapado" dentro de Inteligencia: hoy ese dato hay que sacarlo
+  a mano con SQL.
 
 **Descartado, no reintentar:** detectar automáticamente si un F29 está presentado (el SII lo entrega
 por GWT, protocolo binario que se rompe en cada despliegue; probado y revertido en `5df314c`).
 
 ---
 
-**Versión activa del POS: v64 — RCV del SII automático + semáforo de IVA del mes.** Detalle en
+**Versión activa del POS: v65 — fichas sin Markdown crudo + generar texto con IA (ficha web y
+Facebook).** Detalle en `docs/CHANGELOG-V65.md`. Migración de datos `sql/53` ya aplicada en
+producción. Commits `2e97651` y `3be7a33`.
+
+- 🐛 13 fichas mostraban `###` y `**` al cliente: estaban envueltas en un solo `<p>`, y la tienda no
+  formatea nada que "ya traiga HTML". Se quitó solo ese `<p>`. Verificado en las 13 fichas reales.
+- 🤖 Dos botones en el modal de producto. Los prompts viven en el servidor y **exigen información
+  real**: sin specs pegadas ni Descripción escrita, el endpoint devuelve 400 (un modelo con solo el
+  nombre inventa características). Nada se guarda ni se publica solo.
+- ⚠️ **Trampa de Postgres:** en sus expresiones regulares `\b` **no es borde de palabra, es
+  backspace** (el borde es `\y`). Una auditoría dio 58 fichas rotas cuando eran 13, por esto.
+
+**Versión anterior: v64 — RCV del SII automático + semáforo de IVA del mes.** Detalle en
 `docs/CHANGELOG-V64.md`. Migración `sql/51` ya aplicada en producción.
 
 - 🧾 Robot diario (cron) que entra al SII con el certificado del dueño y trae el RCV; tarjeta en
