@@ -1205,6 +1205,78 @@ function textoPlanoParaPrompt(html) {
     .replace(/\n\s*\n+/g, '\n')
     .trim();
 }
+/* ---------- Gemini: una sola puerta para todos los botones de IA ----------
+   MODELOS, EN ORDEN (12-09-2026)
+   gemini-flash-latest, el modelo estrella de Google, vive saturado: en 9
+   pruebas reales respondió 1 vez y el resto "high demand" tras 14–30 s.
+   gemini-flash-lite-latest respondió 5 de 5, casi siempre en ~1 s.
+   Los dos son ALIAS: Google los mueve al modelo vigente, así no se rompen
+   cuando retira una versión fija (ya pasó con 2.0 y 2.5).
+   Cada intento tiene tope de tiempo: el botón nunca queda colgado.
+
+   Está extraído acá porque lo usan TRES botones (SEO, ficha web y
+   Facebook) — antes vivía adentro de /generar-seo y copiarlo habría
+   dejado tres reintentos distintos que se desincronizan solos. */
+const MODELOS_GEMINI = [
+  { modelo: 'gemini-flash-lite-latest', topeMs: 10000 },
+  { modelo: 'gemini-flash-latest', topeMs: 12000 },
+];
+
+/* Devuelve { texto, modelo } o lanza un Error con `fallas` adjunto.
+   `generationConfig` lo arma quien llama: el SEO pide JSON con esquema,
+   los textos de ficha/Facebook piden texto plano. */
+async function pedirAGemini(prompt, generationConfig, topeMsExtra = 0) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    const err = new Error('Falta GEMINI_API_KEY en las variables de entorno del servidor (Vercel → Settings → Environment Variables).');
+    err.sinLlave = true;
+    throw err;
+  }
+
+  const cuerpo = JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig });
+  const fallas = [];
+
+  for (const { modelo, topeMs } of MODELOS_GEMINI) {
+    const tope = topeMs + topeMsExtra;
+    try {
+      const respuesta = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey}`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: cuerpo, signal: AbortSignal.timeout(tope) }
+      );
+      const datos = await respuesta.json().catch(() => ({}));
+      if (!respuesta.ok) {
+        fallas.push(`${modelo}: HTTP ${respuesta.status} ${datos?.error?.message || ''}`.trim());
+        // Llave inválida o pedido mal armado: otro modelo no lo arregla.
+        if ([400, 401, 403].includes(respuesta.status)) break;
+        continue;
+      }
+      const texto = datos?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!texto) { fallas.push(`${modelo}: respuesta vacía o ilegible`); continue; }
+      return { texto, modelo };
+    } catch (err) {
+      fallas.push(`${modelo}: ${err.name === 'TimeoutError' ? `sin respuesta en ${tope / 1000} s` : err.message}`);
+    }
+  }
+
+  const err = new Error('Gemini no respondió');
+  err.fallas = fallas;
+  err.llaveMala = fallas.some(x => /HTTP (400|401|403)/.test(x));
+  throw err;
+}
+
+/* Mensaje al usuario, igual para los tres botones. `salida` es la salida a
+   mano que le queda al dueño cuando Google no responde ("El SEO se puede
+   escribir a mano") — cambia según el botón, así que la pone quien llama. */
+function responderFalloGemini(res, err, etiqueta, salida = '') {
+  if (err.sinLlave) return enviarError(res, 500, err.message);
+  console.error(`[${etiqueta}] Gemini falló:`, (err.fallas || []).join(' | '));
+  if (res.locals) res.locals.detalleError = `Gemini (${etiqueta}): ${(err.fallas || []).join(' | ')}`;
+  const cola = salida ? ` ${salida}` : '';
+  return enviarError(res, 502, err.llaveMala
+    ? `Google rechazó la llave de Gemini. Revisa GEMINI_API_KEY en Vercel.${cola}`
+    : `Google está saturado en este momento y no respondió. Intenta en un minuto.${cola}`);
+}
+
 
 /* SEO con IA: título + meta-descripción para Google, a partir del nombre y
    la Descripción YA escritos (nunca inventa specs — regla del proyecto, ver
@@ -1213,11 +1285,6 @@ function textoPlanoParaPrompt(html) {
    cualquier otro campo (ver meta_titulo_web/meta_descripcion_web en
    CAMPOS_PRODUCTO y sql/33-seo-ia.sql). */
 app.post('/api/productos/generar-seo', auth(true), async (req, res) => {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return enviarError(res, 500, 'Falta GEMINI_API_KEY en las variables de entorno del servidor (Vercel → Settings → Environment Variables).');
-  }
-
   const nombre = String(req.body?.nombre || '').trim();
   const textoDescripcion = textoPlanoParaPrompt(req.body?.descripcion_html);
   if (!nombre) return enviarError(res, 400, 'Falta el nombre del producto');
@@ -1243,81 +1310,252 @@ Reglas:
   descrito arriba, invita a comprar sin exagerar ni inventar.
 - No repitas "Sevelin" en el texto (ya aparece aparte en el resultado de Google).`;
 
-  /* MODELOS, EN ORDEN (12-09-2026)
-     El botón fallaba porque gemini-flash-latest, el modelo estrella de
-     Google, vive saturado: en 9 pruebas reales respondió 1 vez y el resto
-     "high demand" tras 14–30 s. gemini-flash-lite-latest respondió 5 de 5,
-     casi siempre en ~1 s, y para un título de 60 caracteres alcanza.
-     Los dos son ALIAS: Google los mueve al modelo vigente, así no se rompen
-     cuando retira una versión fija (ya pasó con 2.0 y 2.5).
-     Cada intento tiene tope de tiempo: el botón nunca queda colgado. */
-  const MODELOS_SEO = [
-    { modelo: 'gemini-flash-lite-latest', topeMs: 10000 },
-    { modelo: 'gemini-flash-latest', topeMs: 12000 },
-  ];
-  const cuerpoGemini = JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.4,
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: 'OBJECT',
-              properties: {
-                meta_titulo: { type: 'STRING' },
-                meta_descripcion: { type: 'STRING' }
-              },
-              required: ['meta_titulo', 'meta_descripcion']
-            }
-          }
-  });
-
-  const fallas = [];
-  for (const { modelo, topeMs } of MODELOS_SEO) {
-    try {
-      const respuesta = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey}`,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: cuerpoGemini, signal: AbortSignal.timeout(topeMs) }
-      );
-      const datos = await respuesta.json().catch(() => ({}));
-      if (!respuesta.ok) {
-        fallas.push(`${modelo}: HTTP ${respuesta.status} ${datos?.error?.message || ''}`.trim());
-        // Llave inválida o pedido mal armado: otro modelo no lo arregla.
-        if ([400, 401, 403].includes(respuesta.status)) break;
-        continue;
+  /* El reintento entre modelos y el manejo de errores viven en
+     pedirAGemini() / responderFalloGemini() — los comparten los tres
+     botones de IA (SEO, ficha web y Facebook). */
+  try {
+    const { texto, modelo } = await pedirAGemini(prompt, {
+      temperature: 0.4,
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: 'OBJECT',
+        properties: {
+          meta_titulo: { type: 'STRING' },
+          meta_descripcion: { type: 'STRING' }
+        },
+        required: ['meta_titulo', 'meta_descripcion']
       }
-      const texto = datos?.candidates?.[0]?.content?.parts?.[0]?.text;
-      let resultado = null;
-      try { resultado = texto ? JSON.parse(texto) : null; } catch { resultado = null; }
-      if (!resultado?.meta_titulo) { fallas.push(`${modelo}: respuesta vacía o ilegible`); continue; }
+    });
 
-      /* El prompt pide no repetir la marca (Google ya la muestra aparte), pero
-         el modelo liviano a veces la agrega igual: 'Cambio de Pantalla | Sevelin'. */
-      const sinMarca = (t) => String(t || '')
-        .replace(/\s*[|\-–—:]\s*Sevelin\b/gi, '')          // "… | Sevelin"
-        .replace(/\ben Sevelin(?=\s+\p{L})/giu, 'en')       // "en Sevelin Arica" → "en Arica"
-        .replace(/\s*\ben Sevelin\b/gi, '')                 // "Visítanos en Sevelin." → "Visítanos."
-        .replace(/\bSevelin\b\s*/gi, '')
-        .replace(/\s{2,}/g, ' ')
-        .replace(/\s+([.,;:!?])/g, '$1')
-        .trim();
-      return res.json({
-        meta_titulo: sinMarca(resultado.meta_titulo).slice(0, 70),
-        meta_descripcion: sinMarca(resultado.meta_descripcion).slice(0, 200),
-        modelo
-      });
-    } catch (err) {
-      fallas.push(`${modelo}: ${err.name === 'TimeoutError' ? `sin respuesta en ${topeMs / 1000} s` : err.message}`);
+    let resultado = null;
+    try { resultado = JSON.parse(texto); } catch { resultado = null; }
+    if (!resultado?.meta_titulo) {
+      return enviarError(res, 502, 'Google devolvió una respuesta ilegible. Intenta de nuevo, o escribe el SEO a mano.');
     }
-  }
 
-  console.error('[generar-seo] Gemini falló:', fallas.join(' | '));
-  if (res.locals) res.locals.detalleError = `Gemini (Generar con IA): ${fallas.join(' | ')}`;
-  const llaveMala = fallas.some(x => /HTTP (400|401|403)/.test(x));
-  enviarError(res, 502, llaveMala
-    ? 'Google rechazó la llave de Gemini. Revisa GEMINI_API_KEY en Vercel. El SEO se puede escribir a mano.'
-    : 'Google está saturado en este momento y no respondió. Intenta en un minuto, o escribe el SEO a mano.');
+    /* El prompt pide no repetir la marca (Google ya la muestra aparte), pero
+       el modelo liviano a veces la agrega igual: 'Cambio de Pantalla | Sevelin'. */
+    const sinMarca = (t) => String(t || '')
+      .replace(/\s*[|\-–—:]\s*Sevelin\b/gi, '')          // "… | Sevelin"
+      .replace(/\ben Sevelin(?=\s+\p{L})/giu, 'en')       // "en Sevelin Arica" → "en Arica"
+      .replace(/\s*\ben Sevelin\b/gi, '')                 // "Visítanos en Sevelin." → "Visítanos."
+      .replace(/\bSevelin\b\s*/gi, '')
+      .replace(/\s{2,}/g, ' ')
+      .replace(/\s+([.,;:!?])/g, '$1')
+      .trim();
+
+    return res.json({
+      meta_titulo: sinMarca(resultado.meta_titulo).slice(0, 70),
+      meta_descripcion: sinMarca(resultado.meta_descripcion).slice(0, 200),
+      modelo
+    });
+  } catch (err) {
+    return responderFalloGemini(res, err, 'generar-seo', 'El SEO se puede escribir a mano.');
+  }
 });
 
+
+/* ---------- Generar texto con IA: ficha de la tienda y post de Facebook ----------
+   Son los prompts oficiales que el dueño venía pegando a mano en Gemini
+   (ver docs/, memoria del proyecto). Viven acá, en el servidor, por dos
+   razones: el prompt es la regla de negocio (qué se puede decir y qué no),
+   y así se corrige en un solo lugar en vez de en cada pestaña abierta.
+
+   LA REGLA QUE MÁS IMPORTA: los tres prompts prohíben inventar specs. Por
+   eso el endpoint EXIGE información real (`datos` o la Descripción ya
+   escrita) y devuelve 400 si no hay ninguna — un modelo al que solo se le
+   da el nombre del producto rellena con características plausibles que
+   nadie verificó, y eso termina publicado en sevelin.cl y en Facebook.
+
+   El prompt de la ficha se elige por `es_servicio` (la marca de sql/52):
+   un servicio técnico no puede prometer resultados ni plazos, un producto
+   sí lista specs. No se deriva de stock_ilimitado (ver CLAUDE.md). */
+
+const PROMPT_FICHA_PRODUCTO = `Crea la ficha de un producto para la tienda online Sevelin (Arica, Chile) a partir de la información real que te voy a entregar.
+
+NO escribir encabezados internos como "🏷️ Título del producto", "Nombre del producto" o similares.
+
+La primera línea debe ser directamente el título comercial del producto, listo para copiar y pegar en el campo "Nombre del producto" de la tienda online. Debe incluir, cuando estén disponibles, marca + modelo + tipo de producto + característica o variante relevante. Claro, profesional, sin palabras innecesarias ni exageraciones. Este mismo título se repite después dentro de la introducción, palabra por palabra.
+
+✨ Introducción breve y atractiva, SIEMPRE empezando con el emoji ✨ y en un solo párrafo seguido (sin saltos de línea internos). Incluye el título completo del producto, qué es, su principal beneficio, y para qué tipo de usuario o situación está pensado.
+
+### ✨ Características principales
+
+✅ [Característica o beneficio relevante]
+✅ [Característica o beneficio relevante]
+✅ [Característica o beneficio relevante]
+(entre 8 y 12 en total, solo las más importantes para el comprador — beneficios reales y especificaciones relevantes, sin tecnicismos innecesarios)
+
+### ⚠️ Importante
+
+[Incluir esta sección SOLO si la información proporcionada trae una advertencia, condición de uso, limitación, requisito de instalación o montaje, compatibilidad especial o incompatibilidad. Explicarlo claro y directo, en un párrafo — nunca inventar una advertencia que no esté respaldada por la información entregada. Si no hay ninguna, omitir la sección completa.]
+
+Reglas estrictas:
+- NO agregar ninguna sección de envíos, WhatsApp, Instagram, garantía, métodos de pago, boleta ni "compra online" — esa parte la agrega automáticamente la tienda, no debe repetirse en la ficha.
+- No incluir dirección física, referencias de ubicación, horarios de atención ni instrucciones para tocar la puerta.
+- No inventar especificaciones técnicas, accesorios incluidos, compatibilidades, autonomía, potencia, dimensiones, capacidad, contenido de la caja, stock, tiempos de despacho ni ninguna característica que no esté confirmada en la información que te doy.
+- Si existen contradicciones entre distintas partes de la información proporcionada, usa la más clara y específica — nunca inventes para resolver la contradicción.
+- Si el producto es reacondicionado, usado, de segunda mano, abierto o tiene cualquier condición especial, indícalo claramente y de forma profesional — nunca lo presentes como nuevo si no corresponde.
+- La respuesta final contiene ÚNICAMENTE la ficha, empezando directo con el título, sin encabezado previo.`;
+
+const PROMPT_FICHA_SERVICIO = `Crea la ficha de un servicio técnico para la tienda online Sevelin (Arica, Chile) a partir de la información real que te voy a entregar a continuación. Debe quedar profesional, clara, atractiva y transmitir confianza para que el cliente se anime a agendar el servicio.
+
+La respuesta debe estar lista para copiar y pegar directamente en el campo de descripción de la tienda. No agregues explicaciones, comentarios ni instrucciones fuera de la ficha.
+
+No escribas encabezados internos como "🏷️ Título del servicio", "Nombre del servicio" o similares.
+
+La primera línea es directamente el título comercial del servicio, listo para copiar en el campo "Nombre del producto" de la tienda online. Ej: "Formateo e instalación de Windows con respaldo de datos", "Cambio de pantalla de notebook", "Limpieza y mantención de PC". Claro y profesional, sin palabras innecesarias ni exageraciones. Este mismo título se repite después, palabra por palabra, dentro de la introducción.
+
+✨ Introducción breve y atractiva, siempre empezando con el emoji ✨, en un solo párrafo seguido (sin saltos de línea internos). Incluye el título completo del servicio, en qué consiste, su principal beneficio, y para qué tipo de problema o necesidad está pensado.
+
+### ⚠️ Importante
+
+Incluye esta sección solo si la información entregada trae una advertencia real, un requisito previo (ej: traer el cargador, respaldar los datos antes), una condición del diagnóstico, una limitación o algo que el servicio NO cubre. Un párrafo claro y directo — nunca inventes una advertencia, requisito, plazo o condición que no esté respaldada por la información entregada. Si no hay ninguna, omite la sección completa.
+
+### ✨ Qué incluye este servicio
+
+✅ [Qué incluye o resuelve el servicio]
+✅ [Qué incluye o resuelve el servicio]
+✅ [Qué incluye o resuelve el servicio]
+
+Entre 6 y 10 en total — solo lo más relevante para quien está evaluando contratar el servicio: qué se hace, qué problema soluciona, qué queda revisado o entregado al final.
+
+Reglas estrictas:
+- No agregues ninguna sección de envíos, WhatsApp, Instagram, garantía, métodos de pago, boleta ni "compra online" — la tienda la agrega automáticamente, no la repitas.
+- No incluyas dirección física, referencias de ubicación, horarios de atención ni instrucciones de retiro.
+- No inventes plazos de entrega, tiempo que demora el servicio, precio del diagnóstico, garantía del servicio, repuestos incluidos, marcas/modelos compatibles, ni ninguna condición que no esté confirmada en la información que te doy.
+- No prometas que el servicio soluciona el problema al 100% ni hagas afirmaciones absolutas sobre resultados — un servicio técnico depende del diagnóstico real de cada equipo.
+- Si hay contradicciones entre partes de la información entregada, usa la más clara y específica — nunca inventes para resolver la contradicción.
+- La respuesta final contiene ÚNICAMENTE la ficha, empezando directo con el título, sin encabezado previo.`;
+
+const PROMPT_FACEBOOK = `Crea una publicación para Facebook de la tienda Sevelin (Arica, Chile) a partir de la información real que te voy a entregar a continuación. Debe quedar profesional, atractiva y optimizada para vender.
+
+La respuesta debe estar completamente lista para copiar y pegar directamente en Facebook. No agregues explicaciones, comentarios, títulos, instrucciones ni ningún texto fuera de la publicación.
+
+Usa únicamente texto plano y emojis. No uses Markdown, negritas, cursivas, enlaces Markdown, tablas, bloques de código ni encabezados con #.
+
+No conviertas www.sevelin.cl en un enlace Markdown — debe aparecer exactamente como texto plano: www.sevelin.cl
+
+El encabezado de la publicación debe comenzar siempre con ✨ NUEVO o ✨ NUEVA, según el género del producto (ej: NUEVO audífono, NUEVA plancha).
+
+✨ [NUEVO/NUEVA] [nombre completo y comercial del producto — incluye marca, modelo, tipo de producto y característica o variante relevante cuando estén disponibles]
+
+✨ [Introducción breve, atractiva y orientada a ventas. Qué es el producto, sus principales beneficios y para qué tipo de usuario o necesidad está pensado. Sin exageraciones ni afirmaciones que no estén respaldadas por la información entregada.]
+
+Si el producto trae una advertencia real, requisito de instalación, condición de compatibilidad o algún detalle importante (como piezas no incluidas), agrégalo acá mismo, antes de las características — nunca al final de la publicación:
+
+⚠️ IMPORTANTE: [advertencia o condición, en un párrafo claro y directo]
+
+✨ CARACTERÍSTICAS PRINCIPALES
+
+✅ [Característica relevante]
+✅ [Característica relevante]
+✅ [Característica relevante]
+
+Entre 8 y 12 en total — solo las más importantes y útiles para el comprador. Prioriza beneficios reales y especificaciones relevantes, sin tecnicismos innecesarios.
+
+📌 RETIRO PRESENCIAL SECTOR 11 SEPTIEMBRE O ENVÍO HOY EN ARICA
+Escríbenos antes de venir a retirar o solicitar tu despacho. Así te confirmamos disponibilidad del producto, el horario exacto y nos aseguramos de que haya alguien listo para entregártelo.
+
+🕐 Horario de atención: Consulta nuestros horarios actualizados en nuestros canales digitales.
+
+📲 WhatsApp: +56935750828
+📸 Instagram: @sevelin.cl
+
+🇨🇱 Envíos a todo Chile.
+
+🛡️ Garantía: 6 meses en todos nuestros productos por fallas de fábrica.
+
+💳 Métodos de pago: Efectivo • Transferencia • Tarjetas de débito • Tarjetas de crédito.
+
+🧾 Se emite boleta por su compra.
+
+🛍️ Compra online: Compra de forma rápida y segura directamente en nuestra tienda online www.sevelin.cl
+
+Si el producto es reacondicionado, usado, de segunda mano, abierto, con detalles estéticos o tiene cualquier condición especial, indícalo claramente y de forma profesional — nunca lo presentes como nuevo si no corresponde.
+
+No incluyas dirección física, referencias de ubicación ni dirección de la tienda.
+
+No inventes especificaciones técnicas, accesorios incluidos, compatibilidades, autonomía, potencia, dimensiones, capacidad, contenido de la caja, stock, tiempos de despacho, condiciones de instalación, garantía adicional ni ninguna otra característica que no esté confirmada en la información que te doy.
+
+Al final de la publicación, genera exactamente 20 hashtags relevantes, en una sola línea, separados únicamente por comas, cada uno empezando con #, sin repetir ninguno y sin ningún título ni texto antes de ellos (nunca escribas "HASHTAGS" ni nada parecido). Combina estratégicamente hashtags de marca, ubicación, categoría, tipo de producto, necesidad, uso e intención de compra — por ejemplo #Sevelin, #Tecnologia, #Computacion, #Informatica, #Arica, #AricaChile, #Chile, #Ofertas, #AccesoriosPC y otros realmente relacionados con el producto. Evita hashtags irrelevantes, genéricos al extremo, inventados o de spam.
+
+La respuesta final contiene ÚNICAMENTE la publicación completa, lista para copiar y pegar.`;
+
+const DESTINOS_TEXTO_IA = ['ficha', 'facebook'];
+
+app.post('/api/productos/generar-texto', auth(true), async (req, res) => {
+  const destino = String(req.body?.destino || '').trim().toLowerCase();
+  if (!DESTINOS_TEXTO_IA.includes(destino)) {
+    return enviarError(res, 400, 'Destino inválido: tiene que ser "ficha" o "facebook".');
+  }
+
+  const nombre = String(req.body?.nombre || '').trim();
+  if (!nombre) return enviarError(res, 400, 'Escribe el nombre del producto primero.');
+
+  const esServicio = req.body?.es_servicio === true || req.body?.es_servicio === 'true';
+  const datosPegados = String(req.body?.datos || '').trim();
+  const descripcionActual = textoPlanoParaPrompt(req.body?.descripcion_html);
+
+  /* Sin información real, el modelo inventa. Es la regla de oro de los tres
+     prompts y la única validación que de verdad protege al negocio acá. */
+  if (!datosPegados && !descripcionActual) {
+    return enviarError(res, 400, destino === 'facebook'
+      ? 'Falta la información real del producto. Escribe la Descripción primero, o pega las specs en el cuadro — la IA no inventa características.'
+      : 'Falta la información real del producto. Pega las specs (o lo que sepas de él) en el cuadro de abajo — la IA no inventa características.');
+  }
+
+  /* Los datos que el POS ya conoce se mandan como contexto, pero SIEMPRE
+     rotulados: el prompt no debe confundirlos con specs verificadas. */
+  const contexto = [
+    `Nombre actual en el sistema: ${nombre}`,
+    req.body?.marca ? `Marca: ${String(req.body.marca).trim()}` : null,
+    req.body?.condicion ? `Condición: ${String(req.body.condicion).trim()}` : null,
+    req.body?.categoria ? `Categoría: ${String(req.body.categoria).trim()}` : null,
+    esServicio ? 'Este ítem es un SERVICIO TÉCNICO, no un producto físico.' : null,
+    datosPegados ? `\nInformación real entregada por el dueño:\n"""\n${datosPegados.slice(0, 6000)}\n"""` : null,
+    descripcionActual ? `\nDescripción que ya tiene hoy (úsala como fuente, no la copies textual):\n"""\n${descripcionActual.slice(0, 4000)}\n"""` : null,
+  ].filter(Boolean).join('\n');
+
+  const base = destino === 'facebook'
+    ? PROMPT_FACEBOOK
+    : (esServicio ? PROMPT_FICHA_SERVICIO : PROMPT_FICHA_PRODUCTO);
+
+  const prompt = `${base}\n\nInformación real del ${esServicio ? 'servicio' : 'producto'}:\n${contexto}`;
+
+  try {
+    /* Sin responseMimeType: estos prompts piden texto listo para pegar, no
+       JSON. Temperatura un poco más alta que el SEO porque acá sí se
+       espera redacción, no un título de 60 caracteres.
+       topeMsExtra: una ficha completa son ~2.000 caracteres contra los ~200
+       del SEO, así que necesita más tiempo que el tope de ese botón. */
+    const { texto, modelo } = await pedirAGemini(prompt, { temperature: 0.7 }, 12000);
+    const limpio = String(texto).trim();
+
+    if (destino === 'facebook') {
+      return res.json({ destino, texto: limpio, modelo });
+    }
+
+    /* La ficha viene con el título comercial en la primera línea (así lo
+       piden los dos prompts). Se separa acá para que el POS pueda ofrecerlo
+       como nombre del producto sin que el dueño tenga que cortarlo a mano.
+       Si la primera línea ya es la intro (empieza con ✨ o ###), no hay
+       título separado y se devuelve la ficha entera. */
+    const lineas = limpio.split('\n');
+    const primera = (lineas[0] || '').trim();
+    const pareceTitulo = primera && !/^[✨#>\-*✅⚠️]/u.test(primera) && primera.length <= 150;
+
+    return res.json({
+      destino,
+      titulo: pareceTitulo ? primera : '',
+      cuerpo: pareceTitulo ? lineas.slice(1).join('\n').trim() : limpio,
+      modelo
+    });
+  } catch (err) {
+    return responderFalloGemini(res, err, `generar-texto:${destino}`,
+      'Mientras tanto puedes pegar el prompt en Gemini a mano, como antes.');
+  }
+});
 /* Importación masiva (CSV / Excel de Tiendanube)
    ------------------------------------------------------------
    Exige reconfirmar el PIN de administrador: es una operación que puede

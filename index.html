@@ -2264,6 +2264,34 @@
             </div>
             <textarea id="prodDescripcion" style="display:none"></textarea>
           </div>
+
+          <!-- ---------- Generar texto con IA (ficha web / Facebook) ----------
+               Los prompts oficiales viven en el SERVIDOR (api/index.js:
+               PROMPT_FICHA_PRODUCTO / PROMPT_FICHA_SERVICIO / PROMPT_FACEBOOK),
+               no acá — son regla de negocio (qué se puede decir de un producto
+               y qué no), y así se corrigen en un solo lugar.
+
+               El cuadro de "información real" NO es opcional por capricho: los
+               tres prompts prohíben inventar specs, así que el servidor rechaza
+               la llamada si no hay ni datos pegados ni Descripción ya escrita.
+               Un modelo al que solo se le da el nombre rellena con
+               características plausibles que nadie verificó. -->
+          <div class="field" style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">
+            <label>Información real del producto (para la IA)</label>
+            <textarea id="prodDatosReales" rows="4"
+                      placeholder="Pega acá las specs del proveedor, lo que dice la caja, o lo que sepas de verdad del producto. La IA no inventa: solo usa esto."></textarea>
+            <p class="subtitle">No se guarda en la base — es solo el material que se le pasa a la IA.
+              Si el producto ya tiene Descripción escrita, también se usa como fuente.</p>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
+              <button type="button" class="btn btn-outline btn-sm" id="btnGenerarFichaIA">
+                🛒 Generar ficha para la tienda
+              </button>
+              <button type="button" class="btn btn-outline btn-sm" id="btnGenerarFacebookIA">
+                📣 Generar publicación para Facebook
+              </button>
+            </div>
+            <p class="subtitle" id="prodTextoIAAviso">La ficha reemplaza la Descripción de arriba (revísala antes de guardar). La de Facebook se abre aparte, con botón para copiar.</p>
+          </div>
         </div>
 
         </div><!-- /.editor-col-principal -->
@@ -2964,6 +2992,30 @@
       <div class="modal-foot">
         <button class="btn btn-ghost" id="btnCancelarAbrirCaja">Cancelar</button>
         <button class="btn btn-primary" id="btnConfirmarAbrirCaja">Abrir caja</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       PUBLICACIÓN PARA FACEBOOK (resultado de la IA)
+       Solo muestra y copia: el texto no se guarda en ninguna parte.
+       Va en un <textarea> y no en un <div> a propósito — así el dueño
+       puede corregir una palabra antes de copiar, sin volver a generar.
+       ============================================================ -->
+  <div id="modalTextoFacebook" class="modal-overlay">
+    <div class="modal-box">
+      <h2>📣 Publicación para Facebook</h2>
+      <p class="modal-hint">
+        Revísala antes de publicar — sobre todo que no haya ninguna característica
+        que el producto no tenga. Nada se publica solo: esto es solo el texto.
+      </p>
+      <div class="field" style="margin-top:14px;">
+        <textarea id="textoFacebookResultado" rows="16" spellcheck="true"
+                  style="font-family:inherit; line-height:1.5;"></textarea>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCerrarTextoFacebook" type="button">Cerrar</button>
+        <button class="btn btn-green" id="btnCopiarTextoFacebook" type="button">📋 Copiar</button>
       </div>
     </div>
   </div>

@@ -106,6 +106,11 @@ const elProdMetaDescripcion = document.getElementById('prodMetaDescripcion');
 const elProdMetaDescripcionContador = document.getElementById('prodMetaDescripcionContador');
 const elBtnGenerarSeoIA = document.getElementById('btnGenerarSeoIA');
 const elProdSeoIAAviso = document.getElementById('prodSeoIAAviso');
+const elProdDatosReales = document.getElementById('prodDatosReales');
+const elBtnGenerarFichaIA = document.getElementById('btnGenerarFichaIA');
+const elBtnGenerarFacebookIA = document.getElementById('btnGenerarFacebookIA');
+const elModalTextoFacebook = document.getElementById('modalTextoFacebook');
+const elTextoFacebookResultado = document.getElementById('textoFacebookResultado');
 let productoEnEdicionImagenUrls = [];
 // Fotos elegidas ANTES de que el producto tenga id (modo creación): quedan
 // acá como data URLs hasta que guardarProducto() cree el producto y recién
@@ -210,6 +215,10 @@ function setupProductosEventListeners() {
   if (elBtnGuardarMedidas) elBtnGuardarMedidas.addEventListener('click', guardarMedidasProducto);
   document.getElementById('btnDescargarTodasFotos')?.addEventListener('click', descargarTodasFotosProducto);
   if (elBtnGenerarSeoIA) elBtnGenerarSeoIA.addEventListener('click', generarSeoConIA);
+  if (elBtnGenerarFichaIA) elBtnGenerarFichaIA.addEventListener('click', () => generarTextoConIA('ficha'));
+  if (elBtnGenerarFacebookIA) elBtnGenerarFacebookIA.addEventListener('click', () => generarTextoConIA('facebook'));
+  document.getElementById('btnCerrarTextoFacebook')?.addEventListener('click', cerrarModalTextoFacebook);
+  document.getElementById('btnCopiarTextoFacebook')?.addEventListener('click', copiarTextoFacebook);
   if (elProdMetaTitulo) elProdMetaTitulo.addEventListener('input', actualizarContadoresSeo);
   if (elProdMetaDescripcion) elProdMetaDescripcion.addEventListener('input', actualizarContadoresSeo);
   if (elBtnEliminarTodosProductos) elBtnEliminarTodosProductos.addEventListener('click', eliminarTodosLosProductos);
@@ -1085,6 +1094,98 @@ async function generarSeoConIA() {
   }
 }
 
+/* ---------- Generar texto con IA: ficha de la tienda / post de Facebook ----------
+   Los prompts están en el servidor (api/index.js). Acá solo se junta el
+   material real y se coloca el resultado donde corresponde.
+
+   NADA SE GUARDA SOLO: la ficha queda en el editor para que el dueño la
+   revise y recién se guarda con "Guardar producto"; la de Facebook se
+   muestra en un modal con botón de copiar y no toca la base. */
+async function generarTextoConIA(destino) {
+  const boton = destino === 'facebook' ? elBtnGenerarFacebookIA : elBtnGenerarFichaIA;
+  const nombre = elProdNombre?.value.trim() || '';
+  if (!nombre) { showToast('Escribe el nombre del producto primero', 'err'); return; }
+
+  const datos = elProdDatosReales?.value.trim() || '';
+  const descripcionHtml = elProdDescripcion?.value || '';
+  if (!datos && !descripcionHtml.trim()) {
+    showToast('Pega la información real del producto en el cuadro — la IA no inventa características', 'err');
+    elProdDatosReales?.focus();
+    return;
+  }
+
+  /* Reemplazar la ficha entera es destructivo y no hay "deshacer" en Quill
+     una vez que se guarda, así que se pregunta. Para Facebook no hace falta:
+     no pisa nada. */
+  if (destino === 'ficha' && descripcionHtml.trim() &&
+      !confirm('Esto va a reemplazar la Descripción actual por la que genere la IA. ¿Seguir?')) {
+    return;
+  }
+
+  const textoOriginal = boton?.textContent;
+  if (boton) { boton.disabled = true; boton.textContent = '✨ Generando…'; }
+  try {
+    const resultado = await API.productos.generarTexto({
+      destino,
+      nombre,
+      es_servicio: !!(elProdEsServicio && elProdEsServicio.checked),
+      marca: elProdMarca?.value.trim() || '',
+      condicion: elProdCondicion?.value || '',
+      categoria: elPopFotosCategoria?.selectedOptions?.[0]?.textContent?.trim() || '',
+      datos,
+      descripcion_html: descripcionHtml
+    });
+
+    if (destino === 'facebook') {
+      abrirModalTextoFacebook(resultado.texto || '');
+      return;
+    }
+
+    /* convertirMarkdownAHtml() es la MISMA función que usa el pegado desde
+       Gemini — así la ficha entra al editor como HTML real (h3, ul, strong)
+       y no como Markdown crudo. Es justo lo que le faltó a las 13 fichas
+       que quedaron mostrando "###" y "**" en sevelin.cl (ver sql/53). */
+    establecerDescripcion(convertirMarkdownAHtml(resultado.cuerpo || ''));
+
+    /* El título comercial solo se propone si el campo está vacío: si el
+       dueño ya le puso nombre al producto, ese nombre manda — puede ser el
+       que está publicado en Marketplace o el que conoce el cliente. */
+    if (resultado.titulo && elProdNombre && !elProdNombre.value.trim()) {
+      elProdNombre.value = resultado.titulo;
+    }
+    showToast(resultado.titulo && elProdNombre?.value !== resultado.titulo
+      ? `Ficha generada. La IA propuso este nombre: "${resultado.titulo}"`
+      : 'Ficha generada — revísala y guarda el producto', 'ok');
+  } catch (err) {
+    showToast(err.message || 'No se pudo generar el texto', 'err');
+  } finally {
+    if (boton) { boton.disabled = false; boton.textContent = textoOriginal; }
+  }
+}
+
+function abrirModalTextoFacebook(texto) {
+  if (elTextoFacebookResultado) elTextoFacebookResultado.value = texto;
+  elModalTextoFacebook?.classList.add('show');
+}
+
+function cerrarModalTextoFacebook() {
+  elModalTextoFacebook?.classList.remove('show');
+}
+
+async function copiarTextoFacebook() {
+  const texto = elTextoFacebookResultado?.value || '';
+  if (!texto) return;
+  try {
+    await navigator.clipboard.writeText(texto);
+    showToast('Copiado — pégalo en Facebook', 'ok');
+  } catch {
+    /* clipboard falla sin HTTPS o sin permiso; seleccionar el texto deja
+       al dueño copiar con Ctrl+C sin perder el trabajo. */
+    elTextoFacebookResultado?.select();
+    showToast('No se pudo copiar solo — está seleccionado, usa Ctrl+C', 'err');
+  }
+}
+
 function establecerDescripcion(html) {
   initEditorDescripcion();
   if (editorDescripcion) editorDescripcion.root.innerHTML = html || '<p><br></p>';
@@ -1095,6 +1196,11 @@ function establecerDescripcion(html) {
 function abrirModalProducto(producto = null) {
   if (!elViewProductoEditor) return;
   if (!esAdmin()) { showToast('Solo el administrador puede editar productos', 'err'); return; }
+
+  /* El material para la IA es de un solo uso y no se guarda en la base —
+     si quedara pegado, el siguiente producto se generaría con las specs
+     del anterior. Se limpia en los dos casos (crear y editar). */
+  if (elProdDatosReales) elProdDatosReales.value = '';
 
   if (producto) {
     editingProductId = producto.id;

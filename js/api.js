@@ -105,6 +105,12 @@ const API = {
        guarda con el botón normal "Guardar producto". */
     generarSeo: (datos) => apiRequest('/productos/generar-seo', { method: 'POST', body: datos }),
 
+    /* Texto con IA para los dos destinos que usa el dueño: la ficha de la
+       tienda (destino 'ficha' — el prompt cambia solo según es_servicio) y
+       el post de Facebook (destino 'facebook'). Los prompts viven en el
+       servidor. Tampoco guarda nada: devuelve el texto para revisarlo. */
+    generarTexto: (datos) => apiRequest('/productos/generar-texto', { method: 'POST', body: datos }),
+
     // Capas de costo (PEPS / FIFO)
     listarLotes: (id) => apiRequest(`/productos/${id}/lotes`),
 
