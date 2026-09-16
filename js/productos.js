@@ -1103,8 +1103,12 @@ async function generarSeoConIA() {
    muestra en un modal con botón de copiar y no toca la base. */
 async function generarTextoConIA(destino) {
   const boton = destino === 'facebook' ? elBtnGenerarFacebookIA : elBtnGenerarFichaIA;
+  // El nombre es opcional a propósito (16-09-2026): si el campo está vacío,
+  // el prompt ya le pide a la IA que proponga un título comercial a partir
+  // de la Descripción/datos reales — exigirlo antes obligaba a subir hasta
+  // arriba y escribirlo a mano solo para poder generar. Ver más abajo cómo
+  // se completa el campo con la sugerencia.
   const nombre = elProdNombre?.value.trim() || '';
-  if (!nombre) { showToast('Escribe el nombre del producto primero', 'err'); return; }
 
   const datos = elProdDatosReales?.value.trim() || '';
   const descripcionHtml = elProdDescripcion?.value || '';
@@ -1149,12 +1153,14 @@ async function generarTextoConIA(destino) {
 
     /* El título comercial solo se propone si el campo está vacío: si el
        dueño ya le puso nombre al producto, ese nombre manda — puede ser el
-       que está publicado en Marketplace o el que conoce el cliente. */
-    if (resultado.titulo && elProdNombre && !elProdNombre.value.trim()) {
-      elProdNombre.value = resultado.titulo;
-    }
-    showToast(resultado.titulo && elProdNombre?.value !== resultado.titulo
-      ? `Ficha generada. La IA propuso este nombre: "${resultado.titulo}"`
+       que está publicado en Marketplace o el que conoce el cliente. Queda
+       en el campo tal cual lo editable que es: se puede aceptar o corregir
+       ahí mismo antes de guardar, nada se guarda solo. */
+    const sePropusoNombre = !!(resultado.titulo && elProdNombre && !elProdNombre.value.trim());
+    if (sePropusoNombre) elProdNombre.value = resultado.titulo;
+
+    showToast(sePropusoNombre
+      ? `Ficha generada — la IA sugirió el nombre "${resultado.titulo}", revísalo antes de guardar`
       : 'Ficha generada — revísala y guarda el producto', 'ok');
   } catch (err) {
     showToast(err.message || 'No se pudo generar el texto', 'err');

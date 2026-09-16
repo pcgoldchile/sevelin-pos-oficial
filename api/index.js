@@ -1252,6 +1252,19 @@ async function pedirAGemini(prompt, generationConfig, topeMsExtra = 0) {
       }
       const texto = datos?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!texto) { fallas.push(`${modelo}: respuesta vacía o ilegible`); continue; }
+      /* finishReason distinto de STOP = Gemini se quedó a medias (topó el
+         límite de tokens, un filtro de seguridad, etc.) — el texto que
+         mandó hasta ahí queda cortado a mitad de una sección, sin avisar
+         con ningún error HTTP. Bug real: "Generar ficha" devolvía la
+         intro + el título "✨ Características principales" y ninguna
+         viñeta después — Gemini paró justo ahí y el código lo daba por
+         bueno igual. Se descarta el intento y se prueba el otro modelo,
+         en vez de pegar en la Descripción del producto una ficha rota. */
+      const finishReason = datos?.candidates?.[0]?.finishReason;
+      if (finishReason && finishReason !== 'STOP') {
+        fallas.push(`${modelo}: respuesta cortada (${finishReason})`);
+        continue;
+      }
       return { texto, modelo };
     } catch (err) {
       fallas.push(`${modelo}: ${err.name === 'TimeoutError' ? `sin respuesta en ${tope / 1000} s` : err.message}`);
@@ -1490,8 +1503,13 @@ app.post('/api/productos/generar-texto', auth(true), async (req, res) => {
     return enviarError(res, 400, 'Destino inválido: tiene que ser "ficha" o "facebook".');
   }
 
+  /* El nombre es OPCIONAL (16-09-2026): los dos prompts de ficha ya le
+     piden a la IA que proponga un título comercial en la primera línea a
+     partir de la info real — exigirlo antes de generar era un candado de
+     más, que obligaba a subir hasta el campo Nombre y escribir algo a
+     mano solo para poder apretar el botón. El POS ya sabe usar ese título
+     propuesto (ver más abajo, y generarTextoConIA() en productos.js). */
   const nombre = String(req.body?.nombre || '').trim();
-  if (!nombre) return enviarError(res, 400, 'Escribe el nombre del producto primero.');
 
   const esServicio = req.body?.es_servicio === true || req.body?.es_servicio === 'true';
   const datosPegados = String(req.body?.datos || '').trim();
@@ -1508,7 +1526,9 @@ app.post('/api/productos/generar-texto', auth(true), async (req, res) => {
   /* Los datos que el POS ya conoce se mandan como contexto, pero SIEMPRE
      rotulados: el prompt no debe confundirlos con specs verificadas. */
   const contexto = [
-    `Nombre actual en el sistema: ${nombre}`,
+    nombre
+      ? `Nombre actual en el sistema: ${nombre}`
+      : 'Todavía no tiene nombre en el sistema — proponlo tú, basado en la información real de abajo.',
     req.body?.marca ? `Marca: ${String(req.body.marca).trim()}` : null,
     req.body?.condicion ? `Condición: ${String(req.body.condicion).trim()}` : null,
     req.body?.categoria ? `Categoría: ${String(req.body.categoria).trim()}` : null,
@@ -1527,9 +1547,13 @@ app.post('/api/productos/generar-texto', auth(true), async (req, res) => {
     /* Sin responseMimeType: estos prompts piden texto listo para pegar, no
        JSON. Temperatura un poco más alta que el SEO porque acá sí se
        espera redacción, no un título de 60 caracteres.
+       maxOutputTokens explícito y holgado: sin esto, una ficha larga con
+       lista de 12 características podía toparse con el límite por
+       defecto y Gemini paraba a mitad de la lista (ver el chequeo de
+       finishReason en pedirAGemini).
        topeMsExtra: una ficha completa son ~2.000 caracteres contra los ~200
        del SEO, así que necesita más tiempo que el tope de ese botón. */
-    const { texto, modelo } = await pedirAGemini(prompt, { temperature: 0.7 }, 12000);
+    const { texto, modelo } = await pedirAGemini(prompt, { temperature: 0.7, maxOutputTokens: 3000 }, 12000);
     const limpio = String(texto).trim();
 
     if (destino === 'facebook') {
