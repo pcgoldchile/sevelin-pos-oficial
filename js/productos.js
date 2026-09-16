@@ -111,6 +111,11 @@ const elBtnGenerarFichaIA = document.getElementById('btnGenerarFichaIA');
 const elBtnGenerarFacebookIA = document.getElementById('btnGenerarFacebookIA');
 const elModalTextoFacebook = document.getElementById('modalTextoFacebook');
 const elTextoFacebookResultado = document.getElementById('textoFacebookResultado');
+const elModalFichaGenerada = document.getElementById('modalFichaGenerada');
+const elFichaGeneradaTexto = document.getElementById('fichaGeneradaTexto');
+const elFichaGeneradaTitulo = document.getElementById('fichaGeneradaTitulo');
+const elFichaGeneradaTituloFila = document.getElementById('fichaGeneradaTituloFila');
+const elFichaGeneradaTituloAviso = document.getElementById('fichaGeneradaTituloAviso');
 let productoEnEdicionImagenUrls = [];
 // Fotos elegidas ANTES de que el producto tenga id (modo creación): quedan
 // acá como data URLs hasta que guardarProducto() cree el producto y recién
@@ -219,6 +224,8 @@ function setupProductosEventListeners() {
   if (elBtnGenerarFacebookIA) elBtnGenerarFacebookIA.addEventListener('click', () => generarTextoConIA('facebook'));
   document.getElementById('btnCerrarTextoFacebook')?.addEventListener('click', cerrarModalTextoFacebook);
   document.getElementById('btnCopiarTextoFacebook')?.addEventListener('click', copiarTextoFacebook);
+  document.getElementById('btnDescartarFichaGenerada')?.addEventListener('click', cerrarModalFichaGenerada);
+  document.getElementById('btnUsarFichaGenerada')?.addEventListener('click', aplicarFichaGenerada);
   if (elProdMetaTitulo) elProdMetaTitulo.addEventListener('input', actualizarContadoresSeo);
   if (elProdMetaDescripcion) elProdMetaDescripcion.addEventListener('input', actualizarContadoresSeo);
   if (elBtnEliminarTodosProductos) elBtnEliminarTodosProductos.addEventListener('click', eliminarTodosLosProductos);
@@ -993,6 +1000,45 @@ function convertirMarkdownAHtml(textoPlano) {
   return bloques.join('');
 }
 
+/* Limpia lo que devuelve Quill antes de guardarlo en la base.
+   ------------------------------------------------------------
+   Quill 2 representa una lista de viñetas como
+   `<ol><li data-list="bullet"><span class="ql-ui"></span>Texto</li></ol>`
+   — o sea un <ol> (lista NUMERADA en HTML normal) marcado con un atributo
+   propio de Quill. La tienda sanitiza la descripción y borra los atributos
+   que no conoce, así que `data-list` se pierde y en sevelin.cl esas
+   viñetas salen NUMERADAS (1. 2. 3.) en vez de con el diseño de tarjetas
+   con ✓ que la tienda le da a los <ul>. Verificado en vivo el 16-09-2026
+   en /productos/adaptador-hdmi-a-vga-43wbg.
+
+   Acá se traduce a HTML de verdad, una sola vez y en un solo lugar: un
+   <ol> cuyos ítems son todos "bullet" pasa a ser <ul>; uno de ítems
+   "ordered" se queda <ol>, que es lo correcto. De paso se sacan los
+   <span class="ql-ui"> que Quill mete para dibujar la viñeta y que no
+   pintan nada fuera del editor.
+
+   Se usa el DOM y no expresiones regulares a propósito: parsear HTML con
+   regex es justo como se rompen estas cosas. */
+function normalizarListasQuill(html) {
+  if (!html) return '';
+  const cont = document.createElement('div');
+  cont.innerHTML = html;
+
+  cont.querySelectorAll('span.ql-ui').forEach(s => s.remove());
+
+  cont.querySelectorAll('ol').forEach(ol => {
+    const items = Array.from(ol.children).filter(n => n.tagName === 'LI');
+    const todasVinetas = items.length > 0 && items.every(li => li.getAttribute('data-list') === 'bullet');
+    if (!todasVinetas) return;
+    const ul = document.createElement('ul');
+    while (ol.firstChild) ul.appendChild(ol.firstChild);
+    ol.replaceWith(ul);
+  });
+
+  cont.querySelectorAll('[data-list]').forEach(li => li.removeAttribute('data-list'));
+  return cont.innerHTML;
+}
+
 function initEditorDescripcion() {
   if (editorDescripcion || typeof Quill === 'undefined') return;
   const contenedor = document.getElementById('prodDescripcionEditor');
@@ -1007,7 +1053,9 @@ function initEditorDescripcion() {
     // Un editor "visualmente vacío" igual guarda '<p><br></p>' — sin este
     // chequeo, cada producto nuevo terminaría con una descripción "vacía"
     // que en realidad no lo está.
-    elProdDescripcion.value = editorDescripcion.getText().trim() ? editorDescripcion.root.innerHTML : '';
+    elProdDescripcion.value = editorDescripcion.getText().trim()
+      ? normalizarListasQuill(editorDescripcion.root.innerHTML)
+      : '';
     actualizarDisponibilidadSeoIA();
   });
 
@@ -1118,13 +1166,10 @@ async function generarTextoConIA(destino) {
     return;
   }
 
-  /* Reemplazar la ficha entera es destructivo y no hay "deshacer" en Quill
-     una vez que se guarda, así que se pregunta. Para Facebook no hace falta:
-     no pisa nada. */
-  if (destino === 'ficha' && descripcionHtml.trim() &&
-      !confirm('Esto va a reemplazar la Descripción actual por la que genere la IA. ¿Seguir?')) {
-    return;
-  }
+  /* Ya no se pregunta acá si reemplazar la Descripción: la ficha pasa
+     primero por la previsualización (modalFichaGenerada) y recién se
+     aplica si el dueño aprieta "Usar esta ficha". Mientras tanto no se
+     toca nada del formulario. */
 
   const textoOriginal = boton?.textContent;
   if (boton) { boton.disabled = true; boton.textContent = '✨ Generando…'; }
@@ -1145,28 +1190,61 @@ async function generarTextoConIA(destino) {
       return;
     }
 
-    /* convertirMarkdownAHtml() es la MISMA función que usa el pegado desde
-       Gemini — así la ficha entra al editor como HTML real (h3, ul, strong)
-       y no como Markdown crudo. Es justo lo que le faltó a las 13 fichas
-       que quedaron mostrando "###" y "**" en sevelin.cl (ver sql/53). */
-    establecerDescripcion(convertirMarkdownAHtml(resultado.cuerpo || ''));
-
-    /* El título comercial solo se propone si el campo está vacío: si el
-       dueño ya le puso nombre al producto, ese nombre manda — puede ser el
-       que está publicado en Marketplace o el que conoce el cliente. Queda
-       en el campo tal cual lo editable que es: se puede aceptar o corregir
-       ahí mismo antes de guardar, nada se guarda solo. */
-    const sePropusoNombre = !!(resultado.titulo && elProdNombre && !elProdNombre.value.trim());
-    if (sePropusoNombre) elProdNombre.value = resultado.titulo;
-
-    showToast(sePropusoNombre
-      ? `Ficha generada — la IA sugirió el nombre "${resultado.titulo}", revísalo antes de guardar`
-      : 'Ficha generada — revísala y guarda el producto', 'ok');
+    /* No se aplica nada todavía: se abre la previsualización con el
+       Markdown tal cual lo devolvió la IA, para revisarlo (y corregirlo)
+       antes de que reemplace la Descripción. */
+    abrirModalFichaGenerada(resultado.cuerpo || '', resultado.titulo || '');
   } catch (err) {
     showToast(err.message || 'No se pudo generar el texto', 'err');
   } finally {
     if (boton) { boton.disabled = false; boton.textContent = textoOriginal; }
   }
+}
+
+/* ---------- Previsualización de la ficha generada ----------
+   Se guarda el Markdown crudo y el título propuesto hasta que el dueño
+   decida. Si descarta, el formulario queda exactamente como estaba. */
+function abrirModalFichaGenerada(cuerpoMarkdown, tituloPropuesto) {
+  if (elFichaGeneradaTexto) elFichaGeneradaTexto.value = cuerpoMarkdown;
+
+  /* El título solo se ofrece si el campo Nombre está vacío: si el dueño ya
+     le puso nombre al producto, ese nombre manda — puede ser el que está
+     publicado en Marketplace o el que conoce el cliente. */
+  const ofrecerTitulo = !!(tituloPropuesto && elProdNombre && !elProdNombre.value.trim());
+  if (elFichaGeneradaTituloFila) elFichaGeneradaTituloFila.style.display = ofrecerTitulo ? '' : 'none';
+  if (elFichaGeneradaTitulo) elFichaGeneradaTitulo.value = ofrecerTitulo ? tituloPropuesto : '';
+  if (elFichaGeneradaTituloAviso && ofrecerTitulo) {
+    elFichaGeneradaTituloAviso.textContent = 'El producto todavía no tiene nombre, así que se va a usar este. Puedes corregirlo acá.';
+  }
+
+  elModalFichaGenerada?.classList.add('show');
+}
+
+function cerrarModalFichaGenerada() {
+  elModalFichaGenerada?.classList.remove('show');
+}
+
+/* Recién acá se toca el formulario. `convertirMarkdownAHtml()` es la MISMA
+   función que usa el pegado desde Gemini, así la ficha entra al editor
+   como HTML de verdad (h3, ul, strong) y no como Markdown crudo — que fue
+   lo que dejó 13 fichas mostrando "###" y "**" en sevelin.cl (ver sql/53). */
+function aplicarFichaGenerada() {
+  const markdown = (elFichaGeneradaTexto?.value || '').trim();
+  if (!markdown) { showToast('La ficha está vacía', 'err'); return; }
+
+  establecerDescripcion(convertirMarkdownAHtml(markdown));
+
+  const tituloElegido = (elFichaGeneradaTituloFila && elFichaGeneradaTituloFila.style.display !== 'none')
+    ? (elFichaGeneradaTitulo?.value || '').trim()
+    : '';
+  if (tituloElegido && elProdNombre && !elProdNombre.value.trim()) {
+    elProdNombre.value = tituloElegido;
+  }
+
+  cerrarModalFichaGenerada();
+  showToast(tituloElegido
+    ? `Ficha aplicada — el nombre quedó como "${tituloElegido}". Revisa y guarda el producto`
+    : 'Ficha aplicada — revísala y guarda el producto', 'ok');
 }
 
 function abrirModalTextoFacebook(texto) {
@@ -1192,10 +1270,68 @@ async function copiarTextoFacebook() {
   }
 }
 
-function establecerDescripcion(html) {
+/* BUG REAL (16-09-2026, reproducido en un navegador de verdad con Quill
+   2.0.3): esto escribía `editorDescripcion.root.innerHTML = html`, o sea
+   pisaba el DOM del editor por debajo, sin pasar por Quill. Quill 2 vigila
+   su propio DOM con un MutationObserver y lo "normaliza" contra su modelo
+   interno: todo lo que no reconoce como suyo lo BORRA. Una `<ul><li>` no
+   es formato nativo de Quill 2 (él usa `<ol><li data-list="bullet">`), así
+   que la lista entera desaparecía en silencio.
+
+   Medido: entraban 12 <li> y quedaban 0 — 1128 caracteres de HTML se
+   convertían en 458. Por eso "Generar ficha para la tienda" dejaba la
+   intro y el título "✨ Características principales" y ninguna viñeta
+   debajo, mientras que el botón de Facebook salía completo: ese texto va a
+   un <textarea> normal y nunca toca Quill.
+
+   La forma correcta es pasarle el HTML a Quill por su propia puerta
+   (`clipboard.convert` → `setContents`), que traduce <ul>/<li> a su
+   formato interno en vez de tirarlos. Es la MISMA puerta que ya usaba el
+   pegado desde Gemini (`dangerouslyPasteHTML`), que por eso sí funcionaba.
+
+   Después NO se escribe el textarea a mano: `setContents` dispara
+   `text-change`, y ese manejador ya deja en el textarea lo que Quill tiene
+   de verdad (ya normalizado). Escribirlo acá además lo dejaba distinto de
+   lo que mostraba el editor. */
+/* Muchas descripciones del catálogo NO son HTML: son texto plano con
+   Markdown (`### ✨ Ventajas`, `✅ **Metal líquido:** …`). Se guardaron así
+   a propósito — la tienda las formatea sola y quedan con títulos y viñetas
+   en tarjetas (ver sql/53 y formatear-descripcion.ts de sevelin-tienda).
+
+   Metidas crudas a un editor de texto enriquecido, Quill las aplasta a un
+   solo párrafo y, al guardar, quedarían envueltas en <p>…</p> — que es
+   EXACTAMENTE el bug que dejó 13 fichas mostrando "###" y "**" al cliente
+   y que se arregló ayer. Abrir una de esas fichas y guardarla la habría
+   roto de nuevo, en silencio.
+
+   Por eso, si lo que llega no trae etiquetas de bloque, se convierte el
+   Markdown a HTML ANTES de dárselo al editor. El resultado en sevelin.cl
+   es el mismo (la tienda pinta <ul> con el mismo diseño de tarjetas), pero
+   ahora sobrevive a una pasada por el editor. */
+function prepararHtmlParaEditor(valor) {
+  const texto = String(valor || '');
+  if (!texto.trim()) return '';
+  const traeHtmlDeBloque = /<(p|div|h[1-6]|ul|ol|li|br)\b/i.test(texto);
+  return traeHtmlDeBloque ? texto : convertirMarkdownAHtml(texto);
+}
+
+function establecerDescripcion(valor) {
   initEditorDescripcion();
-  if (editorDescripcion) editorDescripcion.root.innerHTML = html || '<p><br></p>';
-  if (elProdDescripcion) elProdDescripcion.value = html || '';
+  const html = prepararHtmlParaEditor(valor);
+
+  if (editorDescripcion) {
+    if (html) editorDescripcion.setContents(editorDescripcion.clipboard.convert({ html }));
+    else editorDescripcion.setText('');
+    // Respaldo por si `text-change` no llegó a correr (editor recién creado).
+    if (elProdDescripcion && !elProdDescripcion.value && editorDescripcion.getText().trim()) {
+      elProdDescripcion.value = normalizarListasQuill(editorDescripcion.root.innerHTML);
+    }
+  } else if (elProdDescripcion) {
+    // Sin Quill cargado (CDN caído): el textarea oculto sigue siendo la
+    // fuente de verdad, así no se pierde la descripción.
+    elProdDescripcion.value = html || '';
+  }
+
   actualizarDisponibilidadSeoIA();
 }
 

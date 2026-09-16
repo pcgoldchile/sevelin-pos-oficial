@@ -3021,6 +3021,45 @@
   </div>
 
   <!-- ============================================================
+       FICHA GENERADA POR LA IA (previsualización antes de aplicarla)
+       Pedido del dueño (16-09-2026): poder VER la ficha antes de que
+       reemplace la Descripción, igual que ya pasaba con la de Facebook.
+       Antes entraba directo al editor y, si no gustaba, ya había pisado
+       lo que había — sin deshacer.
+       Se muestra en Markdown (tal cual lo devuelve la IA) y no ya
+       convertido: así se puede corregir una palabra, agregar o borrar una
+       viñeta acá mismo, y recién al aceptar se convierte y se aplica.
+       ============================================================ -->
+  <div id="modalFichaGenerada" class="modal-overlay">
+    <div class="modal-box">
+      <h2>🛒 Ficha generada para la tienda</h2>
+      <p class="modal-hint">
+        Revísala antes de aplicarla — sobre todo que no haya ninguna característica
+        que el producto no tenga. Se aplica solo si aprietas "Usar esta ficha".
+      </p>
+
+      <div class="field" id="fichaGeneradaTituloFila" style="margin-top:14px; display:none;">
+        <label for="fichaGeneradaTitulo">Nombre que propone la IA</label>
+        <input type="text" id="fichaGeneradaTitulo" maxlength="200">
+        <p class="subtitle" id="fichaGeneradaTituloAviso">Se va a usar como Nombre del producto. Puedes corregirlo acá.</p>
+      </div>
+
+      <div class="field" style="margin-top:12px;">
+        <label for="fichaGeneradaTexto">Descripción</label>
+        <textarea id="fichaGeneradaTexto" rows="15" spellcheck="true"
+                  style="font-family:inherit; line-height:1.5;"></textarea>
+        <p class="subtitle">Los <strong>###</strong> son títulos de sección y los <strong>✅</strong> son viñetas:
+          se convierten al aplicarla, no se ven así en la tienda.</p>
+      </div>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnDescartarFichaGenerada" type="button">Descartar</button>
+        <button class="btn btn-green" id="btnUsarFichaGenerada" type="button">✅ Usar esta ficha</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
        CERRAR CAJA
        Compara lo contado contra lo esperado y guarda la diferencia.
        ============================================================ -->
