@@ -197,6 +197,11 @@
       <button id="btnF29" class="btn-notificaciones btn-f29 admin-only" title="F29 pendiente" hidden>
         🧾 <span id="textoF29">F29</span>
       </button>
+      <!-- Productos agotados esperando decisión (sql/55): solo aparece si
+           hay alguno sin decidir. Lo pinta js/notificaciones.js. -->
+      <button id="btnAgotados" class="btn-notificaciones btn-agotados admin-only" title="Productos agotados sin decidir" hidden>
+        📦 <span id="textoAgotados">Agotados</span>
+      </button>
       <span id="syncBadge" class="sync-badge sync-pending">⏳ Conectando…</span>
     </div>
   </header>
@@ -1136,6 +1141,26 @@
               </div>
             </div>
             <div id="intelAuditoria"></div>
+          </div>
+
+          <!-- ============================================================
+               COMPRAS Y DEVOLUCIONES (sql/56)
+               Responde "¿se están vendiendo al ritmo que esperaba o me
+               conviene devolverlos?". Las entradas se cargan desde el
+               modal de cada producto. Lo pinta js/inteligencia.js.
+               ============================================================ -->
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h3 style="margin:0;">Compras y devoluciones</h3>
+                <p class="subtitle" id="rotacionSubtitulo">Cada compra de mercadería, cómo va rotando y hasta cuándo se puede devolver.</p>
+              </div>
+              <div class="toolbar-group">
+                <button class="btn btn-outline btn-sm" id="btnRotacionRecargar">🔄 Actualizar</button>
+              </div>
+            </div>
+            <div id="rotacionResumen" class="rotacion-resumen"></div>
+            <div id="rotacionLista"></div>
           </div>
 
           <div class="card">
@@ -2194,9 +2219,20 @@
         <div class="card">
           <div class="card-head"><div><h2>Medidas y envío</h2><p class="subtitle">Mismo formato del CSV de Tiendanube.</p></div></div>
           <div class="grid grid-4">
+            <!-- Peso con unidad elegible (dueño, 16-09-2026): escribir "45"
+                 pensando en gramos y que se guarde como 45 KILOS falsea el
+                 costo de todos los despachos de ese producto. Con el selector
+                 se escribe en la unidad en que uno piensa, y el aviso de abajo
+                 dice en vivo cuánto es en las dos. -->
             <div class="field">
-              <label>Peso (kg)</label>
-              <input type="number" id="prodPeso" min="0" step="0.001">
+              <label for="prodPeso">Peso</label>
+              <div style="display:flex; gap:6px;">
+                <input type="number" id="prodPeso" min="0" step="0.001" style="flex:1; min-width:0;">
+                <select id="prodPesoUnidad" style="width:74px; flex-shrink:0;">
+                  <option value="kg">kg</option>
+                  <option value="g">g</option>
+                </select>
+              </div>
             </div>
             <div class="field">
               <label>Alto (cm)</label>
@@ -2211,6 +2247,7 @@
               <input type="number" id="prodProfundidad" min="0" step="0.1">
             </div>
           </div>
+          <p class="modal-hint" id="prodPesoLectura" style="margin-top:8px;"></p>
           <p class="modal-hint" id="prodMedidasActualizado" style="margin-top:10px;">Última actualización de medidas y peso: —</p>
 
           <!-- Las medidas se guardan APARTE del resto del producto (sql/43):
@@ -2227,6 +2264,53 @@
               guardan por separado y con nombre. <strong>El botón "Guardar" de abajo no toca las
               medidas</strong> — solo este las registra.</p>
           </div>
+        </div>
+
+        <!-- ---------- Compras de este producto (sql/56) ----------
+             Cuándo llegó cada lote, a qué costo y hasta cuándo el
+             proveedor lo recibe de vuelta. NO toca el costeo (eso son los
+             lotes PEPS de sql/09): sirve para medir rotación y alcanzar a
+             devolver lo que sobra antes de que venza el plazo. -->
+        <div class="card" id="cardIngresosProducto">
+          <div class="card-head">
+            <div><h2>Compras de este producto</h2>
+              <p class="subtitle">Cuándo llegó cada compra y hasta cuándo se puede devolver.
+                Con esto el POS avisa si conviene devolver lo que va a sobrar.</p></div>
+          </div>
+          <div class="grid grid-4">
+            <div class="field">
+              <label for="ingFecha">Fecha de compra *</label>
+              <input type="date" id="ingFecha">
+            </div>
+            <div class="field">
+              <label for="ingCantidad">¿Cuántas compraste? *</label>
+              <input type="number" id="ingCantidad" min="1" step="1" placeholder="Ej: 50" inputmode="numeric">
+            </div>
+            <div class="field">
+              <label for="ingCosto">Costo por unidad</label>
+              <input type="number" id="ingCosto" min="0" step="1" placeholder="Ej: 2000" inputmode="numeric">
+            </div>
+            <div class="field">
+              <label for="ingDevolucion">Se puede devolver hasta</label>
+              <input type="date" id="ingDevolucion">
+            </div>
+          </div>
+          <div class="grid grid-2">
+            <div class="field">
+              <label for="ingProveedor">Proveedor</label>
+              <input type="text" id="ingProveedor" maxlength="80" placeholder="A quién se la compraste">
+            </div>
+            <div class="field">
+              <label for="ingReferencia">N° de factura / guía</label>
+              <input type="text" id="ingReferencia" maxlength="80" placeholder="Opcional">
+            </div>
+          </div>
+          <p class="modal-hint">Si el proveedor no acepta devoluciones, deja la fecha vacía —
+            es distinto de una fecha ya vencida, y el informe los trata distinto.</p>
+          <div style="display:flex; justify-content:flex-end; margin-top:8px;">
+            <button type="button" class="btn btn-outline" id="btnAgregarIngreso">📥 Registrar compra</button>
+          </div>
+          <div id="ingresosLista" style="margin-top:12px;"></div>
         </div>
 
         <!-- ---------- Descripción ---------- -->
@@ -3879,14 +3963,25 @@
         <div id="envioCostoCampos">
           <div class="grid grid-2">
             <div class="field">
-              <label for="envioCosto">Costo del envío</label>
+              <label for="envioCosto">Costo real (lo que pagas tú)</label>
               <input type="number" id="envioCosto" min="0" step="100" placeholder="Ej: 3500" inputmode="numeric">
+            </div>
+            <!-- sql/54: sin este campo no había forma de ver que el envío
+                 salió más caro de lo que se le cobró al cliente. -->
+            <div class="field">
+              <label for="envioCobrado">Le cobré al cliente</label>
+              <input type="number" id="envioCobrado" min="0" step="100" placeholder="Ej: 3000" inputmode="numeric">
             </div>
             <div class="field">
               <label for="envioKm">Km (opcional)</label>
               <input type="number" id="envioKm" min="0" step="0.1" placeholder="Ej: 4.2" inputmode="decimal">
             </div>
+            <div class="field">
+              <label for="envioDuracion">Demoró (min, opcional)</label>
+              <input type="number" id="envioDuracion" min="0" max="1440" step="5" placeholder="Ej: 25" inputmode="numeric">
+            </div>
           </div>
+          <p class="modal-hint" id="envioHintBolsillo"></p>
           <p class="modal-hint" id="envioHintKm"></p>
           <div class="field">
             <label>¿Cómo lo pagas?</label>
@@ -3901,7 +3996,8 @@
           <input type="text" id="envioSector" list="envioSectoresLista" placeholder="Ej: Chinchorro, Azapa, centro" maxlength="60">
           <datalist id="envioSectoresLista"></datalist>
         </div>
-        <p class="modal-hint">Si todavía no sabes el costo, déjalo vacío: la venta se registra igual, pero ese envío no queda en el registro.</p>
+        <p class="modal-hint">Si todavía no sabes el costo, déjalo vacío: la venta se registra igual, pero ese envío no queda en el registro.
+          "Le cobré al cliente" también puede quedar vacío — solo sirve para saber si el despacho te costó plata a ti.</p>
       </div>
 
       <div class="field">
@@ -5634,6 +5730,23 @@
 
   <!-- MODAL: CONFIRMAR CON PIN DE ADMINISTRADOR (acciones destructivas) -->
   <!-- Recordatorio del F29 (sql/49) — ver js/notificaciones.js -->
+  <!-- ============================================================
+       AGOTADOS: QUÉ HACER CON CADA UNO (sql/55)
+       Se abre desde el botón 📦 del header. Nada se mueve solo: cada
+       producto se queda acá hasta que el dueño aprueba una de las
+       cuatro salidas. Lo pinta js/notificaciones.js.
+       ============================================================ -->
+  <div id="modalAgotados" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <h2>📦 Productos agotados</h2>
+      <p class="modal-hint" id="agotadosResumen">—</p>
+      <div id="agotadosLista" class="agotados-lista"></div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCerrarAgotados" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modalF29" class="modal-overlay">
     <div class="modal-box modal-sm">
       <h2>🧾 F29 pendiente</h2>

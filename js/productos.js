@@ -75,6 +75,7 @@ const elProdStockIlimitado = document.getElementById('prodStockIlimitado');
 const elProdEsServicio = document.getElementById('prodEsServicio');   // sql/52
 const elGridProdStockControl = document.getElementById('gridProdStockControl');
 const elProdPeso = document.getElementById('prodPeso');
+const elProdPesoUnidad = document.getElementById('prodPesoUnidad');   // kg | g (ver actualizarLecturaPeso)
 const elProdAlto = document.getElementById('prodAlto');
 const elProdAncho = document.getElementById('prodAncho');
 const elProdProfundidad = document.getElementById('prodProfundidad');
@@ -218,6 +219,8 @@ function setupProductosEventListeners() {
   if (elBtnVolverProductos) elBtnVolverProductos.addEventListener('click', cerrarModalProducto);
   if (elBtnGuardarProducto) elBtnGuardarProducto.addEventListener('click', guardarProducto);
   if (elBtnGuardarMedidas) elBtnGuardarMedidas.addEventListener('click', guardarMedidasProducto);
+  elProdPeso?.addEventListener('input', actualizarLecturaPeso);
+  elProdPesoUnidad?.addEventListener('change', actualizarLecturaPeso);
   document.getElementById('btnDescargarTodasFotos')?.addEventListener('click', descargarTodasFotosProducto);
   if (elBtnGenerarSeoIA) elBtnGenerarSeoIA.addEventListener('click', generarSeoConIA);
   if (elBtnGenerarFichaIA) elBtnGenerarFichaIA.addEventListener('click', () => generarTextoConIA('ficha'));
@@ -1367,7 +1370,7 @@ function abrirModalProducto(producto = null) {
         ? `Última actualización de stock: ${tsAChile(producto.stock_actualizado_en)}`
         : 'Última actualización de stock: sin registro previo.';
     }
-    if (elProdPeso) elProdPeso.value = producto.peso_kg || 0;
+    ponerPesoEnFormulario(producto.peso_kg || 0);
     if (elProdAlto) elProdAlto.value = producto.alto_cm || 0;
     if (elProdAncho) elProdAncho.value = producto.ancho_cm || 0;
     if (elProdProfundidad) elProdProfundidad.value = producto.profundidad_cm || 0;
@@ -1420,6 +1423,7 @@ function abrirModalProducto(producto = null) {
     [elProdCosto, elProdPrecio].forEach(el => { if (el) el.value = ''; });
     [elProdStock, elProdPeso, elProdAlto, elProdAncho, elProdProfundidad]
       .forEach(el => { if (el) el.value = 0; });
+    ponerPesoEnFormulario(0);
     if (elProdRequiereSN) elProdRequiereSN.checked = false;
     if (elProdEsRepuesto) elProdEsRepuesto.checked = false;
     if (elProdStockMinimo) elProdStockMinimo.value = STOCK_MINIMO_POR_DEFECTO;
@@ -1458,6 +1462,8 @@ function abrirModalProducto(producto = null) {
 
   aplicarStockIlimitadoProductoUI();
   if (typeof alternarLotesUI === 'function') alternarLotesUI();
+  // Compras de mercadería (sql/56): solo sobre un producto ya guardado
+  cargarIngresosProducto();
 
   // Solo se exporta lo que ya existe en la base
   if (elBtnExportarProducto) elBtnExportarProducto.style.display = producto ? '' : 'none';
@@ -1627,6 +1633,87 @@ function construirPayloadProducto() {
   };
 }
 
+/* ============================================================
+   PESO CON UNIDAD (kg / g) — dueño, 16-09-2026
+   ------------------------------------------------------------
+   EL ERROR QUE EVITA: escribir "45" pensando en gramos y guardar
+   45 KILOS. Un peso mal puesto no se nota nunca en pantalla, pero
+   ensucia el costo de despacho de ese producto para siempre y viaja
+   tal cual al CSV de Tiendanube.
+
+   La base sigue guardando SIEMPRE `peso_kg` en kilos: el selector es
+   solo la unidad en la que se escribe. Al cambiar de unidad NO se
+   convierte el número — se reinterpreta. Es el arreglo que se busca:
+   escribiste 45, te das cuenta de que eran gramos, aprietas "g" y
+   queda 45 g. Convertirlo daría 45.000 g, que no le sirve a nadie.
+   ============================================================ */
+
+/* Número con coma decimal, a mano. Igual que fmtCLP, no se usa
+   toLocaleString: el ICU recortado de Android agrupa distinto. */
+function fmtNumeroCL(n, decimales) {
+  const v = Number(n) || 0;
+  const s = v.toFixed(decimales == null ? 3 : decimales).replace(/\.?0+$/, '');
+  const [ent, dec] = s.split('.');
+  const entero = ent.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return dec ? `${entero},${dec}` : entero;
+}
+
+/* Lo escrito en el formulario, siempre convertido a KILOS. */
+function pesoKgDelFormulario() {
+  const valor = Number(elProdPeso?.value) || 0;
+  if (valor <= 0) return 0;
+  const unidad = elProdPesoUnidad?.value === 'g' ? 'g' : 'kg';
+  const kg = unidad === 'g' ? valor / 1000 : valor;
+  // 6 decimales: 1 gramo son 0,001 kg, así que sobra de largo
+  return Math.round(kg * 1e6) / 1e6;
+}
+
+/* Pone en el formulario un peso que viene en kilos, eligiendo la unidad
+   que se lee mejor: menos de 1 kg se muestra en gramos (0,045 kg → 45 g),
+   de 1 kg para arriba en kilos. */
+function ponerPesoEnFormulario(kg) {
+  if (!elProdPeso) return;
+  const v = Number(kg) || 0;
+  const enGramos = v > 0 && v < 1;
+  if (elProdPesoUnidad) elProdPesoUnidad.value = enGramos ? 'g' : 'kg';
+  elProdPeso.value = enGramos ? Math.round(v * 1000 * 1000) / 1000 : v;
+  actualizarLecturaPeso();
+}
+
+/* Lectura en vivo bajo el campo: cuánto es en las dos unidades, y aviso
+   cuando el número huele a error de unidad. */
+function actualizarLecturaPeso() {
+  const el = document.getElementById('prodPesoLectura');
+  if (!el) return;
+  const escrito = Number(elProdPeso?.value) || 0;
+  const unidad = elProdPesoUnidad?.value === 'g' ? 'g' : 'kg';
+  const kg = pesoKgDelFormulario();
+
+  if (escrito <= 0) {
+    el.textContent = 'Sin peso. Sin peso no se puede calcular bien el costo de un despacho.';
+    el.style.color = 'var(--text-muted)';
+    return;
+  }
+
+  const lectura = `El peso está siendo ${fmtNumeroCL(kg, 3)} kg = ${fmtNumeroCL(kg * 1000, 1)} gramos`;
+
+  // Más de 20 kg: en este catálogo no hay nada tan pesado. Casi siempre es
+  // un número pensado en gramos escrito en kilos.
+  if (kg >= 20) {
+    el.textContent = `⚠️ ${lectura}. ¿Seguro? Si eran gramos, cambia la unidad a «g»: quedaría ${fmtNumeroCL(escrito / 1000, 3)} kg.`;
+    el.style.color = 'var(--red)';
+    return;
+  }
+  // Menos de 1 gramo: el error al revés (0,045 escrito con la unidad en «g»).
+  if (kg > 0 && kg < 0.001) {
+    el.textContent = `⚠️ ${lectura} — menos de un gramo. ¿Escribiste kilos con la unidad en «g»?`;
+    el.style.color = 'var(--red)';
+    return;
+  }
+  el.textContent = `✔️ ${lectura}${unidad === 'g' ? '' : ''}`;
+  el.style.color = 'var(--green)';
+}
+
 /* Guarda SOLO las medidas, firmadas. Ruta propia (PUT
    /api/productos/:id/medidas): el botón "Guardar" del producto ya no las
    toca, porque el formulario las mandaba siempre y cualquier corrección
@@ -1650,7 +1737,7 @@ async function guardarMedidasProducto() {
   try {
     const actualizado = await API.productos.guardarMedidas(editingProductId, {
       medido_por: quien,
-      peso_kg: elProdPeso?.value ?? '',
+      peso_kg: pesoKgDelFormulario(),   // el formulario puede estar en gramos
       alto_cm: elProdAlto?.value ?? '',
       ancho_cm: elProdAncho?.value ?? '',
       profundidad_cm: elProdProfundidad?.value ?? '',
@@ -2107,6 +2194,7 @@ async function crearBorradorProducto() {
 
   editingProductId = creado.id;
   if (elProdEditId) elProdEditId.value = creado.id;
+  cargarIngresosProducto();   // ya tiene id: puede recibir compras (sql/56)
   if (elProductoFormTitle) elProductoFormTitle.textContent = 'Editar Producto (borrador)';
   // Mismo criterio que abrirModalProducto: exportar/archivar solo tienen
   // sentido sobre un producto que ya existe de verdad — y este, apenas se
@@ -2923,4 +3011,164 @@ function refrescarListaMarcas() {
   });
   const marcas = [...vistas.values()].sort((a, b) => a.localeCompare(b, 'es'));
   elListaMarcas.innerHTML = marcas.map(m => `<option value="${escHtml(m)}"></option>`).join('');
+}
+
+/* ============================================================
+   COMPRAS DE MERCADERÍA DEL PRODUCTO (sql/56)
+   ------------------------------------------------------------
+   Cuándo llegó cada compra, a qué costo y hasta cuándo el proveedor la
+   recibe de vuelta. Con eso el informe de Inteligencia ("Compras y
+   devoluciones") puede avisar a tiempo si conviene devolver lo que va a
+   sobrar en vez de quedarse con plata parada.
+
+   OJO: esto NO es lo mismo que los lotes PEPS (sql/09, "usa_lotes").
+   Aquéllos deciden de dónde sale el COSTO de cada venta; éstos no tocan
+   el costeo de nada. Anotar una fecha de compra no puede cambiar la
+   utilidad de un producto.
+   ============================================================ */
+
+let ingresosDelProducto = [];
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btnAgregarIngreso')?.addEventListener('click', agregarIngresoProducto);
+  document.getElementById('ingresosLista')?.addEventListener('click', (e) => {
+    const cerrar = e.target.closest('[data-cerrar-ingreso]');
+    if (cerrar) { cerrarIngresoProducto(Number(cerrar.dataset.cerrarIngreso), cerrar.dataset.motivo); return; }
+    const borrar = e.target.closest('[data-borrar-ingreso]');
+    if (borrar) borrarIngresoProducto(Number(borrar.dataset.borrarIngreso));
+  });
+});
+
+/* La sección solo tiene sentido con un producto ya guardado: una compra
+   necesita a qué producto colgarse. */
+async function cargarIngresosProducto() {
+  const cont = document.getElementById('ingresosLista');
+  const card = document.getElementById('cardIngresosProducto');
+  if (!cont || !card) return;
+
+  if (!editingProductId) {
+    card.style.display = 'none';
+    ingresosDelProducto = [];
+    return;
+  }
+  card.style.display = '';
+  limpiarFormularioIngreso();
+  cont.innerHTML = '<p class="modal-hint">Cargando compras…</p>';
+  try {
+    ingresosDelProducto = await API.productos.listarIngresos(editingProductId) || [];
+    pintarIngresosProducto();
+  } catch (err) {
+    cont.innerHTML = `<p class="modal-hint">No se pudieron cargar las compras: ${escHtml(err.message || '')}</p>`;
+  }
+}
+
+function limpiarFormularioIngreso() {
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  set('ingFecha', todayISO());
+  set('ingCantidad', '');
+  set('ingCosto', '');
+  set('ingDevolucion', '');
+  set('ingProveedor', '');
+  set('ingReferencia', '');
+}
+
+function pintarIngresosProducto() {
+  const cont = document.getElementById('ingresosLista');
+  if (!cont) return;
+  if (!ingresosDelProducto.length) {
+    cont.innerHTML = '<p class="modal-hint">Todavía no hay ninguna compra registrada de este producto.</p>';
+    return;
+  }
+
+  cont.innerHTML = `
+    <table class="data-table">
+      <thead><tr>
+        <th>Compra</th><th>Cantidad</th><th class="num">Costo unit.</th>
+        <th>Devolución</th><th>Proveedor</th><th></th>
+      </tr></thead>
+      <tbody>
+        ${ingresosDelProducto.map(i => `
+          <tr${i.cerrado_en ? ' style="opacity:.55;"' : ''}>
+            <td>${escHtml(fechaCorta(i.fecha_compra))}</td>
+            <td>${num(i.cantidad)}</td>
+            <td class="num">${fmtCLP(i.costo_unitario)}</td>
+            <td>${i.devolucion_hasta
+                  ? escHtml(fechaCorta(i.devolucion_hasta))
+                  : '<span style="color:var(--text-muted);">no acepta</span>'}</td>
+            <td>${escHtml(i.proveedor || '—')}</td>
+            <td>
+              <div class="cell-actions">
+                ${i.cerrado_en
+                  ? `<small style="color:var(--text-muted);">${escHtml(i.cerrado_motivo || 'cerrada')}</small>`
+                  : `<button class="btn btn-ghost btn-sm" data-cerrar-ingreso="${i.id}" data-motivo="devuelto" title="Se devolvió al proveedor">↩️ Devuelta</button>
+                     <button class="btn btn-ghost btn-sm" data-cerrar-ingreso="${i.id}" data-motivo="vendido" title="Se vendió completa">✔️ Vendida</button>`}
+                <button class="btn btn-icon btn-icon-del" data-borrar-ingreso="${i.id}" title="Borrar este registro">✕</button>
+              </div>
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+/* '2026-09-16' → '16-09-2026'. A mano, sin new Date(): con la cadena sola
+   el navegador la lee como UTC y en Chile puede mostrar el día anterior. */
+function fechaCorta(iso) {
+  const [a, m, d] = String(iso || '').slice(0, 10).split('-');
+  return a && m && d ? `${d}-${m}-${a}` : '—';
+}
+
+async function agregarIngresoProducto() {
+  if (!editingProductId) {
+    showToast('Guarda el producto primero, después registra sus compras', 'err');
+    return;
+  }
+  const fecha = (document.getElementById('ingFecha')?.value || '').trim();
+  const cantidad = Number(document.getElementById('ingCantidad')?.value) || 0;
+  if (!fecha) { showToast('Indica la fecha de la compra', 'err'); return; }
+  if (cantidad <= 0) { showToast('Indica cuántas unidades compraste', 'err'); return; }
+
+  const btn = document.getElementById('btnAgregarIngreso');
+  if (btn) btn.disabled = true;
+  try {
+    await API.productos.crearIngreso(editingProductId, {
+      fecha_compra: fecha,
+      cantidad,
+      costo_unitario: Number(document.getElementById('ingCosto')?.value) || 0,
+      devolucion_hasta: (document.getElementById('ingDevolucion')?.value || '').trim() || null,
+      proveedor: (document.getElementById('ingProveedor')?.value || '').trim() || null,
+      referencia: (document.getElementById('ingReferencia')?.value || '').trim() || null
+    });
+    showToast('Compra registrada', 'ok');
+    ingresosDelProducto = await API.productos.listarIngresos(editingProductId) || [];
+    pintarIngresosProducto();
+    limpiarFormularioIngreso();
+  } catch (err) {
+    showToast(err.message || 'No se pudo registrar la compra', 'err');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function cerrarIngresoProducto(id, motivo) {
+  try {
+    await API.productos.cerrarIngreso(id, { cerrado_motivo: motivo });
+    showToast(motivo === 'devuelto' ? 'Marcada como devuelta' : 'Marcada como vendida', 'ok');
+    ingresosDelProducto = await API.productos.listarIngresos(editingProductId) || [];
+    pintarIngresosProducto();
+  } catch (err) {
+    showToast(err.message || 'No se pudo actualizar la compra', 'err');
+  }
+}
+
+async function borrarIngresoProducto(id) {
+  // Borrar es distinto de cerrar: esto es para un registro mal cargado.
+  if (!confirm('¿Borrar este registro de compra? Se usa solo cuando lo cargaste mal — si la compra existió, marca "Devuelta" o "Vendida" en vez de borrarla.')) return;
+  try {
+    await API.productos.eliminarIngreso(id);
+    showToast('Registro borrado', 'ok');
+    ingresosDelProducto = await API.productos.listarIngresos(editingProductId) || [];
+    pintarIngresosProducto();
+  } catch (err) {
+    showToast(err.message || 'No se pudo borrar el registro', 'err');
+  }
 }

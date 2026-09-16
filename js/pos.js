@@ -30,10 +30,28 @@ const elItemFotoPreview = document.getElementById('itemFotoPreview');
 // Muestra/oculta la miniatura junto al nombre del producto en "Ingresar
 // producto" — compartido entre seleccionarProductoCatalogo() y
 // limpiarFormularioItem().
-function mostrarFotoItem(url) {
+/* Muestra la miniatura del producto elegido. `urls` puede traer todas las
+   fotos: al hacer clic se abren en el visor grande, con flechas si hay
+   varias (dueño, 16-09-2026 — la miniatura de 52px no alcanza para
+   confirmar que es el producto que el cliente tiene en la mano). */
+function mostrarFotoItem(urls, nombre) {
   if (!elItemFotoPreview) return;
-  if (url) { elItemFotoPreview.src = url; elItemFotoPreview.style.display = ''; }
-  else { elItemFotoPreview.removeAttribute('src'); elItemFotoPreview.style.display = 'none'; }
+  const lista = (Array.isArray(urls) ? urls : [urls]).filter(Boolean);
+  if (lista.length) {
+    elItemFotoPreview.src = lista[0];
+    elItemFotoPreview.style.display = '';
+    elItemFotoPreview.classList.add('miniatura-ampliable');
+    elItemFotoPreview.dataset.ampliar = JSON.stringify(lista);
+    elItemFotoPreview.dataset.ampliarTitulo = nombre || '';
+    elItemFotoPreview.title = 'Clic para ver la foto en grande';
+  } else {
+    elItemFotoPreview.removeAttribute('src');
+    elItemFotoPreview.style.display = 'none';
+    elItemFotoPreview.classList.remove('miniatura-ampliable');
+    delete elItemFotoPreview.dataset.ampliar;
+    delete elItemFotoPreview.dataset.ampliarTitulo;
+    elItemFotoPreview.removeAttribute('title');
+  }
 }
 const elUtilidadPreview = document.getElementById('utilidadPreview');
 const elBtnAgregarItem = document.getElementById('btnAgregarItem');
@@ -266,7 +284,7 @@ function seleccionarProductoCatalogo(producto, opciones = {}) {
   if (elItemCosto && esAdmin()) elItemCosto.value = producto.costo_unitario || 0;
   if (elItemPrecio) elItemPrecio.value = producto.precio_unitario || 0;
   if (elItemCantidad) elItemCantidad.value = 1;
-  mostrarFotoItem(Array.isArray(producto.imagen_urls) ? producto.imagen_urls[0] : null);
+  mostrarFotoItem(producto.imagen_urls, producto.nombre);
 
   if (elCheckSN) {
     elCheckSN.checked = !!producto.requiere_sn;
@@ -707,7 +725,7 @@ function renderCart() {
   } else {
     elCartTableBody.innerHTML = cart.map((item, idx) => `
       <tr class="row-in">
-        <td>${miniaturaProducto({ imagen_urls: item.imagen_url ? [item.imagen_url] : [] }, 48)}</td>
+        <td>${miniaturaProducto({ imagen_urls: item.imagen_url ? [item.imagen_url] : [], nombre: item.nombre }, 48, { ampliable: true })}</td>
         <td>${item.cantidad}</td>
         <td>${escHtml(item.nombre)}
           ${item.es_servicio ? '<br><small style="color:var(--valor);">🔧 Servicio</small>' : ''}

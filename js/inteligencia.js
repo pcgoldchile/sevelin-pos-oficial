@@ -91,6 +91,10 @@ async function cargarInteligencia() {
   try {
     intelInforme = await API.inteligencia.obtener(intelRango.desde, intelRango.hasta);
     pintarInteligencia();
+    /* Compras y devoluciones (sql/56) va aparte y SIN el rango de fechas:
+       una compra se mide desde el día que llegó hasta hoy. Si falla, no
+       arrastra al resto del panel. */
+    cargarRotacionCompras();
   } catch (err) {
     showToast(err.message || 'No se pudo cargar la inteligencia del negocio', 'error');
   } finally {
@@ -371,4 +375,108 @@ function pintarMesesInteligencia() {
       </table>
     </div>
   `;
+}
+
+/* ============================================================
+   COMPRAS Y DEVOLUCIONES (sql/56) — Finanzas → Inteligencia
+   ------------------------------------------------------------
+   Las dos preguntas del dueño (16-09-2026):
+     · "Compré 50 ventiladores: ¿se venden al ritmo que esperaba o me
+        conviene devolverlos y comprarlos en otra fecha?"
+     · "Compré 20 monitores para navidad y al 1 de enero me sobran 10."
+
+   TODO EL CÁLCULO ES DEL SERVIDOR (GET /api/pos/rotacion-compras), igual
+   que el resto de Inteligencia: acá solo se pinta. El servidor manda
+   también el texto de la recomendación, para que el panel y cualquier
+   informe futuro digan exactamente lo mismo.
+
+   Las recomendaciones son SUGERENCIAS con su razón a la vista. Nada se
+   devuelve ni se liquida solo: quien decide es el dueño.
+
+   El rango de fechas de Inteligencia NO se aplica acá a propósito: una
+   compra se mide desde el día que llegó hasta hoy, no dentro de una
+   ventana elegida. Filtrarla por "esta semana" daría un ritmo falso.
+   ============================================================ */
+
+let rotacionInforme = null;
+
+const ROTACION_ESTILOS = {
+  urgente:         { emoji: '🔴', titulo: 'Devolver YA',            color: 'var(--red)' },
+  devolver:        { emoji: '🟠', titulo: 'Conviene devolver',      color: 'var(--valor)' },
+  ventana_cerrada: { emoji: '⏰', titulo: 'Se cerró el plazo',      color: 'var(--text-muted)' },
+  liquidar:        { emoji: '🪨', titulo: 'Liquidar',               color: 'var(--red)' },
+  vigilar:         { emoji: '👀', titulo: 'Rota lento',             color: 'var(--valor)' },
+  ok:              { emoji: '✅', titulo: 'Va bien',                color: 'var(--green)' },
+  agotado:         { emoji: '📦', titulo: 'Se vendió completa',     color: 'var(--green)' }
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btnRotacionRecargar')?.addEventListener('click', () => cargarRotacionCompras());
+});
+
+async function cargarRotacionCompras() {
+  const lista = document.getElementById('rotacionLista');
+  if (!lista || !tokenActual() || !esAdmin()) return;
+
+  lista.innerHTML = '<p class="subtitle">Calculando…</p>';
+  try {
+    rotacionInforme = await API.rotacion.compras();
+    pintarRotacionCompras();
+  } catch (err) {
+    lista.innerHTML = `<p class="subtitle">No se pudo cargar: ${escHtml(err.message || '')}</p>`;
+  }
+}
+
+function pintarRotacionCompras() {
+  const lista = document.getElementById('rotacionLista');
+  const resumen = document.getElementById('rotacionResumen');
+  const subtitulo = document.getElementById('rotacionSubtitulo');
+  if (!lista) return;
+
+  const filas = rotacionInforme?.filas || [];
+  if (!filas.length) {
+    if (resumen) resumen.innerHTML = '';
+    lista.innerHTML = '<p class="subtitle">Todavía no hay ninguna compra registrada. '
+      + 'Se cargan en el modal de cada producto, en "Compras de este producto".</p>';
+    return;
+  }
+
+  const r = rotacionInforme.resumen || {};
+  if (subtitulo) {
+    subtitulo.textContent = `${r.entradas} compra(s) abierta(s) con ${fmtCLP(r.capital)} de mercadería adentro.`;
+  }
+  if (resumen) {
+    resumen.innerHTML = r.devolvibles > 0
+      ? `<div class="rotacion-aviso">⚠️ Hay <strong>${r.devolvibles}</strong> compra(s) que conviene devolver antes de que
+           venza el plazo: son <strong>${fmtCLP(r.monto_devolvible)}</strong> que vuelven a tu bolsillo si alcanzas.</div>`
+      : '<div class="rotacion-aviso rotacion-aviso-ok">✅ No hay ninguna devolución por hacer en este momento.</div>';
+  }
+
+  lista.innerHTML = filas.map(f => {
+    const est = ROTACION_ESTILOS[f.recomendacion] || ROTACION_ESTILOS.ok;
+    const plazo = f.devolucion_hasta
+      ? `Devolución hasta el ${escHtml(fechaCorta(f.devolucion_hasta))}`
+      : 'El proveedor no acepta devoluciones';
+    return `
+      <div class="rotacion-fila">
+        <div class="rotacion-cabecera">
+          ${miniaturaProducto({ imagen_urls: f.imagen_url ? [f.imagen_url] : [], nombre: f.nombre }, 48, { ampliable: true })}
+          <div class="rotacion-datos">
+            <strong>${escHtml(f.nombre)}</strong>
+            <small>Compradas ${escHtml(fechaCorta(f.fecha_compra))}${f.proveedor ? ' a ' + escHtml(f.proveedor) : ''}
+              · ${f.cantidad} unidades a ${fmtCLP(f.costo_unitario)} c/u</small>
+            <small>${escHtml(plazo)}</small>
+          </div>
+          <span class="rotacion-etiqueta" style="color:${est.color};">${est.emoji} ${escHtml(est.titulo)}</span>
+        </div>
+        <div class="rotacion-numeros">
+          <span><b>${f.vendidas}</b> vendidas</span>
+          <span><b>${f.restante}</b> quedan</span>
+          <span><b>${f.ritmo_mensual}</b> al mes</span>
+          <span><b>${fmtCLP(f.capital_atrapado)}</b> adentro</span>
+          ${f.meses_para_agotar != null ? `<span><b>${f.meses_para_agotar}</b> meses para agotarse</span>` : ''}
+        </div>
+        <p class="rotacion-mensaje" style="color:${est.color};">${escHtml(f.mensaje)}</p>
+      </div>`;
+  }).join('');
 }

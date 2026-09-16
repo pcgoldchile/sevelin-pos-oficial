@@ -83,6 +83,24 @@ const API = {
     // ya no las toca, y ésta exige el nombre de quien midió.
     guardarMedidas: (id, medidas) => apiRequest(`/productos/${id}/medidas`, { method: 'PUT', body: medidas }),
     eliminar: (id) => apiRequest(`/productos/${id}`, { method: 'DELETE' }),
+
+    /* Agotados (sql/55): los que llegaron a stock 0 y esperan que el dueño
+       decida qué hacer. `decidirAgotado` es lo ÚNICO que los mueve — el
+       listado solo detecta y pregunta. */
+    agotados: () => apiRequest('/productos/agotados'),
+    decidirAgotado: (id, datos) =>
+      apiRequest(`/productos/${id}/agotado`, { method: 'POST', body: datos }),
+
+    /* Compras de mercadería (sql/56): cuándo llegó cada lote y hasta
+       cuándo se puede devolver. NO es lo mismo que los lotes PEPS de
+       sql/09 — esto no participa del costeo. */
+    listarIngresos: (id) => apiRequest(`/productos/${id}/ingresos`),
+    crearIngreso: (id, datos) =>
+      apiRequest(`/productos/${id}/ingresos`, { method: 'POST', body: datos }),
+    cerrarIngreso: (ingresoId, datos) =>
+      apiRequest(`/ingresos/${ingresoId}`, { method: 'PUT', body: datos }),
+    eliminarIngreso: (ingresoId) =>
+      apiRequest(`/ingresos/${ingresoId}`, { method: 'DELETE' }),
     // Operaciones masivas: exigen reconfirmar el PIN de administrador
     eliminarTodos: (pin) => apiRequest('/productos/todos', { method: 'DELETE', body: { pin } }),
     eliminarLote: (ids, pin) => apiRequest('/productos/eliminar-lote', { method: 'POST', body: { ids, pin } }),
@@ -137,6 +155,13 @@ const API = {
     // Diagnóstico de sección 0.6: cuántos productos no tienen peso/medidas
     // cargadas todavía (para dimensionar el trabajo antes de Shipit).
     auditoriaEnvio: () => apiRequest('/productos/auditoria-envio')
+  },
+
+  /* Informe de rotación y devoluciones (sql/56): qué compra conviene
+     devolver antes de que venza el plazo. Todo el cálculo es del
+     servidor, igual que Inteligencia. */
+  rotacion: {
+    compras: () => apiRequest('/pos/rotacion-compras')
   },
 
   /* ---------- Envíos de despacho (sql/50) ---------- */

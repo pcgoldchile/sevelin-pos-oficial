@@ -676,6 +676,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('envioCosto')?.addEventListener('input', actualizarHintEnvio);
   document.getElementById('envioKm')?.addEventListener('input', actualizarHintEnvio);
+  document.getElementById('envioCobrado')?.addEventListener('input', actualizarHintEnvio);
 });
 
 function seleccionarTipoEntrega(tipo) {
@@ -739,6 +740,54 @@ function actualizarHintEnvio() {
     partes.push(`este viaje: ${fmtCLP(esteKm)}/km${comparacion}`);
   }
   hint.textContent = partes.join(' · ');
+  actualizarHintBolsillo();
+}
+
+/* ------------------------------------------------------------
+   "¿Salió de tu bolsillo?" (sql/54, dueño 16-09-2026)
+   ------------------------------------------------------------
+   El caso real: le dijo $3.000 al cliente y el InDrive le cobró $3.500.
+   Esos $500 los puso él y hoy no se veían en ninguna parte. Acá se ven
+   ANTES de registrar la venta, que es cuando todavía sirve reaccionar.
+
+   Ojo con la contabilidad: los $3.500 completos YA se registran como
+   gasto "Envíos / Despachos" (ver registrarEnvioDeVenta en api/index.js).
+   La diferencia es un dato derivado, NO un gasto ni una merma aparte —
+   anotarla otra vez contaría los $500 dos veces.
+   ------------------------------------------------------------ */
+function actualizarHintBolsillo() {
+  const el = document.getElementById('envioHintBolsillo');
+  if (!el) return;
+  const costo = Number(document.getElementById('envioCosto')?.value) || 0;
+  const campoCobrado = document.getElementById('envioCobrado');
+  const anotado = String(campoCobrado?.value ?? '').trim() !== '';
+  const cobrado = Number(campoCobrado?.value) || 0;
+
+  // Acumulado del mes, para que un "son solo $500" se lea en contexto
+  const mes = envioResumen?.bolsillo;
+  const cola = mes?.total > 0
+    ? ` · Este mes llevas ${fmtCLP(mes.total)} de tu bolsillo en ${mes.envios} envío${mes.envios === 1 ? '' : 's'}.`
+    : '';
+
+  if (!anotado || costo <= 0) {
+    el.textContent = anotado && costo <= 0 && cobrado > 0
+      ? `Anotaste el cobro pero no el costo: no se puede saber si ganaste o perdiste.${cola}`
+      : cola.trim();
+    el.style.color = 'var(--text-muted)';
+    return;
+  }
+
+  const dif = cobrado - costo;
+  if (dif < 0) {
+    el.textContent = `⚠️ Este envío lo pusiste tú: ${fmtCLP(Math.abs(dif))} de tu bolsillo (cobraste ${fmtCLP(cobrado)}, pagaste ${fmtCLP(costo)}).${cola}`;
+    el.style.color = 'var(--red)';
+  } else if (dif > 0) {
+    el.textContent = `✔️ El envío te dejó ${fmtCLP(dif)} a favor.${cola}`;
+    el.style.color = 'var(--green)';
+  } else {
+    el.textContent = `El envío quedó justo: ni ganas ni pones.${cola}`;
+    el.style.color = 'var(--text-muted)';
+  }
 }
 
 async function cargarResumenEnvios() {
@@ -773,7 +822,9 @@ function pedirDatosEntrega() {
   if (campoCom) campoCom.style.display = 'none';
   set('envioDetalle', '');
   set('envioCosto', '');
+  set('envioCobrado', '');
   set('envioKm', '');
+  set('envioDuracion', '');
   set('envioSector', '');
   seleccionarRepartidorEnvio('indrive');
   seleccionarPagoEnvio('caja');
@@ -805,7 +856,13 @@ function confirmarEntregaVenta() {
         costo: envioRepartidor === 'sin_costo' ? 0 : costo,
         pago: envioPago,
         km: Number(document.getElementById('envioKm')?.value) || null,
-        sector: (document.getElementById('envioSector')?.value || '').trim() || null
+        sector: (document.getElementById('envioSector')?.value || '').trim() || null,
+        /* Vacío ≠ 0 (sql/54): sin anotar no se sabe cuánto se cobró, y un 0
+           diría "envío regalado" e inventaría una pérdida que no existe. */
+        cobrado_cliente: String(document.getElementById('envioCobrado')?.value ?? '').trim() === ''
+          ? null : Math.max(0, Number(document.getElementById('envioCobrado').value) || 0),
+        duracion_min: Number(document.getElementById('envioDuracion')?.value) > 0
+          ? Math.round(Number(document.getElementById('envioDuracion').value)) : null
       };
     }
   }

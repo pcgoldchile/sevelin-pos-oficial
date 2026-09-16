@@ -7,7 +7,33 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
-**Fecha:** 16-09-2026 · **v65 publicada** — 13 fichas que mostraban el Markdown crudo (`###`, `**`) al
+**Fecha:** 16-09-2026 · **v66 lista (sin publicar): faltan las 3 migraciones** — cinco pedidos del
+dueño en una tanda: el envío que salió de su bolsillo + duración del viaje, ver la foto del producto
+en grande desde el POS, peso con unidad kg/g y lectura en vivo, cola de agotados que pregunta antes
+de mover nada, y compras de mercadería con fecha de devolución + informe de rotación. Detalle en
+`docs/CHANGELOG-V66.md`.
+
+- 🚚 **Envío de tu bolsillo (`sql/54`):** campo "Le cobré al cliente" + "Demoró (min)". El aviso en
+  vivo dice "lo pusiste tú: $500" y cuánto lleva del mes. **La diferencia NO se anota como merma:**
+  el costo completo ya está en `compras` desde v63, y anotarla otra vez la contaría dos veces.
+  Vacío se guarda `NULL`, nunca 0 (un 0 diría "envío regalado" e inventaría una pérdida).
+- 🔍 **Visor de foto compartido** (`abrirVisorImagen` en `js/config.js`): se arma y se destruye en el
+  momento, así no agrega ids fijos a `index.html`. Se usa en el POS (artículo y carrito), en los
+  agotados y en el informe de rotación.
+- ⚖️ **Peso con unidad kg/g:** evita el error de escribir 45 pensando en gramos y guardar 45 KILOS.
+  Cambiar de unidad **reinterpreta**, no convierte. La base sigue guardando `peso_kg` en kilos.
+- 📦 **Agotados (`sql/55`, tabla `agotados_decisiones` + RLS):** botón en el header, cuatro salidas
+  (por llegar / encargo / archivar / dejarlo). **Nada se mueve solo** — regla explícita del dueño. Si
+  el producto vuelve a tener stock, la decisión se borra y vuelve a preguntar la próxima vez.
+- 📥 **Compras de mercadería (`sql/56`, tabla `ingresos_mercaderia` + RLS):** fecha de compra,
+  cantidad, costo y **hasta cuándo el proveedor las recibe de vuelta**. Informe en Finanzas →
+  Inteligencia → "Compras y devoluciones": ritmo, plata atrapada y cuántas conviene devolver antes de
+  que venza el plazo. **Tabla aparte de `producto_lotes` a propósito:** los lotes PEPS cambian de
+  dónde sale el costo de cada venta, y anotar una fecha de compra no puede tener ese efecto.
+- ⚠️ **Falta aplicar `sql/54`, `sql/55` y `sql/56` en producción** (`npx supabase db query --file … --linked`).
+  Hasta que se apliquen, los campos y paneles nuevos van a dar error de base.
+
+**Versión anterior: v65** — 13 fichas que mostraban el Markdown crudo (`###`, `**`) al
 cliente en sevelin.cl, arregladas y verificadas en vivo; y dos botones nuevos en el modal de producto
 para generar con IA la ficha de la tienda y la publicación de Facebook. Detalle en
 `docs/CHANGELOG-V65.md`. Migración de datos `sql/53` ya aplicada.

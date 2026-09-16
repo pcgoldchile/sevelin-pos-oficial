@@ -184,3 +184,190 @@ async function confirmarF29Presentado() {
     if (btn) btn.disabled = false;
   }
 }
+
+/* ============================================================
+   PRODUCTOS AGOTADOS: QUÉ HACER CON CADA UNO (sql/55)
+   ------------------------------------------------------------
+   Un producto que llega a stock 0 hoy se queda callado y deja de
+   venderse sin que nadie lo note. Este botón aparece en el header solo
+   si hay agotados sin decidir, y el modal ofrece las cuatro salidas que
+   ya existen en el sistema:
+
+     · Por llegar  → productos.por_llegar (sql/42): se puede reservar
+                     pagando el 100% y la tienda avisa cuando llega.
+     · Encargo     → productos.es_pedido_encargo (sql/30): se vende sin
+                     stock, con abono.
+     · Archivar    → productos.archivado (sql/32): sale del catálogo y de
+                     la tienda, sin borrarse ni perder su historial.
+     · Dejarlo     → no cambia nada, pero se GUARDA la decisión para no
+                     volver a preguntar por ese producto.
+
+   REGLA DEL DUEÑO: nada se mueve solo. El POS detecta y pregunta; el
+   cambio lo aplica el servidor recién con la decisión aprobada.
+
+   Se consulta cada 30 minutos, igual que el F29: un producto no se
+   agota cada minuto y no vale la pena gastar llamadas en eso.
+   ============================================================ */
+
+const INTERVALO_AGOTADOS_MS = 30 * 60 * 1000;
+let intervaloAgotados = null;
+let agotadosPendientes = [];
+let agotadosDias = 90;
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btnAgotados')?.addEventListener('click', abrirModalAgotados);
+  document.getElementById('btnCerrarAgotados')?.addEventListener('click', () => cerrarModal('modalAgotados'));
+
+  /* Clic delegado: la lista se vuelve a pintar entera después de cada
+     decisión, así que enganchar botón por botón se perdería en el
+     siguiente render (mismo criterio que el visor de imagen). */
+  document.getElementById('agotadosLista')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-agotado-decision]');
+    if (!btn) return;
+    const id = Number(btn.dataset.agotadoId);
+    const decision = btn.dataset.agotadoDecision;
+    if (decision === 'por_llegar' && !btn.dataset.confirmado) {
+      mostrarCamposPorLlegar(id);
+      return;
+    }
+    decidirAgotado(id, decision);
+  });
+});
+
+document.addEventListener('pos:sesion-iniciada', () => {
+  if (intervaloAgotados) { clearInterval(intervaloAgotados); intervaloAgotados = null; }
+  const btn = document.getElementById('btnAgotados');
+  if (!esAdmin()) { if (btn) btn.hidden = true; return; }
+
+  actualizarAvisoAgotados();
+  intervaloAgotados = setInterval(actualizarAvisoAgotados, INTERVALO_AGOTADOS_MS);
+});
+
+async function actualizarAvisoAgotados() {
+  const btn = document.getElementById('btnAgotados');
+  const texto = document.getElementById('textoAgotados');
+  if (!btn || !texto || !tokenActual() || !esAdmin()) return;
+
+  try {
+    const datos = await API.productos.agotados();
+    agotadosPendientes = Array.isArray(datos?.pendientes) ? datos.pendientes : [];
+    agotadosDias = Number(datos?.dias) || 90;
+
+    if (agotadosPendientes.length === 0) { btn.hidden = true; return; }
+    texto.textContent = `${agotadosPendientes.length} agotado${agotadosPendientes.length === 1 ? '' : 's'}`;
+    btn.title = 'Productos en stock 0 esperando que decidas qué hacer con ellos';
+    btn.hidden = false;
+    if (document.getElementById('modalAgotados')?.classList.contains('show')) pintarListaAgotados();
+  } catch (err) {
+    // Mismo criterio que la campana y el F29: un fallo puntual del sondeo
+    // no interrumpe al administrador con un toast.
+    console.error('Error al revisar los productos agotados:', err.message || err);
+  }
+}
+
+function abrirModalAgotados() {
+  if (!agotadosPendientes.length) return;
+  pintarListaAgotados();
+  document.getElementById('modalAgotados')?.classList.add('show');
+}
+
+/* "vendió 8 en 90 días · última el 12-09" — sin esto la decisión se toma
+   a ciegas: no es lo mismo que se agote algo que vendía 8 al mes que algo
+   que vendió 1 en todo el año. */
+function resumenVentasAgotado(p) {
+  const u = Number(p.unidades_vendidas) || 0;
+  if (u === 0) {
+    return `Sin ventas en los últimos ${agotadosDias} días — se agotó hace rato y nadie lo pidió.`;
+  }
+  const ultima = p.ultima_venta ? ` · última el ${String(p.ultima_venta).slice(0, 10).split('-').reverse().join('-')}` : '';
+  const ritmo = u / (agotadosDias / 30);
+  return `Vendió ${u} unidad${u === 1 ? '' : 'es'} en ${agotadosDias} días (${ritmo.toFixed(1)} al mes)${ultima}`;
+}
+
+function pintarListaAgotados() {
+  const cont = document.getElementById('agotadosLista');
+  const resumen = document.getElementById('agotadosResumen');
+  if (!cont) return;
+
+  if (resumen) {
+    resumen.textContent = agotadosPendientes.length
+      ? `${agotadosPendientes.length} producto(s) en stock 0 esperando tu decisión. Nada cambia hasta que elijas.`
+      : 'No queda ningún agotado por decidir.';
+  }
+
+  if (!agotadosPendientes.length) {
+    cont.innerHTML = '<p class="modal-hint">Nada pendiente por acá.</p>';
+    return;
+  }
+
+  cont.innerHTML = agotadosPendientes.map(p => `
+    <div class="agotado-fila" data-fila-agotado="${p.id}">
+      <div class="agotado-cabecera">
+        ${miniaturaProducto({ imagen_urls: p.imagen_url ? [p.imagen_url] : [], nombre: p.nombre }, 56, { ampliable: true })}
+        <div class="agotado-datos">
+          <strong>${escHtml(p.nombre)}</strong>
+          ${p.sku ? `<small>SKU ${escHtml(p.sku)}</small>` : ''}
+          <small>${escHtml(resumenVentasAgotado(p))}</small>
+          <small>Deja ${fmtCLP(p.margen)} por unidad (costo ${fmtCLP(p.costo_unitario)} · precio ${fmtCLP(p.precio_unitario)})</small>
+        </div>
+      </div>
+      <div class="agotado-campos" id="agotadoCampos-${p.id}" style="display:none;">
+        <label>¿Cuántas vienen?</label>
+        <input type="number" id="agotadoUnidades-${p.id}" min="0" step="1" placeholder="Ej: 5" inputmode="numeric">
+        <label>¿Cuándo llegan?</label>
+        <input type="date" id="agotadoFecha-${p.id}">
+        <button class="btn btn-blue btn-sm" data-agotado-decision="por_llegar" data-agotado-id="${p.id}" data-confirmado="1">Confirmar</button>
+      </div>
+      <div class="agotado-acciones">
+        <button class="btn btn-outline btn-sm" data-agotado-decision="por_llegar" data-agotado-id="${p.id}">🚚 Por llegar</button>
+        <button class="btn btn-outline btn-sm" data-agotado-decision="encargo" data-agotado-id="${p.id}">📝 Por encargo</button>
+        <button class="btn btn-outline btn-sm" data-agotado-decision="archivar" data-agotado-id="${p.id}">🗄️ Archivar</button>
+        <button class="btn btn-ghost btn-sm" data-agotado-decision="dejar" data-agotado-id="${p.id}">Dejarlo como está</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+/* "Por llegar" es la única salida que pide datos extra: cuántas vienen
+   (es el tope de lo que se puede reservar, sql/44) y cuándo. Las dos son
+   opcionales — se puede confirmar sin llenarlas. */
+function mostrarCamposPorLlegar(id) {
+  const campos = document.getElementById(`agotadoCampos-${id}`);
+  if (campos) campos.style.display = campos.style.display === 'none' ? 'flex' : 'none';
+}
+
+async function decidirAgotado(id, decision) {
+  const fila = document.querySelector(`[data-fila-agotado="${id}"]`);
+  fila?.querySelectorAll('button').forEach(b => { b.disabled = true; });
+  try {
+    const datos = { decision };
+    if (decision === 'por_llegar') {
+      const u = Number(document.getElementById(`agotadoUnidades-${id}`)?.value) || 0;
+      if (u > 0) datos.stock_por_llegar = u;
+      const f = (document.getElementById(`agotadoFecha-${id}`)?.value || '').trim();
+      if (f) datos.fecha_llegada_estimada = f;
+    }
+    await API.productos.decidirAgotado(id, datos);
+
+    const nombres = { por_llegar: 'marcado "por llegar"', encargo: 'pasado a encargo', archivar: 'archivado', dejar: 'dejado como está' };
+    showToast(`Producto ${nombres[decision] || 'actualizado'}`, 'ok');
+
+    agotadosPendientes = agotadosPendientes.filter(p => Number(p.id) !== Number(id));
+    pintarListaAgotados();
+    const btn = document.getElementById('btnAgotados');
+    const texto = document.getElementById('textoAgotados');
+    if (agotadosPendientes.length === 0) {
+      if (btn) btn.hidden = true;
+      cerrarModal('modalAgotados');
+    } else if (texto) {
+      texto.textContent = `${agotadosPendientes.length} agotado${agotadosPendientes.length === 1 ? '' : 's'}`;
+    }
+
+    // El catálogo cambió: se recarga para que el POS y la tabla de
+    // productos no sigan mostrando el estado viejo.
+    if (typeof cargarProductos === 'function') cargarProductos();
+  } catch (err) {
+    showToast(err.message || 'No se pudo aplicar la decisión', 'err');
+    fila?.querySelectorAll('button').forEach(b => { b.disabled = false; });
+  }
+}

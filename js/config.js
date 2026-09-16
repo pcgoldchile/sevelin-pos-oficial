@@ -122,14 +122,118 @@ function fmtCLP(v) {
    muestra un cuadro con 📦 en vez de dejar un hueco vacío o romper el
    layout de la fila. `tam` en px, 36 por defecto (tablas); se pasa uno
    más grande donde haga falta más presencia visual. */
-function miniaturaProducto(p, tam) {
-  const url = Array.isArray(p?.imagen_urls) ? p.imagen_urls[0] : null;
+function miniaturaProducto(p, tam, opciones) {
+  const urls = Array.isArray(p?.imagen_urls) ? p.imagen_urls.filter(Boolean) : [];
+  const url = urls[0] || null;
   const px = tam || 36;
   if (!url) {
     return `<div class="miniatura-producto miniatura-vacia" style="width:${px}px;height:${px}px;font-size:${Math.round(px * 0.5)}px;">📦</div>`;
   }
-  return `<img src="${escHtml(url)}" alt="" class="miniatura-producto" style="width:${px}px;height:${px}px;" loading="lazy">`;
+  /* `ampliable` es opt-in a propósito: en las tablas donde la fila entera
+     ya hace algo al hacer clic (abrir el producto), robarle el clic a la
+     miniatura confundiría. Se prende donde el clic no compite. */
+  const amp = opciones?.ampliable
+    ? ` data-ampliar="${escHtml(JSON.stringify(urls))}" data-ampliar-titulo="${escHtml(p?.nombre || '')}" title="Clic para ver la foto en grande"`
+    : '';
+  const clase = opciones?.ampliable ? 'miniatura-producto miniatura-ampliable' : 'miniatura-producto';
+  return `<img src="${escHtml(url)}" alt="" class="${clase}" style="width:${px}px;height:${px}px;" loading="lazy"${amp}>`;
 }
+
+/* ------------------------------------------------------------
+   VISOR DE IMAGEN AMPLIADA (helper compartido)
+   ------------------------------------------------------------
+   Una miniatura de 48px no alcanza para confirmar que el producto que
+   estás cobrando es el que el cliente tiene en la mano (dueño, 16-09-2026).
+   El visor se ARMA EN EL MOMENTO y se destruye al cerrar: así no agrega
+   ids fijos a index.html (regla 2 del CLAUDE.md, "nunca dos elementos con
+   el mismo id") ni queda ocupando DOM cuando no se usa.
+
+   Se abre con abrirVisorImagen(urls, indice, titulo). `urls` puede ser un
+   string o un arreglo: con varias fotos aparecen las flechas y funcionan
+   ← → del teclado. Escape o un clic fuera de la foto cierran.
+   ------------------------------------------------------------ */
+let visorImagenUrls = [];
+let visorImagenIdx = 0;
+
+function abrirVisorImagen(urls, indice, titulo) {
+  const lista = (Array.isArray(urls) ? urls : [urls]).filter(Boolean);
+  if (lista.length === 0) return;
+
+  cerrarVisorImagen();                       // nunca dos visores encima
+  visorImagenUrls = lista;
+  visorImagenIdx = Math.min(Math.max(Number(indice) || 0, 0), lista.length - 1);
+
+  const cont = document.createElement('div');
+  cont.className = 'visor-imagen';
+  cont.id = 'visorImagen';
+  cont.innerHTML =
+    '<button type="button" class="visor-cerrar" data-visor-cerrar title="Cerrar (Esc)">&#10005;</button>' +
+    '<button type="button" class="visor-flecha visor-prev" data-visor-mover="-1" title="Anterior">&#8249;</button>' +
+    '<figure class="visor-marco">' +
+      '<img class="visor-img" alt="">' +
+      '<figcaption class="visor-pie"></figcaption>' +
+    '</figure>' +
+    '<button type="button" class="visor-flecha visor-next" data-visor-mover="1" title="Siguiente">&#8250;</button>';
+  // El título va por textContent, nunca por innerHTML: es nombre de producto
+  cont.dataset.titulo = titulo || '';
+  document.body.appendChild(cont);
+
+  cont.addEventListener('click', (e) => {
+    const mover = e.target.closest('[data-visor-mover]');
+    if (mover) { moverVisorImagen(Number(mover.dataset.visorMover)); return; }
+    // Clic fuera de la foto (o en la ✕) cierra
+    if (e.target.closest('[data-visor-cerrar]') || !e.target.closest('.visor-marco')) cerrarVisorImagen();
+  });
+  document.addEventListener('keydown', teclasVisorImagen);
+  pintarVisorImagen();
+}
+
+function pintarVisorImagen() {
+  const cont = document.getElementById('visorImagen');
+  if (!cont) return;
+  const img = cont.querySelector('.visor-img');
+  const pie = cont.querySelector('.visor-pie');
+  if (img) { img.src = visorImagenUrls[visorImagenIdx]; img.alt = cont.dataset.titulo || ''; }
+  if (pie) {
+    const contador = visorImagenUrls.length > 1 ? ` (${visorImagenIdx + 1}/${visorImagenUrls.length})` : '';
+    pie.textContent = (cont.dataset.titulo || '') + contador;
+    pie.style.display = pie.textContent.trim() ? '' : 'none';
+  }
+  const varias = visorImagenUrls.length > 1;
+  cont.querySelectorAll('.visor-flecha').forEach(b => { b.style.display = varias ? '' : 'none'; });
+}
+
+function moverVisorImagen(paso) {
+  if (visorImagenUrls.length < 2) return;
+  const total = visorImagenUrls.length;
+  visorImagenIdx = (visorImagenIdx + paso + total) % total;
+  pintarVisorImagen();
+}
+
+function cerrarVisorImagen() {
+  document.removeEventListener('keydown', teclasVisorImagen);
+  document.getElementById('visorImagen')?.remove();
+}
+
+function teclasVisorImagen(e) {
+  if (e.key === 'Escape') { e.preventDefault(); cerrarVisorImagen(); }
+  else if (e.key === 'ArrowLeft') moverVisorImagen(-1);
+  else if (e.key === 'ArrowRight') moverVisorImagen(1);
+}
+
+/* Clic delegado: cualquier miniatura marcada con data-ampliar abre el
+   visor. Es delegado a propósito — las filas del carrito se vuelven a
+   pintar entero en cada cambio y volver a enganchar listeners una por una
+   se olvidaría en el primer render nuevo. */
+document.addEventListener('click', (e) => {
+  const mini = e.target.closest('[data-ampliar]');
+  if (!mini) return;
+  e.preventDefault();
+  e.stopPropagation();          // no dispara el clic de la fila que la contiene
+  let urls = [];
+  try { urls = JSON.parse(mini.dataset.ampliar || '[]'); } catch (_) { urls = []; }
+  abrirVisorImagen(urls, 0, mini.dataset.ampliarTitulo || '');
+});
 
 /* ------------------------------------------------------------
    BÚSQUEDA POR PALABRAS SUELTAS

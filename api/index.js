@@ -1772,6 +1772,529 @@ app.get('/api/productos/:id/lotes', auth(true), async (req, res) => {
    "existe en el catálogo". Se excluyen los productos con stock_ilimitado
    (servicios/mano de obra: nunca se despachan, no necesitan peso ni medidas).
    Es de solo lectura y temporal: no la usa ningún flujo real todavía. */
+/* ============================================================
+   AGOTADOS: QUÉ HACER CON UN PRODUCTO EN STOCK 0 (sql/55)
+   ------------------------------------------------------------
+   Un producto que se agota hoy se queda callado: no se repone, no se
+   archiva, no pasa a encargo. Los tres caminos ya existen (por_llegar
+   sql/42, es_pedido_encargo sql/30, archivado sql/32); lo que faltaba
+   era algo que PREGUNTARA cuál corresponde.
+
+   REGLA DEL DUEÑO (16-09-2026): nada se mueve solo. Acá se detecta y se
+   ofrece; el cambio sobre `productos` se aplica recién cuando él aprueba
+   una de las cuatro salidas.
+   ============================================================ */
+
+/* Cuántas unidades se vendieron de cada producto en los últimos `dias`, y
+   cuándo fue la última. Se usa para no preguntar a ciegas: no es lo mismo
+   agotarse algo que vendía 8 al mes que algo que vendió 1 en todo el año.
+   Devuelve un Map(producto_id -> { unidades, ultimaVenta }). */
+async function ventasRecientesPorProducto(ids, dias) {
+  const resumen = new Map();
+  const lista = [...new Set((ids || []).map(Number).filter(Boolean))];
+  if (lista.length === 0) return resumen;
+
+  const desde = new Date(Date.now() - (Number(dias) || 90) * 86400000).toISOString().slice(0, 10);
+  const { data: ventas, error: errV } = await db.from('ventas').select('id, fecha').gte('fecha', desde);
+  if (errV) throw errV;
+  const fechaDe = new Map((ventas || []).map(v => [v.id, v.fecha]));
+  if (fechaDe.size === 0) return resumen;
+
+  const { data: items, error: errI } = await db.from('venta_items')
+    .select('venta_id, producto_id, cantidad').in('producto_id', lista);
+  if (errI) throw errI;
+
+  for (const it of items || []) {
+    const fecha = fechaDe.get(it.venta_id);
+    if (!fecha) continue;                        // venta fuera del período
+    const pid = Number(it.producto_id);
+    const acum = resumen.get(pid) || { unidades: 0, ultimaVenta: null };
+    acum.unidades += num(it.cantidad);
+    if (!acum.ultimaVenta || String(fecha) > String(acum.ultimaVenta)) acum.ultimaVenta = fecha;
+    resumen.set(pid, acum);
+  }
+  return resumen;
+}
+
+/* Un producto entra a la cola de agotados solo si su stock 0 significa de
+   verdad "no hay para vender". Quedan fuera los que por diseño se venden
+   sin stock: servicios, stock ilimitado, encargos y los que ya están
+   marcados "por llegar". Tampoco los archivados ni los borradores. */
+function agotadoDeVerdad(p) {
+  return num(p.stock) <= 0
+    && !p.stock_ilimitado && !p.es_servicio && !p.es_pedido_encargo
+    && !p.por_llegar && !p.archivado && !p.es_borrador;
+}
+
+const DIAS_VENTAS_AGOTADOS = 90;
+
+app.get('/api/productos/agotados', auth(true), async (req, res) => {
+  try {
+    const { data: productos, error } = await db.from('productos')
+      .select('id, nombre, sku, stock, costo_unitario, precio_unitario, imagen_urls, categoria_web, ' +
+              'stock_ilimitado, es_servicio, es_pedido_encargo, por_llegar, archivado, es_borrador, publicado_web');
+    if (error) throw error;
+
+    const agotados = (productos || []).filter(agotadoDeVerdad);
+    const idsAgotados = new Set(agotados.map(p => Number(p.id)));
+
+    const { data: filas, error: errF } = await db.from('agotados_decisiones').select('*');
+    if (errF) throw errF;
+
+    /* El producto volvió a tener stock: se borra su fila para que, cuando
+       se agote de nuevo, vuelva a preguntar. La decisión de septiembre no
+       tiene por qué valer para la de diciembre. */
+    const revivieron = (filas || []).filter(f => !idsAgotados.has(Number(f.producto_id)));
+    for (const f of revivieron) {
+      await db.from('agotados_decisiones').delete().eq('producto_id', f.producto_id);
+    }
+
+    const yaTiene = new Set((filas || [])
+      .filter(f => idsAgotados.has(Number(f.producto_id))).map(f => Number(f.producto_id)));
+    const nuevos = agotados.filter(p => !yaTiene.has(Number(p.id)));
+    if (nuevos.length) {
+      await db.from('agotados_decisiones').insert(nuevos.map(p => ({ producto_id: Number(p.id) })));
+    }
+
+    const decididos = new Map((filas || [])
+      .filter(f => f.decision).map(f => [Number(f.producto_id), f]));
+    const pendientes = agotados.filter(p => !decididos.has(Number(p.id)));
+
+    const ventas = await ventasRecientesPorProducto(pendientes.map(p => p.id), DIAS_VENTAS_AGOTADOS);
+
+    res.json({
+      dias: DIAS_VENTAS_AGOTADOS,
+      pendientes: pendientes.map(p => {
+        const v = ventas.get(Number(p.id)) || { unidades: 0, ultimaVenta: null };
+        return {
+          id: p.id,
+          nombre: p.nombre,
+          sku: p.sku || null,
+          imagen_url: Array.isArray(p.imagen_urls) ? (p.imagen_urls[0] || null) : null,
+          categoria_web: p.categoria_web || null,
+          publicado_web: !!p.publicado_web,
+          costo_unitario: num(p.costo_unitario),
+          precio_unitario: num(p.precio_unitario),
+          margen: num(p.precio_unitario) - num(p.costo_unitario),
+          unidades_vendidas: v.unidades,
+          ultima_venta: v.ultimaVenta
+        };
+      }).sort((a, b) => b.unidades_vendidas - a.unidades_vendidas)
+    });
+  } catch (error) {
+    return enviarErrorBD(res, error, 'GET /api/productos/agotados');
+  }
+});
+
+/* Aplica la decisión del dueño. Es el ÚNICO lugar donde un agotado cambia
+   de estado: el GET de arriba solo detecta y pregunta. */
+const DECISIONES_AGOTADO = ['por_llegar', 'encargo', 'archivar', 'dejar'];
+
+app.post('/api/productos/:id/agotado', auth(true), async (req, res) => {
+  const id = Number(req.params.id);
+  const decision = String(req.body?.decision || '').trim();
+  if (!Number.isFinite(id) || id <= 0) return enviarError(res, 400, 'Producto inválido');
+  if (!DECISIONES_AGOTADO.includes(decision)) {
+    return enviarError(res, 400, `Decisión inválida. Debe ser una de: ${DECISIONES_AGOTADO.join(', ')}`);
+  }
+
+  try {
+    const { data: producto, error: errP } = await db.from('productos')
+      .select('id, nombre, stock').eq('id', id).maybeSingle();
+    if (errP) throw errP;
+    if (!producto) return enviarError(res, 404, 'Producto no encontrado');
+
+    const cambios = {};
+    if (decision === 'por_llegar') {
+      cambios.por_llegar = true;
+      // Unidades y fecha son opcionales: el tope de reserva lo define el
+      // dueño a mano (sql/44) y la fecha se muestra siempre como estimada.
+      const unidades = Math.max(0, Math.round(num(req.body?.stock_por_llegar)));
+      if (unidades > 0) cambios.stock_por_llegar = unidades;
+      const fecha = String(req.body?.fecha_llegada_estimada || '').trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(fecha)) cambios.fecha_llegada_estimada = fecha;
+    } else if (decision === 'encargo') {
+      cambios.es_pedido_encargo = true;
+    } else if (decision === 'archivar') {
+      cambios.archivado = true;
+      // Mismo criterio que PUT /api/productos/:id: un archivado nunca
+      // puede quedar visible en la tienda.
+      cambios.publicado_web = false;
+    }
+
+    if (Object.keys(cambios).length) {
+      const { error: errU } = await db.from('productos').update(cambios).eq('id', id);
+      if (errU) throw errU;
+    }
+
+    const fila = {
+      producto_id: id,
+      decision,
+      decidido_en: new Date().toISOString(),
+      decidido_por: req.usuario?.usuario || req.usuario?.rol || null,
+      nota: String(req.body?.nota || '').trim().slice(0, 200) || null
+    };
+    const { data: previo } = await db.from('agotados_decisiones')
+      .select('producto_id').eq('producto_id', id).maybeSingle();
+    if (previo) await db.from('agotados_decisiones').update(fila).eq('producto_id', id);
+    else await db.from('agotados_decisiones').insert([fila]);
+
+    res.json({ ok: true, producto_id: id, decision, cambios });
+  } catch (error) {
+    return enviarErrorBD(res, error, 'POST /api/productos/:id/agotado');
+  }
+});
+
+/* ============================================================
+   COMPRAS DE MERCADERÍA Y ROTACIÓN (sql/56)
+   ------------------------------------------------------------
+   Responde las dos preguntas que el dueño hizo el 16-09-2026:
+     · "Compré 50 ventiladores, ¿se están vendiendo al ritmo que esperaba
+        o me conviene devolverlos y comprarlos en otra fecha?"
+     · "Compré 20 monitores para navidad y al 1 de enero me sobran 10."
+
+   TODO EL CÁLCULO VIVE ACÁ, igual que Inteligencia y Utilidades: así el
+   panel, el modal del producto y cualquier informe futuro no pueden
+   contradecirse entre sí. Y NADA de esto se guarda: un "te sobran 10"
+   guardado envejece mal y después se lee como si fuera de hoy.
+
+   CÓMO SE REPARTEN LAS VENTAS ENTRE VARIAS COMPRAS DEL MISMO PRODUCTO
+   Por orden de llegada (la más antigua primero). Si compró 50 en agosto y
+   20 en noviembre, las ventas de septiembre se descuentan de las de
+   agosto. Es una atribución, no un hecho: el POS no sabe de qué caja
+   física salió cada unidad. Se eligió así porque es como se vende en
+   realidad y es lo mismo que hace el PEPS del costeo (sql/09).
+
+   OJO: el cálculo se topea contra el stock real. Si las cuentas dicen que
+   quedan 12 y en la estantería hay 8, manda el 8 — la diferencia es
+   merma, robo o un ajuste de stock, y suponer 12 llevaría a ofrecerle al
+   proveedor una devolución que no se puede cumplir.
+   ============================================================ */
+
+const MOTIVOS_CIERRE_INGRESO = ['devuelto', 'vendido', 'liquidado', 'otro'];
+
+function fechaValidaISO(v) {
+  return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+}
+
+/* Para los días entre dos fechas se usa diasEntre(), que ya existe más
+   abajo (lo usa el recordatorio del F29): compara en UTC, que es lo que
+   hace falta acá — un día de diferencia por zona horaria cambiaría una
+   fecha de vencimiento. NO se redefine: dos funciones con el mismo nombre
+   en este proyecto se pisan en silencio. */
+
+function sanearIngreso(body) {
+  const fecha = String(body?.fecha_compra || '').trim();
+  if (!fechaValidaISO(fecha)) return { error: 'La fecha de compra debe venir como YYYY-MM-DD' };
+  if (fecha > fechaHoyChile()) return { error: 'La fecha de compra no puede estar en el futuro' };
+
+  const cantidad = num(body?.cantidad);
+  if (cantidad <= 0) return { error: 'La cantidad comprada debe ser mayor a 0' };
+
+  const costo = num(body?.costo_unitario);
+  if (costo < 0) return { error: 'El costo unitario no puede ser negativo' };
+
+  const devolucion = String(body?.devolucion_hasta || '').trim();
+  if (devolucion && !fechaValidaISO(devolucion)) {
+    return { error: 'La fecha de devolución debe venir como YYYY-MM-DD' };
+  }
+  if (devolucion && devolucion < fecha) {
+    return { error: 'La fecha de devolución no puede ser anterior a la compra' };
+  }
+
+  return {
+    datos: {
+      fecha_compra: fecha,
+      cantidad,
+      costo_unitario: Math.round(costo),
+      proveedor: String(body?.proveedor || '').trim().slice(0, 80) || null,
+      devolucion_hasta: devolucion || null,
+      referencia: String(body?.referencia || '').trim().slice(0, 80) || null,
+      nota: String(body?.nota || '').trim().slice(0, 300) || null
+    }
+  };
+}
+
+/* El corazón del asunto: qué pasó con cada compra desde que llegó.
+   `ingresos` son las entradas ABIERTAS; `ventasPorProducto` es un
+   Map(producto_id → [{fecha, cantidad}]) con las ventas del período. */
+function analizarIngresos(ingresos, ventasPorProducto, productosPorId, hoyISO) {
+  const porProducto = new Map();
+  for (const ing of ingresos) {
+    const pid = Number(ing.producto_id);
+    if (!porProducto.has(pid)) porProducto.set(pid, []);
+    porProducto.get(pid).push(ing);
+  }
+
+  const filas = [];
+  for (const [pid, lista] of porProducto) {
+    const producto = productosPorId.get(pid);
+    if (!producto) continue;
+    lista.sort((a, b) => String(a.fecha_compra).localeCompare(String(b.fecha_compra)));
+
+    /* Reparto por orden de llegada: cada venta posterior a una compra la
+       va consumiendo. Una venta anterior a TODAS las compras abiertas no
+       se atribuye a ninguna (era stock viejo). */
+    const ventas = (ventasPorProducto.get(pid) || [])
+      .slice().sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+    const restantes = lista.map(i => num(i.cantidad));
+    const vendidas = lista.map(() => 0);
+
+    for (const v of ventas) {
+      let porRepartir = num(v.cantidad);
+      for (let i = 0; i < lista.length && porRepartir > 0; i++) {
+        if (String(v.fecha) < String(lista[i].fecha_compra)) continue;   // llegó después
+        const toma = Math.min(restantes[i], porRepartir);
+        restantes[i] -= toma;
+        vendidas[i] += toma;
+        porRepartir -= toma;
+      }
+    }
+
+    /* Tope contra el stock real: si las cuentas dicen 12 y hay 8, manda el
+       8. Se recorta desde la compra más antigua, que es la que ya debería
+       haberse ido. */
+    const stockReal = producto.stock_ilimitado ? Infinity : Math.max(0, num(producto.stock));
+    let sobraSobreStock = restantes.reduce((a, b) => a + b, 0) - stockReal;
+    for (let i = 0; i < restantes.length && sobraSobreStock > 0; i++) {
+      const recorte = Math.min(restantes[i], sobraSobreStock);
+      restantes[i] -= recorte;
+      sobraSobreStock -= recorte;
+    }
+
+    lista.forEach((ing, i) => {
+      const dias = Math.max(1, diasEntre(String(ing.fecha_compra), hoyISO));
+      const restante = Math.max(0, restantes[i]);
+      const ritmoDiario = vendidas[i] / dias;
+      const ritmoMensual = Math.round(ritmoDiario * 30 * 10) / 10;
+      const capital = Math.round(restante * num(ing.costo_unitario));
+
+      const diasParaDevolver = ing.devolucion_hasta ? diasEntre(hoyISO, String(ing.devolucion_hasta)) : null;
+      // Lo que alcanzaría a venderse antes de que se cierre la ventana
+      const proyectado = diasParaDevolver != null && diasParaDevolver > 0
+        ? Math.floor(ritmoDiario * diasParaDevolver) : 0;
+      const sobranteEstimado = diasParaDevolver != null ? Math.max(0, restante - proyectado) : null;
+      const mesesParaAgotar = ritmoMensual > 0 ? Math.round((restante / ritmoMensual) * 10) / 10 : null;
+
+      filas.push({
+        id: ing.id,
+        producto_id: pid,
+        nombre: producto.nombre,
+        sku: producto.sku || null,
+        imagen_url: Array.isArray(producto.imagen_urls) ? (producto.imagen_urls[0] || null) : null,
+        fecha_compra: ing.fecha_compra,
+        proveedor: ing.proveedor || null,
+        referencia: ing.referencia || null,
+        cantidad: num(ing.cantidad),
+        costo_unitario: num(ing.costo_unitario),
+        precio_unitario: num(producto.precio_unitario),
+        margen_unitario: num(producto.precio_unitario) - num(ing.costo_unitario),
+        dias_desde_compra: dias,
+        vendidas: vendidas[i],
+        restante,
+        stock_actual: producto.stock_ilimitado ? null : num(producto.stock),
+        ritmo_mensual: ritmoMensual,
+        meses_para_agotar: mesesParaAgotar,
+        capital_atrapado: capital,
+        devolucion_hasta: ing.devolucion_hasta || null,
+        dias_para_devolver: diasParaDevolver,
+        sobrante_estimado: sobranteEstimado,
+        ...recomendarSobreIngreso({ restante, diasParaDevolver, sobranteEstimado, ritmoMensual, capital, dias, tieneVentana: !!ing.devolucion_hasta })
+      });
+    });
+  }
+
+  // Lo más urgente primero: ventana por cerrarse, después plata atrapada
+  const peso = { urgente: 0, devolver: 1, ventana_cerrada: 2, liquidar: 3, vigilar: 4, ok: 5, agotado: 6 };
+  filas.sort((a, b) => (peso[a.recomendacion] ?? 9) - (peso[b.recomendacion] ?? 9)
+    || b.capital_atrapado - a.capital_atrapado);
+  return filas;
+}
+
+/* La recomendación es una SUGERENCIA con su razón a la vista, nunca una
+   acción automática: quien decide devolver o liquidar es el dueño. */
+function recomendarSobreIngreso({ restante, diasParaDevolver, sobranteEstimado, ritmoMensual, capital, dias, tieneVentana }) {
+  if (restante <= 0) {
+    return { recomendacion: 'agotado', mensaje: 'Se vendió completa. Si conviene, repón.' };
+  }
+
+  if (tieneVentana && diasParaDevolver != null && diasParaDevolver >= 0) {
+    const plazo = diasParaDevolver === 0 ? 'HOY' : `en ${diasParaDevolver} día${diasParaDevolver === 1 ? '' : 's'}`;
+    if (sobranteEstimado >= 1) {
+      const urgente = diasParaDevolver <= 7;
+      return {
+        recomendacion: urgente ? 'urgente' : 'devolver',
+        mensaje: `Al ritmo de ahora (${ritmoMensual}/mes) te van a sobrar ${sobranteEstimado} cuando se cierre el plazo. `
+               + `Se pueden devolver hasta ${sobranteEstimado} unidades, y el plazo vence ${plazo}. `
+               + `Son ${fmtPesos(Math.round(sobranteEstimado * (capital / Math.max(1, restante))))} que vuelven a tu bolsillo.`
+      };
+    }
+    return {
+      recomendacion: 'ok',
+      mensaje: `Va bien: al ritmo de ahora (${ritmoMensual}/mes) se venden las ${restante} que quedan antes de que venza el plazo (${plazo}).`
+    };
+  }
+
+  if (tieneVentana && diasParaDevolver != null && diasParaDevolver < 0) {
+    return {
+      recomendacion: 'ventana_cerrada',
+      mensaje: `El plazo de devolución venció hace ${Math.abs(diasParaDevolver)} día(s). `
+             + `Quedan ${restante} unidades con ${fmtPesos(capital)} adentro: ya solo se sale vendiéndolas.`
+    };
+  }
+
+  // Sin ventana de devolución: la única salida es vender
+  if (ritmoMensual <= 0 && dias >= 60) {
+    return {
+      recomendacion: 'liquidar',
+      mensaje: `${dias} días desde que llegó y ni una venta. ${fmtPesos(capital)} parados en ${restante} unidades, `
+             + `y el proveedor no las recibe de vuelta. Liquidar es la única salida.`
+    };
+  }
+  if (ritmoMensual > 0 && restante / ritmoMensual > 6) {
+    return {
+      recomendacion: 'vigilar',
+      mensaje: `Al ritmo de ahora (${ritmoMensual}/mes) tardan ${Math.round(restante / ritmoMensual)} meses en venderse. `
+             + `Son ${fmtPesos(capital)} inmovilizados mientras tanto.`
+    };
+  }
+  return {
+    recomendacion: 'ok',
+    mensaje: `Rota bien: ${ritmoMensual}/mes, quedan ${restante}.`
+  };
+}
+
+/* Formato de pesos del backend — el frontend tiene el suyo (fmtCLP), pero
+   estos textos se arman acá para que el panel, el modal y cualquier
+   informe digan exactamente lo mismo. */
+function fmtPesos(v) {
+  const n = Math.round(Number(v) || 0);
+  return '$' + String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+/* ---------- Entradas de un producto (modal del producto) ---------- */
+
+app.get('/api/productos/:id/ingresos', auth(true), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return enviarError(res, 400, 'Producto inválido');
+  const { data, error } = await db.from('ingresos_mercaderia')
+    .select('*').eq('producto_id', id).order('fecha_compra', { ascending: false });
+  if (error) return enviarErrorBD(res, error);
+  res.json(data || []);
+});
+
+app.post('/api/productos/:id/ingresos', auth(true), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return enviarError(res, 400, 'Producto inválido');
+
+  const { datos, error: errVal } = sanearIngreso(req.body);
+  if (errVal) return enviarError(res, 400, errVal);
+
+  try {
+    const { data: producto, error: errP } = await db.from('productos')
+      .select('id').eq('id', id).maybeSingle();
+    if (errP) throw errP;
+    if (!producto) return enviarError(res, 404, 'Producto no encontrado');
+
+    const { data, error } = await db.from('ingresos_mercaderia').insert([{
+      ...datos, producto_id: id, creado_por: req.usuario?.usuario || req.usuario?.rol || null
+    }]).select('*').single();
+    if (error) throw error;
+    res.status(201).json(data);
+  } catch (error) {
+    return enviarErrorBD(res, error, 'POST /api/productos/:id/ingresos');
+  }
+});
+
+/* Cerrar una entrada: se devolvió, se vendió o se liquidó. No se borra —
+   el historial de compras es justamente lo que hace útil la tabla. */
+app.put('/api/ingresos/:id', auth(true), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return enviarError(res, 400, 'Entrada inválida');
+
+  const motivo = String(req.body?.cerrado_motivo || '').trim();
+  const reabrir = req.body?.reabrir === true;
+  if (!reabrir && !MOTIVOS_CIERRE_INGRESO.includes(motivo)) {
+    return enviarError(res, 400, `Motivo inválido. Debe ser uno de: ${MOTIVOS_CIERRE_INGRESO.join(', ')}`);
+  }
+
+  const cambios = reabrir
+    ? { cerrado_en: null, cerrado_motivo: null }
+    : { cerrado_en: new Date().toISOString(), cerrado_motivo: motivo };
+  if (req.body?.nota !== undefined) cambios.nota = String(req.body.nota || '').trim().slice(0, 300) || null;
+
+  const { data, error } = await db.from('ingresos_mercaderia').update(cambios).eq('id', id).select('*');
+  if (error) return enviarErrorBD(res, error);
+  if (!data || data.length === 0) return enviarError(res, 404, 'Entrada no encontrada');
+  res.json(data[0]);
+});
+
+app.delete('/api/ingresos/:id', auth(true), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return enviarError(res, 400, 'Entrada inválida');
+  const { error } = await db.from('ingresos_mercaderia').delete().eq('id', id);
+  if (error) return enviarErrorBD(res, error);
+  res.json({ ok: true });
+});
+
+/* ---------- El informe: qué compra conviene devolver ---------- */
+
+app.get('/api/pos/rotacion-compras', auth(true), async (req, res) => {
+  try {
+    const hoy = fechaHoyChile();
+    const { data: ingresos, error: errI } = await db.from('ingresos_mercaderia')
+      .select('*').is('cerrado_en', null);
+    if (errI) throw errI;
+
+    if (!ingresos || ingresos.length === 0) {
+      return res.json({ hoy, filas: [], resumen: { entradas: 0, capital: 0, devolvibles: 0, monto_devolvible: 0 } });
+    }
+
+    const ids = [...new Set(ingresos.map(i => Number(i.producto_id)))];
+    const { data: productos, error: errP } = await db.from('productos')
+      .select('id, nombre, sku, stock, stock_ilimitado, precio_unitario, imagen_urls').in('id', ids);
+    if (errP) throw errP;
+    const productosPorId = new Map((productos || []).map(p => [Number(p.id), p]));
+
+    /* Ventas desde la compra más antigua que sigue abierta: no hace falta
+       traer el histórico completo para repartir lo que se vendió después. */
+    const desde = ingresos.reduce((min, i) => (String(i.fecha_compra) < min ? String(i.fecha_compra) : min), hoy);
+    const { data: ventas, error: errV } = await db.from('ventas').select('id, fecha').gte('fecha', desde);
+    if (errV) throw errV;
+    const fechaDe = new Map((ventas || []).map(v => [v.id, v.fecha]));
+
+    const { data: items, error: errIt } = await db.from('venta_items')
+      .select('venta_id, producto_id, cantidad').in('producto_id', ids);
+    if (errIt) throw errIt;
+
+    const ventasPorProducto = new Map();
+    for (const it of items || []) {
+      const fecha = fechaDe.get(it.venta_id);
+      if (!fecha) continue;
+      const pid = Number(it.producto_id);
+      if (!ventasPorProducto.has(pid)) ventasPorProducto.set(pid, []);
+      ventasPorProducto.get(pid).push({ fecha: String(fecha).slice(0, 10), cantidad: num(it.cantidad) });
+    }
+
+    const filas = analizarIngresos(ingresos, ventasPorProducto, productosPorId, hoy);
+    const devolvibles = filas.filter(f => f.recomendacion === 'devolver' || f.recomendacion === 'urgente');
+
+    res.json({
+      hoy,
+      filas,
+      resumen: {
+        entradas: filas.length,
+        capital: filas.reduce((a, f) => a + f.capital_atrapado, 0),
+        devolvibles: devolvibles.length,
+        // Cuánta plata se recupera si devuelve todo lo que va a sobrar
+        monto_devolvible: devolvibles.reduce((a, f) => a + Math.round(f.sobrante_estimado * f.costo_unitario), 0)
+      }
+    });
+  } catch (error) {
+    return enviarErrorBD(res, error, 'GET /api/pos/rotacion-compras');
+  }
+});
+
 app.get('/api/productos/auditoria-envio', auth(true), async (req, res) => {
   const { data, error } = await db.from('productos')
     .select('id, nombre, sku, peso_kg, alto_cm, ancho_cm, profundidad_cm')
@@ -2905,6 +3428,16 @@ async function registrarEnvioDeVenta(venta, body) {
       }
     }
 
+    /* sql/54. `cobrado_cliente` vacío se guarda NULL, NO 0: un 0 querría
+       decir "envío regalado" e inventaría una pérdida que quizás no hubo.
+       La diferencia (costo - cobrado) NO se asienta como gasto ni merma:
+       el costo completo ya quedó arriba en `compras`, y anotarla otra vez
+       la contaría dos veces. */
+    const cobrado = e.cobrado_cliente === null || e.cobrado_cliente === undefined || e.cobrado_cliente === ''
+      ? null : Math.max(0, Math.round(num(e.cobrado_cliente)));
+    const duracion = num(e.duracion_min) > 0
+      ? Math.min(1440, Math.round(num(e.duracion_min))) : null;
+
     const { error: errE } = await db.from('envios').insert([{
       venta_id: venta.id,
       repartidor,
@@ -2916,7 +3449,9 @@ async function registrarEnvioDeVenta(venta, body) {
       sector,
       direccion: venta.direccion_envio || null,
       compra_id: compraId,
-      caja_movimiento_id: movId
+      caja_movimiento_id: movId,
+      cobrado_cliente: cobrado,
+      duracion_min: duracion
     }]);
     if (errE) avisos.push('el detalle del envío no se guardó');
 
@@ -2931,7 +3466,8 @@ async function registrarEnvioDeVenta(venta, body) {
    de InDrive por km, para saber al tiro si un viaje está caro. */
 app.get('/api/envios/resumen', auth(), async (req, res) => {
   const { data, error } = await db.from('envios')
-    .select('repartidor, costo, km, sector').order('creado_en', { ascending: false }).limit(500);
+    .select('repartidor, costo, km, sector, cobrado_cliente, duracion_min, creado_en')
+    .order('creado_en', { ascending: false }).limit(500);
   if (error) return enviarErrorBD(res, error);
   const filas = data || [];
 
@@ -2940,6 +3476,16 @@ app.get('/api/envios/resumen', auth(), async (req, res) => {
   const totalKm = conKm.reduce((a, f) => a + num(f.km), 0);
   const totalCosto = conKm.reduce((a, f) => a + num(f.costo), 0);
 
+  /* Cuánto puso el dueño de su bolsillo este mes (sql/54). Solo cuentan los
+     envíos donde SÍ se anotó lo cobrado: sin ese dato no se sabe si hubo
+     pérdida, y suponer 0 inventaría una. */
+  const mesChile = fechaHoyChile().slice(0, 7);   // 'YYYY-MM'
+  const delMes = filas.filter(f => String(f.creado_en || '').slice(0, 7) === mesChile
+    && f.cobrado_cliente !== null && f.cobrado_cliente !== undefined);
+  const perdidas = delMes.filter(f => num(f.costo) > num(f.cobrado_cliente));
+
+  const conDuracion = filas.filter(f => num(f.duracion_min) > 0);
+
   res.json({
     sectores,
     indrive: {
@@ -2947,6 +3493,13 @@ app.get('/api/envios/resumen', auth(), async (req, res) => {
       costoPorKm: totalKm > 0 ? Math.round(totalCosto / totalKm) : null,
       costoPromedio: conKm.length ? Math.round(totalCosto / conKm.length) : null
     },
+    bolsillo: {
+      envios: perdidas.length,
+      total: perdidas.reduce((a, f) => a + (num(f.costo) - num(f.cobrado_cliente)), 0),
+      mes: mesChile
+    },
+    duracionPromedio: conDuracion.length
+      ? Math.round(conDuracion.reduce((a, f) => a + num(f.duracion_min), 0) / conDuracion.length) : null,
     totalEnvios: filas.length
   });
 });
