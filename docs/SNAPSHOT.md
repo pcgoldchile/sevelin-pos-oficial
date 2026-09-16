@@ -20,7 +20,19 @@ para generar con IA la ficha de la tienda y la publicación de Facebook. Detalle
   prompts oficiales viven ahora en el servidor. Exigen información real: el endpoint devuelve 400 si
   no hay ni specs pegadas ni Descripción escrita, porque un modelo con solo el nombre del producto
   inventa características. Nada se guarda ni se publica solo.
-- ⚠️ **Falta la prueba real de cada botón contra Gemini** — en las pruebas está simulado.
+- ✅ **Los dos botones YA se probaron contra Gemini de verdad** (llave real, datos reales del Cable
+  de Fibra Óptica): devuelve la ficha completa con sus 12 viñetas. Lo que fallaba era el editor, no
+  la IA — ver el bug de Quill más abajo.
+- 🖼️ **`sevelin-tienda`, dos arreglos en la ficha de producto** (commits `a21f59a` y `06c777c`):
+  la foto ahora **crece con la pantalla** (antes quedaba clavada en 524px en cualquier monitor,
+  porque el tope lo ponía el ancho de la columna y no el alto), y "Envíos/Atención y garantía" sube
+  junto a la foto en pantallas de 940px o más para llenar el hueco que quedaba al hacer scroll
+  (era de 280 a 460px, y crecía mientras más grande el monitor). Además, **el visor ampliado quedaba
+  tapado por el header**: el `sticky z-10` del nuevo contenedor creaba una burbuja de apilado que
+  dejaba el `z-70` del visor compitiendo solo contra sus hermanos. Se sacó con `createPortal` a
+  `<body>`. **Ojo: el portal envuelve el `<AnimatePresence>` entero, no el `<div>` de adentro** —
+  framer-motion v13 no puede clonar un Portal y fallaba en silencio (el estado cambiaba pero no se
+  montaba nada en el DOM, sin ningún error en consola).
 - 🧾 **Cowork "Sevelin Finanzas" probado y verificado:** respondió $274.204 de crédito de IVA y cuadra
   al peso contra `sii_rcv_resumen` + `iva_remanentes`. Lo que le faltó decir: que el mes no ha
   terminado, que el PPM se paga igual aunque el IVA dé cero, y que el RCV solo ve la venta con
@@ -103,13 +115,29 @@ por GWT, protocolo binario que se rompe en cada despliegue; probado y revertido 
 
 **Versión activa del POS: v65 — fichas sin Markdown crudo + generar texto con IA (ficha web y
 Facebook).** Detalle en `docs/CHANGELOG-V65.md`. Migración de datos `sql/53` ya aplicada en
-producción. Commits `2e97651` y `3be7a33`.
+producción. Commits `2e97651`, `3be7a33`, `ac6519e`, `f1cae24`.
 
 - 🐛 13 fichas mostraban `###` y `**` al cliente: estaban envueltas en un solo `<p>`, y la tienda no
   formatea nada que "ya traiga HTML". Se quitó solo ese `<p>`. Verificado en las 13 fichas reales.
 - 🤖 Dos botones en el modal de producto. Los prompts viven en el servidor y **exigen información
   real**: sin specs pegadas ni Descripción escrita, el endpoint devuelve 400 (un modelo con solo el
   nombre inventa características). Nada se guarda ni se publica solo.
+- 👁️ **La ficha generada pasa por una previsualización** (`modalFichaGenerada`) antes de reemplazar
+  la Descripción, igual que la de Facebook: Markdown editable + el nombre propuesto si el producto
+  todavía no tiene. Si se descarta, el formulario queda intacto. **El nombre NO es obligatorio para
+  generar** — la IA lo propone a partir de la info real.
+- 🔴 **EL BUG QUE MÁS COSTÓ ENCONTRAR (16-09-2026):** "Generar ficha" dejaba la intro y el título
+  "✨ Características principales" SIN NINGUNA VIÑETA. No era Gemini (se verificó llamándolo de
+  verdad: devuelve las 12 viñetas, `finishReason: STOP`). Era que `establecerDescripcion()` escribía
+  `editorDescripcion.root.innerHTML = html`, pisando el DOM de Quill por debajo. **Quill 2 vigila su
+  propio DOM con un MutationObserver y BORRA todo lo que no reconoce como formato suyo** — y `<ul>`
+  no lo es (usa `<ol><li data-list="bullet">`). Medido en un navegador real: entraban 12 `<li>`,
+  quedaban 0. Facebook no sufría nada porque su texto va a un `<textarea>`, nunca toca Quill.
+  **Regla: nunca escribir `root.innerHTML` de Quill — usar `clipboard.convert()` + `setContents()`.**
+- 🎨 Quill guarda las viñetas como `<ol data-list="bullet">`; la tienda borra ese atributo al
+  sanitizar, así que en sevelin.cl salían **numeradas** en vez del diseño de tarjetas con ✓ que le da
+  a los `<ul>` (verificado en `/productos/adaptador-hdmi-a-vga-43wbg`; las 37 descripciones con lista
+  de la base están así). `normalizarListasQuill()` lo traduce a `<ul>` al guardar.
 - ⚠️ **Trampa de Postgres:** en sus expresiones regulares `\b` **no es borde de palabra, es
   backspace** (el borde es `\y`). Una auditoría dio 58 fichas rotas cuando eran 13, por esto.
 
