@@ -1,0 +1,407 @@
+<!doctype html>
+<title>Cotización Insumos Sevelin</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@600;700;800&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap');
+
+  :root {
+    --paper: #eef2f2;
+    --surface: #ffffff;
+    --surface-2: #f4f7f7;
+    --ink: #1a2327;
+    --ink-soft: #55666d;
+    --ink-faint: #82969c;
+    --line: #d7e0e2;
+    --line-strong: #b9c7ca;
+    --accent: #0e8a9c;
+    --accent-ink: #ffffff;
+    --accent-soft: rgba(14, 138, 156, .1);
+    --ok: #1f8a4c;
+    --ok-soft: rgba(31, 138, 76, .12);
+    --warn: #a5720f;
+    --warn-soft: rgba(184, 130, 20, .14);
+    --danger: #b3261e;
+    --danger-soft: rgba(179, 38, 30, .1);
+    --shadow: 0 1px 2px rgba(20, 30, 33, .06), 0 8px 24px rgba(20, 30, 33, .06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #10171a;
+      --surface: #172024;
+      --surface-2: #1c262a;
+      --ink: #e7eef0;
+      --ink-soft: #9fb3b8;
+      --ink-faint: #6d8388;
+      --line: #2b3a3f;
+      --line-strong: #3c4f55;
+      --accent: #3fc3d6;
+      --accent-ink: #06232a;
+      --accent-soft: rgba(63, 195, 214, .14);
+      --ok: #45c980;
+      --ok-soft: rgba(69, 201, 128, .14);
+      --warn: #e0a94a;
+      --warn-soft: rgba(224, 169, 74, .16);
+      --danger: #ef6459;
+      --danger-soft: rgba(239, 100, 89, .14);
+      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 12px 28px rgba(0, 0, 0, .35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #10171a;
+    --surface: #172024;
+    --surface-2: #1c262a;
+    --ink: #e7eef0;
+    --ink-soft: #9fb3b8;
+    --ink-faint: #6d8388;
+    --line: #2b3a3f;
+    --line-strong: #3c4f55;
+    --accent: #3fc3d6;
+    --accent-ink: #06232a;
+    --accent-soft: rgba(63, 195, 214, .14);
+    --ok: #45c980;
+    --ok-soft: rgba(69, 201, 128, .14);
+    --warn: #e0a94a;
+    --warn-soft: rgba(224, 169, 74, .16);
+    --danger: #ef6459;
+    --danger-soft: rgba(239, 100, 89, .14);
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 12px 28px rgba(0, 0, 0, .35);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Public Sans', ui-sans-serif, system-ui, sans-serif;
+    padding-inline: 16px;
+    padding-block: 40px;
+  }
+  .hoja {
+    max-width: 900px;
+    margin: 0 auto;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+
+  /* ---------- Encabezado ---------- */
+  .encabezado {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 20px;
+    flex-wrap: wrap;
+    padding: 32px 36px 26px;
+    border-bottom: 1px solid var(--line);
+  }
+  .marca { display: flex; flex-direction: column; gap: 4px; }
+  .marca b {
+    font-family: 'Libre Franklin', sans-serif;
+    font-weight: 800;
+    font-size: 26px;
+    letter-spacing: -0.01em;
+  }
+  .marca b span { color: var(--accent); }
+  .marca small { color: var(--ink-soft); font-size: 13px; }
+  .doc-info { text-align: right; }
+  .doc-info .eyebrow {
+    font-family: 'Libre Franklin', sans-serif;
+    font-weight: 700;
+    font-size: 11.5px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .doc-info .fecha { font-size: 13px; color: var(--ink-soft); margin-top: 2px; }
+  .doc-info .ref { font-size: 13px; color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace; margin-top: 6px; }
+
+  .intro { padding: 22px 36px 4px; }
+  .intro p { color: var(--ink-soft); line-height: 1.55; max-width: 62ch; font-size: 14.5px; }
+
+  /* ---------- Leyenda de estados ---------- */
+  .leyenda {
+    display: flex; flex-wrap: wrap; gap: 8px 16px;
+    padding: 4px 36px 22px;
+    font-size: 12.5px; color: var(--ink-soft);
+  }
+  .leyenda .item { display: flex; align-items: center; gap: 6px; }
+  .punto { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .punto.ok { background: var(--ok); }
+  .punto.parcial { background: var(--warn); }
+  .punto.no { background: var(--danger); }
+
+  /* ---------- Tabla ---------- */
+  .tabla-envoltorio { padding: 0 36px; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; min-width: 720px; }
+  thead th {
+    text-align: left;
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 11px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 700;
+    padding: 10px 10px;
+    border-bottom: 1px solid var(--line-strong);
+  }
+  thead th.num, td.num { text-align: right; }
+  tbody td {
+    padding: 14px 10px;
+    border-bottom: 1px solid var(--line);
+    font-size: 13.5px;
+    vertical-align: top;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  .pedido b { display: block; font-weight: 600; }
+  .pedido small { color: var(--ink-soft); font-size: 12px; }
+  .ofrezco b { display: block; font-weight: 600; }
+  .ofrezco .nota {
+    display: block; margin-top: 4px; font-size: 12px; line-height: 1.4;
+  }
+  .ofrezco .nota.parcial { color: var(--warn); }
+  .ofrezco .nota.info { color: var(--ink-soft); }
+  .estado {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 9px; border-radius: 999px;
+    font-size: 11.5px; font-weight: 600; white-space: nowrap;
+  }
+  .estado.ok { background: var(--ok-soft); color: var(--ok); }
+  .estado.parcial { background: var(--warn-soft); color: var(--warn); }
+  .estado.no { background: var(--danger-soft); color: var(--danger); }
+  .cant, .precio, .subtotal { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
+  .fila-no td { opacity: .7; }
+  .fila-no .subtotal { color: var(--ink-faint); }
+
+  /* ---------- Resumen ---------- */
+  .resumen {
+    margin: 26px 36px 8px;
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 620px) { .resumen { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+  .panel h3 {
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--ink-faint); margin: 0 0 12px;
+  }
+  .panel.total { display: flex; flex-direction: column; justify-content: space-between; }
+  .total-linea { display: flex; justify-content: space-between; font-size: 13px; color: var(--ink-soft); padding: 5px 0; }
+  .total-linea b { color: var(--ink); font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
+  .total-final {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-top: 10px; padding-top: 12px; border-top: 1px solid var(--line-strong);
+  }
+  .total-final span { font-family: 'Libre Franklin', sans-serif; font-weight: 700; font-size: 14px; }
+  .total-final b {
+    font-family: 'IBM Plex Mono', monospace; font-size: 22px; font-weight: 600;
+    color: var(--accent); font-variant-numeric: tabular-nums;
+  }
+  .faltantes ul { margin: 0; padding-left: 18px; color: var(--ink-soft); font-size: 13px; line-height: 1.7; }
+  .faltantes li b { color: var(--ink); font-weight: 600; }
+
+  /* ---------- Notas y pie ---------- */
+  .notas { margin: 20px 36px 0; padding: 16px 18px; background: var(--accent-soft); border-radius: 10px; border: 1px solid transparent; }
+  .notas p { margin: 0 0 6px; font-size: 12.5px; color: var(--ink-soft); line-height: 1.6; }
+  .notas p:last-child { margin-bottom: 0; }
+  .notas b { color: var(--ink); }
+
+  .pie {
+    margin-top: 28px;
+    padding: 22px 36px 30px;
+    border-top: 1px solid var(--line);
+    display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap;
+  }
+  .pie-col { font-size: 12.5px; color: var(--ink-soft); line-height: 1.8; }
+  .pie-col b { display: block; color: var(--ink); font-family: 'Libre Franklin', sans-serif; font-size: 11px; letter-spacing: .07em; text-transform: uppercase; margin-bottom: 6px; }
+</style>
+
+<div class="hoja">
+
+  <div class="encabezado">
+    <div class="marca">
+      <b>SE<span>VEL</span>IN</b>
+      <small>Tienda de electrónica y servicio técnico · Arica</small>
+    </div>
+    <div class="doc-info">
+      <div class="eyebrow">Cotización</div>
+      <div class="fecha">14 de septiembre de 2026</div>
+      <div class="ref">Ref: insumos de cómputo y mantenimiento</div>
+    </div>
+  </div>
+
+  <div class="intro">
+    <p>Revisé tu lista contra lo que tengo hoy en tienda. De 13 ítems, <b style="color:var(--ink)">5 los cubro completos</b>,
+    <b style="color:var(--ink)">4 solo en parte o con un producto similar</b>, y <b style="color:var(--ink)">4 no los tengo</b> —
+    esos quedan detallados al final para que decidas cómo seguir.</p>
+  </div>
+
+  <div class="leyenda">
+    <div class="item"><span class="punto ok"></span> Disponible, cubre lo pedido</div>
+    <div class="item"><span class="punto parcial"></span> Cubre parcial o con producto similar</div>
+    <div class="item"><span class="punto no"></span> No disponible por ahora</div>
+  </div>
+
+  <div class="tabla-envoltorio">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:24%">Pediste</th>
+          <th style="width:30%">Te ofrezco</th>
+          <th>Estado</th>
+          <th class="num">Cant.</th>
+          <th class="num">P. unit.</th>
+          <th class="num">Subtotal</th>
+        </tr>
+      </thead>
+      <tbody>
+
+        <tr class="fila-no">
+          <td class="pedido"><b>Cable HDMI 4K</b><small>5 metros · 4 und</small></td>
+          <td class="ofrezco"><span class="nota info">No tengo en 5 m. Sí hay de 15 m ($10.000) o adaptadores cortos — no calzan con lo pedido.</span></td>
+          <td><span class="estado no">No disponible</span></td>
+          <td class="num cant">—</td><td class="num precio">—</td><td class="num subtotal">—</td>
+        </tr>
+
+        <tr class="fila-no">
+          <td class="pedido"><b>Disco Duro Externo</b><small>4TB USB 3.0, similar Toshiba Canvio · 3 und</small></td>
+          <td class="ofrezco"><span class="nota info">No tengo discos externos en el catálogo actual.</span></td>
+          <td><span class="estado no">No disponible</span></td>
+          <td class="num cant">—</td><td class="num precio">—</td><td class="num subtotal">—</td>
+        </tr>
+
+        <tr>
+          <td class="pedido"><b>Memoria MicroSD</b><small>256 GB · 2 und</small></td>
+          <td class="ofrezco"><b>Kingston Canvas Select Plus 128GB</b><span class="nota parcial">La capacidad más alta que tengo es 128GB, no 256GB. Solo queda 1 unidad en stock.</span></td>
+          <td><span class="estado parcial">Similar, 1 de 2</span></td>
+          <td class="num cant">1</td><td class="num precio">$22.000</td><td class="num subtotal">$22.000</td>
+        </tr>
+
+        <tr>
+          <td class="pedido"><b>Monitor 24–27"</b><small>Ajuste de altura, similar LG 24BQ650Y · 2 und</small></td>
+          <td class="ofrezco"><b>Monitor Samsung Essential S30GD 22" IPS 100Hz</b><span class="nota parcial">Es 22", no 24–27", y no tengo confirmado si el soporte ajusta altura — la mayoría de los monitores económicos no lo trae. Antes de ofrecerlo como reemplazo real, reviso el soporte físico en tienda.</span></td>
+          <td><span class="estado parcial">Similar, sin confirmar</span></td>
+          <td class="num cant">2</td><td class="num precio">$70.000</td><td class="num subtotal">$140.000</td>
+        </tr>
+
+        <tr>
+          <td class="pedido"><b>Teclado con cable</b><small>2 und</small></td>
+          <td class="ofrezco"><b>Combo Teclado + Mouse RGB AB-D335</b><span class="nota parcial">No tengo teclado suelto: solo viene en combo con mouse (alámbrico, USB).</span></td>
+          <td><span class="estado parcial">Solo en combo</span></td>
+          <td class="num cant">2</td><td class="num precio">$8.000</td><td class="num subtotal">$16.000</td>
+        </tr>
+
+        <tr>
+          <td class="pedido"><b>Mouse con cable</b><small>3 und</small></td>
+          <td class="ofrezco"><b>Mouse Urbano Labs Gamer Pro RGB</b><span class="nota info">Alámbrico USB, 3 botones. Stock de sobra (20 unidades).</span></td>
+          <td><span class="estado ok">Disponible</span></td>
+          <td class="num cant">3</td><td class="num precio">$3.000</td><td class="num subtotal">$9.000</td>
+        </tr>
+
+        <tr>
+          <td class="pedido"><b>Hub multipuerto USB</b><small>Similar Baseus 9-en-1 · 4 und</small></td>
+          <td class="ofrezco"><b>Hub USB Tipo C 8 en 1</b><span class="nota parcial">HDMI 4K + RJ45 + USB + SD. Es 8-en-1, un puerto menos que el modelo de referencia.</span></td>
+          <td><span class="estado parcial">Similar (8 en 1)</span></td>
+          <td class="num cant">4</td><td class="num precio">$10.000</td><td class="num subtotal">$40.000</td>
+        </tr>
+
+        <tr>
+          <td class="pedido"><b>Pasta térmica</b><small>Calidad similar Arctic MX-4 · 4 und</small></td>
+          <td class="ofrezco"><b>Pasta Térmica Kronos KP03</b><span class="nota parcial">6,5 W/m·K, con espátula. Solo quedan 2 unidades en stock, no 4.</span></td>
+          <td><span class="estado parcial">2 de 4</span></td>
+          <td class="num cant">2</td><td class="num precio">$3.000</td><td class="num subtotal">$6.000</td>
+        </tr>
+
+        <tr class="fila-no">
+          <td class="pedido"><b>Alcohol isopropílico</b><small>Botella 1 lt · 4 und</small></td>
+          <td class="ofrezco"><span class="nota info">No lo tengo en el catálogo.</span></td>
+          <td><span class="estado no">No disponible</span></td>
+          <td class="num cant">—</td><td class="num precio">—</td><td class="num subtotal">—</td>
+        </tr>
+
+        <tr>
+          <td class="pedido"><b>Paños antiestáticos</b><small>Para fibra óptica · 4 und</small></td>
+          <td class="ofrezco"><span class="nota parcial">No los vendo sueltos. Viene 1 paño de microfibra antiestático dentro del Kit de Limpieza para Pantallas (ver más abajo) — no llega a las 4 unidades.</span></td>
+          <td><span class="estado parcial">1 de 4, en un kit</span></td>
+          <td class="num cant">—</td><td class="num precio">—</td><td class="num subtotal">incluido ↓</td>
+        </tr>
+
+        <tr>
+          <td class="pedido"><b>Kit de limpieza</b><small>Para cámara y lente · 1 kit</small></td>
+          <td class="ofrezco"><b>Kit de Limpieza para Pantallas Opula KCL-1029</b><span class="nota parcial">No es específico para cámara: trae spray 100ml + paño de microfibra antiestático + brocha antiestática. Es el más cercano que tengo y también cubre el paño y la brocha de arriba/abajo.</span></td>
+          <td><span class="estado parcial">Similar</span></td>
+          <td class="num cant">1</td><td class="num precio">$3.000</td><td class="num subtotal">$3.000</td>
+        </tr>
+
+        <tr>
+          <td class="pedido"><b>Aire comprimido</b><small>Lata · 6 und</small></td>
+          <td class="ofrezco"><b>Limpiador de Aire Comprimido 400ML</b><span class="nota parcial">Solo quedan 3 unidades en stock, no 6.</span></td>
+          <td><span class="estado parcial">3 de 6</span></td>
+          <td class="num cant">3</td><td class="num precio">$7.000</td><td class="num subtotal">$21.000</td>
+        </tr>
+
+        <tr>
+          <td class="pedido"><b>Brocha antiestática</b><small>Kit · 1 und</small></td>
+          <td class="ofrezco"><span class="nota info">Viene incluida en el Kit de Limpieza para Pantallas de arriba — no se vende suelta.</span></td>
+          <td><span class="estado ok">Cubierta en el kit</span></td>
+          <td class="num cant">—</td><td class="num precio">—</td><td class="num subtotal">incluido ↑</td>
+        </tr>
+
+      </tbody>
+    </table>
+  </div>
+
+  <div class="resumen">
+    <div class="panel faltantes">
+      <h3>No disponible por ahora</h3>
+      <ul>
+        <li><b>Cable HDMI 4K 5 mt</b> — 4 unidades</li>
+        <li><b>Disco duro externo 4TB</b> — 3 unidades</li>
+        <li><b>Alcohol isopropílico 1 lt</b> — 4 unidades</li>
+        <li><b>Paños antiestáticos sueltos</b> — 3 de las 4 pedidas (1 viene en el kit)</li>
+      </ul>
+    </div>
+    <div class="panel total">
+      <div>
+        <h3>Lo que sí se puede ofrecer hoy</h3>
+        <div class="total-linea"><span>Ítems con disponibilidad</span> <b>8 de 13</b></div>
+        <div class="total-linea"><span>Cubiertos completos</span> <b>1 de 8</b></div>
+        <div class="total-linea"><span>Cubiertos parcial o similar</span> <b>7 de 8</b></div>
+      </div>
+      <div class="total-final">
+        <span>Total estimado</span>
+        <b>$257.000</b>
+      </div>
+    </div>
+  </div>
+
+  <div class="notas">
+    <p><b>Antes de enviarla:</b> el monitor y el hub quedaron marcados como "similar" a propósito — conviene que confirmes con el cliente si sirven así o si prefiere que sigamos buscando el modelo exacto.</p>
+    <p>Precios de catálogo de hoy, sin descuento por volumen. Los ítems marcados "parcial" se pueden completar si el cliente acepta esperar reposición — dime y reviso plazos con los proveedores.</p>
+  </div>
+
+  <div class="pie">
+    <div class="pie-col">
+      <b>Pago y garantía</b>
+      Efectivo, transferencia, débito o crédito<br>
+      Boleta en cada compra · 6 meses de garantía por falla de fábrica
+    </div>
+    <div class="pie-col">
+      <b>Entrega</b>
+      Retiro en tienda o despacho en Arica<br>
+      Coordinado por WhatsApp
+    </div>
+    <div class="pie-col">
+      <b>Contacto</b>
+      WhatsApp +56 9 3575 0828<br>
+      www.sevelin.cl
+    </div>
+  </div>
+
+</div>

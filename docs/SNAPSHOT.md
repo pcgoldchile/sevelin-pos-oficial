@@ -41,6 +41,29 @@ ampliado con carrusel al hacer clic en la foto), y un badge de contraste corregi
   movidos al **día 15** (el día 1 se comía toda la utilidad de los días 21-31) y el checkbox quedó
   construido en **v62**.
 
+## ⏭️ Pendientes al 16-09-2026 (retomar por acá)
+
+**Del dueño:**
+1. **F29 de agosto — vence el lunes 21-09** (18 y 19 feriados). Pagar $3.625 de PPM, marcarlo en el
+   botón 🧾 del POS y anotar ahí el remanente código 77 ($219.227).
+2. **Cowork "Sevelin Finanzas"**: crear el proyecto, subir `docs/CONTEXTO-SEVELIN-COWORK.md`, pegar las
+   instrucciones y probar con "¿cuánto crédito de IVA me queda este mes?" (debe responder ~$274.000 y
+   decir cuándo sincronizó el robot). El conector de Supabase de solo lectura ya está conectado.
+3. **Aceptar la factura pendiente en el SII** ($169.990, IVA $27.141).
+4. **Acreditar actividades en el SII** (anotación del 02-09-2026): destraba facturas y notas de crédito.
+5. **19 costos en $0** y stock dormido.
+
+**De construcción, cuando se pida:**
+- Cowork "Sevelin Contenido" + conector Metricool (ver `docs/RUTA-COWORK-METRICOOL.md`).
+- Publicar los 4 productos sin SKU (microSD 128GB, pasta Kronos, kit Opula, Air Duster).
+- Semáforo de IVA dentro del informe semanal (v57).
+- Cargar el costo de un envío después de la venta (hoy solo al cobrar).
+
+**Descartado, no reintentar:** detectar automáticamente si un F29 está presentado (el SII lo entrega
+por GWT, protocolo binario que se rompe en cada despliegue; probado y revertido en `5df314c`).
+
+---
+
 **Versión activa del POS: v64 — RCV del SII automático + semáforo de IVA del mes.** Detalle en
 `docs/CHANGELOG-V64.md`. Migración `sql/51` ya aplicada en producción.
 
