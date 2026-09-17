@@ -2392,9 +2392,16 @@
           <!-- ---------- Fotos (tarjeta independiente) ---------- -->
           <div class="card">
             <div class="card-head"><div><h2>Fotos</h2>
-              <p class="subtitle">Se procesan automáticamente a 1000×1000, fondo blanco. La primera es la foto principal del catálogo.</p>
+              <p class="subtitle">Se procesan automáticamente a 1000×1000, fondo blanco. La primera es la foto principal del catálogo.
+                Para publicar en Instagram usa "📷 Para Instagram": las baja en JPG 4:5 sin recortarlas.</p>
             </div>
-              <button type="button" class="btn btn-outline btn-sm" id="btnDescargarTodasFotos" style="display:none;" title="Descarga todas las fotos de este producto en un .zip">⬇️ Descargar todas</button>
+              <div class="toolbar-group">
+                <button type="button" class="btn btn-outline btn-sm" id="btnDescargarTodasFotos" style="display:none;" title="Descarga todas las fotos de este producto en un .zip">⬇️ Descargar todas</button>
+                <!-- Instagram no acepta webp, y una foto 1:1 en un feed 4:5
+                     sale recortada. Este botón resuelve las dos cosas al
+                     descargar, sin tocar cómo se guarda el catálogo. -->
+                <button type="button" class="btn btn-outline btn-sm" id="btnDescargarInstagram" style="display:none;" title="JPG de 1080×1350 (4:5) con la foto completa, sin recortar">📷 Para Instagram</button>
+              </div>
             </div>
 
             <label class="dropzone-fotos" id="dropzoneFotos" for="prodFotoInput">

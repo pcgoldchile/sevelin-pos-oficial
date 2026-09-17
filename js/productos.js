@@ -222,6 +222,7 @@ function setupProductosEventListeners() {
   elProdPeso?.addEventListener('input', actualizarLecturaPeso);
   elProdPesoUnidad?.addEventListener('change', actualizarLecturaPeso);
   document.getElementById('btnDescargarTodasFotos')?.addEventListener('click', descargarTodasFotosProducto);
+  document.getElementById('btnDescargarInstagram')?.addEventListener('click', descargarFotosInstagram);
   if (elBtnGenerarSeoIA) elBtnGenerarSeoIA.addEventListener('click', generarSeoConIA);
   if (elBtnGenerarFichaIA) elBtnGenerarFichaIA.addEventListener('click', () => generarTextoConIA('ficha'));
   if (elBtnGenerarFacebookIA) elBtnGenerarFacebookIA.addEventListener('click', () => generarTextoConIA('facebook'));
@@ -1845,6 +1846,8 @@ function renderFotosProducto() {
   const lista = fotosActivas();
   const elBtnDescargarTodas = document.getElementById('btnDescargarTodasFotos');
   if (elBtnDescargarTodas) elBtnDescargarTodas.style.display = lista.length ? '' : 'none';
+  const elBtnInstagram = document.getElementById('btnDescargarInstagram');
+  if (elBtnInstagram) elBtnInstagram.style.display = lista.length ? '' : 'none';
   if (!lista.length) {
     elProdFotosGrid.innerHTML = '<p class="modal-hint">Sin fotos todavía.</p>';
     return;
@@ -3175,5 +3178,106 @@ async function borrarIngresoProducto(id) {
     pintarIngresosProducto();
   } catch (err) {
     showToast(err.message || 'No se pudo borrar el registro', 'err');
+  }
+}
+
+/* ============================================================
+   DESCARGAR LAS FOTOS LISTAS PARA INSTAGRAM (dueño, 17-09-2026)
+   ------------------------------------------------------------
+   DOS PROBLEMAS REALES, la misma causa:
+     1. Las fotos se guardan en WEBP e Instagram no acepta ese formato.
+     2. Se guardan en 1:1 (1000×1000), y al subirlas a un feed en 4:5
+        Instagram las recorta por los lados.
+
+   POR QUÉ NO SE ARREGLA CAMBIANDO CÓMO SE GUARDAN
+   Guardar el catálogo en 4:5 cambiaría la proporción de TODAS las
+   imágenes del sitio: las grillas de sevelin.cl, la ficha de producto y
+   el feed de Google Merchant están armados sobre imágenes cuadradas.
+   Es un destrozo enorme para resolver algo que es de la descarga. El
+   catálogo se queda en 1:1; lo que cambia es lo que uno se lleva.
+
+   CÓMO SE LLEGA AL 4:5 SIN RECORTAR
+   Lienzo de 1080×1350 (el 4:5 exacto que pide Instagram), fondo blanco,
+   y la foto completa centrada y escalada para caber entera — "contain",
+   nunca "cover". No se pierde un solo pixel de la imagen original.
+
+   El relleno blanco lo eligió el dueño sabiendo que en sus diseños con
+   fondo de color (los flyers hechos con IA) se van a ver dos franjas
+   blancas arriba y abajo. En una foto de producto sobre blanco, que es
+   el caso normal, el relleno es invisible.
+
+   OJO CON EL CANVAS Y EL CORS: las fotos viven en el bucket de Supabase,
+   otro dominio. Si se dibujara una <img> de ese origen, el canvas queda
+   "contaminado" y toBlob() lanza una excepción de seguridad. Por eso se
+   baja primero con fetch() —que ya funciona, es lo que usa "Descargar
+   todas"— y se dibuja desde un blob LOCAL, que no contamina nada.
+   ============================================================ */
+
+const IG_ANCHO = 1080;
+const IG_ALTO = 1350;        // 1080×1350 = 4:5 exacto
+const IG_CALIDAD = 0.92;     // Instagram recomprime igual; más que esto solo pesa
+
+/* Convierte UNA foto a JPG 4:5 con la imagen completa centrada. */
+async function aFotoInstagram(url) {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`No se pudo leer una de las fotos (${resp.status})`);
+  const bitmap = await createImageBitmap(await resp.blob());
+
+  const canvas = document.createElement('canvas');
+  canvas.width = IG_ANCHO;
+  canvas.height = IG_ALTO;
+  const ctx = canvas.getContext('2d');
+
+  // El fondo se pinta SIEMPRE, incluso si la foto lo tapara entero: un
+  // JPG no tiene transparencia, y sin esto el sobrante saldría negro.
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, IG_ANCHO, IG_ALTO);
+
+  // "contain": entra completa. Con Math.min, el lado que sobra queda en
+  // blanco; con Math.max se recortaría, que es justo lo que se evita.
+  const escala = Math.min(IG_ANCHO / bitmap.width, IG_ALTO / bitmap.height);
+  const ancho = Math.round(bitmap.width * escala);
+  const alto = Math.round(bitmap.height * escala);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(bitmap, Math.round((IG_ANCHO - ancho) / 2), Math.round((IG_ALTO - alto) / 2), ancho, alto);
+  bitmap.close?.();
+
+  return new Promise((resolver, rechazar) => {
+    canvas.toBlob(
+      (blob) => (blob ? resolver(blob) : rechazar(new Error('No se pudo convertir la foto a JPG'))),
+      'image/jpeg',
+      IG_CALIDAD
+    );
+  });
+}
+
+async function descargarFotosInstagram() {
+  const lista = fotosActivas();
+  if (!lista.length) return;
+  const nombre = elProdNombre?.value.trim() || 'producto';
+  const boton = document.getElementById('btnDescargarInstagram');
+  if (boton) { boton.disabled = true; boton.textContent = '⏳ Preparando…'; }
+
+  try {
+    const blobs = [];
+    for (const url of lista) blobs.push(await aFotoInstagram(url));
+    const base = slugArchivo(nombre);
+
+    if (blobs.length === 1) {
+      dispararDescargaBlob(blobs[0], `${base}-instagram.jpg`);
+    } else {
+      // Mismo criterio que "Descargar todas": varios archivos sueltos de un
+      // solo clic los bloquea el navegador, así que van en un .zip.
+      if (typeof JSZip === 'undefined') { showToast('No se pudo cargar el compresor .zip', 'err'); return; }
+      const zip = new JSZip();
+      blobs.forEach((blob, i) => zip.file(`${base}-instagram-${i + 1}.jpg`, blob));
+      dispararDescargaBlob(await zip.generateAsync({ type: 'blob' }), `${base}-instagram.zip`);
+    }
+    showToast(`${blobs.length} foto(s) en JPG 1080×1350, listas para Instagram`, 'ok');
+  } catch (err) {
+    showToast(err.message || 'No se pudieron preparar las fotos', 'err');
+  } finally {
+    if (boton) { boton.disabled = false; boton.textContent = '📷 Para Instagram'; }
   }
 }

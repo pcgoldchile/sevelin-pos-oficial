@@ -7,7 +7,25 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
-**Fecha:** 17-09-2026 · **v68 publicada — panel "Cotizaciones"** (Página Web). Lo que los clientes
+**Fecha:** 17-09-2026 · **v69 publicada — botón "📷 Para Instagram"** en las fotos del producto.
+Baja las fotos en **JPG de 1080×1350 (4:5 exacto)** con la imagen completa centrada sobre blanco.
+
+- 🐛 **Los dos problemas que arregla, reportados por el dueño:** Instagram **no acepta webp** (el
+  formato en que se guardan), y una foto **1:1 en un feed 4:5 sale recortada** por los lados.
+- 🚫 **NO se cambió cómo se guardan las fotos**, a propósito: el catálogo sigue en 1000×1000 webp.
+  Guardarlas en 4:5 cambiaría la proporción de todas las imágenes de sevelin.cl (grillas, ficha de
+  producto, feed de Google Merchant) para arreglar algo que es de la **descarga**.
+- 📐 **"contain", nunca "cover":** la foto entra entera y se rellena arriba y abajo. **No se pierde
+  un pixel.** Verificado en un navegador real con marcas en las 4 esquinas: las cuatro sobreviven.
+- ⚪ **El relleno es blanco**, elegido por el dueño sabiendo que en sus diseños con fondo de color
+  (los flyers hechos con IA) van a quedar dos franjas blancas. En una foto de producto sobre blanco
+  es invisible. Cambiarlo a "color del borde" es un cambio chico si algún día molesta.
+- ⚠️ **Trampa del canvas resuelta:** las fotos viven en el bucket de Supabase, otro dominio. Dibujar
+  una `<img>` de ahí **contamina el canvas** y `toBlob()` lanza SecurityError. Por eso se baja con
+  `fetch()` primero y se dibuja desde un blob LOCAL. Probado contra una foto real del bucket.
+- "⬇️ Descargar todas" se queda igual (webp 1:1) — sirve de respaldo y para la tienda.
+
+**Versión anterior: v68 — panel "Cotizaciones"** (Página Web). Lo que los clientes
 se cotizaron solos en sevelin.cl: quién, cuánto, si sigue vigente y cuánta plata hay en cotizaciones
 vigentes sin revisar. Solo lectura + marcar como revisada — un documento emitido no se edita desde
 acá. El cotizador en sí vive en `sevelin-tienda` (`supabase/35`), ver su `docs/SNAPSHOT.md`.
