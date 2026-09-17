@@ -558,3 +558,152 @@ function quitarBorradorDeLaLista(id) {
     texto.textContent = `${borradoresPendientes.length} compra${borradoresPendientes.length === 1 ? '' : 's'}`;
   }
 }
+
+/* ============================================================
+   PEDIDOS POR ENTREGAR (dueño, 17-09-2026)
+   ------------------------------------------------------------
+   "A veces me olvido que dejé un pedido en pendiente, y al llegar no le
+   pongo entregado ya que requiere que entre a historial de ventas; mejor
+   que me salte una notificación también de aceptar como entregado."
+
+   Botón en el header con los despachos que no están entregados, y un
+   "✅ Entregado" por fila que lo marca ahí mismo. Cero pasos intermedios:
+   el problema no era que faltara la función, era que estaba a tres clics.
+
+   SIN PIN, a propósito: marcar entregado es logística y se hace con el
+   cliente delante. Editar la dirección o el costo del viaje sí lo pide
+   (ver guardarDespachoCompleto en js/historial.js) porque eso es plata.
+
+   NO es admin-only, por lo mismo: el que entrega puede ser el trabajador.
+   Por eso el endpoint no devuelve costo ni utilidad.
+
+   Se consulta cada 5 minutos, no cada 30 como el F29: un pedido se
+   entrega dentro del día, no dentro del mes.
+   ============================================================ */
+
+const INTERVALO_ENVIOS_MS = 5 * 60 * 1000;
+let intervaloEnvios = null;
+let enviosPendientesCache = [];
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btnEnviosPendientes')?.addEventListener('click', abrirModalEnviosPendientes);
+  document.getElementById('btnCerrarEnviosPendientes')?.addEventListener('click', () => cerrarModal('modalEnviosPendientes'));
+
+  document.getElementById('enviosPendientesLista')?.addEventListener('click', (e) => {
+    const entregar = e.target.closest('[data-entregar-venta]');
+    if (entregar) { marcarEntregado(Number(entregar.dataset.entregarVenta)); return; }
+    const detalle = e.target.closest('[data-ver-venta]');
+    if (detalle && typeof verDetalleVenta === 'function') {
+      cerrarModal('modalEnviosPendientes');
+      verDetalleVenta(Number(detalle.dataset.verVenta));
+    }
+  });
+});
+
+document.addEventListener('pos:sesion-iniciada', () => {
+  if (intervaloEnvios) { clearInterval(intervaloEnvios); intervaloEnvios = null; }
+  actualizarAvisoEnvios();
+  intervaloEnvios = setInterval(actualizarAvisoEnvios, INTERVALO_ENVIOS_MS);
+});
+
+async function actualizarAvisoEnvios() {
+  const btn = document.getElementById('btnEnviosPendientes');
+  const texto = document.getElementById('textoEnviosPendientes');
+  if (!btn || !texto || !tokenActual()) return;
+
+  try {
+    enviosPendientesCache = await API.ventas.enviosPendientes() || [];
+    if (enviosPendientesCache.length === 0) { btn.hidden = true; return; }
+
+    const n = enviosPendientesCache.length;
+    texto.textContent = `${n} por entregar`;
+    /* El más viejo manda el color: uno de hace 3 días es otra cosa que uno
+       de hoy, y ese olvido es justamente lo que hay que hacer visible. */
+    const masViejo = Math.max(...enviosPendientesCache.map(v => Number(v.dias_esperando) || 0));
+    btn.classList.remove('envios-atrasado');
+    if (masViejo >= 2) btn.classList.add('envios-atrasado');
+    btn.title = masViejo >= 2
+      ? `El más antiguo lleva ${masViejo} días sin marcarse como entregado`
+      : 'Pedidos despachados sin marcar como entregados';
+    btn.hidden = false;
+    if (document.getElementById('modalEnviosPendientes')?.classList.contains('show')) pintarEnviosPendientes();
+  } catch (err) {
+    // Mismo criterio que el resto de los avisos: un fallo del sondeo no
+    // interrumpe con un toast; se reintenta en el próximo ciclo.
+    console.error('Error al revisar los pedidos por entregar:', err.message || err);
+  }
+}
+
+function abrirModalEnviosPendientes() {
+  if (!enviosPendientesCache.length) return;
+  pintarEnviosPendientes();
+  document.getElementById('modalEnviosPendientes')?.classList.add('show');
+}
+
+function pintarEnviosPendientes() {
+  const cont = document.getElementById('enviosPendientesLista');
+  const resumen = document.getElementById('enviosPendientesResumen');
+  if (!cont) return;
+
+  if (resumen) {
+    const atrasados = enviosPendientesCache.filter(v => Number(v.dias_esperando) >= 2).length;
+    resumen.textContent = enviosPendientesCache.length
+      ? `${enviosPendientesCache.length} pedido(s) despachado(s) sin marcar como entregados`
+        + (atrasados ? ` · ${atrasados} llevan 2 días o más.` : '.')
+      : 'No queda ningún pedido por entregar.';
+  }
+  if (!enviosPendientesCache.length) {
+    cont.innerHTML = '<p class="modal-hint">Nada pendiente por acá.</p>';
+    return;
+  }
+
+  cont.innerHTML = enviosPendientesCache.map(v => {
+    const dias = Number(v.dias_esperando) || 0;
+    const cuando = dias === 0 ? 'hoy' : dias === 1 ? 'ayer' : `hace ${dias} días`;
+    const est = ETIQUETAS_ENVIO[v.estado_envio || 'pendiente'] || ETIQUETAS_ENVIO.pendiente;
+    const orden = String(v.numero_orden ?? v.id).padStart(5, '0');
+    return `
+      <div class="agotado-fila" data-fila-envio="${v.id}">
+        <div class="agotado-cabecera">
+          <div class="agotado-datos">
+            <strong>#${escHtml(orden)} · ${escHtml(v.cliente || 'Consumidor Final')}</strong>
+            <small>Vendido ${escHtml(cuando)} (${escHtml(v.fecha || '')}${v.hora ? ' · ' + escHtml(v.hora) : ''}) · ${fmtCLP(v.total)}</small>
+            <small>📍 ${escHtml(v.direccion_envio || 'sin dirección anotada')}</small>
+            ${v.notas_despacho ? `<small>📝 ${escHtml(v.notas_despacho)}</small>` : ''}
+            ${v.cliente_telefono ? `<small>📱 ${escHtml(v.cliente_telefono)}</small>` : ''}
+          </div>
+          <span class="badge ${est.clase}">${est.txt}</span>
+        </div>
+        <div class="agotado-acciones">
+          <button class="btn btn-green btn-sm" data-entregar-venta="${v.id}">✅ Entregado</button>
+          <button class="btn btn-ghost btn-sm" data-ver-venta="${v.id}">Ver detalle</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function marcarEntregado(id) {
+  const fila = document.querySelector(`[data-fila-envio="${id}"]`);
+  fila?.querySelectorAll('button').forEach(b => { b.disabled = true; });
+  try {
+    await API.ventas.actualizarEnvio(id, { estado_envio: 'entregado' });
+    showToast('Pedido marcado como entregado', 'ok');
+
+    enviosPendientesCache = enviosPendientesCache.filter(v => Number(v.id) !== Number(id));
+    pintarEnviosPendientes();
+    const btn = document.getElementById('btnEnviosPendientes');
+    const texto = document.getElementById('textoEnviosPendientes');
+    if (enviosPendientesCache.length === 0) {
+      if (btn) btn.hidden = true;
+      cerrarModal('modalEnviosPendientes');
+    } else if (texto) {
+      texto.textContent = `${enviosPendientesCache.length} por entregar`;
+    }
+
+    // El historial, si está abierto, muestra el estado viejo hasta recargar
+    if (typeof cargarHistorial === 'function') cargarHistorial();
+  } catch (err) {
+    showToast(err.message || 'No se pudo marcar como entregado', 'err');
+    fila?.querySelectorAll('button').forEach(b => { b.disabled = false; });
+  }
+}

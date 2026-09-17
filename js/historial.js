@@ -1681,6 +1681,19 @@ async function guardarEdicionVenta() {
   const invalido = itemsEditando.find(i => !String(i.nombre).trim() || i.cantidad <= 0 || i.precio_unitario < 0);
   if (invalido) { showToast('Revisa nombres, cantidades y precios de los ítems', 'err'); return; }
 
+  /* PIN de administrador (dueño, 17-09-2026). Editar una venta cambia
+     total, costo y utilidad de algo ya cerrado, y con eso el resultado del
+     día y del mes. Se pide ANTES de deshabilitar el botón: si cancela, el
+     formulario queda tal cual, con todo lo que ya escribió. */
+  const t = totalesEdicion();
+  const pin = await pedirPinAdmin({
+    titulo: '✏️ Editar esta venta',
+    mensaje: 'Editar una venta recalcula su total, su costo y su utilidad, y eso mueve el resultado del día. Confirma con el PIN de administrador.',
+    resumen: `Orden #${String(ventaEditando?.numero_orden ?? id).padStart(5, '0')} · queda en ${fmtCLP(t.total)} (utilidad ${fmtCLP(t.utilidad)})`,
+    textoBoton: '✏️ Sí, guardar los cambios'
+  });
+  if (!pin) return;
+
   if (elBtnGuardarEdicionVenta) elBtnGuardarEdicionVenta.disabled = true;
 
   try {
@@ -1692,7 +1705,7 @@ async function guardarEdicionVenta() {
       cliente_telefono: elEditVentaClienteTelefono?.value.trim() || null,
       metodo_pago: elEditVentaMetodoPago?.value || null,
       items: itemsEditando
-    });
+    }, pin);
 
     showToast('Venta actualizada y totales recalculados', 'ok');
     cerrarModalEditarVenta();
@@ -1808,6 +1821,7 @@ function renderDetalleVenta(venta) {
         Costo ${fmtCLP(venta.costo_total)} ·
         Utilidad ${hayDescuento ? `tras descuento ${fmtCLP(venta.utilidad)} (bruta ${fmtCLP(utilidadBruta)})` : fmtCLP(venta.utilidad)}
       </p>` : ''}
+    ${bloqueDespachoDetalle(venta)}
     <div class="row-actions" style="justify-content:flex-end; margin-top:16px;">
       <button class="btn btn-gold" id="btnReimprimirDesdeDetalle">🖨️ Reimprimir Ticket</button>
     </div>
@@ -1817,6 +1831,10 @@ function renderDetalleVenta(venta) {
   if (btnReimprimir) {
     btnReimprimir.addEventListener('click', () => imprimirTicketVenta(venta, venta.items));
   }
+  document.getElementById('btnEditarDespacho')?.addEventListener('click', () => {
+    cerrarDetalleVenta();
+    abrirEditorDespacho(venta);
+  });
 }
 
 function cerrarDetalleVenta() {
@@ -1852,47 +1870,30 @@ function celdaEnvio(v) {
 
 let envioEditandoId = null;
 
-function abrirModalEnvio(id) {
+/* La tabla del historial solo tiene la cabecera de cada venta; el detalle
+   del viaje vive en otra tabla. Se pide al abrir para poder editarlo acá
+   mismo, sin obligar a entrar al detalle de la venta. Si esa consulta
+   falla, el modal se abre igual con lo que hay (estado y seguimiento). */
+async function abrirModalEnvio(id) {
   const venta = salesHistory.find(v => String(v.id) === String(id));
   if (!venta) return;
-  envioEditandoId = venta.id;
-
-  const ref = document.getElementById('envioVentaRef');
-  if (ref) ref.textContent =
-    `Orden #${String(venta.numero_orden ?? venta.id).padStart(5, '0')} · ${venta.cliente || 'Consumidor Final'}` +
-    (venta.direccion_envio ? ` · ${venta.direccion_envio}` : '');
-
-  const est = document.getElementById('envioEstado');
-  const seg = document.getElementById('envioSeguimiento');
-  if (est) est.value = venta.estado_envio || 'pendiente';
-  if (seg) seg.value = venta.numero_seguimiento || '';
-
-  document.getElementById('modalEnvio')?.classList.add('show');
-}
-
-async function guardarEnvio() {
-  if (!envioEditandoId) return;
-  const estado_envio = document.getElementById('envioEstado')?.value || 'pendiente';
-  const numero_seguimiento = (document.getElementById('envioSeguimiento')?.value || '').trim();
-
-  const btn = document.getElementById('btnGuardarEnvio');
-  if (btn) btn.disabled = true;
+  let completa = venta;
   try {
-    await API.ventas.actualizarEnvio(envioEditandoId, { estado_envio, numero_seguimiento });
-    showToast('Envío actualizado', 'ok');
-    document.getElementById('modalEnvio')?.classList.remove('show');
-    await cargarHistorial();
+    completa = { ...venta, ...(await API.ventas.detalle(venta.id)) };
   } catch (err) {
-    showToast(err.message || 'No se pudo actualizar el envío', 'err');
-  } finally {
-    if (btn) btn.disabled = false;
+    console.error('No se pudo cargar el detalle del envío:', err.message || err);
   }
+  abrirEditorDespacho(completa);
 }
+
+/* guardarEnvio() se reemplazó por guardarDespachoCompleto() el 17-09-2026:
+   ahora el modal guarda el estado (sin pin) y, si corresponde, el detalle
+   del despacho (con pin). Ver el bloque de despacho al final del archivo. */
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnCancelarEnvio')?.addEventListener('click', () =>
     document.getElementById('modalEnvio')?.classList.remove('show'));
-  document.getElementById('btnGuardarEnvio')?.addEventListener('click', guardarEnvio);
+  document.getElementById('btnGuardarEnvio')?.addEventListener('click', guardarDespachoCompleto);
   document.getElementById('modalEnvio')?.addEventListener('click', (e) => {
     if (e.target.id === 'modalEnvio') document.getElementById('modalEnvio').classList.remove('show');
   });
@@ -2007,5 +2008,166 @@ function buscarVentaUniversal() {
     elHistResultadoBusqueda.innerHTML = coincidencias.length
       ? `<b>${coincidencias.length}</b> venta(s) con ${escHtml(etiqueta)}.`
       : `Sin ventas con ${escHtml(etiqueta)} en este período. Prueba “Buscar en todo el historial” o amplía las fechas.`;
+  }
+}
+
+/* ============================================================
+   DESPACHO DENTRO DEL DETALLE DE VENTA (dueño, 17-09-2026)
+   ------------------------------------------------------------
+   "Deseo ver en el detalle de venta la dirección de envío y todos los
+   detalles, también que se puedan editar."
+
+   Hasta ahora el detalle mostraba qué se vendió y en cuánto, pero no a
+   dónde iba ni cuánto costó llevarlo: eso vive en la tabla `envios`
+   (sql/50 y 54) y solo se veía como un badge de estado en la tabla.
+
+   EDITAR ESTO EXIGE PIN. No por burocracia: el costo del viaje y lo que
+   se le cobró al cliente son plata de esa venta. Cambiar el ESTADO
+   (entregado/pendiente) NO pide pin — eso es logística y se hace con el
+   cliente delante.
+   ============================================================ */
+
+const REPARTIDORES_ETIQUETA = {
+  indrive: '🚗 InDrive', padre: '👨 Mi padre', otro: 'Otro', sin_costo: 'Sin costo'
+};
+
+/* El bloque que se inserta en el detalle. Devuelve '' para retiro en
+   tienda: no hay despacho del que hablar y una tarjeta vacía solo estorba. */
+function bloqueDespachoDetalle(venta) {
+  if (venta.tipo_entrega !== 'despacho') return '';
+  const e = venta.envio || null;
+  const est = ETIQUETAS_ENVIO[venta.estado_envio || 'pendiente'] || ETIQUETAS_ENVIO.pendiente;
+
+  const fila = (etiqueta, valor) => valor
+    ? `<div style="display:flex; justify-content:space-between; gap:12px; padding:3px 0;">
+         <span style="color:var(--text-muted);">${etiqueta}</span><span style="text-align:right;">${valor}</span>
+       </div>`
+    : '';
+
+  /* "Lo pusiste tú" (sql/54): la diferencia entre lo que costó y lo que se
+     cobró. Solo se muestra si AMBOS datos existen — sin el cobro anotado no
+     se sabe si hubo pérdida, y suponer 0 inventaría una. */
+  let bolsillo = '';
+  if (e && e.cobrado_cliente !== null && e.cobrado_cliente !== undefined && num(e.costo) > 0) {
+    const dif = num(e.cobrado_cliente) - num(e.costo);
+    if (dif < 0) {
+      bolsillo = `<div style="margin-top:6px; color:var(--red);">⚠️ Este envío lo pusiste tú: ${fmtCLP(Math.abs(dif))} de tu bolsillo</div>`;
+    } else if (dif > 0) {
+      bolsillo = `<div style="margin-top:6px; color:var(--green);">✔️ El envío dejó ${fmtCLP(dif)} a favor</div>`;
+    }
+  }
+
+  return `
+    <div style="border-top:1px solid var(--border); margin-top:14px; padding-top:12px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px;">
+        <b>🚚 Despacho</b>
+        <span class="badge ${est.clase}">${est.txt}</span>
+      </div>
+      <div style="font-size:13px;">
+        ${fila('Dirección', escHtml(venta.direccion_envio || '') || '<span style="color:var(--text-muted);">sin anotar</span>')}
+        ${fila('Notas', escHtml(venta.notas_despacho || ''))}
+        ${fila('Seguimiento', escHtml(venta.numero_seguimiento || ''))}
+        ${e ? `
+          ${fila('Quién lo lleva', escHtml(REPARTIDORES_ETIQUETA[e.repartidor] || e.repartidor || '') + (e.repartidor_detalle ? ' · ' + escHtml(e.repartidor_detalle) : ''))}
+          ${fila('Costo real', fmtCLP(e.costo) + (e.metodo_pago ? ` <small style="color:var(--text-muted);">(${escHtml(e.metodo_pago)})</small>` : ''))}
+          ${fila('Cobrado al cliente', e.cobrado_cliente === null || e.cobrado_cliente === undefined
+              ? '<span style="color:var(--text-muted);">no anotado</span>' : fmtCLP(e.cobrado_cliente))}
+          ${fila('Sector', escHtml(e.sector || ''))}
+          ${fila('Distancia', e.km ? `${e.km} km` : '')}
+          ${fila('Demoró', e.duracion_min ? `${e.duracion_min} min` : '')}
+        ` : '<p class="modal-hint" style="margin:6px 0 0;">Todavía no se anotó el costo de este viaje.</p>'}
+      </div>
+      ${bolsillo}
+      <div class="row-actions" style="justify-content:flex-end; margin-top:10px;">
+        <button class="btn btn-outline btn-sm" id="btnEditarDespacho">✏️ Editar despacho</button>
+      </div>
+    </div>`;
+}
+
+/* Abre el editor del despacho, precargado con lo que hay. Se arma sobre el
+   modal de envío que ya existía (modalEnvio) — ahí vivían el estado y el
+   seguimiento; ahora además están la dirección y el detalle del viaje. */
+function abrirEditorDespacho(venta) {
+  const e = venta.envio || {};
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v ?? ''; };
+  envioEditandoId = venta.id;
+
+  const ref = document.getElementById('envioVentaRef');
+  if (ref) ref.textContent =
+    `Orden #${String(venta.numero_orden ?? venta.id).padStart(5, '0')} · ${venta.cliente || 'Consumidor Final'}`;
+
+  set('envioEstado', venta.estado_envio || 'pendiente');
+  set('envioSeguimiento', venta.numero_seguimiento || '');
+  set('envioDireccionEdit', venta.direccion_envio || '');
+  set('envioNotasEdit', venta.notas_despacho || '');
+  set('envioRepartidorEdit', e.repartidor || 'indrive');
+  set('envioCostoEdit', e.costo ?? '');
+  set('envioCobradoEdit', e.cobrado_cliente ?? '');
+  set('envioKmEdit', e.km ?? '');
+  set('envioDuracionEdit', e.duracion_min ?? '');
+  set('envioSectorEdit', e.sector || '');
+
+  const bloque = document.getElementById('envioCamposDespacho');
+  if (bloque) bloque.style.display = venta.tipo_entrega === 'despacho' ? 'block' : 'none';
+
+  document.getElementById('modalEnvio')?.classList.add('show');
+}
+
+/* Guarda los datos del despacho. Dos llamadas a propósito y en este orden:
+   primero el estado (sin pin, nunca falla por autorización) y después el
+   detalle con plata (con pin). Si el pin se cancela, el estado igual quedó
+   guardado — que es lo que más se usa. */
+async function guardarDespachoCompleto() {
+  if (!envioEditandoId) return;
+  const valor = (id) => (document.getElementById(id)?.value ?? '').trim();
+  const btn = document.getElementById('btnGuardarEnvio');
+  if (btn) btn.disabled = true;
+
+  try {
+    await API.ventas.actualizarEnvio(envioEditandoId, {
+      estado_envio: valor('envioEstado') || 'pendiente',
+      numero_seguimiento: valor('envioSeguimiento')
+    });
+
+    // ¿Cambió algo del despacho que valga plata o dirección?
+    const bloque = document.getElementById('envioCamposDespacho');
+    const editaDespacho = bloque && bloque.style.display !== 'none';
+
+    if (editaDespacho) {
+      const pin = await pedirPinAdmin({
+        titulo: '🚚 Guardar datos del despacho',
+        mensaje: 'La dirección y el costo del viaje son parte de la plata de esta venta. Confirma con el PIN de administrador.',
+        resumen: 'El estado de envío ya se guardó: esto es solo el detalle del despacho.',
+        textoBoton: '🚚 Sí, guardar el despacho'
+      });
+      if (!pin) { showToast('Estado guardado. El detalle del despacho quedó sin cambios', 'ok'); }
+      else {
+        const resp = await API.ventas.actualizarDespacho(envioEditandoId, {
+          direccion_envio: valor('envioDireccionEdit'),
+          notas_despacho: valor('envioNotasEdit'),
+          envio: {
+            repartidor: valor('envioRepartidorEdit'),
+            costo: valor('envioCostoEdit') === '' ? undefined : Number(valor('envioCostoEdit')),
+            // Vacío = no anotado (NULL), nunca 0 — ver sql/54
+            cobrado_cliente: valor('envioCobradoEdit') === '' ? null : Number(valor('envioCobradoEdit')),
+            km: valor('envioKmEdit') === '' ? undefined : Number(valor('envioKmEdit')),
+            duracion_min: valor('envioDuracionEdit') === '' ? undefined : Number(valor('envioDuracionEdit')),
+            sector: valor('envioSectorEdit')
+          }
+        }, pin);
+        showToast('Despacho actualizado', 'ok');
+        // El gasto ya asentado no se reescribe solo: se avisa, no se esconde.
+        if (resp?.aviso_gasto) setTimeout(() => showToast(resp.aviso_gasto, 'err'), 2200);
+      }
+    } else {
+      showToast('Envío actualizado', 'ok');
+    }
+
+    document.getElementById('modalEnvio')?.classList.remove('show');
+    await cargarHistorial();
+  } catch (err) {
+    showToast(err.message || 'No se pudo actualizar el despacho', 'err');
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }

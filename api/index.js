@@ -3330,6 +3330,140 @@ app.get('/api/ventas/items/por-ventas', auth(), async (req, res) => {
 });
 
 // Detalle: venta + ítems (el ticket lo necesita para reimprimir)
+/* ============================================================
+   DESPACHOS SIN ENTREGAR (dueño, 17-09-2026)
+   ------------------------------------------------------------
+   "A veces me olvido que dejé un pedido en pendiente, y al llegar no le
+   pongo entregado ya que requiere que entre a historial de ventas."
+
+   Acá está la lista para el aviso del header. Va ANTES de
+   GET /api/ventas/:id a propósito: Express resuelve por orden, y si
+   estuviera después, "envios-pendientes" entraría como un :id y daría 404.
+
+   auth() y no auth(true): entregar un pedido es logística, y el trabajador
+   que recibe al cliente tiene que poder marcarlo. Por eso tampoco se
+   devuelven costo ni utilidad — solo lo necesario para entregar.
+   ============================================================ */
+app.get('/api/ventas/envios-pendientes', auth(), async (req, res) => {
+  const { data, error } = await db.from('ventas')
+    .select('id, numero_orden, fecha, hora, cliente, cliente_telefono, direccion_envio, notas_despacho, estado_envio, numero_seguimiento, total, vendida_en')
+    .eq('tipo_entrega', 'despacho')
+    .neq('estado_envio', 'entregado')
+    .order('vendida_en', { ascending: true });          // lo más viejo primero: es lo que más urge
+  if (error) return enviarErrorBD(res, error);
+
+  const hoy = fechaHoyChile();
+  res.json((data || []).map(v => ({
+    ...v,
+    /* Cuántos días lleva esperando. Es el dato que ataca el problema real
+       ("se me olvidó"): un pedido de hace 5 días no se lee igual que uno
+       de hoy. Se calcula al leer, nunca se guarda: mañana sería otro. */
+    dias_esperando: Math.max(0, diasEntre(String(v.fecha), hoy))
+  })));
+});
+
+/* ============================================================
+   EDITAR LOS DATOS DEL DESPACHO — EXIGE PIN DE ADMINISTRADOR
+   ------------------------------------------------------------
+   Separado de PUT /api/ventas/:id/envio (que solo mueve el estado y el
+   seguimiento, y sigue SIN pin) por una razón concreta: marcar un pedido
+   como entregado tiene que ser de un clic para el que está atendiendo,
+   mientras que corregir la dirección, el costo del viaje o cuánto se le
+   cobró al cliente cambia la plata de esa venta. Lo primero es logística,
+   lo segundo es editar la venta.
+
+   Toca dos tablas: la cabecera vive en `ventas` (dirección y notas, que
+   viajan en el ticket) y el detalle del viaje en `envios` (sql/50 y 54).
+   ============================================================ */
+app.put('/api/ventas/:id/despacho', auth(true), exigirPinAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return enviarError(res, 400, 'Venta inválida');
+
+  try {
+    const { data: venta, error: errV } = await db.from('ventas')
+      .select('id, tipo_entrega').eq('id', id).maybeSingle();
+    if (errV) throw errV;
+    if (!venta) return enviarError(res, 404, 'Venta no encontrada');
+
+    // ---------- Cabecera de la venta ----------
+    const cambiosVenta = {};
+    if (req.body?.direccion_envio !== undefined) {
+      cambiosVenta.direccion_envio = String(req.body.direccion_envio || '').trim().slice(0, 200) || null;
+    }
+    if (req.body?.notas_despacho !== undefined) {
+      cambiosVenta.notas_despacho = String(req.body.notas_despacho || '').trim().slice(0, 200) || null;
+    }
+    if (Object.keys(cambiosVenta).length) {
+      const { error } = await db.from('ventas').update(cambiosVenta).eq('id', id);
+      if (error) throw error;
+    }
+
+    /* ---------- Detalle del viaje ----------
+       Si la venta todavía no tiene fila en `envios` (se cobró sin anotar el
+       costo, que es el caso de "lo sabré después"), se crea acá. Por eso
+       este endpoint también sirve para cargar el costo de un envío DESPUÉS
+       de la venta — que estaba pendiente desde v63. */
+    const e = req.body?.envio;
+    let envioGuardado = null;
+    if (e && typeof e === 'object') {
+      const repartidor = Object.keys(REPARTIDORES).includes(e.repartidor) ? e.repartidor : null;
+      const datos = {};
+      if (repartidor) datos.repartidor = repartidor;
+      if (e.repartidor_detalle !== undefined) datos.repartidor_detalle = String(e.repartidor_detalle || '').trim().slice(0, 80) || null;
+      if (e.costo !== undefined) datos.costo = Math.max(0, Math.round(num(e.costo)));
+      /* Vacío se guarda NULL, nunca 0 (sql/54): un 0 diría "envío regalado"
+         e inventaría una pérdida que quizás no hubo. */
+      if (e.cobrado_cliente !== undefined) {
+        datos.cobrado_cliente = e.cobrado_cliente === null || e.cobrado_cliente === ''
+          ? null : Math.max(0, Math.round(num(e.cobrado_cliente)));
+      }
+      if (e.km !== undefined) datos.km = num(e.km) > 0 ? Math.round(num(e.km) * 10) / 10 : null;
+      if (e.duracion_min !== undefined) {
+        datos.duracion_min = num(e.duracion_min) > 0 ? Math.min(1440, Math.round(num(e.duracion_min))) : null;
+      }
+      if (e.sector !== undefined) datos.sector = String(e.sector || '').trim().replace(/\s+/g, ' ').slice(0, 60) || null;
+
+      if (Object.keys(datos).length) {
+        const { data: previo } = await db.from('envios').select('id').eq('venta_id', id).maybeSingle();
+        if (previo) {
+          const { data, error } = await db.from('envios').update(datos).eq('venta_id', id).select('*');
+          if (error) throw error;
+          envioGuardado = data?.[0] || null;
+        } else {
+          /* Alta nueva: `repartidor` es obligatorio en la tabla, así que sin
+             uno declarado se asume "otro" en vez de fallar — el dueño está
+             anotando un costo que ya pagó, no dando de alta un proveedor. */
+          const { data, error } = await db.from('envios').insert([{
+            venta_id: id,
+            repartidor: repartidor || 'otro',
+            ...datos,
+            direccion: cambiosVenta.direccion_envio ?? null
+          }]).select('*');
+          if (error) throw error;
+          envioGuardado = data?.[0] || null;
+        }
+      }
+    }
+
+    /* OJO: acá NO se toca el gasto en `compras` ni el egreso del turno de
+       caja que se hayan registrado al cobrar (ver registrarEnvioDeVenta).
+       Corregir el costo del viaje después no puede reescribir un gasto ya
+       asentado ni un arqueo de caja ya cerrado: eso se corrige en Gastos,
+       donde queda rastro. La respuesta lo avisa para que la pantalla lo
+       diga y nadie suponga lo contrario. */
+    const { data: actualizada } = await db.from('ventas').select('*').eq('id', id).maybeSingle();
+    res.json({
+      ...limpiarParaRol(actualizada, req.usuario.rol),
+      envio: envioGuardado,
+      aviso_gasto: envioGuardado && e?.costo !== undefined
+        ? 'El costo del envío se actualizó acá, pero el gasto ya registrado en Gastos no cambia solo: corrígelo ahí si hace falta.'
+        : null
+    });
+  } catch (error) {
+    return enviarErrorBD(res, error, 'PUT /api/ventas/:id/despacho');
+  }
+});
+
 app.get('/api/ventas/:id', auth(), async (req, res) => {
   const { data: venta, error } = await db.from('ventas').select('*').eq('id', req.params.id).single();
   if (error) return enviarError(res, 404, 'Venta no encontrada');
@@ -3337,9 +3471,21 @@ app.get('/api/ventas/:id', auth(), async (req, res) => {
   const { data: items, error: errItems } = await db.from('venta_items').select('*').eq('venta_id', req.params.id).order('id');
   if (errItems) return enviarErrorBD(res, errItems);
 
+  /* Detalle del despacho (sql/50 y 54). Vive en su propia tabla, así que
+     hasta ahora el detalle de venta no lo mostraba: el dueño veía la venta
+     pero no a dónde iba ni cuánto costó llevarla. Un fallo al leerlo NO
+     tumba el detalle: la venta se muestra igual, solo sin el bloque. */
+  let envio = null;
+  if (venta.tipo_entrega === 'despacho') {
+    const { data, error: errEnvio } = await db.from('envios').select('*').eq('venta_id', req.params.id).maybeSingle();
+    if (errEnvio) console.error('[VENTAS] no se pudo leer el envío:', errEnvio.message);
+    else envio = data || null;
+  }
+
   res.json({
     ...limpiarParaRol(venta, req.usuario.rol),
-    items: limpiarLista(items, req.usuario.rol)
+    items: limpiarLista(items, req.usuario.rol),
+    envio
   });
 });
 
@@ -3798,7 +3944,12 @@ app.post('/api/ventas/importar', auth(true), async (req, res) => {
    Acepta cabecera y, opcionalmente, la lista completa de ítems:
    si viene "items", se reemplaza el detalle y se recalculan
    total, costo_total y utilidad. */
-app.put('/api/ventas/:id', auth(true), async (req, res) => {
+/* Editar una venta cambia total, costo y utilidad de una operación ya
+   cerrada — y con eso el resultado del día y del mes. Desde el 17-09-2026
+   exige reconfirmar el PIN de administrador (pedido del dueño), igual que
+   borrar productos en masa. El estado de envío NO pasa por acá: marcar
+   "entregado" es logística y sigue siendo de un clic. */
+app.put('/api/ventas/:id', auth(true), exigirPinAdmin, async (req, res) => {
   try {
     const id = req.params.id;
     const cambios = {};

@@ -7,7 +7,30 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
-**Fecha:** 17-09-2026 · **v69 publicada — botón "📷 Para Instagram"** en las fotos del producto.
+**Fecha:** 17-09-2026 · **v70 publicada — despachos por entregar, despacho en el detalle de venta, y
+PIN para editar una venta.**
+
+- 🚚 **Aviso "por entregar" en el header.** "A veces me olvido que dejé un pedido en pendiente, y al
+  llegar no le pongo entregado ya que requiere que entre a historial de ventas" (dueño). Ahora hay
+  botón con los despachos sin entregar y **"✅ Entregado" de un clic** en cada uno. Muestra hace
+  cuántos días espera cada pedido, y **se pone rojo con pulso a los 2 días**. Se consulta cada 5
+  minutos, no cada 30 como el F29: un pedido se entrega dentro del día.
+- 👷 **NO es admin-only y NO pide PIN**, a propósito: entregar lo hace quien atiende, con el cliente
+  delante. Por eso el endpoint tampoco devuelve costo ni utilidad (verificado en la prueba, con el
+  doble respetando ahora las columnas del `select`).
+- 📦 **El detalle de venta muestra el despacho completo:** dirección, notas, quién lo llevó, costo
+  real, cobrado al cliente, sector, km y duración — más el aviso de **"este envío lo pusiste tú"**
+  cuando cobraste menos de lo que pagaste. Antes nada de eso se veía: vive en la tabla `envios`.
+- 🔒 **Editar una venta exige PIN de administrador** (pedido del dueño). Cambia total, costo y
+  utilidad de algo ya cerrado, y con eso el resultado del día. Editar la **dirección o el costo del
+  despacho** también lo pide; cambiar el **estado de envío**, no.
+- 💸 **Se puede cargar el costo de un envío DESPUÉS de la venta** (estaba pendiente desde v63): si la
+  venta no tenía fila en `envios`, el editor la crea.
+- ⚠️ **Lo que NO hace, y lo dice en pantalla:** corregir el costo del viaje **no reescribe** el gasto
+  ya asentado en Gastos ni el egreso del turno de caja. Eso se corrige en Gastos, donde queda rastro.
+- Sin migración: usa `ventas.estado_envio` y las tablas `envios` de sql/50 y 54.
+
+**Versión anterior: v69 — botón "📷 Para Instagram"** en las fotos del producto.
 Baja las fotos en **JPG de 1080×1350 (4:5 exacto)** con la imagen completa centrada sobre blanco.
 
 - 🐛 **Los dos problemas que arregla, reportados por el dueño:** Instagram **no acepta webp** (el

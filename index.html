@@ -208,6 +208,11 @@
       <button id="btnBorradores" class="btn-notificaciones btn-borradores admin-only" title="Compras detectadas sin confirmar" hidden>
         📥 <span id="textoBorradores">Compras</span>
       </button>
+      <!-- Despachos sin entregar. NO es admin-only: entregar un pedido lo
+           hace quien atiende, y el punto es que se marque en el momento. -->
+      <button id="btnEnviosPendientes" class="btn-notificaciones btn-envios" title="Pedidos despachados sin marcar como entregados" hidden>
+        🚚 <span id="textoEnviosPendientes">Por entregar</span>
+      </button>
       <span id="syncBadge" class="sync-badge sync-pending">⏳ Conectando…</span>
     </div>
   </header>
@@ -3879,8 +3884,8 @@
        ACTUALIZAR ENVÍO (punto 5) — estado + número de seguimiento
        ============================================================ -->
   <div id="modalEnvio" class="modal-overlay">
-    <div class="modal-box modal-sm">
-      <h2>🚚 Estado del envío</h2>
+    <div class="modal-box">
+      <h2>🚚 Envío y despacho</h2>
       <p class="modal-hint" id="envioVentaRef">—</p>
 
       <div class="field" style="margin-top:14px;">
@@ -3895,6 +3900,52 @@
       <div class="field">
         <label for="envioSeguimiento">N° de seguimiento (Starken / Chilexpress)</label>
         <input type="text" id="envioSeguimiento" placeholder="Opcional" maxlength="60">
+      </div>
+
+      <!-- Detalle del despacho (sql/50 y 54). Solo para ventas con despacho.
+           Guardar ESTO pide el PIN de administrador: la dirección y el costo
+           del viaje son plata de la venta. El estado de arriba no lo pide. -->
+      <div id="envioCamposDespacho" style="display:none; border-top:1px solid var(--border); margin-top:12px; padding-top:12px;">
+        <p class="modal-hint" style="margin-bottom:10px;">✏️ Editar lo de abajo pide el PIN de administrador.</p>
+        <div class="field">
+          <label for="envioDireccionEdit">Dirección de envío</label>
+          <input type="text" id="envioDireccionEdit" maxlength="200" placeholder="Calle, número, comuna">
+        </div>
+        <div class="field">
+          <label for="envioNotasEdit">Notas de despacho</label>
+          <input type="text" id="envioNotasEdit" maxlength="200" placeholder="Ej: entregar en conserjería">
+        </div>
+        <div class="grid grid-2">
+          <div class="field">
+            <label for="envioRepartidorEdit">¿Quién lo lleva?</label>
+            <select id="envioRepartidorEdit">
+              <option value="indrive">🚗 InDrive</option>
+              <option value="padre">👨 Mi padre</option>
+              <option value="otro">Otro</option>
+              <option value="sin_costo">Sin costo</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="envioSectorEdit">Sector / población</label>
+            <input type="text" id="envioSectorEdit" maxlength="60" placeholder="Ej: Chinchorro">
+          </div>
+          <div class="field">
+            <label for="envioCostoEdit">Costo real (lo que pagas tú)</label>
+            <input type="number" id="envioCostoEdit" min="0" step="100" inputmode="numeric" placeholder="Ej: 3500">
+          </div>
+          <div class="field">
+            <label for="envioCobradoEdit">Le cobré al cliente</label>
+            <input type="number" id="envioCobradoEdit" min="0" step="100" inputmode="numeric" placeholder="Déjalo vacío si no lo anotaste">
+          </div>
+          <div class="field">
+            <label for="envioKmEdit">Km</label>
+            <input type="number" id="envioKmEdit" min="0" step="0.1" inputmode="decimal" placeholder="Ej: 4.2">
+          </div>
+          <div class="field">
+            <label for="envioDuracionEdit">Demoró (min)</label>
+            <input type="number" id="envioDuracionEdit" min="0" max="1440" step="5" inputmode="numeric" placeholder="Ej: 25">
+          </div>
+        </div>
       </div>
 
       <div class="modal-foot">
@@ -5791,6 +5842,24 @@
        lo único que no puede saber: el plazo de devolución. Se abre desde
        el botón 📥 del header. Lo pinta js/notificaciones.js.
        ============================================================ -->
+  <!-- ============================================================
+       DESPACHOS POR ENTREGAR
+       "A veces me olvido que dejé un pedido en pendiente, y al llegar no
+       le pongo entregado ya que requiere que entre a historial de ventas"
+       (dueño, 17-09-2026). Acá se marca entregado de un clic, sin PIN:
+       es logística, no editar la venta. Lo pinta js/notificaciones.js.
+       ============================================================ -->
+  <div id="modalEnviosPendientes" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <h2>🚚 Pedidos por entregar</h2>
+      <p class="modal-hint" id="enviosPendientesResumen">—</p>
+      <div id="enviosPendientesLista" class="agotados-lista"></div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCerrarEnviosPendientes" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modalIngresosBorradores" class="modal-overlay">
     <div class="modal-box modal-lg">
       <h2>📥 Compras por confirmar</h2>

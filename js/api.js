@@ -201,11 +201,27 @@ const API = {
     // Cambia solo el tipo de DTE (edición rápida desde el Historial)
     cambiarDTE: (id, tipo) => apiRequest(`/ventas/${id}/dte`, { method: 'POST', body: { tipo_dte: tipo } }),
     // Actualiza estado de envío y número de seguimiento (logística)
+    // Estado de envío y seguimiento: SIN pin a propósito — marcar un pedido
+    // como entregado es logística y tiene que ser de un clic.
     actualizarEnvio: (id, datos) => apiRequest(`/ventas/${id}/envio`, { method: 'PUT', body: datos }),
+
+    /* Despachos que todavía no se entregaron — alimenta el aviso 🚚 del
+       header (dueño: "a veces me olvido que dejé un pedido en pendiente"). */
+    enviosPendientes: () => apiRequest('/ventas/envios-pendientes'),
+
+    /* Dirección, notas y detalle del viaje (costo, cobrado, km, duración).
+       Esto SÍ exige el PIN: cambia la plata de la venta, a diferencia del
+       estado de envío. También sirve para cargar el costo de un envío
+       DESPUÉS de la venta. */
+    actualizarDespacho: (id, datos, pin) =>
+      apiRequest(`/ventas/${id}/despacho`, { method: 'PUT', body: { ...datos, pin } }),
     importar: (ventas) => apiRequest('/ventas/importar', { method: 'POST', body: { ventas } }),
     detalle: (id) => apiRequest(`/ventas/${id}`),
     crear: (venta) => apiRequest('/ventas', { method: 'POST', body: venta }),
-    actualizar: (id, cambios) => apiRequest(`/ventas/${id}`, { method: 'PUT', body: cambios }),
+    /* Editar una venta cambia total, costo y utilidad de algo ya cerrado, y
+       con eso el resultado del día. Exige reconfirmar el PIN de
+       administrador desde el 17-09-2026 (pedido del dueño). */
+    actualizar: (id, cambios, pin) => apiRequest(`/ventas/${id}`, { method: 'PUT', body: { ...cambios, pin } }),
     eliminar: (id) => apiRequest(`/ventas/${id}`, { method: 'DELETE' }),
     eliminarPeriodo: (desde, hasta, pin) => apiRequest(`/ventas?desde=${desde}&hasta=${hasta}`, { method: 'DELETE', body: { pin } }),
     eliminarTodo: (pin) => apiRequest('/ventas?todo=true', { method: 'DELETE', body: { pin } }),
