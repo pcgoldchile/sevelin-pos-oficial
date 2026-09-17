@@ -160,6 +160,7 @@
         <button class="nav-btn admin-only" data-view="view-pagina-web">🌐 Página Web</button>
         <div class="nav-subitems admin-only">
           <button class="nav-subitem" data-view="view-pagina-web" data-subtab="pedidos">Pedidos Web</button>
+          <button class="nav-subitem" data-view="view-pagina-web" data-subtab="cotizaciones">Cotizaciones</button>
           <button class="nav-subitem" data-view="view-pagina-web" data-subtab="categorias">Categorías</button>
         </div>
       </div>
@@ -2585,12 +2586,48 @@
 
       <nav class="subtabs" id="subtabsPaginaWeb">
         <button class="subtab activo" data-subtab="pedidos">🌐 Pedidos Web</button>
+        <button class="subtab" data-subtab="cotizaciones">📄 Cotizaciones</button>
         <button class="subtab" data-subtab="categorias">🗂️ Categorías</button>
         <button class="subtab" data-subtab="mas-buscados">🔍 Más buscados</button>
         <button class="subtab" data-subtab="metricas">📊 Métricas</button>
         <button class="subtab" data-subtab="feed">📣 Feed de catálogo</button>
         <button class="subtab" data-subtab="salud">🩺 Salud</button>
       </nav>
+
+      <!-- ============================================================
+           COTIZACIONES (supabase/35 en sevelin-tienda)
+           Las que el cliente se generó solo desde el carrito de sevelin.cl.
+           Solo lectura + marcar como gestionada: un documento ya emitido no
+           se edita desde acá. Lo pinta js/pagina-web.js.
+           ============================================================ -->
+      <div class="panel-pagina-web" data-panel-pagina-web="cotizaciones">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Cotizaciones</h2>
+              <p class="subtitle" id="cotizacionesResumen">Lo que los clientes se cotizaron solos en la tienda.</p>
+            </div>
+            <div class="toolbar-group">
+              <div class="chip-group" id="cotizacionesChips">
+                <button class="chip active" data-cot-filtro="">Todas</button>
+                <button class="chip" data-cot-filtro="pendientes">Sin revisar</button>
+              </div>
+              <button class="btn btn-outline btn-sm" id="btnCotizacionesRecargar">🔄 Actualizar</button>
+            </div>
+          </div>
+          <div class="tabla-scroll">
+            <table class="data-table">
+              <thead><tr>
+                <th>N°</th><th>Fecha</th><th>Cliente</th><th>Productos</th>
+                <th class="num">Neto</th><th class="num">Total</th><th>Estado</th><th></th>
+              </tr></thead>
+              <tbody id="cotizacionesBody">
+                <tr class="empty-row"><td colspan="8">Cargando…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
 
       <div class="panel-pagina-web activo" data-panel-pagina-web="pedidos">
         <div class="card">

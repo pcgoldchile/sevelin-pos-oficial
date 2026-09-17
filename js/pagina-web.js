@@ -70,6 +70,7 @@ function mostrarPanelPaginaWeb(nombre) {
   });
 
   if (nombre === 'pedidos' && typeof cargarPedidosWeb === 'function') cargarPedidosWeb();
+  if (nombre === 'cotizaciones') cargarCotizacionesWeb();
   if (nombre === 'categorias') cargarCategoriasWeb();
   if (nombre === 'mas-buscados') cargarMasBuscados();
   if (nombre === 'metricas') { cargarMetricasWeb(); iniciarRefrescoVisitantesActivos(); }
@@ -943,5 +944,120 @@ async function descargarFeedCatalogo() {
     showToast(err.message || 'No se pudo generar el feed', 'err');
   } finally {
     if (boton) { boton.disabled = false; boton.textContent = '⬇️ Generar y descargar'; }
+  }
+}
+
+/* ============================================================
+   COTIZACIONES DE LA TIENDA (supabase/35 en sevelin-tienda)
+   ------------------------------------------------------------
+   Lo que los clientes se cotizaron solos desde el carrito de sevelin.cl.
+   Antes esa intención de compra se perdía entera: alguien armaba $6
+   millones en tarjetas de video, se llevaba el número y nadie en el POS
+   se enteraba nunca.
+
+   Solo lectura + "marcar como revisada". Un documento ya emitido no se
+   edita desde acá: el cliente tiene su copia en PDF y cambiarle los
+   números por detrás sería peor que no tener cotizador.
+
+   La vigencia la calcula el SERVIDOR al leer (ver GET
+   /api/pos/cotizaciones): una cotización vence sola con el paso del
+   tiempo, así que un "vigente" guardado quedaría mintiendo al día
+   siguiente.
+   ============================================================ */
+
+let cotizacionesCache = [];
+let cotizacionesFiltro = '';
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btnCotizacionesRecargar')?.addEventListener('click', () => cargarCotizacionesWeb());
+
+  document.getElementById('cotizacionesChips')?.addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-cot-filtro]');
+    if (!chip) return;
+    cotizacionesFiltro = chip.dataset.cotFiltro || '';
+    document.querySelectorAll('#cotizacionesChips .chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    cargarCotizacionesWeb();
+  });
+
+  /* Clic delegado: la tabla se vuelve a pintar entera tras cada cambio, y
+     enganchar botón por botón se perdería en el siguiente render. */
+  document.getElementById('cotizacionesBody')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-cot-gestionar]');
+    if (btn) { gestionarCotizacion(Number(btn.dataset.cotGestionar), btn.dataset.cotValor === '1'); return; }
+    const ver = e.target.closest('[data-cot-ver]');
+    if (ver) window.open(`https://sevelin.cl/cotizacion/${ver.dataset.cotVer}`, '_blank', 'noopener');
+  });
+});
+
+async function cargarCotizacionesWeb() {
+  const cuerpo = document.getElementById('cotizacionesBody');
+  if (!cuerpo) return;
+  cuerpo.innerHTML = '<tr class="empty-row"><td colspan="8">Cargando…</td></tr>';
+  try {
+    cotizacionesCache = await API.cotizacionesWeb.listar(cotizacionesFiltro === 'pendientes') || [];
+    pintarCotizacionesWeb();
+  } catch (err) {
+    cuerpo.innerHTML = `<tr class="empty-row"><td colspan="8">${escHtml(err.message || 'No se pudieron cargar')}</td></tr>`;
+  }
+}
+
+function pintarCotizacionesWeb() {
+  const cuerpo = document.getElementById('cotizacionesBody');
+  const resumen = document.getElementById('cotizacionesResumen');
+  if (!cuerpo) return;
+
+  if (resumen) {
+    const sinRevisar = cotizacionesCache.filter(c => !c.gestionada_en).length;
+    const montoVigente = cotizacionesCache
+      .filter(c => c.vigente && !c.gestionada_en)
+      .reduce((a, c) => a + num(c.total), 0);
+    resumen.textContent = cotizacionesCache.length
+      ? `${cotizacionesCache.length} cotización(es) · ${sinRevisar} sin revisar · ${fmtCLP(montoVigente)} en cotizaciones vigentes sin revisar.`
+      : 'Todavía nadie se ha cotizado nada en la tienda.';
+  }
+
+  if (!cotizacionesCache.length) {
+    cuerpo.innerHTML = '<tr class="empty-row"><td colspan="8">Sin cotizaciones por acá.</td></tr>';
+    return;
+  }
+
+  cuerpo.innerHTML = cotizacionesCache.map(c => {
+    const quien = c.empresa || c.nombre;
+    const contacto = c.empresa ? `${c.nombre} · ${c.correo}` : c.correo;
+    const estado = c.gestionada_en
+      ? '<span style="color:var(--text-muted);">✔️ Revisada</span>'
+      : c.vigente
+        ? '<span style="color:var(--green);">● Vigente</span>'
+        : '<span style="color:var(--text-muted);">○ Vencida</span>';
+    return `
+      <tr>
+        <td class="strong">${escHtml(c.numero_cotizacion)}</td>
+        <td>${escHtml(tsAChile(c.creado_en))}</td>
+        <td>${escHtml(quien)}<br><small style="color:var(--text-muted);">${escHtml(contacto)}</small>
+          ${c.rut ? `<br><small style="color:var(--text-muted);">${escHtml(c.rut)}</small>` : ''}</td>
+        <td>${c.lineas}</td>
+        <td class="num">${fmtCLP(c.neto)}</td>
+        <td class="num strong">${fmtCLP(c.total)}</td>
+        <td>${estado}</td>
+        <td>
+          <div class="cell-actions">
+            <button class="btn btn-ghost btn-sm" data-cot-ver="${escHtml(c.token_publico)}" title="Abrir el documento que ve el cliente">Ver</button>
+            <button class="btn btn-ghost btn-sm" data-cot-gestionar="${c.id}" data-cot-valor="${c.gestionada_en ? '0' : '1'}">
+              ${c.gestionada_en ? 'Reabrir' : 'Marcar revisada'}
+            </button>
+          </div>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+async function gestionarCotizacion(id, gestionada) {
+  try {
+    await API.cotizacionesWeb.marcar(id, gestionada);
+    showToast(gestionada ? 'Marcada como revisada' : 'Vuelve a pendientes', 'ok');
+    await cargarCotizacionesWeb();
+  } catch (err) {
+    showToast(err.message || 'No se pudo actualizar', 'err');
   }
 }

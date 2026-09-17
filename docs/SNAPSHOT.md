@@ -7,7 +7,22 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
-**Fecha:** 17-09-2026 · **v67 publicada** — el POS ahora **detecta solo cuándo repusiste**. Al subir
+**Fecha:** 17-09-2026 · **v68 publicada — panel "Cotizaciones"** (Página Web). Lo que los clientes
+se cotizaron solos en sevelin.cl: quién, cuánto, si sigue vigente y cuánta plata hay en cotizaciones
+vigentes sin revisar. Solo lectura + marcar como revisada — un documento emitido no se edita desde
+acá. El cotizador en sí vive en `sevelin-tienda` (`supabase/35`), ver su `docs/SNAPSHOT.md`.
+
+- 🔒 Lee `dbWeb` (Supabase de la TIENDA), nunca `db`. La prueba lo verifica a propósito con una
+  tabla del mismo nombre y datos distintos en la base del POS: si el endpoint leyera de la
+  equivocada, la prueba lo delata.
+- 🧾 La vigencia se calcula al leer, nunca se guarda: una cotización vence sola con el paso del
+  tiempo, y un campo "vigente" guardado quedaría mintiendo al día siguiente.
+- 🛡️ Mandar montos en el body NO cambia el documento emitido (probado). Solo administrador.
+- 🎨 **La tienda cambió de diseño el mismo día**: negro plano + un solo acento azul, sin la capa
+  cyberpunk. Nada de eso toca al POS, pero conviene saberlo antes de mirar sevelin.cl y creer que
+  algo se rompió.
+
+**Versión anterior: v67** — el POS ahora **detecta solo cuándo repusiste**. Al subir
 el stock de un producto arma un borrador de compra (fecha, cuántas entraron, el costo cargado) y lo
 deja en el botón 📥 del header esperando aprobación. El dueño confirma el costo y pone el plazo de
 devolución — el único dato que el POS no puede saber y que **nunca se inventa**. Detalle en

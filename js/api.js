@@ -302,6 +302,15 @@ const API = {
     actualizar: (id, cambios) => apiRequest(`/pos/pedidos-web/${id}`, { method: 'PUT', body: cambios })
   },
 
+  /* Cotizaciones que el cliente se armó solo en la tienda (supabase/35 de
+     sevelin-tienda). Solo lectura + marcar como revisada: un documento ya
+     emitido no se edita desde el POS. */
+  cotizacionesWeb: {
+    listar: (soloPendientes) => apiRequest('/pos/cotizaciones' + (soloPendientes ? '?pendientes=1' : '')),
+    marcar: (id, gestionada) =>
+      apiRequest(`/pos/cotizaciones/${id}`, { method: 'PUT', body: { gestionada } })
+  },
+
   // Módulo Garantías: busca ventas de productos / OT entregadas y su
   // estado de garantía (vigente/vencida) — ver sql/31-garantias.sql.
   garantias: {

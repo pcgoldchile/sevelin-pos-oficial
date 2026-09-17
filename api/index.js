@@ -8423,6 +8423,56 @@ app.post('/api/interno/registrar-venta-web', authSync, async (req, res) => {
    administración, no logística general como /api/ventas/:id/envio. */
 const ESTADOS_DESPACHO_PEDIDO_WEB = ['PREPARANDO', 'ENVIADO', 'ENTREGADO', 'CANCELADO'];
 
+/* ============================================================
+   COTIZACIONES DE LA TIENDA (supabase/35 en sevelin-tienda)
+   ------------------------------------------------------------
+   El cliente se arma su propia cotización desde el carrito de sevelin.cl
+   y acá el dueño ve QUÉ le están cotizando, por cuánto y quién — la
+   información de venta que hasta ahora se perdía entera.
+
+   Lee `dbWeb` (Supabase de la TIENDA), nunca `db` (el del POS): son dos
+   proyectos distintos y mezclarlos es la regla que más cuesta cara en
+   este proyecto. Solo lectura + marcar como gestionada; el documento en
+   sí no se toca desde acá (una cotización emitida no se edita).
+   ============================================================ */
+app.get('/api/pos/cotizaciones', auth(true), async (req, res) => {
+  const { data, error } = await consultarConReintento(() => {
+    let q = dbWeb.from('cotizaciones_web')
+      .select('id, numero_cotizacion, token_publico, creado_en, vence_en, nombre, correo, telefono, empresa, rut, giro, nota, neto, iva, total, items, gestionada_en')
+      .order('creado_en', { ascending: false })
+      .limit(200);
+    // ?pendientes=1 → solo las que el dueño todavía no marcó
+    if (req.query.pendientes === '1') q = q.is('gestionada_en', null);
+    return q;
+  });
+  if (error) return enviarErrorBD(res, error, 'Cotizaciones Web');
+
+  const ahora = Date.now();
+  res.json((data || []).map(c => ({
+    ...c,
+    // La vigencia se calcula al leer, nunca se guarda: una cotización
+    // vence sola con el paso del tiempo, y un campo "vigente" guardado
+    // quedaría mintiendo desde el día siguiente.
+    vigente: new Date(c.vence_en).getTime() > ahora,
+    lineas: Array.isArray(c.items) ? c.items.length : 0
+  })));
+});
+
+app.put('/api/pos/cotizaciones/:id', auth(true), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return enviarError(res, 400, 'Cotización inválida');
+
+  // Alternar: marcar como gestionada o devolverla a pendiente si se marcó
+  // por error. Nada más: el documento emitido no se edita desde el POS.
+  const gestionada = req.body?.gestionada !== false;
+  const { data, error } = await dbWeb.from('cotizaciones_web')
+    .update({ gestionada_en: gestionada ? new Date().toISOString() : null })
+    .eq('id', id).select('id, gestionada_en');
+  if (error) return enviarErrorBD(res, error, 'Cotizaciones Web');
+  if (!data || data.length === 0) return enviarError(res, 404, 'Cotización no encontrada');
+  res.json(data[0]);
+});
+
 app.get('/api/pos/pedidos-web', auth(true), async (req, res) => {
   // consultarConReintento: un corte pasajero de Supabase Web ya no llega al
   // panel como error rojo (se vio el 12-09-2026, "Gateway Timeout").
