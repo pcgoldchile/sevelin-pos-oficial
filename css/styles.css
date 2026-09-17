@@ -4112,3 +4112,22 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
     .rotacion-etiqueta { white-space: normal; }
     .rotacion-numeros { gap: 10px; }
 }
+
+/* Compras por confirmar (sql/57) — reusa la lista de agotados, más la
+   rejilla de campos que el dueño completa antes de aprobar. Verde, no
+   rojo ni azul: es algo que suma información, no una alerta. */
+.btn-borradores[hidden] { display: none; }
+.btn-borradores {
+    background: var(--tint-green, rgba(34, 197, 94, .14));
+    color: var(--green);
+    border-color: rgba(34, 197, 94, .40);
+}
+.borrador-campos {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;
+    margin-top: 10px; padding: 10px; border-radius: var(--radius);
+    background: var(--surface-soft);
+}
+.borrador-campos label {
+    display: flex; flex-direction: column; gap: 4px;
+    color: var(--text-muted); font-size: .8rem;
+}

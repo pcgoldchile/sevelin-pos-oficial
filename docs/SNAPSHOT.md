@@ -7,7 +7,29 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
-**Fecha:** 16-09-2026 · **v66 lista (sin publicar): faltan las 3 migraciones** — cinco pedidos del
+**Fecha:** 17-09-2026 · **v67 publicada** — el POS ahora **detecta solo cuándo repusiste**. Al subir
+el stock de un producto arma un borrador de compra (fecha, cuántas entraron, el costo cargado) y lo
+deja en el botón 📥 del header esperando aprobación. El dueño confirma el costo y pone el plazo de
+devolución — el único dato que el POS no puede saber y que **nunca se inventa**. Detalle en
+`docs/CHANGELOG-V67.md`. Migración `sql/57` ya aplicada.
+
+- 🎯 **Por qué:** el informe de v66 solo veía lo cargado a mano, y un informe incompleto es PEOR que
+  ninguno — habla con seguridad de las 3 compras cargadas e ignora las otras 37. Mismo error que el
+  margen inflado por ítems sin costo (07/08-09-2026).
+- 🚫 **Un borrador NO cuenta en el informe** hasta confirmarlo: sin costo revisado ni plazo, contarlo
+  sería analizar con datos supuestos.
+- ✅ **Dispara en tres caminos:** subir el stock al editar (`reposicion`), crear el producto con stock
+  (`alta`) y cargar una capa PEPS (`lote`). **NO dispara** al anular una venta, al corregir sus
+  líneas, en la importación por CSV ni en productos de stock ilimitado — todas decisiones explícitas.
+- 💡 **"No fue una compra"** existe para el stock que sube por un ajuste: sin esa salida, la única
+  forma de sacarse el aviso sería inventar un costo.
+- 📱 **El aviso se queda dentro del POS** (decisión del dueño): mandar correo obligaría a tocar
+  `sevelin-tienda`, que es el repo que manda los correos.
+- ⏭️ **Propuesto y sin construir:** alarma de plazo por vencer (cron diario + botón como el del F29) y
+  la revisión semanal con IA (Gemini en el informe semanal, o un cowork "Sevelin Inventario").
+  Conviene esperar a tener 10-15 compras confirmadas antes de la parte de IA.
+
+**Versión anterior: v66** — cinco pedidos del
 dueño en una tanda: el envío que salió de su bolsillo + duración del viaje, ver la foto del producto
 en grande desde el POS, peso con unidad kg/g y lectura en vivo, cola de agotados que pregunta antes
 de mover nada, y compras de mercadería con fecha de devolución + informe de rotación. Detalle en
@@ -30,8 +52,8 @@ de mover nada, y compras de mercadería con fecha de devolución + informe de ro
   Inteligencia → "Compras y devoluciones": ritmo, plata atrapada y cuántas conviene devolver antes de
   que venza el plazo. **Tabla aparte de `producto_lotes` a propósito:** los lotes PEPS cambian de
   dónde sale el costo de cada venta, y anotar una fecha de compra no puede tener ese efecto.
-- ⚠️ **Falta aplicar `sql/54`, `sql/55` y `sql/56` en producción** (`npx supabase db query --file … --linked`).
-  Hasta que se apliquen, los campos y paneles nuevos van a dar error de base.
+- ✅ `sql/54`, `sql/55` y `sql/56` aplicadas y verificadas en producción el 16-09-2026 (las dos tablas
+  nuevas con RLS activado).
 
 **Versión anterior: v65** — 13 fichas que mostraban el Markdown crudo (`###`, `**`) al
 cliente en sevelin.cl, arregladas y verificadas en vivo; y dos botones nuevos en el modal de producto

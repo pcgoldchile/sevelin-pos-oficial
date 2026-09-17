@@ -371,3 +371,190 @@ async function decidirAgotado(id, decision) {
     fila?.querySelectorAll('button').forEach(b => { b.disabled = false; });
   }
 }
+
+/* ============================================================
+   COMPRAS POR CONFIRMAR (sql/57)
+   ------------------------------------------------------------
+   El POS detectó que subió el stock y armó el borrador solo: fecha,
+   cuántas entraron y el costo cargado. Acá el dueño revisa eso y pone
+   lo único que el POS no puede saber — hasta cuándo el proveedor las
+   recibe de vuelta.
+
+   Mientras el borrador no se confirma NO cuenta en el informe de
+   "Compras y devoluciones": contarlo sería analizar con un costo
+   supuesto y un plazo inexistente.
+
+   "No fue una compra" existe porque el stock también sube por razones
+   que no son compras (un ajuste de inventario a mano, por ejemplo), y
+   forzar a inventar un costo para sacarse el aviso de encima ensuciaría
+   el informe justamente donde más duele.
+
+   Se consulta cada 30 minutos, igual que el F29 y los agotados.
+   ============================================================ */
+
+const INTERVALO_BORRADORES_MS = 30 * 60 * 1000;
+let intervaloBorradores = null;
+let borradoresPendientes = [];
+
+const ORIGEN_BORRADOR = {
+  reposicion: 'le subiste el stock',
+  alta: 'lo creaste con stock',
+  lote: 'le cargaste una capa de costo',
+  manual: 'lo cargaste a mano'
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btnBorradores')?.addEventListener('click', abrirModalBorradores);
+  document.getElementById('btnCerrarBorradores')?.addEventListener('click', () => cerrarModal('modalIngresosBorradores'));
+
+  document.getElementById('borradoresLista')?.addEventListener('click', (e) => {
+    const conf = e.target.closest('[data-confirmar-borrador]');
+    if (conf) { confirmarBorradorCompra(Number(conf.dataset.confirmarBorrador)); return; }
+    const desc = e.target.closest('[data-descartar-borrador]');
+    if (desc) descartarBorradorCompra(Number(desc.dataset.descartarBorrador));
+  });
+});
+
+document.addEventListener('pos:sesion-iniciada', () => {
+  if (intervaloBorradores) { clearInterval(intervaloBorradores); intervaloBorradores = null; }
+  const btn = document.getElementById('btnBorradores');
+  if (!esAdmin()) { if (btn) btn.hidden = true; return; }
+
+  actualizarAvisoBorradores();
+  intervaloBorradores = setInterval(actualizarAvisoBorradores, INTERVALO_BORRADORES_MS);
+});
+
+async function actualizarAvisoBorradores() {
+  const btn = document.getElementById('btnBorradores');
+  const texto = document.getElementById('textoBorradores');
+  if (!btn || !texto || !tokenActual() || !esAdmin()) return;
+
+  try {
+    const datos = await API.productos.ingresosBorradores();
+    borradoresPendientes = Array.isArray(datos?.pendientes) ? datos.pendientes : [];
+
+    if (borradoresPendientes.length === 0) { btn.hidden = true; return; }
+    texto.textContent = `${borradoresPendientes.length} compra${borradoresPendientes.length === 1 ? '' : 's'}`;
+    btn.title = 'Compras que detecté al subir el stock y esperan que confirmes costo y plazo de devolución';
+    btn.hidden = false;
+    if (document.getElementById('modalIngresosBorradores')?.classList.contains('show')) pintarListaBorradores();
+  } catch (err) {
+    // Mismo criterio que la campana, el F29 y los agotados: un fallo del
+    // sondeo cada 30 min no interrumpe al administrador con un toast.
+    console.error('Error al revisar las compras por confirmar:', err.message || err);
+  }
+}
+
+function abrirModalBorradores() {
+  if (!borradoresPendientes.length) return;
+  pintarListaBorradores();
+  document.getElementById('modalIngresosBorradores')?.classList.add('show');
+}
+
+/* Propone el mismo plazo que duró la ventana de la compra anterior de ese
+   producto (si la hubo). Es una sugerencia visible y editable, nunca un
+   dato dado por cierto: el plazo real está en la factura. */
+function fechaDevolucionSugerida(b) {
+  if (!b.dias_ventana_previa) return '';
+  const base = new Date(`${b.fecha_compra}T00:00:00Z`);
+  base.setUTCDate(base.getUTCDate() + Number(b.dias_ventana_previa));
+  return base.toISOString().slice(0, 10);
+}
+
+function pintarListaBorradores() {
+  const cont = document.getElementById('borradoresLista');
+  const resumen = document.getElementById('borradoresResumen');
+  if (!cont) return;
+
+  if (resumen) {
+    resumen.textContent = borradoresPendientes.length
+      ? `${borradoresPendientes.length} compra(s) que detecté al subir el stock. Confirma el costo y hasta cuándo se pueden devolver — eso último no lo puedo saber yo.`
+      : 'No queda ninguna compra por confirmar.';
+  }
+  if (!borradoresPendientes.length) {
+    cont.innerHTML = '<p class="modal-hint">Nada pendiente por acá.</p>';
+    return;
+  }
+
+  cont.innerHTML = borradoresPendientes.map(b => {
+    const movimiento = b.stock_antes != null && b.stock_despues != null
+      ? `El stock pasó de ${b.stock_antes} a ${b.stock_despues}`
+      : `Entraron ${b.cantidad} unidades`;
+    const sugerida = fechaDevolucionSugerida(b);
+    return `
+      <div class="agotado-fila" data-fila-borrador="${b.id}">
+        <div class="agotado-cabecera">
+          ${miniaturaProducto({ imagen_urls: b.imagen_url ? [b.imagen_url] : [], nombre: b.nombre }, 56, { ampliable: true })}
+          <div class="agotado-datos">
+            <strong>${escHtml(b.nombre)}</strong>
+            ${b.sku ? `<small>SKU ${escHtml(b.sku)}</small>` : ''}
+            <small>${escHtml(movimiento)} el ${escHtml(fechaCorta(b.fecha_compra))} — ${escHtml(ORIGEN_BORRADOR[b.origen] || 'subió el stock')}.</small>
+            ${b.proveedor_sugerido ? `<small>La vez pasada se la compraste a ${escHtml(b.proveedor_sugerido)}.</small>` : ''}
+          </div>
+        </div>
+        <div class="borrador-campos">
+          <label>Cuántas
+            <input type="number" id="borrCantidad-${b.id}" min="1" step="1" value="${b.cantidad}" inputmode="numeric">
+          </label>
+          <label>Costo por unidad
+            <input type="number" id="borrCosto-${b.id}" min="0" step="1" value="${b.costo_unitario}" inputmode="numeric">
+          </label>
+          <label>Devolver hasta
+            <input type="date" id="borrDevolucion-${b.id}" value="${escHtml(sugerida)}">
+          </label>
+          <label>Proveedor
+            <input type="text" id="borrProveedor-${b.id}" maxlength="80" value="${escHtml(b.proveedor_sugerido || '')}" placeholder="Opcional">
+          </label>
+        </div>
+        <div class="agotado-acciones">
+          <button class="btn btn-green btn-sm" data-confirmar-borrador="${b.id}">✔️ Confirmar compra</button>
+          <button class="btn btn-ghost btn-sm" data-descartar-borrador="${b.id}">No fue una compra</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function confirmarBorradorCompra(id) {
+  const fila = document.querySelector(`[data-fila-borrador="${id}"]`);
+  const cantidad = Number(document.getElementById(`borrCantidad-${id}`)?.value) || 0;
+  if (cantidad <= 0) { showToast('La cantidad tiene que ser mayor a 0', 'err'); return; }
+
+  fila?.querySelectorAll('button').forEach(b => { b.disabled = true; });
+  try {
+    await API.productos.confirmarIngreso(id, {
+      cantidad,
+      costo_unitario: Number(document.getElementById(`borrCosto-${id}`)?.value) || 0,
+      devolucion_hasta: (document.getElementById(`borrDevolucion-${id}`)?.value || '').trim() || null,
+      proveedor: (document.getElementById(`borrProveedor-${id}`)?.value || '').trim() || null
+    });
+    showToast('Compra confirmada: ya cuenta en el informe', 'ok');
+    quitarBorradorDeLaLista(id);
+  } catch (err) {
+    showToast(err.message || 'No se pudo confirmar la compra', 'err');
+    fila?.querySelectorAll('button').forEach(b => { b.disabled = false; });
+  }
+}
+
+async function descartarBorradorCompra(id) {
+  if (!confirm('¿Descartar este aviso? Se usa cuando el stock subió por algo que no fue una compra (un ajuste de inventario, por ejemplo). No cambia el stock.')) return;
+  try {
+    await API.productos.eliminarIngreso(id);
+    showToast('Aviso descartado', 'ok');
+    quitarBorradorDeLaLista(id);
+  } catch (err) {
+    showToast(err.message || 'No se pudo descartar el aviso', 'err');
+  }
+}
+
+function quitarBorradorDeLaLista(id) {
+  borradoresPendientes = borradoresPendientes.filter(b => Number(b.id) !== Number(id));
+  pintarListaBorradores();
+  const btn = document.getElementById('btnBorradores');
+  const texto = document.getElementById('textoBorradores');
+  if (borradoresPendientes.length === 0) {
+    if (btn) btn.hidden = true;
+    cerrarModal('modalIngresosBorradores');
+  } else if (texto) {
+    texto.textContent = `${borradoresPendientes.length} compra${borradoresPendientes.length === 1 ? '' : 's'}`;
+  }
+}

@@ -95,6 +95,13 @@ const API = {
        cuándo se puede devolver. NO es lo mismo que los lotes PEPS de
        sql/09 — esto no participa del costeo. */
     listarIngresos: (id) => apiRequest(`/productos/${id}/ingresos`),
+
+    /* Compras que el POS detectó solo al subir el stock (sql/57) y esperan
+       aprobación. Un borrador NO cuenta en el informe hasta confirmarlo:
+       todavía no tiene costo revisado ni plazo de devolución. */
+    ingresosBorradores: () => apiRequest('/productos/ingresos-borradores'),
+    confirmarIngreso: (ingresoId, datos) =>
+      apiRequest(`/ingresos/${ingresoId}/confirmar`, { method: 'POST', body: datos }),
     crearIngreso: (id, datos) =>
       apiRequest(`/productos/${id}/ingresos`, { method: 'POST', body: datos }),
     cerrarIngreso: (ingresoId, datos) =>

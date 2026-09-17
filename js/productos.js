@@ -3089,7 +3089,10 @@ function pintarIngresosProducto() {
       <tbody>
         ${ingresosDelProducto.map(i => `
           <tr${i.cerrado_en ? ' style="opacity:.55;"' : ''}>
-            <td>${escHtml(fechaCorta(i.fecha_compra))}</td>
+            <td>${escHtml(fechaCorta(i.fecha_compra))}
+              ${i.estado === 'borrador'
+                ? '<br><small style="color:var(--valor);">📥 sin confirmar</small>'
+                : ''}</td>
             <td>${num(i.cantidad)}</td>
             <td class="num">${fmtCLP(i.costo_unitario)}</td>
             <td>${i.devolucion_hasta
@@ -3100,8 +3103,10 @@ function pintarIngresosProducto() {
               <div class="cell-actions">
                 ${i.cerrado_en
                   ? `<small style="color:var(--text-muted);">${escHtml(i.cerrado_motivo || 'cerrada')}</small>`
-                  : `<button class="btn btn-ghost btn-sm" data-cerrar-ingreso="${i.id}" data-motivo="devuelto" title="Se devolvió al proveedor">↩️ Devuelta</button>
-                     <button class="btn btn-ghost btn-sm" data-cerrar-ingreso="${i.id}" data-motivo="vendido" title="Se vendió completa">✔️ Vendida</button>`}
+                  : i.estado === 'borrador'
+                    ? '<small style="color:var(--text-muted);">Confírmala en el botón 📥 del header</small>'
+                    : `<button class="btn btn-ghost btn-sm" data-cerrar-ingreso="${i.id}" data-motivo="devuelto" title="Se devolvió al proveedor">↩️ Devuelta</button>
+                       <button class="btn btn-ghost btn-sm" data-cerrar-ingreso="${i.id}" data-motivo="vendido" title="Se vendió completa">✔️ Vendida</button>`}
                 <button class="btn btn-icon btn-icon-del" data-borrar-ingreso="${i.id}" title="Borrar este registro">✕</button>
               </div>
             </td>

@@ -1184,6 +1184,16 @@ app.post('/api/productos', auth(true), async (req, res) => {
 
   const { data, error } = await db.from('productos').insert([producto]).select().single();
   if (error) return enviarErrorBD(res, error);
+
+  /* Nace con stock = alguien lo compró (sql/57). Queda como borrador
+     esperando el costo revisado y el plazo de devolución. */
+  if (num(data?.stock) > 0 && !data?.stock_ilimitado) {
+    await crearBorradorIngreso({
+      productoId: data.id, cantidad: num(data.stock), costoUnitario: data.costo_unitario,
+      origen: 'alta', stockAntes: 0, stockDespues: num(data.stock),
+      usuario: req.usuario?.usuario || req.usuario?.rol
+    });
+  }
   res.status(201).json(data);
 });
 
@@ -2237,13 +2247,162 @@ app.delete('/api/ingresos/:id', auth(true), async (req, res) => {
   res.json({ ok: true });
 });
 
+/* ============================================================
+   EL POS DETECTA QUE REPUSISTE (sql/57)
+   ------------------------------------------------------------
+   El informe de compras y devoluciones (sql/56) solo vale lo que valgan
+   los datos cargados. Cargarlos a mano producto por producto no se
+   sostiene, y un informe incompleto es peor que ninguno: habla con
+   seguridad de las 3 compras cargadas e ignora las otras 37.
+
+   Entonces: cuando el stock SUBE, el POS arma solo un borrador con lo
+   que le consta (fecha de hoy, cuántas entraron, el costo cargado) y lo
+   deja esperando aprobación. El dueño solo confirma el costo y pone el
+   plazo de devolución — el único dato que el POS no puede saber y que
+   nunca se va a inventar.
+
+   NO todo aumento de stock es una compra. Esto se llama SOLO desde:
+     · PUT /api/productos/:id  cuando el stock sube  → 'reposicion'
+     · POST /api/productos     si nace con stock     → 'alta'
+     · POST /api/productos/:id/lotes (capa PEPS)     → 'lote'
+   Y a propósito NO desde: anular una venta (devuelve stock), corregir
+   las líneas de una venta (es un ajuste) ni la importación por CSV (100
+   productos darían 100 borradores de golpe y el aviso se volvería ruido).
+   ============================================================ */
+
+async function crearBorradorIngreso({ productoId, cantidad, costoUnitario, origen, stockAntes, stockDespues, usuario }) {
+  const unidades = num(cantidad);
+  if (!productoId || unidades <= 0) return null;
+  try {
+    const { data, error } = await db.from('ingresos_mercaderia').insert([{
+      producto_id: Number(productoId),
+      fecha_compra: fechaHoyChile(),
+      cantidad: unidades,
+      costo_unitario: Math.max(0, Math.round(num(costoUnitario))),
+      estado: 'borrador',
+      origen,
+      stock_antes: stockAntes == null ? null : num(stockAntes),
+      stock_despues: stockDespues == null ? null : num(stockDespues),
+      creado_por: usuario || null
+    }]).select('id').single();
+    if (error) throw error;
+    return data;
+  } catch (err) {
+    /* Silencioso a propósito: esto es un apunte al margen de lo que el
+       usuario pidió (guardar un producto). Si falla, el producto ya se
+       guardó bien y no tiene por qué recibir un error por esto. */
+    console.error('[COMPRAS] no se pudo crear el borrador de ingreso:', err.message);
+    return null;
+  }
+}
+
+/* Los borradores esperando aprobación, con lo que hace falta para decidir
+   sin tener que ir a buscar el producto a otra pantalla. */
+app.get('/api/productos/ingresos-borradores', auth(true), async (req, res) => {
+  try {
+    const { data: borradores, error } = await db.from('ingresos_mercaderia')
+      .select('*').eq('estado', 'borrador').order('creado_en', { ascending: false });
+    if (error) throw error;
+
+    if (!borradores || borradores.length === 0) return res.json({ pendientes: [] });
+
+    const ids = [...new Set(borradores.map(b => Number(b.producto_id)))];
+    const { data: productos, error: errP } = await db.from('productos')
+      .select('id, nombre, sku, stock, costo_unitario, precio_unitario, imagen_urls').in('id', ids);
+    if (errP) throw errP;
+    const porId = new Map((productos || []).map(p => [Number(p.id), p]));
+
+    /* El proveedor y el plazo de la compra ANTERIOR del mismo producto: casi
+       siempre se le compra al mismo y con las mismas condiciones, así que
+       se ofrecen precargados. Sugerencia, no dato: hay que confirmarla. */
+    const { data: previos } = await db.from('ingresos_mercaderia')
+      .select('producto_id, proveedor, devolucion_hasta, fecha_compra')
+      .eq('estado', 'confirmado').in('producto_id', ids)
+      .order('fecha_compra', { ascending: false });
+    const ultimoDe = new Map();
+    for (const p of previos || []) {
+      if (!ultimoDe.has(Number(p.producto_id))) ultimoDe.set(Number(p.producto_id), p);
+    }
+
+    res.json({
+      pendientes: borradores.map(b => {
+        const p = porId.get(Number(b.producto_id));
+        const previo = ultimoDe.get(Number(b.producto_id)) || null;
+        // Cuántos días duró la ventana la vez pasada, para proponer la misma
+        let diasVentanaPrevia = null;
+        if (previo?.devolucion_hasta && previo?.fecha_compra) {
+          const d = diasEntre(String(previo.fecha_compra), String(previo.devolucion_hasta));
+          if (d > 0) diasVentanaPrevia = d;
+        }
+        return {
+          id: b.id,
+          producto_id: b.producto_id,
+          nombre: p?.nombre || `Producto #${b.producto_id}`,
+          sku: p?.sku || null,
+          imagen_url: Array.isArray(p?.imagen_urls) ? (p.imagen_urls[0] || null) : null,
+          fecha_compra: b.fecha_compra,
+          cantidad: num(b.cantidad),
+          costo_unitario: num(b.costo_unitario),
+          precio_unitario: num(p?.precio_unitario),
+          stock_antes: b.stock_antes == null ? null : num(b.stock_antes),
+          stock_despues: b.stock_despues == null ? null : num(b.stock_despues),
+          origen: b.origen,
+          proveedor_sugerido: previo?.proveedor || null,
+          dias_ventana_previa: diasVentanaPrevia
+        };
+      })
+    });
+  } catch (error) {
+    return enviarErrorBD(res, error, 'GET /api/productos/ingresos-borradores');
+  }
+});
+
+/* Aprobar un borrador: recién acá pasa a contar en el informe. El dueño
+   puede corregir todo lo que el POS supuso (fecha, cantidad y costo) —
+   lo detectado es una propuesta, no un hecho consumado. */
+app.post('/api/ingresos/:id/confirmar', auth(true), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return enviarError(res, 400, 'Borrador inválido');
+
+  try {
+    const { data: previo, error: errB } = await db.from('ingresos_mercaderia')
+      .select('*').eq('id', id).maybeSingle();
+    if (errB) throw errB;
+    if (!previo) return enviarError(res, 404, 'Borrador no encontrado');
+    if (previo.estado !== 'borrador') return enviarError(res, 409, 'Esta compra ya estaba confirmada');
+
+    // Se reutiliza la misma validación del alta manual: una compra
+    // confirmada por este camino tiene que ser tan válida como la otra.
+    const { datos, error: errVal } = sanearIngreso({
+      fecha_compra: req.body?.fecha_compra || previo.fecha_compra,
+      cantidad: req.body?.cantidad !== undefined ? req.body.cantidad : previo.cantidad,
+      costo_unitario: req.body?.costo_unitario !== undefined ? req.body.costo_unitario : previo.costo_unitario,
+      proveedor: req.body?.proveedor,
+      devolucion_hasta: req.body?.devolucion_hasta,
+      referencia: req.body?.referencia,
+      nota: req.body?.nota
+    });
+    if (errVal) return enviarError(res, 400, errVal);
+
+    const { data, error } = await db.from('ingresos_mercaderia')
+      .update({ ...datos, estado: 'confirmado' }).eq('id', id).select('*');
+    if (error) throw error;
+    res.json(data[0]);
+  } catch (error) {
+    return enviarErrorBD(res, error, 'POST /api/ingresos/:id/confirmar');
+  }
+});
+
 /* ---------- El informe: qué compra conviene devolver ---------- */
 
 app.get('/api/pos/rotacion-compras', auth(true), async (req, res) => {
   try {
     const hoy = fechaHoyChile();
+    /* Solo lo CONFIRMADO (sql/57): un borrador todavía no tiene costo
+       revisado ni plazo de devolución, y contarlo haría el análisis con
+       datos supuestos. */
     const { data: ingresos, error: errI } = await db.from('ingresos_mercaderia')
-      .select('*').is('cerrado_en', null);
+      .select('*').is('cerrado_en', null).eq('estado', 'confirmado');
     if (errI) throw errI;
 
     if (!ingresos || ingresos.length === 0) {
@@ -2348,6 +2507,14 @@ app.post('/api/productos/:id/lotes', auth(true), async (req, res) => {
     .update({ stock: num(producto.stock) + cantidad, stock_actualizado_en: new Date().toISOString() })
     .eq('id', productoId);
 
+  /* Una capa PEPS es una compra con su costo real ya escrito (sql/57):
+     el borrador nace con el costo bueno y solo falta el plazo. */
+  await crearBorradorIngreso({
+    productoId, cantidad, costoUnitario: costo, origen: 'lote',
+    stockAntes: num(producto.stock), stockDespues: num(producto.stock) + cantidad,
+    usuario: req.usuario?.usuario || req.usuario?.rol
+  });
+
   res.status(201).json(lote);
 });
 
@@ -2436,8 +2603,26 @@ app.put('/api/productos/:id', auth(true), async (req, res) => {
   const dup = await buscarDuplicado(producto, req.params.id);
   if (dup) return enviarError(res, 409, errorDuplicado(dup), { duplicado: dup });
 
+  /* Se lee el stock ANTERIOR antes de escribir: es la única forma de
+     saber si esta edición fue una reposición (sql/57). Una consulta más
+     por edición de producto, que es una operación poco frecuente. */
+  const { data: antes } = await db.from('productos')
+    .select('stock, stock_ilimitado').eq('id', req.params.id).maybeSingle();
+
   const { data, error } = await db.from('productos').update(producto).eq('id', req.params.id).select().single();
   if (error) return enviarErrorBD(res, error);
+
+  /* El stock subió = repuso. OJO: esto NO se dispara al anular una venta
+     ni al corregir sus líneas — esos caminos actualizan el stock por su
+     cuenta y no pasan por acá, que es justamente lo que se quiere. */
+  const subio = num(data?.stock) - num(antes?.stock);
+  if (antes && !data?.stock_ilimitado && subio > 0) {
+    await crearBorradorIngreso({
+      productoId: data.id, cantidad: subio, costoUnitario: data.costo_unitario,
+      origen: 'reposicion', stockAntes: num(antes.stock), stockDespues: num(data.stock),
+      usuario: req.usuario?.usuario || req.usuario?.rol
+    });
+  }
   res.json(data);
 });
 

@@ -202,6 +202,11 @@
       <button id="btnAgotados" class="btn-notificaciones btn-agotados admin-only" title="Productos agotados sin decidir" hidden>
         📦 <span id="textoAgotados">Agotados</span>
       </button>
+      <!-- Compras que el POS detectó solo al subir el stock (sql/57) y
+           esperan que el dueño confirme costo y plazo de devolución. -->
+      <button id="btnBorradores" class="btn-notificaciones btn-borradores admin-only" title="Compras detectadas sin confirmar" hidden>
+        📥 <span id="textoBorradores">Compras</span>
+      </button>
       <span id="syncBadge" class="sync-badge sync-pending">⏳ Conectando…</span>
     </div>
   </header>
@@ -5736,6 +5741,23 @@
        producto se queda acá hasta que el dueño aprueba una de las
        cuatro salidas. Lo pinta js/notificaciones.js.
        ============================================================ -->
+  <!-- ============================================================
+       COMPRAS POR CONFIRMAR (sql/57)
+       El POS detectó que subió el stock y armó el borrador solo. Falta
+       lo único que no puede saber: el plazo de devolución. Se abre desde
+       el botón 📥 del header. Lo pinta js/notificaciones.js.
+       ============================================================ -->
+  <div id="modalIngresosBorradores" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <h2>📥 Compras por confirmar</h2>
+      <p class="modal-hint" id="borradoresResumen">—</p>
+      <div id="borradoresLista" class="agotados-lista"></div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCerrarBorradores" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modalAgotados" class="modal-overlay">
     <div class="modal-box modal-lg">
       <h2>📦 Productos agotados</h2>
