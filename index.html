@@ -5920,7 +5920,9 @@
       <div class="field">
         <label for="f29Remanente">Remanente para el período siguiente (código 77, opcional)</label>
         <input type="number" id="f29Remanente" min="0" step="1" placeholder="Ej: 219227">
-        <p class="modal-hint">Es el crédito que te sobra para el mes que viene. Lo usa el semáforo de IVA de Finanzas → Utilidades.</p>
+        <p class="modal-hint">Es el crédito que te sobra para el mes que viene. Lo usa el semáforo de IVA de Finanzas → Utilidades.
+          <strong>Si copias abajo los códigos 537 y 538, este campo se llena solo.</strong></p>
+        <p class="modal-hint" id="f29RemanentePista" style="color:var(--green);"></p>
       </div>
 
       <!-- Los códigos del Formulario Compacto (sql/58). Opcionales y plegados:

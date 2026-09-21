@@ -83,6 +83,17 @@ document.addEventListener('DOMContentLoaded', () => {
   ['f29Base', 'f29Debito', 'f29Credito', 'f29Determinado'].forEach(id => {
     document.getElementById(id)?.addEventListener('input', revisarCuadraturaF29);
   });
+  ['f29Credito', 'f29Debito'].forEach(id => {
+    document.getElementById(id)?.addEventListener('input', sugerirRemanenteF29);
+  });
+  /* Si lo escribe a mano, manda lo suyo y el POS deja de proponerlo.
+     No hace falta distinguir quién disparó el evento: asignar .value desde
+     sugerirRemanenteF29 NO dispara 'input', así que acá solo llega él. */
+  document.getElementById('f29Remanente')?.addEventListener('input', (e) => {
+    delete e.target.dataset.auto;
+    const pista = document.getElementById('f29RemanentePista');
+    if (pista) pista.textContent = '';
+  });
 });
 
 document.addEventListener('pos:sesion-iniciada', () => {
@@ -154,6 +165,32 @@ function leerCodigosF29() {
   return datos;
 }
 
+/* El código 77 sale de una resta: crédito (537) − débito (538). Si están
+   los dos, el POS lo calcula y lo propone, para no hacerle copiar un
+   número que ya se puede deducir. Queda editable: si el SII trae otro
+   valor manda el del SII, y desde que lo toca a mano no se vuelve a
+   pisar (dataset.auto). Se PROPONE y no se impone porque el 77 también
+   se carga desde la propuesta, antes de que existan el 537 y el 538. */
+function sugerirRemanenteF29() {
+  const campo = document.getElementById('f29Remanente');
+  const pista = document.getElementById('f29RemanentePista');
+  if (!campo) return;
+  if (campo.value !== '' && campo.dataset.auto !== '1') return;   // lo escribió él
+
+  const v = (id) => { const t = (document.getElementById(id)?.value || '').trim(); return t === '' ? null : Number(t); };
+  const cred = v('f29Credito'), deb = v('f29Debito');
+  if (cred === null || deb === null || !Number.isFinite(cred) || !Number.isFinite(deb)) return;
+
+  const remanente = Math.max(0, Math.round(cred - deb));
+  campo.value = String(remanente);
+  campo.dataset.auto = '1';
+  if (pista) {
+    pista.textContent = remanente > 0
+      ? `Calculado solo: ${fmtCLP(cred)} de crédito − ${fmtCLP(deb)} de débito = ${fmtCLP(remanente)}. Si el SII dice otra cosa, cámbialo.`
+      : 'Con ese débito y crédito no queda remanente para el mes siguiente.';
+  }
+}
+
 /* Aviso de cuadratura en vivo, mientras escribe. El servidor lo revisa
    igual; esto es para darse cuenta antes de guardar. NO bloquea: el F29
    se anota como el SII lo recibió, aunque un número se vea raro. */
@@ -197,7 +234,9 @@ function abrirModalF29() {
   const monto = document.getElementById('f29Monto');
   if (monto) monto.value = '';
   const remanente = document.getElementById('f29Remanente');
-  if (remanente) remanente.value = '';
+  if (remanente) { remanente.value = ''; delete remanente.dataset.auto; }
+  const pistaRem = document.getElementById('f29RemanentePista');
+  if (pistaRem) pistaRem.textContent = '';
   const chk = document.getElementById('f29RegistrarGasto');
   if (chk) chk.checked = true;
   const metodo = document.getElementById('f29Metodo');

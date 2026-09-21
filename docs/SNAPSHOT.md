@@ -31,6 +31,48 @@ remanente.** Migración `sql/58` aplicada y verificada en producción.
 - 🤖 **Para qué sirve de verdad:** el cowork "Sevelin Finanzas" ya lee esta base. Con el historial
   cargado puede responder solo cómo viene el remanente, sin que nadie le pase un PDF cada mes.
 
+**v72 (21-09-2026) — auditoría de la contabilidad del POS: tres arreglos y el código 77 automático.**
+
+- 🔴 **BUG EN PRODUCCIÓN, encontrado y corregido:** el checklist de **Gastos Fijos del mes** armaba la
+  fecha de cierre como `AAAA-MM-31` a mano. Postgres **rechaza** `2026-09-31` (error 22008), así que
+  la consulta no devolvía nada y **todos los gastos fijos aparecían como NO pagados** — y el
+  resguardo dinámico guardaba plata para cuentas ya pagadas. Rompía en **abril, junio, septiembre,
+  noviembre y febrero**; estaba roto ese mismo día. Ahora usa `ultimoDiaDelMes()`.
+- 🔴 **El mismo `-31`** estaba en el semáforo de IVA (`calcularIvaMes`), en la rama que estima el
+  débito con las boletas del POS cuando el SII todavía no tiene las ventas del mes. Corregido igual.
+- 🕐 **Zona horaria al LEER los gastos.** `compras.fecha` y `mermas.creado_en` son TIMESTAMPTZ y la
+  base corre en UTC; se filtraban con textos sueltos (`'2026-09-30T23:59:59'`) que Postgres lee como
+  UTC, o sea las 20:59 de Chile. Un gasto anotado a las 22:00 caía en el día siguiente — y el último
+  día del mes, en el **mes** siguiente. **Medido en producción: 3 de 17 gastos estaban en el día
+  equivocado.** La escritura ya estaba bien (`fechaHoraDeGasto`); el error era solo al leer. Nuevas
+  `inicioDiaChile()` / `finDiaChile()` sobre `marcaDeTiempoChile`, que calcula el desfase **del día**
+  (Chile cambia entre UTC-3 y UTC-4). La prueba lo comprueba con septiembre, que dura **719 h**.
+- 🧮 **El código 77 ya no hay que copiarlo:** sale de restar 537 − 538. Si se copian esos dos códigos,
+  el campo se llena solo y explica la resta. Sigue editable, y **desde que se escribe a mano el POS
+  no lo vuelve a pisar**. Se propone y no se impone porque el 77 también se carga desde la
+  *propuesta*, antes de que existan el 537 y el 538.
+
+**Lo que la auditoría revisó y encontró BIEN:**
+- Las **202 ventas** cuadran al peso: `total`, `costo_total` y `utilidad` reconcilian exactamente
+  contra sus `venta_items` (0 descuadres).
+- El IVA se extrae siempre hacia atrás (`total / 1,19`), nunca `total × 0,19`. Un solo helper
+  (`ivaContenidoEn`) y una sola función de período para las dos vistas, que por diseño no pueden
+  discrepar.
+- La mercadería (grupo INVENTARIO) queda fuera de la utilidad neta porque ya se descuenta como costo
+  FIFO al vender: no hay doble conteo.
+- El certificado del SII: se lee con node-forge (los .pfx chilenos usan cifrado que OpenSSL 3
+  rechaza), vive solo en variables de Vercel, nunca se escribe en la base ni en un log, y el robot
+  **solo lee**. Las notas de crédito (60/61) restan, como en el F29.
+
+**Dato de negocio, no de código:** 2 ventas quedaron con utilidad inflada porque el producto no tenía
+costo cargado al venderse — orden **#32** (Power Bank Master-G, costo real $14.510) y **#186** (Barra
+de Sonido Master-G, $13.104). Suman **$27.614** de costo no registrado. Corregir el costo del
+producto **no** reescribe la venta ya cerrada.
+
+**Riesgo anotado, sin tocar:** las consultas de finanzas no llevan `.limit()` y PostgREST corta en
+1.000 filas por defecto. Con 202 ventas no molesta; a ~135 ventas/mes, un informe anual empieza a
+truncar en unos 7 meses.
+
 **Versión anterior: v70 — despachos por entregar, despacho en el detalle de venta, y
 PIN para editar una venta.**
 

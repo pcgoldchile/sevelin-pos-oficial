@@ -486,6 +486,40 @@ function fechaHoyChile() {
   }).format(new Date());
 }
 
+/* ============================================================
+   VENTANAS DE FECHA EN HORA DE CHILE (auditoría 21-09-2026)
+   ------------------------------------------------------------
+   Las columnas `fecha` de compras y `creado_en` de mermas son
+   TIMESTAMPTZ, y la base corre en UTC. Filtrar con un texto suelto
+   ('2026-09-30T23:59:59') lo hace leer ese instante COMO UTC, o sea
+   las 19:59 o 20:59 de Chile: un gasto anotado a las 22:00 caía en el
+   día (y a fin de mes, en el MES) siguiente. Medido: 3 de los 17 gastos
+   cargados estaban en el día equivocado.
+
+   La escritura ya estaba bien (fechaHoraDeGasto), el problema era solo
+   al leer. Estas dos funciones cierran la ventana en hora de Chile,
+   reusando marcaDeTiempoChile, que ya calcula el desfase real del día
+   (Chile cambia entre UTC-3 y UTC-4).
+   ============================================================ */
+function inicioDiaChile(fechaISO) {
+  return marcaDeTiempoChile(String(fechaISO).slice(0, 10), '00:00') || String(fechaISO);
+}
+function finDiaChile(fechaISO) {
+  const base = marcaDeTiempoChile(String(fechaISO).slice(0, 10), '23:59');
+  if (!base) return String(fechaISO) + 'T23:59:59';
+  // marcaDeTiempoChile deja los segundos en 0; el minuto 23:59 va completo
+  return new Date(Date.parse(base) + 59999).toISOString();
+}
+
+/* Último día real de un mes 'AAAA-MM'. Escribir "-31" a mano reventaba en
+   los meses de 30 días y en febrero: Postgres rechaza '2026-09-31' con
+   "date/time field value out of range" y la consulta devolvía NADA.
+   Encontrado en producción el 21-09-2026 (ver docs/SNAPSHOT.md). */
+function ultimoDiaDelMes(anioMes) {
+  const [a, m] = String(anioMes).split('-').map(Number);
+  return `${a}-${String(m).padStart(2, '0')}-${String(new Date(Date.UTC(a, m, 0)).getUTCDate()).padStart(2, '0')}`;
+}
+
 /* Suma n meses a una fecha 'YYYY-MM-DD' y devuelve otra 'YYYY-MM-DD'.
    Si el día no existe en el mes destino (ej. 31 de feb), cae al último día
    del mes. Se usa para repartir las cuotas mes a mes. */
@@ -4298,7 +4332,7 @@ app.get('/api/compras', auth(true), async (req, res) => {
 
   let q = db.from('compras').select('*').order('fecha', { ascending: false });
   if (desde) q = q.gte('fecha', desde);
-  if (hasta) q = q.lte('fecha', hasta + 'T23:59:59');
+  if (hasta) q = q.lte('fecha', finDiaChile(hasta));
   if (clasificacion) q = q.eq('clasificacion', clasificacion);
   if (sin_documento === 'true') q = q.is('url_documento', null);
   if (sin_comprobante === 'true') q = q.is('url_comprobante', null);
@@ -4785,7 +4819,7 @@ app.get('/api/reportes/contador', auth(true), async (req, res) => {
     const ivaDebito = totalConDte - netoConDte;
 
     const { data: gastosRaw } = await db.from('compras')
-      .select('*').gte('fecha', desde).lte('fecha', hasta + 'T23:59:59').order('fecha');
+      .select('*').gte('fecha', inicioDiaChile(desde)).lte('fecha', finDiaChile(hasta)).order('fecha');
 
     const gastos = gastosRaw || [];
     const totalGastos = gastos.reduce((a, g) => a + num(g.costo_total), 0);
@@ -4865,7 +4899,7 @@ async function calcularEfectivoEsperado(fecha, fondoInicial) {
 
   const { data: gastosRaw } = await db.from('compras')
     .select('costo_total, metodo_pago, origen, afecta_saldo')
-    .gte('fecha', fecha).lte('fecha', fecha + 'T23:59:59');
+    .gte('fecha', inicioDiaChile(fecha)).lte('fecha', finDiaChile(fecha));
 
   // afecta_saldo=false (sql/49): esa plata no salió del cajón ese día
   const gastosEfectivo = (gastosRaw || [])
@@ -5056,7 +5090,7 @@ app.get('/api/balance', auth(true), async (req, res) => {
     // --- Gastos del período ---
     const { data: gastosRaw } = await db.from('compras')
       .select('id, fecha, clasificacion, costo_total, origen, metodo_pago, tiene_factura, iva_credito, afecta_saldo')
-      .gte('fecha', desde).lte('fecha', hasta + 'T23:59:59');
+      .gte('fecha', inicioDiaChile(desde)).lte('fecha', finDiaChile(hasta));
 
     const gastos = gastosRaw || [];
     const totalGastos = gastos.reduce((a, g) => a + num(g.costo_total), 0);
@@ -5314,7 +5348,7 @@ async function calcularRemanenteIva(hastaFecha) {
 
   const [{ data: ventasRaw }, { data: gastosRaw }, { data: ajustesRaw }] = await Promise.all([
     db.from('ventas').select('fecha, total, tipo_dte').eq('estado', 'PAGADA').lte('fecha', hasta),
-    db.from('compras').select('fecha, tiene_factura, iva_credito').lte('fecha', hasta + 'T23:59:59'),
+    db.from('compras').select('fecha, tiene_factura, iva_credito').lte('fecha', finDiaChile(hasta)),
     db.from('iva_ajustes').select('*').lte('fecha', hasta).order('fecha')
   ]);
 
@@ -5414,7 +5448,7 @@ app.get('/api/finanzas/utilidades', auth(true), async (req, res) => {
 
     const { data: gastosRaw } = await db.from('compras')
       .select('id, fecha, proveedor, clasificacion, descripcion, costo_total, metodo_pago, origen, gasto_fijo_id, tiene_factura, iva_credito')
-      .gte('fecha', desde).lte('fecha', hasta + 'T23:59:59').order('fecha');
+      .gte('fecha', inicioDiaChile(desde)).lte('fecha', finDiaChile(hasta)).order('fecha');
 
     const gastos = gastosRaw || [];
 
@@ -5605,7 +5639,7 @@ app.get('/api/finanzas/proyeccion', auth(true), async (req, res) => {
       db.from('ventas').select('fecha, total, comision_pos, encargo_id')
         .gte('fecha', desde).lte('fecha', hasta).eq('estado', 'PAGADA'),
       db.from('compras').select('fecha, costo_total, metodo_pago, origen')
-        .gte('fecha', desde).lte('fecha', hasta + 'T23:59:59')
+        .gte('fecha', inicioDiaChile(desde)).lte('fecha', finDiaChile(hasta))
     ]);
 
     /* Proyección de caja: ingresan los abonos el día que llegan, no la
@@ -5729,7 +5763,7 @@ app.delete('/api/finanzas/balance', auth(true), exigirPinAdmin, async (req, res)
     return enviarError(res, 400, `Indica qué borrar: ${VALIDOS.join(', ')}`);
   }
 
-  const hastaFin = hasta + 'T23:59:59';
+  const hastaFin = finDiaChile(hasta);
   const borrado = {};
 
   try {
@@ -6081,8 +6115,8 @@ app.get('/api/finanzas/gastos-fijos-mes', auth(true), async (req, res) => {
   try {
     const hoy = fechaHoyChile();              // YYYY-MM-DD (Chile)
     const [anio, mes] = hoy.split('-');
-    const desdeMes = `${anio}-${mes}-01`;
-    const hastaMes = `${anio}-${mes}-31T23:59:59`;
+    const desdeMes = inicioDiaChile(`${anio}-${mes}-01`);
+    const hastaMes = finDiaChile(ultimoDiaDelMes(`${anio}-${mes}`));
 
     const { data: fijosRaw } = await db.from('gastos_fijos').select('*').eq('activo', true);
     const fijos = fijosRaw || [];
@@ -6797,7 +6831,7 @@ async function calcularIvaMes(periodoAAAAMM) {
     fuenteDebito = 'sii';
   } else {
     const desde = `${a}-${String(m).padStart(2, '0')}-01`;
-    const hasta = `${a}-${String(m).padStart(2, '0')}-31`;
+    const hasta = ultimoDiaDelMes(`${a}-${String(m).padStart(2, '0')}`);
     const { data: ventasPos } = await db.from('ventas').select('total, tipo_dte')
       .gte('fecha', desde).lte('fecha', hasta).eq('estado', 'PAGADA').in('tipo_dte', ['BOLETA', 'FACTURA']);
     debito = Math.round((ventasPos || []).reduce((s, v) => s + num(v.total) - num(v.total) / 1.19, 0));
@@ -8015,8 +8049,8 @@ app.get('/api/mermas', auth(true), async (req, res) => {
   const { desde, hasta } = req.query;
 
   let q = db.from('mermas').select('*').order('id', { ascending: false });
-  if (desde) q = q.gte('creado_en', desde);
-  if (hasta) q = q.lte('creado_en', hasta + 'T23:59:59');
+  if (desde) q = q.gte('creado_en', inicioDiaChile(desde));
+  if (hasta) q = q.lte('creado_en', finDiaChile(hasta));
 
   const { data, error } = await q.limit(limiteDe(req));
   if (error) return enviarErrorBD(res, error);
