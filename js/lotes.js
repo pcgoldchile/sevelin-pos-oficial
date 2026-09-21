@@ -37,18 +37,49 @@ function alternarLotesUI() {
   const activo = !!(elProdUsaLotes && elProdUsaLotes.checked);
   if (elBloqueProdLotes) elBloqueProdLotes.style.display = activo ? 'block' : 'none';
 
+  /* (B) Con PEPS activo el "Costo Unit." de arriba NO manda: lo deciden las
+     capas. Dejarlo editable daba dos costos a la vista y ninguna forma de
+     saber cuál se usaba. Queda de solo lectura y mostrando el promedio real
+     de las capas vigentes. */
   const elCosto = document.getElementById('prodCosto');
   if (elCosto) {
     elCosto.classList.toggle('campo-atenuado', activo);
+    elCosto.readOnly = activo;
     elCosto.title = activo
-      ? 'Con lotes activos este costo solo sirve de respaldo si se vende más de lo cargado en capas.'
+      ? 'Con PEPS activo lo deciden las capas: este campo solo sirve de respaldo si se vende más de lo cargado.'
       : '';
   }
+  pintarCostoSegunLotes(activo ? (lotesPorProducto[editingProductId] || []) : null);
 
   if (activo && editingProductId) cargarLotesDelProducto(editingProductId);
   else if (activo && elProdLotesLista) {
     elProdLotesLista.innerHTML = '<p class="modal-hint">Guarda el producto primero: las capas se crean al registrar una compra.</p>';
   }
+}
+
+/* Promedio PONDERADO por unidades vivas, no promedio simple de las capas:
+   10 unidades a $2.000 y 1 a $9.000 dan $2.636, no $5.500. Es el costo que
+   de verdad va a salir de las próximas ventas. */
+function costoPromedioDeLotes(lotes) {
+  let unidades = 0, total = 0;
+  for (const l of (lotes || [])) {
+    const c = Math.max(0, Number(l.cantidad) || 0);
+    unidades += c;
+    total += c * (Number(l.costo_unitario) || 0);
+  }
+  return unidades > 0 ? Math.round(total / unidades) : null;
+}
+
+function pintarCostoSegunLotes(lotes) {
+  const nota = document.getElementById('prodCostoLotesNota');
+  if (!nota) return;
+  if (lotes === null) { nota.textContent = ''; return; }
+
+  const promedio = costoPromedioDeLotes(lotes);
+  const unidades = (lotes || []).reduce((a, l) => a + Math.max(0, Number(l.cantidad) || 0), 0);
+  nota.textContent = promedio === null
+    ? '📚 PEPS activo: el costo lo deciden las capas. Todavía no hay ninguna — se crean al registrar una compra.'
+    : `📚 Lo calculan tus capas: ${fmtCLP(promedio)} por unidad (promedio de ${unidades} unidad(es) vivas).`;
 }
 
 // ---------- Capas del producto que se está editando ----------
@@ -60,6 +91,7 @@ async function cargarLotesDelProducto(productoId) {
     const lotes = await API.productos.listarLotes(productoId);
     lotesPorProducto[productoId] = lotes || [];
     renderLotesModal(productoId, lotes || []);
+    pintarCostoSegunLotes(lotes || []);
   } catch (err) {
     console.error('Error al cargar lotes:', err.message || err);
     elProdLotesLista.innerHTML = `<p class="modal-hint" style="color:var(--red);">No se pudieron cargar los lotes: ${err.message || 'error'}</p>`;

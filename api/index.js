@@ -2814,6 +2814,321 @@ app.get('/api/pos/rotacion-compras', auth(true), async (req, res) => {
   }
 });
 
+/* ============================================================
+   DÓNDE ESTÁ GUARDADO CADA PRODUCTO (sql/60, dueño 21-09-2026)
+   ------------------------------------------------------------
+   Un lugar (estante, caja, cajón) guarda VARIOS productos, y un producto
+   puede estar en VARIOS lugares. Por eso son dos tablas y no un campo de
+   texto: con un texto suelto no se podría preguntar "¿qué hay en la
+   Caja 3?", que es justo lo que pasa cuando se busca algo.
+   ============================================================ */
+const TIPOS_UBICACION = ['estante', 'caja', 'cajon', 'vitrina', 'bodega', 'otro'];
+const BUCKET_FOTOS_UBICACION = 'productos-imagenes';   // el mismo bucket público
+
+function sanearUbicacion(body) {
+  const nombre = String(body?.nombre || '').trim().slice(0, 80);
+  if (!nombre) return { error: 'Ponle un nombre al lugar (ej: "Estante A - Repisa 2" o "Caja 3")' };
+  const tipo = String(body?.tipo || '').trim().toLowerCase();
+  if (tipo && !TIPOS_UBICACION.includes(tipo)) {
+    return { error: `Tipo inválido. Debe ser uno de: ${TIPOS_UBICACION.join(', ')}` };
+  }
+  return {
+    datos: {
+      nombre,
+      tipo: tipo || null,
+      descripcion: String(body?.descripcion || '').trim().slice(0, 300) || null
+    }
+  };
+}
+
+app.get('/api/ubicaciones', auth(true), async (req, res) => {
+  const { data, error } = await db.from('ubicaciones')
+    .select('*').eq('activo', true).order('nombre').limit(500);
+  if (error) return enviarErrorBD(res, error);
+  res.json(data || []);
+});
+
+app.post('/api/ubicaciones', auth(true), async (req, res) => {
+  const { datos, error: errVal } = sanearUbicacion(req.body);
+  if (errVal) return enviarError(res, 400, errVal);
+  // El índice único ignora mayúsculas y espacios: "Caja 3" y "caja 3" son el mismo lugar
+  const { data: previo } = await db.from('ubicaciones')
+    .select('*').ilike('nombre', datos.nombre).limit(1);
+  if (previo && previo.length) return res.status(200).json(previo[0]);
+
+  const { data, error } = await db.from('ubicaciones').insert([datos]).select().single();
+  if (error) return enviarErrorBD(res, error);
+  res.status(201).json(data);
+});
+
+app.put('/api/ubicaciones/:id', auth(true), async (req, res) => {
+  const { datos, error: errVal } = sanearUbicacion(req.body);
+  if (errVal) return enviarError(res, 400, errVal);
+  const { data, error } = await db.from('ubicaciones')
+    .update(datos).eq('id', Number(req.params.id)).select().single();
+  if (error) return enviarErrorBD(res, error);
+  res.json(data);
+});
+
+/* Foto del lugar. Va en la UBICACIÓN y no en el par producto-lugar: es la
+   foto del estante o de la caja, y sirve para todo lo que esté ahí. El
+   navegador la comprime antes (el teléfono saca fotos de 4 MB). */
+app.post('/api/ubicaciones/:id/foto', auth(true), async (req, res) => {
+  try {
+    const base64 = req.body?.imagen_base64;
+    if (!base64) return enviarError(res, 400, 'Falta la imagen');
+    const id = Number(req.params.id);
+
+    const { data: ubi } = await db.from('ubicaciones').select('id, foto_url').eq('id', id).maybeSingle();
+    if (!ubi) return enviarError(res, 404, 'Lugar no encontrado');
+
+    const contenido = String(base64).includes(',') ? String(base64).split(',')[1] : String(base64);
+    const buffer = Buffer.from(contenido, 'base64');
+    if (buffer.length > MAX_BYTES_IMAGEN_PRODUCTO) {
+      return enviarError(res, 413, 'La foto supera 1 MB. El navegador debería haberla comprimido antes.');
+    }
+
+    const ruta = `ubicaciones/${crypto.randomUUID()}.webp`;
+    const { error: errSubida } = await db.storage.from(BUCKET_FOTOS_UBICACION)
+      .upload(ruta, buffer, { contentType: 'image/webp', upsert: false });
+    if (errSubida) throw new Error(errSubida.message);
+
+    const { data: pub } = db.storage.from(BUCKET_FOTOS_UBICACION).getPublicUrl(ruta);
+    const { data, error } = await db.from('ubicaciones')
+      .update({ foto_url: pub.publicUrl }).eq('id', id).select().single();
+    if (error) return enviarErrorBD(res, error);
+    res.json(data);
+  } catch (e) {
+    enviarError(res, 500, e.message || 'No se pudo subir la foto del lugar');
+  }
+});
+
+// Qué hay guardado en un lugar — la pregunta que un campo de texto no podría responder
+app.get('/api/ubicaciones/:id/productos', auth(true), async (req, res) => {
+  const { data: filas, error } = await db.from('producto_ubicaciones')
+    .select('*').eq('ubicacion_id', Number(req.params.id)).limit(500);
+  if (error) return enviarErrorBD(res, error);
+  const ids = (filas || []).map(f => f.producto_id);
+  if (!ids.length) return res.json([]);
+  const { data: productos } = await db.from('productos')
+    .select('id, nombre, sku, stock').in('id', ids);
+  const porId = Object.fromEntries((productos || []).map(p => [p.id, p]));
+  res.json((filas || []).map(f => ({ ...f, producto: porId[f.producto_id] || null })));
+});
+
+// ---------- Los lugares de UN producto ----------
+app.get('/api/productos/:id/ubicaciones', auth(true), async (req, res) => {
+  const id = Number(req.params.id);
+  const { data: filas, error } = await db.from('producto_ubicaciones')
+    .select('*').eq('producto_id', id).limit(50);
+  if (error) return enviarErrorBD(res, error);
+  const ids = (filas || []).map(f => f.ubicacion_id);
+  if (!ids.length) return res.json([]);
+  const { data: ubis } = await db.from('ubicaciones').select('*').in('id', ids);
+  const porId = Object.fromEntries((ubis || []).map(u => [u.id, u]));
+  const lista = (filas || []).map(f => ({ ...f, ubicacion: porId[f.ubicacion_id] || null }))
+    .filter(f => f.ubicacion);
+  lista.sort((a, b) => (b.principal ? 1 : 0) - (a.principal ? 1 : 0));
+  res.json(lista);
+});
+
+/* Guarda el producto en un lugar. Acepta un lugar existente (ubicacion_id)
+   o uno nuevo por nombre (nombre_nuevo): al recibir mercadería no se quiere
+   salir del formulario a crear la caja primero. */
+app.post('/api/productos/:id/ubicaciones', auth(true), async (req, res) => {
+  const productoId = Number(req.params.id);
+  try {
+    const { data: producto } = await db.from('productos').select('id').eq('id', productoId).maybeSingle();
+    if (!producto) return enviarError(res, 404, 'Producto no encontrado');
+
+    let ubicacionId = Number(req.body?.ubicacion_id) || null;
+    const nombreNuevo = String(req.body?.nombre_nuevo || '').trim();
+
+    if (!ubicacionId && nombreNuevo) {
+      const { datos, error: errVal } = sanearUbicacion({ nombre: nombreNuevo, tipo: req.body?.tipo });
+      if (errVal) return enviarError(res, 400, errVal);
+      const { data: previo } = await db.from('ubicaciones').select('id').ilike('nombre', datos.nombre).limit(1);
+      if (previo && previo.length) ubicacionId = previo[0].id;
+      else {
+        const { data, error } = await db.from('ubicaciones').insert([datos]).select('id').single();
+        if (error) throw error;
+        ubicacionId = data.id;
+      }
+    }
+    if (!ubicacionId) return enviarError(res, 400, 'Elige un lugar o escribe el nombre de uno nuevo');
+
+    const nota = String(req.body?.nota || '').trim().slice(0, 300) || null;
+    const principal = req.body?.principal === true;
+
+    const { data: yaEsta } = await db.from('producto_ubicaciones')
+      .select('id').eq('producto_id', productoId).eq('ubicacion_id', ubicacionId).maybeSingle();
+
+    if (yaEsta) {
+      await db.from('producto_ubicaciones').update({ nota, principal }).eq('id', yaEsta.id);
+    } else {
+      const { error } = await db.from('producto_ubicaciones')
+        .insert([{ producto_id: productoId, ubicacion_id: ubicacionId, nota, principal }]);
+      if (error) throw error;
+    }
+
+    /* Un solo lugar principal por producto: es "dónde se busca primero", y
+       dos primeros no existen. */
+    if (principal) {
+      const { data: otros } = await db.from('producto_ubicaciones')
+        .select('id, ubicacion_id').eq('producto_id', productoId);
+      for (const o of (otros || [])) {
+        if (Number(o.ubicacion_id) !== Number(ubicacionId)) {
+          await db.from('producto_ubicaciones').update({ principal: false }).eq('id', o.id);
+        }
+      }
+    }
+
+    res.status(201).json({ ok: true, ubicacion_id: ubicacionId });
+  } catch (error) {
+    return enviarErrorBD(res, error, 'POST /api/productos/:id/ubicaciones');
+  }
+});
+
+app.delete('/api/productos/:id/ubicaciones/:ubicacionId', auth(true), async (req, res) => {
+  const { error } = await db.from('producto_ubicaciones')
+    .delete().eq('producto_id', Number(req.params.id)).eq('ubicacion_id', Number(req.params.ubicacionId));
+  if (error) return enviarErrorBD(res, error);
+  res.json({ ok: true });
+});
+
+/* ============================================================
+   PLAZO DE DEVOLUCIÓN POR PROVEEDOR (sql/60)
+   ------------------------------------------------------------
+   La fecha "se puede devolver hasta" es la que más queda vacía, porque
+   hay que calcularla a mano en cada compra. El plazo es del PROVEEDOR,
+   no de la compra: guardándolo una vez, la fecha se propone sola.
+   Se PROPONE, no se impone: una compra puntual puede tener otro trato.
+   ============================================================ */
+app.get('/api/proveedores-plazos', auth(true), async (req, res) => {
+  const { data, error } = await db.from('proveedores_plazos').select('*').order('proveedor').limit(500);
+  if (error) return enviarErrorBD(res, error);
+  res.json(data || []);
+});
+
+app.put('/api/proveedores-plazos', auth(true), async (req, res) => {
+  const proveedor = String(req.body?.proveedor || '').trim().slice(0, 80);
+  if (!proveedor) return enviarError(res, 400, 'Falta el proveedor');
+  const bruto = req.body?.dias_devolucion;
+  const dias = (bruto === null || bruto === undefined || String(bruto).trim() === '')
+    ? null : Math.round(num(bruto));
+  if (dias !== null && (!Number.isFinite(dias) || dias < 0 || dias > 3650)) {
+    return enviarError(res, 400, 'Los días de devolución deben ir entre 0 y 3650');
+  }
+  const { data, error } = await db.from('proveedores_plazos').upsert([{
+    proveedor,
+    dias_devolucion: dias,
+    nota: String(req.body?.nota || '').trim().slice(0, 200) || null,
+    actualizado_en: new Date().toISOString()
+  }]).select().single();
+  if (error) return enviarErrorBD(res, error);
+  res.json(data);
+});
+
+/* ============================================================
+   MERCADERÍA EN CAMINO (aviso del header, sql/59)
+   ------------------------------------------------------------
+   "Que se vea en notificaciones productos en camino, o que ya llegaron y
+   necesitan mi confirmación."
+
+   `dias_para_llegar` es negativo cuando la fecha estimada ya pasó: esas
+   son las que hay que confirmar o corregir, y son las que ponen el botón
+   en rojo. Sin fecha estimada no hay atraso posible — una compra sin ETA
+   no está atrasada, solo no se sabe.
+   ============================================================ */
+app.get('/api/productos/en-camino', auth(true), async (req, res) => {
+  try {
+    const { data: ingresos, error } = await db.from('ingresos_mercaderia')
+      .select('*').eq('en_camino', true).order('fecha_compra').limit(300);
+    if (error) return enviarErrorBD(res, error);
+    const lista = ingresos || [];
+    if (!lista.length) return res.json({ total: 0, vencidos: 0, compras: [] });
+
+    const ids = [...new Set(lista.map(i => i.producto_id))];
+    const { data: productos } = await db.from('productos')
+      .select('id, nombre, sku, stock, fecha_llegada_estimada, imagen_urls').in('id', ids);
+    const porId = Object.fromEntries((productos || []).map(p => [p.id, p]));
+
+    const hoy = fechaHoyChile();
+    const compras = lista.map(i => {
+      const p = porId[i.producto_id] || null;
+      const eta = p?.fecha_llegada_estimada || null;
+      return {
+        id: i.id,
+        producto_id: i.producto_id,
+        producto: p ? p.nombre : 'Producto borrado',
+        sku: p?.sku || null,
+        cantidad: num(i.cantidad),
+        costo_unitario: num(i.costo_unitario),
+        proveedor: i.proveedor || null,
+        fecha_compra: i.fecha_compra,
+        fecha_llegada_estimada: eta,
+        dias_para_llegar: eta ? diasEntre(hoy, eta) : null,
+        dias_esperando: diasEntre(i.fecha_compra, hoy)
+      };
+    }).filter(c => c.producto_id);
+
+    // Primero lo que ya debería haber llegado, después lo que llega antes
+    compras.sort((a, b) => {
+      const da = a.dias_para_llegar === null ? 9999 : a.dias_para_llegar;
+      const dbb = b.dias_para_llegar === null ? 9999 : b.dias_para_llegar;
+      return da - dbb;
+    });
+
+    res.json({
+      total: compras.length,
+      vencidos: compras.filter(c => c.dias_para_llegar !== null && c.dias_para_llegar < 0).length,
+      compras
+    });
+  } catch (e) {
+    enviarError(res, 500, e.message || 'No se pudo revisar la mercadería en camino');
+  }
+});
+
+/* Margen sugerido para proponer un precio al registrar una compra.
+   Primero el margen que YA usa este producto; si no tiene costo cargado,
+   la mediana de su categoría; si tampoco, null — no se inventa un margen
+   de la nada, que sería peor que no proponer nada. */
+app.get('/api/productos/:id/margen-sugerido', auth(true), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { data: p } = await db.from('productos')
+      .select('id, costo_unitario, precio_unitario, categoria_id, es_servicio').eq('id', id).maybeSingle();
+    if (!p) return enviarError(res, 404, 'Producto no encontrado');
+
+    if (num(p.costo_unitario) > 0 && num(p.precio_unitario) > 0) {
+      return res.json({
+        factor: num(p.precio_unitario) / num(p.costo_unitario),
+        origen: 'este producto'
+      });
+    }
+
+    if (p.categoria_id) {
+      const { data: hermanos } = await db.from('productos')
+        .select('costo_unitario, precio_unitario, archivado, es_borrador')
+        .eq('categoria_id', p.categoria_id).limit(500);
+      const factores = (hermanos || [])
+        .filter(h => !h.archivado && !h.es_borrador && num(h.costo_unitario) > 0 && num(h.precio_unitario) > 0)
+        .map(h => num(h.precio_unitario) / num(h.costo_unitario))
+        .sort((a, b) => a - b);
+      if (factores.length >= 3) {
+        // Mediana y no promedio: un producto con margen extremo no arrastra al resto
+        const medio = Math.floor(factores.length / 2);
+        const mediana = factores.length % 2 ? factores[medio] : (factores[medio - 1] + factores[medio]) / 2;
+        return res.json({ factor: mediana, origen: `${factores.length} productos de su categoría` });
+      }
+    }
+
+    res.json({ factor: null, origen: null });
+  } catch (e) {
+    enviarError(res, 500, e.message || 'No se pudo calcular el margen sugerido');
+  }
+});
+
 app.get('/api/productos/auditoria-envio', auth(true), async (req, res) => {
   const { data, error } = await db.from('productos')
     .select('id, nombre, sku, peso_kg, alto_cm, ancho_cm, profundidad_cm')

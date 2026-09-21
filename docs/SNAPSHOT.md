@@ -31,6 +31,38 @@ remanente.** Migración `sql/58` aplicada y verificada en producción.
 - 🤖 **Para qué sirve de verdad:** el cowork "Sevelin Finanzas" ya lee esta base. Con el historial
   cargado puede responder solo cómo viene el remanente, sin que nadie le pase un PDF cada mes.
 
+**v75 (21-09-2026) — dónde está guardado cada producto, aviso de mercadería en camino, y las
+cuatro automatizaciones (A, B, C, D).** Migración `sql/60` aplicada y verificada en producción.
+
+- 📍 **"Dónde está guardado"**, tarjeta nueva en el editor: el estante, la caja o el cajón donde lo
+  dejaste, con **detalle por producto** ("adentro de la caja azul, junto a las pastas térmicas"),
+  cuál es el lugar donde se busca primero (⭐) y **foto del lugar**.
+- 🗃️ **Dos tablas y no un campo de texto** (`ubicaciones` + `producto_ubicaciones`), por lo que el
+  dueño describió: una caja guarda VARIOS productos (con un texto suelto nunca se podría preguntar
+  "¿qué hay en la Caja 3?", que es lo que uno hace cuando busca algo) y un producto puede estar en
+  VARIOS lugares (los sueltos en un estante, una caja cerrada en otro).
+- 📷 **La foto es del LUGAR, no del producto**: sirve para todo lo que esté guardado ahí. Se comprime
+  en el navegador a 1200 px / ~160 KB webp antes de subirla — la foto sale del teléfono y pesa 3-4 MB.
+  El nombre del lugar es único ignorando mayúsculas: "Caja 3" y "caja 3" son el mismo lugar.
+- 🔄 **Al registrar una compra se propone el lugar de siempre**: "La última vez lo guardaste en
+  Caja 3". Se muestra, no se aplica solo: el stock nuevo puede ir a otra parte.
+- 📦 **Botón nuevo en el header con la mercadería en camino.** Ámbar mientras solo viaja; **rojo con
+  pulso cuando la fecha estimada ya pasó**, que es lo que hay que confirmar o corregir. Cada compra
+  se puede confirmar con "📦 Ya llegó" **sin entrar al producto**. Una compra **sin** fecha estimada
+  no está atrasada: no se sabe, que es distinto.
+- 🔧 **(A) "Es un servicio" enciende solo el stock ilimitado.** Antes había que marcar las dos y un
+  servicio al que se le olvidaba la segunda se quedaba sin stock. Desmarcarlo no apaga la otra.
+- 📚 **(B) Con PEPS activo, el "Costo Unit." queda de solo lectura** y muestra el costo real que
+  calculan las capas — **promedio ponderado por unidades vivas**, no promedio simple: 10 a $2.000 y
+  1 a $9.000 son $2.636, no $5.500.
+- 💡 **(C) Precio sugerido al registrar una compra**, con el margen que ya usa ese producto o la
+  **mediana** de su categoría (mediana y no promedio: un margen extremo no arrastra al resto). Es un
+  botón: nada cambia solo. Si el precio actual ya respeta el margen, no molesta.
+- 📅 **(D) Plazo de devolución por proveedor.** Guardado una vez, la fecha se calcula sola desde la
+  fecha de compra. Con un proveedor nuevo, ofrece recordar el plazo para la próxima.
+- `sql/60`: `ubicaciones`, `producto_ubicaciones` y `proveedores_plazos`, las tres con RLS y sin
+  políticas públicas (verificado con `pg_policies`: 0 políticas).
+
 **v74 (21-09-2026) — el falso "sin categoría", y "por llegar" pasa a ser una compra en camino.**
 Migración `sql/59` aplicada y verificada en producción.
 

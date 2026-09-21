@@ -154,6 +154,13 @@ const API = {
     // La mercadería en camino llegó: sube el stock y apaga "por llegar"
     compraRecibida: (ingresoId) => apiRequest(`/ingresos/${ingresoId}/recibida`, { method: 'PUT' }),
 
+    // Dónde está guardado (sql/60)
+    ubicacionesDe: (id) => apiRequest(`/productos/${id}/ubicaciones`),
+    guardarEnUbicacion: (id, datos) => apiRequest(`/productos/${id}/ubicaciones`, { method: 'POST', body: datos }),
+    quitarDeUbicacion: (id, ubicacionId) => apiRequest(`/productos/${id}/ubicaciones/${ubicacionId}`, { method: 'DELETE' }),
+    margenSugerido: (id) => apiRequest(`/productos/${id}/margen-sugerido`, { silencioso: true }),
+    enCamino: () => apiRequest('/productos/en-camino', { silencioso: true }),
+
     // Qué le falta al catálogo para estar completo
     reglasCompletitud: () => apiRequest('/productos/reglas'),
     incompletos: () => apiRequest('/productos/incompletos', { silencioso: true }),
@@ -419,6 +426,20 @@ const API = {
 
   // Categorías del catálogo web (módulo "Página Web → Categorías") —
   // distinto de repuestos.categorias (taller).
+  ubicaciones: {
+    listar: () => apiRequest('/ubicaciones'),
+    crear: (datos) => apiRequest('/ubicaciones', { method: 'POST', body: datos }),
+    actualizar: (id, datos) => apiRequest(`/ubicaciones/${id}`, { method: 'PUT', body: datos }),
+    subirFoto: (id, imagenBase64) =>
+      apiRequest(`/ubicaciones/${id}/foto`, { method: 'POST', body: { imagen_base64: imagenBase64 } }),
+    queHayEn: (id) => apiRequest(`/ubicaciones/${id}/productos`)
+  },
+
+  proveedores: {
+    plazos: () => apiRequest('/proveedores-plazos', { silencioso: true }),
+    guardarPlazo: (datos) => apiRequest('/proveedores-plazos', { method: 'PUT', body: datos })
+  },
+
   productosCategorias: {
     listar: () => apiRequest('/productos/categorias'),
     crear: (nombre, parentId) => apiRequest('/productos/categorias', { method: 'POST', body: { nombre, parent_id: parentId || null } }),

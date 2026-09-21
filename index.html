@@ -220,6 +220,11 @@
       <button id="btnFichasIncompletas" class="btn-notificaciones btn-fichas admin-only" title="Productos a los que les falta algo" hidden>
         📋 <span id="textoFichasIncompletas">Por completar</span>
       </button>
+      <!-- Mercadería comprada que todavía no llega (sql/59). Rojo cuando la
+           fecha estimada ya pasó: eso hay que confirmarlo o corregirlo. -->
+      <button id="btnEnCamino" class="btn-notificaciones btn-camino admin-only" title="Mercadería comprada que todavía no llega" hidden>
+        📦 <span id="textoEnCamino">En camino</span>
+      </button>
       <span id="syncBadge" class="sync-badge sync-pending">⏳ Conectando…</span>
     </div>
   </header>
@@ -2195,6 +2200,8 @@
             </div>
           </div>
 
+          <p class="modal-hint" id="prodCostoLotesNota" style="margin-top:8px; color:var(--blue);"></p>
+
           <label class="check-item" id="itemProdStockIlimitado" style="margin-top:16px;">
             <input type="checkbox" id="prodStockIlimitado">
             <span>♾️ Stock ilimitado (para servicios o ítems sin inventario físico — no se descuenta al vender)</span>
@@ -2301,6 +2308,12 @@
           </div>
 
           <p class="modal-hint" id="ingAvisoCosto" style="margin-top:8px;"></p>
+
+          <!-- Precio sugerido (C) y dónde se guarda (dueño, 21-09-2026).
+               Los dos son PROPUESTAS con botón: nada cambia solo. -->
+          <p class="modal-hint" id="ingPrecioSugerido" style="margin-top:6px;"></p>
+          <p class="modal-hint" id="ingDondeGuardar" style="margin-top:6px;"></p>
+          <p class="modal-hint" id="ingAvisoPlazo" style="margin-top:6px;"></p>
           <p class="modal-hint">Si el proveedor no acepta devoluciones, deja la fecha vacía —
             es distinto de una fecha ya vencida, y el informe los trata distinto.</p>
 
@@ -2327,6 +2340,73 @@
                 <p class="modal-hint">Guarda el producto para poder cargarle capas.</p>
               </div>
             </div>
+          </div>
+        </div>
+
+<!-- ============================================================
+             DÓNDE ESTÁ GUARDADO (sql/60, dueño 21-09-2026)
+             Una caja guarda varios productos y un producto puede estar en
+             varios lugares (los sueltos en un estante, una caja cerrada en
+             otro). Por eso es una lista y no un campo de texto.
+             ============================================================ -->
+        <div class="card card-plegable" id="cardUbicaciones" data-seccion="ubicacion">
+          <div class="card-head">
+            <div><h2>📍 Dónde está guardado</h2>
+              <p class="subtitle">El estante, la caja o el cajón donde lo dejaste. Puede estar en más
+                de un lugar a la vez.</p></div>
+            <span class="estado-seccion" data-estado="ubicacion"></span>
+          </div>
+
+          <div id="ubicacionesLista"></div>
+
+          <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border);">
+            <div class="grid grid-2">
+              <div class="field">
+                <label for="ubiSelect">Lugar</label>
+                <select id="ubiSelect">
+                  <option value="">— Elige un lugar guardado —</option>
+                  <option value="__nuevo">➕ Crear un lugar nuevo…</option>
+                </select>
+              </div>
+              <div class="field" id="campoUbiNueva" style="display:none;">
+                <label for="ubiNombreNuevo">Nombre del lugar nuevo</label>
+                <div style="display:flex; gap:6px;">
+                  <input type="text" id="ubiNombreNuevo" maxlength="80" placeholder="Ej: Estante A - Repisa 2" style="flex:1; min-width:0;">
+                  <select id="ubiTipoNuevo" style="width:120px; flex-shrink:0;">
+                    <option value="">Tipo…</option>
+                    <option value="estante">Estante</option>
+                    <option value="caja">Caja</option>
+                    <option value="cajon">Cajón</option>
+                    <option value="vitrina">Vitrina</option>
+                    <option value="bodega">Bodega</option>
+                    <option value="otro">Otro</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div class="field" style="margin-top:10px;">
+              <label for="ubiNota">Detalle de ESTE producto en ESE lugar (opcional)</label>
+              <input type="text" id="ubiNota" maxlength="300"
+                     placeholder="Ej: adentro de la caja azul, junto a las pastas térmicas">
+            </div>
+
+            <label class="check-item" style="margin-top:10px;">
+              <input type="checkbox" id="ubiPrincipal" checked>
+              <span>⭐ Es el lugar donde lo busco primero</span>
+            </label>
+
+            <div style="display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-top:10px;">
+              <div>
+                <input type="file" id="ubiFotoInput" accept="image/*" capture="environment" hidden>
+                <button type="button" class="btn btn-outline btn-sm" id="btnUbiFoto"
+                        title="Una foto del estante o de la caja, para reconocerlo de un vistazo">📷 Foto del lugar</button>
+                <small id="ubiFotoEstado" style="color:var(--text-muted); margin-left:8px;"></small>
+              </div>
+              <button type="button" class="btn btn-primary" id="btnGuardarUbicacion">📍 Guardar aquí</button>
+            </div>
+            <p class="subtitle">La foto es <strong>del lugar</strong>, no del producto: sirve para
+              todo lo que esté guardado ahí. Se comprime en el teléfono antes de subirla.</p>
           </div>
         </div>
 
@@ -5940,6 +6020,18 @@
     </div>
   </div>
 
+  <!-- Mercadería en camino (sql/59) -->
+  <div id="modalEnCamino" class="modal-overlay">
+    <div class="modal-box" style="max-width:740px;">
+      <h2>📦 Mercadería en camino</h2>
+      <p class="modal-hint" id="enCaminoResumen">—</p>
+      <div id="enCaminoLista" style="max-height:52vh; overflow:auto;"></div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCerrarEnCamino" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modalF29" class="modal-overlay">
     <div class="modal-box" style="max-width:600px;">
       <h2>🧾 F29 pendiente</h2>
@@ -6109,7 +6201,8 @@
   <script src="js/pedidos-web.js"></script>
   <script src="js/pagina-web.js"></script>   <!-- después de pedidos-web.js: envuelve su vista en el subtab "pedidos" -->
   <script src="js/notificaciones.js"></script>
-  <script src="js/completitud.js"></script>   <!-- usa API.pedidosWeb (js/api.js) y activarVista (js/config.js), ya cargados antes -->
+  <script src="js/completitud.js"></script>
+  <script src="js/ubicaciones.js"></script>   <!-- usa API.pedidosWeb (js/api.js) y activarVista (js/config.js), ya cargados antes -->
   <script src="js/garantias.js"></script>
   <script src="js/repuestos.js"></script>
   <script src="js/ot.js"></script>

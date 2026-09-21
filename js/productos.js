@@ -281,6 +281,19 @@ function setupProductosEventListeners() {
 
   if (elBtnValorizacion) elBtnValorizacion.addEventListener('click', abrirValorizacion);
   if (elProdStockIlimitado) elProdStockIlimitado.addEventListener('change', aplicarStockIlimitadoProductoUI);
+  /* (A) Un servicio no tiene inventario: marcar "Es un servicio" enciende
+     solo el stock ilimitado. Antes había que marcar las dos, y un servicio
+     al que se le olvidaba la segunda se quedaba "sin stock" y dejaba de
+     poder venderse. Desmarcarlo NO apaga la otra: un producto físico puede
+     ser de stock ilimitado igual (ej. algo que se pide siempre). */
+  if (elProdEsServicio) elProdEsServicio.addEventListener('change', () => {
+    if (elProdEsServicio.checked && elProdStockIlimitado && !elProdStockIlimitado.checked) {
+      elProdStockIlimitado.checked = true;
+      aplicarStockIlimitadoProductoUI();
+      showToast('Es un servicio: le puse stock ilimitado', 'ok');
+    }
+    if (typeof revisarCompletitudProducto === 'function') revisarCompletitudProducto();
+  });
   /* Un servicio casi nunca tiene inventario: al marcarlo se sugiere stock
      ilimitado. Solo al MARCAR y solo si no lo estaba — se puede desmarcar
      después si un servicio sí consume algo con stock. */
@@ -1499,6 +1512,36 @@ function abrirModalProducto(producto = null) {
       setTimeout(() => revisarCompletitudProducto({ plegarSegunEstado: true }), 120);
     });
   }
+  if (typeof cargarUbicacionesProducto === 'function') {
+    cargarUbicacionesProducto().then(() => {
+      if (typeof proponerLugarDeLaCompra === 'function') proponerLugarDeLaCompra();
+    });
+  }
+  cargarMargenSugerido();
+  cargarPlazosProveedores();
+}
+
+/* (C) El margen que ya usa este producto — o la mediana de su categoría —
+   para poder proponer un precio cuando se registra una compra. Se pide una
+   vez al abrir; si no hay con qué calcularlo, no se propone nada. */
+let margenSugeridoProducto = null;
+async function cargarMargenSugerido() {
+  margenSugeridoProducto = null;
+  if (!editingProductId) return;
+  try { margenSugeridoProducto = await API.productos.margenSugerido(editingProductId); }
+  catch (_) { margenSugeridoProducto = null; }
+}
+
+/* (D) Plazos de devolución por proveedor: se leen una vez por sesión y
+   sirven para proponer la fecha en cuanto se escribe el proveedor. */
+let plazosProveedores = null;
+async function cargarPlazosProveedores() {
+  if (plazosProveedores) return plazosProveedores;
+  try {
+    const lista = await API.proveedores.plazos() || [];
+    plazosProveedores = Object.fromEntries(lista.map(p => [String(p.proveedor).toLowerCase(), p]));
+  } catch (_) { plazosProveedores = {}; }
+  return plazosProveedores;
 }
 
 // Puebla el <select> de categoría web desde producto_categorias (módulo
@@ -3051,6 +3094,21 @@ let ingresosDelProducto = [];
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnAgregarIngreso')?.addEventListener('click', agregarIngresoProducto);
   document.getElementById('prodPorLlegar')?.addEventListener('change', alternarIngresoEnCamino);
+  document.getElementById('ingCosto')?.addEventListener('input', proponerPrecioDeVenta);
+  document.getElementById('ingProveedor')?.addEventListener('input', proponerPlazoDevolucion);
+  document.getElementById('ingProveedor')?.addEventListener('change', proponerPlazoDevolucion);
+  document.getElementById('ingFecha')?.addEventListener('change', proponerPlazoDevolucion);
+  document.getElementById('ingPrecioSugerido')?.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-usar-precio]');
+    if (!b) return;
+    const elPrecio = document.getElementById('prodPrecio');
+    if (elPrecio) { elPrecio.value = b.dataset.usarPrecio; elPrecio.dispatchEvent(new Event('input', { bubbles: true })); }
+    showToast(`Precio puesto en ${fmtCLP(Number(b.dataset.usarPrecio))} — revísalo antes de guardar`, 'ok');
+  });
+  document.getElementById('ingAvisoPlazo')?.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-recordar-plazo]');
+    if (b) recordarPlazoProveedor();
+  });
   document.getElementById('ingresosLista')?.addEventListener('click', (e) => {
     const recibir = e.target.closest('[data-recibir-ingreso]');
     if (recibir) { recibirCompraEnCamino(Number(recibir.dataset.recibirIngreso)); return; }
@@ -3095,6 +3153,95 @@ Se suman al stock y, si no queda nada más en camino, la tienda le avisa por cor
   } catch (err) {
     showToast(err.message || 'No se pudo marcar como recibida', 'err');
   }
+}
+
+/* (C) Precio sugerido a partir del costo de esta compra. Se PROPONE con un
+   botón: cambiar el precio solo, por detrás, sería peor que no proponer
+   nada. El factor sale del margen que ya usa este producto; si no tiene
+   costo cargado, de la mediana de su categoría. */
+function proponerPrecioDeVenta() {
+  const aviso = document.getElementById('ingPrecioSugerido');
+  if (!aviso) return;
+  const costo = Number(document.getElementById('ingCosto')?.value) || 0;
+  const factor = Number(margenSugeridoProducto?.factor) || 0;
+  const precioActual = Number(document.getElementById('prodPrecio')?.value) || 0;
+
+  if (costo <= 0 || factor <= 1) { aviso.innerHTML = ''; return; }
+  const sugerido = Math.round((costo * factor) / 10) * 10;   // redondeado a la decena
+
+  // Si el precio que ya tiene está a menos de 2% del sugerido, no molesta
+  if (precioActual > 0 && Math.abs(precioActual - sugerido) / sugerido < 0.02) {
+    aviso.innerHTML = `<span style="color:var(--green);">✔️ El precio actual mantiene tu margen de siempre.</span>`;
+    return;
+  }
+
+  const margenPct = Math.round((1 - 1 / factor) * 100);
+  const alerta = precioActual > 0 && precioActual < sugerido;
+  aviso.innerHTML =
+    `${alerta ? '⚠️ ' : '💡 '}Con un costo de ${fmtCLP(costo)}, tu margen habitual (${margenPct}%, según ${escHtml(margenSugeridoProducto?.origen || 'tu historial')}) daría `
+    + `<strong>${fmtCLP(sugerido)}</strong>`
+    + (precioActual > 0 ? ` y hoy lo vendes a ${fmtCLP(precioActual)}.` : '.')
+    + ` <button type="button" class="btn btn-ghost btn-sm" data-usar-precio="${sugerido}">Usar ${fmtCLP(sugerido)}</button>`;
+}
+
+/* (D) Fecha de devolución propuesta desde el plazo del proveedor. Si el
+   proveedor es nuevo y él escribe una fecha, se ofrece recordar el plazo
+   para la próxima. */
+function proponerPlazoDevolucion() {
+  const aviso = document.getElementById('ingAvisoPlazo');
+  if (!aviso || !plazosProveedores) return;
+  const proveedor = (document.getElementById('ingProveedor')?.value || '').trim();
+  const fecha = (document.getElementById('ingFecha')?.value || '').trim();
+  const elDev = document.getElementById('ingDevolucion');
+  if (!proveedor || !fecha || !elDev) { aviso.innerHTML = ''; return; }
+
+  const guardado = plazosProveedores[proveedor.toLowerCase()];
+  if (guardado && Number.isFinite(Number(guardado.dias_devolucion))) {
+    const dias = Number(guardado.dias_devolucion);
+    const limite = sumarDiasISO(fecha, dias);
+    if (!elDev.value) elDev.value = limite;
+    aviso.innerHTML = `📅 ${escHtml(proveedor)} acepta devoluciones hasta ${dias} días: la fecha queda en ${escHtml(fechaCorta(limite))}.`;
+    return;
+  }
+
+  // Proveedor sin plazo guardado: si él puso una fecha, ofrecer recordarla
+  if (elDev.value) {
+    const dias = diasEntreISO(fecha, elDev.value);
+    if (dias >= 0) {
+      aviso.innerHTML = `¿${escHtml(proveedor)} siempre acepta ${dias} días? `
+        + `<button type="button" class="btn btn-ghost btn-sm" data-recordar-plazo="1">Recordarlo para la próxima</button>`;
+      return;
+    }
+  }
+  aviso.innerHTML = '';
+}
+
+async function recordarPlazoProveedor() {
+  const proveedor = (document.getElementById('ingProveedor')?.value || '').trim();
+  const fecha = (document.getElementById('ingFecha')?.value || '').trim();
+  const hasta = (document.getElementById('ingDevolucion')?.value || '').trim();
+  if (!proveedor || !fecha || !hasta) return;
+  const dias = diasEntreISO(fecha, hasta);
+  try {
+    await API.proveedores.guardarPlazo({ proveedor, dias_devolucion: dias });
+    plazosProveedores[proveedor.toLowerCase()] = { proveedor, dias_devolucion: dias };
+    showToast(`Anotado: ${proveedor} acepta ${dias} días`, 'ok');
+    proponerPlazoDevolucion();
+  } catch (err) {
+    showToast(err.message || 'No se pudo guardar el plazo', 'err');
+  }
+}
+
+/* Fechas en texto, sin new Date(): con la cadena sola el navegador la lee
+   como UTC y en Chile puede caer el día anterior. */
+function sumarDiasISO(iso, dias) {
+  const [a, m, d] = String(iso).slice(0, 10).split('-').map(Number);
+  const base = new Date(Date.UTC(a, m - 1, d + Number(dias)));
+  return base.toISOString().slice(0, 10);
+}
+function diasEntreISO(desde, hasta) {
+  const p = (t) => { const [a, m, d] = String(t).slice(0, 10).split('-').map(Number); return Date.UTC(a, m - 1, d); };
+  return Math.round((p(hasta) - p(desde)) / 86400000);
 }
 
 /* La sección solo tiene sentido con un producto ya guardado: una compra
