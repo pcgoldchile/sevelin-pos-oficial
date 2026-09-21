@@ -1247,6 +1247,25 @@
               </table>
             </div>
           </details>
+
+          <!-- Historial del F29 mes a mes (sql/58). Se llena al marcar cada
+               F29 con los códigos del Formulario Compacto. -->
+          <details class="iva-sii-detalle" id="f29HistorialCaja">
+            <summary>Ver historial del F29 mes a mes</summary>
+            <p class="modal-hint" id="f29HistorialResumen">—</p>
+            <div class="table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Período</th><th class="num">Venta declarada</th><th class="num">Débito</th>
+                    <th class="num">Crédito</th><th class="num">IVA pagado</th>
+                    <th class="num">Remanente</th><th>Folio</th>
+                  </tr>
+                </thead>
+                <tbody id="f29HistorialFilas"><tr class="empty-row"><td colspan="7">Sin datos todavía</td></tr></tbody>
+              </table>
+            </div>
+          </details>
         </div>
 
         <div class="card">
@@ -5883,7 +5902,7 @@
   </div>
 
   <div id="modalF29" class="modal-overlay">
-    <div class="modal-box modal-sm">
+    <div class="modal-box" style="max-width:600px;">
       <h2>🧾 F29 pendiente</h2>
       <p class="modal-hint" id="f29Resumen">—</p>
 
@@ -5903,6 +5922,63 @@
         <input type="number" id="f29Remanente" min="0" step="1" placeholder="Ej: 219227">
         <p class="modal-hint">Es el crédito que te sobra para el mes que viene. Lo usa el semáforo de IVA de Finanzas → Utilidades.</p>
       </div>
+
+      <!-- Los códigos del Formulario Compacto (sql/58). Opcionales y plegados:
+           marcar el F29 tiene que seguir siendo de dos clics. Quien los copia
+           gana el historial del remanente; quien no, no pierde nada. -->
+      <details class="f29-codigos">
+        <summary>📄 Copiar los códigos del Formulario Compacto (opcional, 2 min)</summary>
+        <p class="modal-hint">
+          Del PDF <strong>"Formulario Compacto"</strong> que entrega el SII al presentar (no el
+          Certificado Solemne, que trae menos datos). Cada campo dice su código: búscalo en el PDF y
+          cópialo. Lo que dejes vacío queda <strong>sin anotar</strong>, no en cero.
+        </p>
+
+        <div class="grid grid-2">
+          <div class="field">
+            <label for="f29Folio">Folio de la declaración</label>
+            <input type="text" id="f29Folio" inputmode="numeric" placeholder="Ej: 9317313976">
+          </div>
+          <div class="field">
+            <label for="f29FechaPresentacion">Fecha en que el SII la recibió</label>
+            <input type="date" id="f29FechaPresentacion">
+          </div>
+          <div class="field">
+            <label for="f29Base">563 · Base imponible (ventas netas)</label>
+            <input type="number" id="f29Base" min="0" step="1" placeholder="Ej: 2899984">
+          </div>
+          <div class="field">
+            <label for="f29Debito">538 · Total débitos (IVA de tus ventas)</label>
+            <input type="number" id="f29Debito" min="0" step="1" placeholder="Ej: 550997">
+          </div>
+          <div class="field">
+            <label for="f29Credito">537 · Total créditos (IVA de tus compras)</label>
+            <input type="number" id="f29Credito" min="0" step="1" placeholder="Ej: 770224">
+          </div>
+          <div class="field">
+            <label for="f29Determinado">089 · IVA determinado (a pagar)</label>
+            <input type="number" id="f29Determinado" min="0" step="1" placeholder="0">
+          </div>
+          <div class="field">
+            <label for="f29Ppm">062 · PPM neto determinado</label>
+            <input type="number" id="f29Ppm" min="0" step="1" placeholder="Ej: 3625">
+          </div>
+          <div class="field">
+            <label for="f29RemanenteAnterior">504 · Remanente del mes anterior</label>
+            <input type="number" id="f29RemanenteAnterior" min="0" step="1" placeholder="Ej: 329199">
+          </div>
+          <div class="field">
+            <label for="f29Boletas">110 · Cantidad de boletas</label>
+            <input type="number" id="f29Boletas" min="0" step="1" placeholder="Ej: 77">
+          </div>
+          <div class="field">
+            <label for="f29Facturas">519 · Facturas recibidas del giro</label>
+            <input type="number" id="f29Facturas" min="0" step="1" placeholder="Ej: 40">
+          </div>
+        </div>
+
+        <p class="modal-hint" id="f29Cuadratura"></p>
+      </details>
 
       <label class="sn-toggle" style="width:fit-content;">
         <input type="checkbox" id="f29RegistrarGasto" checked>

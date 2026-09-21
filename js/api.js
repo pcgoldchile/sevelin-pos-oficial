@@ -458,6 +458,7 @@ const API = {
     // Recordatorio del F29 (sql/49): períodos pendientes y marcar presentado
     f29Estado: () => apiRequest('/finanzas/f29-estado', { silencioso: true }),
     f29Marcar: (datos) => apiRequest('/finanzas/f29-presentado', { method: 'POST', body: datos }),
+    f29Historial: () => apiRequest('/finanzas/f29-historial'),
     // Semáforo de IVA con el RCV del SII (sql/51)
     ivaSii: (periodo) => apiRequest('/finanzas/sii/iva' + (periodo ? `?periodo=${encodeURIComponent(periodo)}` : '')),
     siiSincronizar: () => apiRequest('/finanzas/sii/sincronizar', { method: 'POST', body: {} }),

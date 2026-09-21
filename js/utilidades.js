@@ -964,6 +964,62 @@ async function cargarIvaSii() {
     const estado = document.getElementById('ivaSiiEstado');
     if (estado) estado.textContent = 'No se pudo calcular el IVA del mes: ' + (err.message || 'error');
   }
+  cargarHistorialF29();
+}
+
+/* ============================================================
+   HISTORIAL DEL F29 MES A MES (sql/58)
+   ------------------------------------------------------------
+   Lo que se anota al marcar cada F29. Con dos meses o más ya se puede
+   responder la pregunta que importa: a qué ritmo se consume el remanente
+   y hasta cuándo alcanza. Si falla, la tabla queda vacía y el resto del
+   panel sigue funcionando: es un extra, no el semáforo.
+   ============================================================ */
+async function cargarHistorialF29() {
+  const tbody = document.getElementById('f29HistorialFilas');
+  const resumen = document.getElementById('f29HistorialResumen');
+  if (!tbody || !esAdmin()) return;
+  try {
+    const d = await API.balance.f29Historial();
+    pintarHistorialF29(d);
+  } catch (err) {
+    if (resumen) resumen.textContent = 'No se pudo leer el historial: ' + (err.message || 'error');
+  }
+}
+
+function pintarHistorialF29(d) {
+  const tbody = document.getElementById('f29HistorialFilas');
+  const resumen = document.getElementById('f29HistorialResumen');
+  if (!tbody) return;
+  const filas = Array.isArray(d?.periodos) ? d.periodos : [];
+
+  const vacio = '<span style="color:var(--text-muted);">—</span>';
+  tbody.innerHTML = filas.length
+    ? filas.map(f => `
+      <tr>
+        <td>${escHtml(nombreMesIvaSii(String(f.periodo).replace('-', '')))}</td>
+        <td class="num">${f.venta_declarada_bruta === null || f.venta_declarada_bruta === undefined ? vacio : fmtCLP(f.venta_declarada_bruta)}</td>
+        <td class="num">${f.debito_total === null || f.debito_total === undefined ? vacio : fmtCLP(f.debito_total)}</td>
+        <td class="num">${f.credito_total === null || f.credito_total === undefined ? vacio : fmtCLP(f.credito_total)}</td>
+        <td class="num">${fmtCLP(f.monto_pagado)}</td>
+        <td class="num">${f.remanente_siguiente === null || f.remanente_siguiente === undefined ? vacio : fmtCLP(f.remanente_siguiente)}</td>
+        <td><small style="color:var(--text-muted);">${escHtml(f.folio || '—')}</small></td>
+      </tr>`).join('')
+    : '<tr class="empty-row"><td colspan="7">Todavía no marcas ningún F29 con sus códigos</td></tr>';
+
+  if (!resumen) return;
+  const p = d?.proyeccion;
+  if (p && p.meses_restantes !== null && p.meses_restantes !== undefined) {
+    /* "Alcanza hasta" es una estimación con promedio simple, y se dice que
+       lo es: con 2 o 3 meses no hay tendencia que valga. */
+    resumen.textContent =
+      `Tu remanente va en ${fmtCLP(p.remanente_actual)} y se consume a razón de ${fmtCLP(p.consumo_promedio)} por mes `
+      + `(promedio de ${p.base_meses} mes/es). A ese ritmo alcanza unos ${p.meses_restantes} mes(es) más. Es una estimación, no una proyección fina.`;
+  } else if (filas.length) {
+    resumen.textContent = 'Con un segundo F29 anotado se puede estimar a qué ritmo se consume el remanente.';
+  } else {
+    resumen.textContent = 'Se llena solo: al marcar un F29, copia los códigos del Formulario Compacto del SII.';
+  }
 }
 
 function nombreMesIvaSii(periodoAAAAMM) {

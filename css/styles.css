@@ -3965,6 +3965,20 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
 .iva-sii-detalle { margin-top: 10px; }
 .iva-sii-detalle summary { cursor: pointer; color: var(--text-300); font-size: 13px; }
 
+/* Códigos del Formulario Compacto dentro del modal del F29 (sql/58).
+   Plegado a propósito: marcar el F29 sigue siendo de dos clics. */
+.f29-codigos {
+    margin: 12px 0;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    background: var(--surface-soft);
+}
+.f29-codigos summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-300); }
+.f29-codigos[open] summary { margin-bottom: 8px; }
+.f29-codigos .grid { margin-top: 8px; }
+.f29-codigos label { font-variant-numeric: tabular-nums; }
+
 /* ============================================================
    VISOR DE IMAGEN AMPLIADA (js/config.js → abrirVisorImagen)
    ------------------------------------------------------------

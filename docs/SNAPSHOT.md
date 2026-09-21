@@ -7,7 +7,31 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
-**Fecha:** 17-09-2026 · **v70 publicada — despachos por entregar, despacho en el detalle de venta, y
+**Fecha:** 21-09-2026 · **v71 publicada — el F29 guarda sus códigos y el POS lleva el historial del
+remanente.** Migración `sql/58` aplicada y verificada en producción.
+
+- 🧾 **El modal del botón 🧾 ahora guarda los códigos del Formulario Compacto** del SII (563, 538,
+  537, 089, 062, 504, 110, 519) más el folio y la fecha real de presentación. Van en un bloque
+  **plegado**: marcar un F29 sigue siendo de dos clics para quien no los quiera copiar.
+- 📄 **Cuál de los dos PDF del SII sirve:** el **Formulario Compacto** (trae los ~20 códigos). El
+  *Certificado Solemne* solo trae 5 y es el comprobante de que se presentó. El modal lo dice.
+- 📊 **"Ver historial del F29 mes a mes"** en Finanzas → Utilidades, dentro de la tarjeta del IVA:
+  venta declarada, débito, crédito, IVA pagado, remanente y folio por período. Con **dos meses o más**
+  estima a qué ritmo se consume el remanente y cuántos meses alcanza — y **dice que es una
+  estimación**, porque con dos puntos no hay tendencia.
+- 🧮 **Chequeo de cuadratura que avisa pero NO bloquea**, en el navegador y otra vez en el servidor:
+  si el 538 no es el 19% del 563, o el 089 no es débito − crédito, se avisa y **se guarda igual**. El
+  F29 se anota como el SII lo recibió; quien decide es el dueño.
+- 🕳️ **Vacío queda NULL, no 0** (misma regla que `envios.cobrado_cliente`): un débito en 0 diría "no
+  vendí ese mes" e inventaría un dato. Los períodos marcados antes de hoy quedan sin códigos.
+- 🔒 El código 77 **no se duplicó**: sigue en `iva_remanentes` (sql/51), porque se conoce desde la
+  propuesta. La vista `v_f29_historial` los junta y calcula la variación al leer.
+- ⚠️ **Una vista NO hereda la RLS de su tabla.** `revoke all ... from anon, authenticated` en la
+  migración; verificado en producción con `has_table_privilege` (anon false, service_role true).
+- 🤖 **Para qué sirve de verdad:** el cowork "Sevelin Finanzas" ya lee esta base. Con el historial
+  cargado puede responder solo cómo viene el remanente, sin que nadie le pase un PDF cada mes.
+
+**Versión anterior: v70 — despachos por entregar, despacho en el detalle de venta, y
 PIN para editar una venta.**
 
 - 🚚 **Aviso "por entregar" en el header.** "A veces me olvido que dejé un pedido en pendiente, y al
@@ -179,9 +203,11 @@ ampliado con carrusel al hacer clic en la foto), y un badge de contraste corregi
 ## ⏭️ Pendientes al 16-09-2026 (retomar por acá)
 
 **Del dueño:**
-1. **F29 de agosto — vence el lunes 21-09** (18 y 19 feriados). Pagar $3.625 de PPM, marcarlo en el
-   botón 🧾 del POS y anotar ahí el remanente código 77 ($219.227). `f29_presentaciones` sigue
-   **vacía**: ningún período marcado todavía.
+1. **F29 de agosto — PRESENTADO el 21-09-2026**, folio 9317313976, $3.625 de PPM por ESTADO PEL.
+   Se presentó exactamente la propuesta (IVA determinado $0, remanente 77 $219.227). **Falta marcarlo
+   en el botón 🧾 del POS**: `f29_presentaciones` sigue vacía. Con v71 conviene aprovechar y copiar
+   ahí los códigos del Formulario Compacto — 563 $2.899.984 · 538 $550.997 · 537 $770.224 · 089 $0 ·
+   062 $3.625 · 504 $329.199 · 110 77 boletas · 519 40 facturas.
 2. **Aceptar la factura pendiente en el SII** ($169.990, IVA $27.141). Sigue en estado PENDIENTE.
 3. **Acreditar actividades en el SII** (anotación del 02-09-2026): destraba facturas y notas de
    crédito. Es la que sostiene todo lo demás — hoy el 66% de la venta de septiembre es SIN DTE.

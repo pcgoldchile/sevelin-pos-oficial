@@ -80,6 +80,9 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnConfirmarF29')?.addEventListener('click', confirmarF29Presentado);
   document.getElementById('f29RegistrarGasto')?.addEventListener('change', actualizarCamposF29);
   document.getElementById('f29Monto')?.addEventListener('input', actualizarCamposF29);
+  ['f29Base', 'f29Debito', 'f29Credito', 'f29Determinado'].forEach(id => {
+    document.getElementById(id)?.addEventListener('input', revisarCuadraturaF29);
+  });
 });
 
 document.addEventListener('pos:sesion-iniciada', () => {
@@ -128,6 +131,56 @@ async function actualizarRecordatorioF29() {
   }
 }
 
+/* Los códigos del Formulario Compacto (sql/58): id del input → campo que
+   espera el servidor. Un solo mapa para limpiar, leer y no repetir ids. */
+const CAMPOS_CODIGOS_F29 = {
+  f29Folio: 'folio',
+  f29FechaPresentacion: 'fecha_presentacion',
+  f29Base: 'base_imponible',
+  f29Debito: 'debito_total',
+  f29Credito: 'credito_total',
+  f29Determinado: 'iva_determinado',
+  f29Ppm: 'ppm_pagado',
+  f29RemanenteAnterior: 'remanente_anterior',
+  f29Boletas: 'cant_boletas',
+  f29Facturas: 'cant_facturas_recibidas'
+};
+
+function leerCodigosF29() {
+  const datos = {};
+  for (const [id, campo] of Object.entries(CAMPOS_CODIGOS_F29)) {
+    datos[campo] = (document.getElementById(id)?.value || '').trim() || null;
+  }
+  return datos;
+}
+
+/* Aviso de cuadratura en vivo, mientras escribe. El servidor lo revisa
+   igual; esto es para darse cuenta antes de guardar. NO bloquea: el F29
+   se anota como el SII lo recibió, aunque un número se vea raro. */
+function revisarCuadraturaF29() {
+  const aviso = document.getElementById('f29Cuadratura');
+  if (!aviso) return;
+  const v = (id) => { const t = (document.getElementById(id)?.value || '').trim(); return t === '' ? null : Number(t); };
+  const base = v('f29Base'), deb = v('f29Debito'), cred = v('f29Credito'), det = v('f29Determinado');
+  const problemas = [];
+
+  if (base !== null && deb !== null && Math.abs(deb - Math.round(base * 0.19)) > 2) {
+    problemas.push(`El 19% de ${fmtCLP(base)} es ${fmtCLP(Math.round(base * 0.19))}, y anotaste ${fmtCLP(deb)} en el 538.`);
+  }
+  if (deb !== null && cred !== null && det !== null) {
+    const esperado = Math.max(0, deb - cred);
+    if (Math.abs(det - esperado) > 2) problemas.push(`Con ese débito y crédito, el 089 debería ser ${fmtCLP(esperado)}.`);
+  }
+  if (deb !== null && cred !== null && det === null && cred >= deb) {
+    aviso.textContent = '✔️ El crédito alcanzó: el IVA determinado (089) va en 0.';
+    aviso.style.color = 'var(--green)';
+    return;
+  }
+
+  aviso.textContent = problemas.length ? '⚠️ ' + problemas.join(' ') + ' Revísalo en el PDF; igual se puede guardar.' : '';
+  aviso.style.color = problemas.length ? 'var(--gold)' : '';
+}
+
 function actualizarCamposF29() {
   const monto = Number(document.getElementById('f29Monto')?.value) || 0;
   const registrar = !!document.getElementById('f29RegistrarGasto')?.checked;
@@ -149,6 +202,12 @@ function abrirModalF29() {
   if (chk) chk.checked = true;
   const metodo = document.getElementById('f29Metodo');
   if (metodo) metodo.value = 'Transferencia';
+  for (const id of Object.keys(CAMPOS_CODIGOS_F29)) {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  }
+  const cuadratura = document.getElementById('f29Cuadratura');
+  if (cuadratura) cuadratura.textContent = '';
   actualizarCamposF29();
 
   document.getElementById('modalF29')?.classList.add('show');
@@ -164,20 +223,26 @@ async function confirmarF29Presentado() {
   if (btn) btn.disabled = true;
   try {
     const registrar = !!document.getElementById('f29RegistrarGasto')?.checked && monto > 0;
-    await API.balance.f29Marcar({
+    const resp = await API.balance.f29Marcar({
       periodo: f29PendienteActual.periodo,
       monto_pagado: monto,
       registrar_gasto: registrar,
       metodo_pago: document.getElementById('f29Metodo')?.value || 'Transferencia',
       // Código 77 (sql/51): vacío = no se toca el remanente guardado
-      remanente_siguiente: (document.getElementById('f29Remanente')?.value || '').trim() || null
+      remanente_siguiente: (document.getElementById('f29Remanente')?.value || '').trim() || null,
+      ...leerCodigosF29()
     });
     showToast(registrar
       ? `F29 de ${f29PendienteActual.nombre} marcado y pago de ${fmtCLP(monto)} registrado en Gastos`
       : `F29 de ${f29PendienteActual.nombre} marcado como presentado`, 'ok');
+    // Guardado igual, pero algo no cuadra: se avisa, no se esconde.
+    if (Array.isArray(resp?.avisos) && resp.avisos.length) {
+      setTimeout(() => showToast('Quedó guardado, pero revisa: ' + resp.avisos[0], 'err'), 2200);
+    }
     cerrarModal('modalF29');
     await actualizarRecordatorioF29();
     if (registrar && typeof cargarCompras === 'function') cargarCompras();
+    if (typeof cargarHistorialF29 === 'function') cargarHistorialF29();
   } catch (err) {
     showToast(err.message || 'No se pudo marcar el F29', 'err');
   } finally {

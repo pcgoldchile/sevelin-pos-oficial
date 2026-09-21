@@ -6174,6 +6174,49 @@ function diasEntre(desdeISO, hastaISO) {
   return Math.round((Date.parse(hastaISO + 'T00:00:00Z') - Date.parse(desdeISO + 'T00:00:00Z')) / 86400000);
 }
 
+/* Los códigos del Formulario Compacto del F29 (sql/58). Todos opcionales:
+   vacío queda NULL ("no anotado"), que no es lo mismo que 0. Un 0 en el
+   débito diría "no vendí nada ese mes" y eso sí sería inventar un dato. */
+const F29_CODIGOS = {
+  base_imponible: '563', debito_total: '538', credito_total: '537',
+  iva_determinado: '089', ppm_pagado: '062', remanente_anterior: '504',
+  cant_boletas: '110', cant_facturas_recibidas: '519'
+};
+
+function sanearCodigosF29(cuerpo) {
+  const datos = {};
+  for (const campo of Object.keys(F29_CODIGOS)) {
+    const bruto = cuerpo?.[campo];
+    if (bruto === undefined || bruto === null || String(bruto).trim() === '') { datos[campo] = null; continue; }
+    const v = num(bruto);
+    if (!Number.isFinite(v) || v < 0) return { error: `El código ${F29_CODIGOS[campo]} no puede ser negativo` };
+    datos[campo] = Math.round(v);
+  }
+
+  const folio = String(cuerpo?.folio || '').trim();
+  if (folio && !/^[0-9]{1,20}$/.test(folio)) return { error: 'El folio del SII son solo números' };
+  datos.folio = folio || null;
+
+  const fecha = String(cuerpo?.fecha_presentacion || '').trim();
+  if (fecha && !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return { error: 'La fecha de presentación debe ser AAAA-MM-DD' };
+  datos.fecha_presentacion = fecha || null;
+
+  /* Chequeo de cuadratura, NO bloqueante: el F29 se declara como el SII lo
+     recibió, aunque un número esté raro. Si el débito no es el 19% de la
+     base, o el IVA determinado no cuadra con débito − crédito, se avisa y
+     se guarda igual — quien decide es el dueño, no el POS. */
+  const avisos = [];
+  const { base_imponible: base, debito_total: deb, credito_total: cred, iva_determinado: det } = datos;
+  if (base !== null && deb !== null && Math.abs(deb - Math.round(base * 0.19)) > 2) {
+    avisos.push(`El débito (538) debería ser ~${Math.round(base * 0.19)} si la base (563) es ${base}`);
+  }
+  if (deb !== null && cred !== null && det !== null) {
+    const esperado = Math.max(0, deb - cred);
+    if (Math.abs(det - esperado) > 2) avisos.push(`El IVA determinado (089) debería ser ~${esperado} con ese débito y crédito`);
+  }
+  return { datos, avisos };
+}
+
 app.get('/api/finanzas/f29-estado', auth(true), async (req, res) => {
   try {
     const hoy = fechaHoyChile();
@@ -6218,6 +6261,9 @@ app.post('/api/finanzas/f29-presentado', auth(true), async (req, res) => {
       return enviarError(res, 400, 'El remanente no puede ser negativo');
     }
 
+    const { datos: codigos, error: errCodigos, avisos } = sanearCodigosF29(req.body);
+    if (errCodigos) return enviarError(res, 400, errCodigos);
+
     const { data: previo } = await db.from('f29_presentaciones').select('*').eq('periodo', periodo).maybeSingle();
     let compraId = previo?.compra_id || null;
 
@@ -6246,7 +6292,8 @@ app.post('/api/finanzas/f29-presentado', auth(true), async (req, res) => {
       presentado_en: new Date().toISOString(),
       monto_pagado: monto,
       compra_id: compraId,
-      notas
+      notas,
+      ...codigos
     }]).select().single();
     if (error) return enviarErrorBD(res, error);
     if (remanente !== undefined && remanente !== null && remanente !== '') {
@@ -6255,9 +6302,40 @@ app.post('/api/finanzas/f29-presentado', auth(true), async (req, res) => {
       }]);
       if (errRem) console.error('[F29] no se pudo guardar el remanente:', errRem.message);
     }
-    res.json(data);
+    res.json({ ...data, avisos: avisos.length ? avisos : undefined });
   } catch (e) {
     enviarError(res, 500, e.message || 'No se pudo marcar el F29');
+  }
+});
+
+/* El historial del F29 mes a mes (vista v_f29_historial, sql/58). Lo lee
+   el panel de Finanzas → Utilidades y sirve para la pregunta que importa:
+   a qué ritmo se consume el remanente y hasta cuándo alcanza.
+
+   La proyección es deliberadamente tonta: promedio simple de los meses en
+   que el remanente bajó. No se inventa una tendencia con dos datos. */
+app.get('/api/finanzas/f29-historial', auth(true), async (req, res) => {
+  try {
+    const { data, error } = await db.from('v_f29_historial').select('*').order('periodo', { ascending: false });
+    if (error) return enviarErrorBD(res, error);
+    const filas = data || [];
+
+    const consumos = filas.map(f => num(f.variacion_remanente)).filter(v => v < 0).map(Math.abs);
+    let proyeccion = null;
+    const ultimo = filas.find(f => f.remanente_siguiente !== null && f.remanente_siguiente !== undefined);
+    if (consumos.length >= 2 && ultimo) {
+      const promedio = Math.round(consumos.reduce((a, b) => a + b, 0) / consumos.length);
+      proyeccion = {
+        consumo_promedio: promedio,
+        remanente_actual: Math.round(num(ultimo.remanente_siguiente)),
+        desde_periodo: ultimo.periodo,
+        meses_restantes: promedio > 0 ? Math.floor(num(ultimo.remanente_siguiente) / promedio) : null,
+        base_meses: consumos.length
+      };
+    }
+    res.json({ periodos: filas, proyeccion });
+  } catch (e) {
+    enviarError(res, 500, e.message || 'No se pudo leer el historial del F29');
   }
 });
 
