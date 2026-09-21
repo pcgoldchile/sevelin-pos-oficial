@@ -2,6 +2,12 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "pos-estatico",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "4173"],
+      "port": 4173
+    },
+    {
       "name": "sevelin-pos-dev",
       "runtimeExecutable": "node",
       "runtimeArgs": ["api/index.js"],

@@ -6,7 +6,12 @@
 // antiguas y toma SU costo, en vez de usar un costo único del catálogo.
 //
 // La opción nace APAGADA para todos los productos, nuevos y existentes.
-// La única forma de encenderla es el checkbox del modal de producto.
+// La única forma de encenderla es el checkbox del editor de producto.
+//
+// 21-09-2026: las capas YA NO se cargan con un formulario propio. Se crean
+// solas al registrar una compra (POST /api/productos/:id/compras), porque
+// eran el mismo hecho pedido dos veces. Acá queda solo mostrarlas y
+// poder eliminar una mal cargada.
 //
 // El descuento por PEPS lo hace la base de datos (función fifo_consumir de
 // sql/09-lotes-fifo-comision.sql), no el navegador: así dos cajas vendiendo
@@ -17,22 +22,12 @@ const elProdUsaLotes = document.getElementById('prodUsaLotes');
 const elBloqueProdLotes = document.getElementById('bloqueProdLotes');
 const elProdLotesLista = document.getElementById('prodLotesLista');
 const elProdLotesAviso = document.getElementById('prodLotesAviso');
-const elProdLoteCantidad = document.getElementById('prodLoteCantidad');
-const elProdLoteCosto = document.getElementById('prodLoteCosto');
-const elProdLoteReferencia = document.getElementById('prodLoteReferencia');
-const elBtnAgregarLote = document.getElementById('btnAgregarLote');
 
 // Capas por producto para pintar la tabla: { productoId: [lote, ...] }
 let lotesPorProducto = {};
 
 document.addEventListener('DOMContentLoaded', () => {
   if (elProdUsaLotes) elProdUsaLotes.addEventListener('change', alternarLotesUI);
-  if (elBtnAgregarLote) elBtnAgregarLote.addEventListener('click', agregarLoteDesdeModal);
-
-  // Enter en el costo carga el lote: se cargan varios seguidos al recibir mercadería
-  if (elProdLoteCosto) elProdLoteCosto.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); agregarLoteDesdeModal(); }
-  });
 });
 
 /* Muestra u oculta el bloque de lotes. Al encenderlo se avisa que el campo
@@ -52,7 +47,7 @@ function alternarLotesUI() {
 
   if (activo && editingProductId) cargarLotesDelProducto(editingProductId);
   else if (activo && elProdLotesLista) {
-    elProdLotesLista.innerHTML = '<p class="modal-hint">Guarda el producto primero y vuelve a abrirlo para cargarle lotes.</p>';
+    elProdLotesLista.innerHTML = '<p class="modal-hint">Guarda el producto primero: las capas se crean al registrar una compra.</p>';
   }
 }
 
@@ -119,80 +114,6 @@ function renderLotesModal(productoId, lotes) {
   elProdLotesLista.querySelectorAll('button[data-quitar-lote]').forEach(btn => {
     btn.addEventListener('click', () => quitarLote(productoId, btn.dataset.quitarLote));
   });
-}
-
-async function agregarLoteDesdeModal() {
-  /* Este bloque se ejecuta al pulsar "Cargar lote". Si algo falla, SIEMPRE
-     hay que dar feedback: el bug reportado era que "no pasaba nada", sin
-     siquiera un aviso. Por eso todo va dentro de un try/catch amplio. */
-  try {
-    if (typeof showToast !== 'function') {
-      // Sin toasts no hay forma de avisar; al menos que quede en consola
-      console.error('showToast no disponible al cargar lote');
-    }
-
-    if (!editingProductId) {
-      showToast('Guarda el producto antes de cargarle lotes', 'err');
-      return;
-    }
-
-    // El producto debe tener los lotes ACTIVOS y GUARDADOS en la base. Si el
-    // usuario marcó la casilla pero no pulsó "Guardar Producto", en la base
-    // sigue con usa_lotes=false y el backend rechazaría la carga. Se detecta
-    // aquí para dar un mensaje claro en vez de un error genérico.
-    const prodEnLista = (typeof productsList !== 'undefined' && Array.isArray(productsList))
-      ? productsList.find(p => String(p.id) === String(editingProductId))
-      : null;
-    if (prodEnLista && prodEnLista.usa_lotes === false) {
-      showToast('Activa los lotes y pulsa "Guardar Producto" antes de cargar capas', 'err');
-      return;
-    }
-
-    const cantidad = Number(elProdLoteCantidad?.value) || 0;
-    const costo = Number(elProdLoteCosto?.value) || 0;
-
-    if (cantidad <= 0) { showToast('La cantidad del lote debe ser mayor a 0', 'err'); return; }
-    if (costo <= 0 && !confirm('El costo del lote es $0. ¿Cargarlo igual?')) return;
-
-    if (elBtnAgregarLote) elBtnAgregarLote.disabled = true;
-
-    try {
-      await API.productos.crearLote(editingProductId, {
-        cantidad,
-        costo_unitario: costo,
-        referencia: (elProdLoteReferencia?.value || '').trim() || null
-      });
-
-      const montoTxt = (typeof fmtCLP === 'function') ? fmtCLP(costo) : `$${costo}`;
-      showToast(`Lote cargado: ${cantidad} un. a ${montoTxt}`, 'ok');
-
-      // Se limpia para encadenar varias cargas seguidas
-      if (elProdLoteCantidad) elProdLoteCantidad.value = '';
-      if (elProdLoteCosto) elProdLoteCosto.value = '';
-      if (elProdLoteReferencia) elProdLoteReferencia.value = '';
-      elProdLoteCantidad?.focus();
-
-      await cargarLotesDelProducto(editingProductId);
-
-      /* El lote sube el stock del producto: se refresca el catálogo para que
-         el campo Stock del modal y la tabla no queden desfasados. */
-      if (typeof cargarProductos === 'function') {
-        await cargarProductos(true);   // se movieron capas: el catálogo cambió
-        const actualizado = (typeof productsList !== 'undefined')
-          ? productsList.find(p => String(p.id) === String(editingProductId)) : null;
-        const elStock = document.getElementById('prodStock');
-        if (actualizado && elStock) elStock.value = actualizado.stock || 0;
-      }
-    } finally {
-      if (elBtnAgregarLote) elBtnAgregarLote.disabled = false;
-    }
-  } catch (err) {
-    // Feedback GARANTIZADO ante cualquier fallo, esperado o no
-    console.error('Error al cargar el lote:', err);
-    const msg = (err && err.message) ? err.message : 'No se pudo cargar el lote';
-    if (typeof showToast === 'function') showToast(msg, 'err');
-    else alert(msg);
-  }
 }
 
 async function quitarLote(productoId, loteId) {

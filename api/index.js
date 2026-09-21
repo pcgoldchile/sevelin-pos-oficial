@@ -2216,6 +2216,145 @@ function fmtPesos(v) {
   return '$' + String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 }
 
+/* ============================================================
+   QUÉ LE FALTA A CADA PRODUCTO (dueño, 21-09-2026)
+   ------------------------------------------------------------
+   "Que salgan advertencias si algo falta o está incompleto, y que se
+   activen las notificaciones de la pestaña principal para corregirlo
+   apenas entre al POS."
+
+   Las reglas viven ACÁ y no en el navegador, para que la lista del
+   header y el aviso dentro del editor no puedan decir cosas distintas:
+   el editor pide este mismo catálogo por GET /api/productos/reglas y lo
+   evalúa en vivo sobre el formulario abierto.
+
+   Tres criterios para que esto no se vuelva ruido:
+     · Cada regla dice QUÉ CUESTA que falte, no solo que falta.
+     · Lo que es una decisión legítima no es un problema: un genérico sin
+       marca, un servicio sin peso o un producto sin SKU (el slug lo
+       genera la tienda) NO aparecen.
+     · Solo se miran productos vivos: archivados y borradores quedan fuera.
+   ============================================================ */
+const REGLAS_PRODUCTO = [
+  {
+    clave: 'costo',
+    titulo: 'Sin costo, pero con stock',
+    seccion: 'precio',
+    gravedad: 'critico',
+    porque: 'Cada venta se anota con utilidad del 100% y el margen del negocio queda inflado.',
+    aplica: p => !p.es_servicio && !p.es_repuesto && !p.stock_ilimitado && num(p.stock) > 0,
+    falta: p => num(p.costo_unitario) === 0
+  },
+  {
+    clave: 'precio',
+    titulo: 'Sin precio de venta',
+    seccion: 'precio',
+    gravedad: 'critico',
+    porque: 'No se puede vender: en el POS sale en $0.',
+    aplica: p => !p.precio_a_consultar,
+    falta: p => num(p.precio_unitario) === 0
+  },
+  {
+    clave: 'foto',
+    titulo: 'Publicado sin ninguna foto',
+    seccion: 'fotos',
+    gravedad: 'critico',
+    porque: 'Está a la venta en sevelin.cl mostrando un hueco.',
+    aplica: p => !!p.publicado_web,
+    falta: p => !Array.isArray(p.imagen_urls) || p.imagen_urls.filter(Boolean).length === 0
+  },
+  {
+    clave: 'medidas',
+    titulo: 'Sin peso ni medidas',
+    seccion: 'medidas',
+    gravedad: 'pendiente',
+    porque: 'Sin esto no se puede calcular cuánto cuesta despacharlo.',
+    aplica: p => !p.es_servicio && !p.stock_ilimitado && num(p.stock) > 0,
+    falta: p => !(num(p.peso_kg) > 0) || !(num(p.alto_cm) > 0) || !(num(p.ancho_cm) > 0) || !(num(p.profundidad_cm) > 0)
+  },
+  {
+    clave: 'descripcion',
+    titulo: 'Publicado sin descripción',
+    seccion: 'descripcion',
+    gravedad: 'pendiente',
+    porque: 'La ficha sale vacía y Google no tiene qué leer.',
+    aplica: p => !!p.publicado_web,
+    falta: p => !String(p.descripcion || '').trim() && !String(p.descripcion_web || '').trim()
+  },
+  {
+    clave: 'categoria',
+    titulo: 'Publicado sin categoría',
+    seccion: 'categoria',
+    gravedad: 'pendiente',
+    porque: 'No aparece en ningún menú de la tienda: solo se llega por el buscador.',
+    aplica: p => !!p.publicado_web,
+    falta: p => !p.categoria_id && !String(p.categoria_web || '').trim()
+  }
+];
+
+// Lo que viaja al navegador: sin las funciones, que no se pueden serializar
+const REGLAS_PRODUCTO_PUBLICAS = REGLAS_PRODUCTO.map(({ aplica, falta, ...resto }) => resto);
+const CLAVES_CRITICAS_PRODUCTO = new Set(REGLAS_PRODUCTO.filter(r => r.gravedad === 'critico').map(r => r.clave));
+
+function faltantesDeProducto(p) {
+  return REGLAS_PRODUCTO.filter(r => r.aplica(p) && r.falta(p)).map(r => r.clave);
+}
+
+app.get('/api/productos/reglas', auth(true), (req, res) => {
+  res.json(REGLAS_PRODUCTO_PUBLICAS);
+});
+
+app.get('/api/productos/incompletos', auth(true), async (req, res) => {
+  try {
+    const { data, error } = await db.from('productos')
+      .select('id, nombre, sku, stock, costo_unitario, precio_unitario, precio_a_consultar, ' +
+              'peso_kg, alto_cm, ancho_cm, profundidad_cm, imagen_urls, descripcion, descripcion_web, ' +
+              'categoria_id, categoria_web, publicado_web, es_servicio, es_repuesto, stock_ilimitado, ' +
+              'archivado, es_borrador')
+      .limit(5000);
+    if (error) return enviarErrorBD(res, error);
+
+    const vivos = (data || []).filter(p => !p.archivado && !p.es_borrador);
+    const porFalta = {};
+    const productos = [];
+
+    for (const p of vivos) {
+      const faltan = faltantesDeProducto(p);
+      if (!faltan.length) continue;
+      faltan.forEach(c => { porFalta[c] = (porFalta[c] || 0) + 1; });
+      productos.push({
+        id: p.id,
+        nombre: p.nombre,
+        sku: p.sku || null,
+        stock: num(p.stock),
+        publicado_web: !!p.publicado_web,
+        faltan
+      });
+    }
+
+    /* Primero lo que cuesta plata hoy, y dentro de eso lo que tiene más
+       stock parado: es el orden en que conviene arreglarlo. */
+    productos.sort((a, b) => {
+      const ca = a.faltan.filter(f => CLAVES_CRITICAS_PRODUCTO.has(f)).length;
+      const cb = b.faltan.filter(f => CLAVES_CRITICAS_PRODUCTO.has(f)).length;
+      if (ca !== cb) return cb - ca;
+      if (b.stock !== a.stock) return b.stock - a.stock;
+      return String(a.nombre || '').localeCompare(String(b.nombre || ''));
+    });
+
+    res.json({
+      total: productos.length,
+      revisados: vivos.length,
+      criticos: productos.filter(p => p.faltan.some(f => CLAVES_CRITICAS_PRODUCTO.has(f))).length,
+      porFalta,
+      reglas: REGLAS_PRODUCTO_PUBLICAS,
+      productos: productos.slice(0, 200)
+    });
+  } catch (e) {
+    enviarError(res, 500, e.message || 'No se pudo revisar el catálogo');
+  }
+});
+
 /* ---------- Entradas de un producto (modal del producto) ---------- */
 
 app.get('/api/productos/:id/ingresos', auth(true), async (req, res) => {
@@ -2247,6 +2386,95 @@ app.post('/api/productos/:id/ingresos', auth(true), async (req, res) => {
     res.status(201).json(data);
   } catch (error) {
     return enviarErrorBD(res, error, 'POST /api/productos/:id/ingresos');
+  }
+});
+
+/* ============================================================
+   UNA SOLA COMPRA (dueño, 21-09-2026)
+   ------------------------------------------------------------
+   Antes había DOS formularios que pedían lo mismo ("compré N unidades a
+   $X"): "Cargar lote" (capa PEPS, subía el stock) y "Registrar compra"
+   (historial + plazo de devolución, NO subía el stock). Era el mismo
+   hecho anotado dos veces, con resultados distintos según cuál se usara.
+
+   Ahora es un solo formulario y un solo endpoint, que hace TODO lo que
+   esa compra implica:
+     1. la deja en el historial (ingresos_mercaderia, sql/56) con su
+        plazo de devolución;
+     2. sube el stock, salvo que se pida lo contrario o el producto tenga
+        stock ilimitado;
+     3. si el producto usa PEPS, crea además la capa de costo (sql/09);
+     4. si el producto todavía no tenía costo, lo deja cargado — es el
+        origen de las dos ventas con utilidad inflada que encontró la
+        auditoría del 21-09.
+
+   El orden importa: primero la capa, después el stock. Si la capa falla,
+   el stock no se movió y no queda inventario sin costo que lo explique.
+   ============================================================ */
+app.post('/api/productos/:id/compras', auth(true), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return enviarError(res, 400, 'Producto inválido');
+
+  const { datos, error: errVal } = sanearIngreso(req.body);
+  if (errVal) return enviarError(res, 400, errVal);
+
+  try {
+    const { data: producto, error: errP } = await db.from('productos')
+      .select('id, nombre, stock, usa_lotes, stock_ilimitado, costo_unitario').eq('id', id).maybeSingle();
+    if (errP) throw errP;
+    if (!producto) return enviarError(res, 404, 'Producto no encontrado');
+
+    // Un servicio o un ítem sin inventario no tiene stock que subir
+    const sumarStock = req.body?.sumar_stock !== false && !producto.stock_ilimitado;
+
+    let lote = null;
+    if (producto.usa_lotes) {
+      const { data, error } = await db.from('producto_lotes').insert([{
+        producto_id: id,
+        cantidad: datos.cantidad,
+        cantidad_inicial: datos.cantidad,
+        costo_unitario: datos.costo_unitario,
+        referencia: datos.referencia
+      }]).select().single();
+      if (error) throw error;
+      lote = data;
+    }
+
+    const { data: ingreso, error: errI } = await db.from('ingresos_mercaderia').insert([{
+      ...datos,
+      producto_id: id,
+      estado: 'confirmado',
+      creado_por: req.usuario?.usuario || req.usuario?.rol || null
+    }]).select('*').single();
+    if (errI) throw errI;
+
+    const cambios = {};
+    let stockNuevo = num(producto.stock);
+    if (sumarStock) {
+      stockNuevo = num(producto.stock) + datos.cantidad;
+      cambios.stock = stockNuevo;
+      cambios.stock_actualizado_en = new Date().toISOString();
+    }
+    /* Solo se rellena si estaba en CERO. Pisar un costo ya cargado con el
+       de la última compra cambiaría el margen de todo el catálogo sin que
+       nadie lo pida; para eso están los lotes. */
+    const costoRellenado = num(producto.costo_unitario) === 0 && datos.costo_unitario > 0;
+    if (costoRellenado) cambios.costo_unitario = datos.costo_unitario;
+
+    if (Object.keys(cambios).length) {
+      const { error: errU } = await db.from('productos').update(cambios).eq('id', id);
+      if (errU) throw errU;
+    }
+
+    res.status(201).json({
+      ingreso,
+      lote,
+      stock_nuevo: stockNuevo,
+      stock_sumado: sumarStock,
+      costo_rellenado: costoRellenado ? datos.costo_unitario : null
+    });
+  } catch (error) {
+    return enviarErrorBD(res, error, 'POST /api/productos/:id/compras');
   }
 });
 

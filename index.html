@@ -213,6 +213,13 @@
       <button id="btnEnviosPendientes" class="btn-notificaciones btn-envios" title="Pedidos despachados sin marcar como entregados" hidden>
         🚚 <span id="textoEnviosPendientes">Por entregar</span>
       </button>
+      <!-- Fichas de producto incompletas (dueño, 21-09-2026): "que se activen
+           las notificaciones de la pestaña principal para que yo corrija eso
+           apenas entre al POS". Rojo solo cuando hay algo CRÍTICO (sin costo
+           con stock, sin precio, publicado sin foto); lo demás es ámbar. -->
+      <button id="btnFichasIncompletas" class="btn-notificaciones btn-fichas admin-only" title="Productos a los que les falta algo" hidden>
+        📋 <span id="textoFichasIncompletas">Por completar</span>
+      </button>
       <span id="syncBadge" class="sync-badge sync-pending">⏳ Conectando…</span>
     </div>
   </header>
@@ -2098,12 +2105,27 @@
       <p class="modal-hint">Las medidas y la descripción usan el mismo formato del CSV de Tiendanube.</p>
       <input type="hidden" id="prodEditId">
 
+      <!-- Qué le falta a ESTE producto. Se calcula en vivo sobre el formulario
+           con las mismas reglas del servidor (GET /api/productos/reglas), así
+           que no puede decir algo distinto del aviso del header. Cada línea
+           abre su sección y lleva el foco al campo. -->
+      <div class="resumen-completitud" id="resumenCompletitud" hidden>
+        <div class="resumen-completitud-cab">
+          <b id="resumenCompletitudTitulo">—</b>
+          <div class="toolbar-group">
+            <button type="button" class="btn btn-ghost btn-sm" id="btnAbrirTodo">Abrir todo</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="btnPlegarTodo">Plegar todo</button>
+          </div>
+        </div>
+        <div id="resumenCompletitudLista" class="resumen-completitud-lista"></div>
+      </div>
+
       <div class="editor-grid">
         <div class="editor-col-principal">
 
         <!-- ---------- Información básica ---------- -->
-        <div class="card">
-          <div class="card-head"><div><h2>Información básica</h2></div></div>
+        <div class="card card-plegable" data-seccion="basico">
+          <div class="card-head"><div><h2>Información básica</h2></div><span class="estado-seccion" data-estado="basico"></span></div>
 
           <div class="grid grid-2">
             <div class="field">
@@ -2155,8 +2177,8 @@
         </div>
 
         <!-- ---------- Precio y stock ---------- -->
-        <div class="card">
-          <div class="card-head"><div><h2>Precio y stock</h2></div></div>
+        <div class="card card-plegable" data-seccion="precio">
+          <div class="card-head"><div><h2>Precio y stock</h2></div><span class="estado-seccion" data-estado="precio"></span></div>
 
           <div class="grid grid-3">
             <div class="field">
@@ -2199,55 +2221,90 @@
         </div>
 
         <!-- ============================================================
-             COSTOS POR LOTE (PEPS / FIFO)
-             Apagado por defecto. Solo el administrador lo enciende a mano,
-             producto por producto: ningún producto nuevo ni existente lo
-             activa solo. Tarjeta propia (no mezclada con Precio y stock):
-             es una función avanzada que la mayoría de los productos nunca
-             usa, no necesita competir por espacio con lo básico.
+             COMPRAS DE ESTE PRODUCTO (dueño, 21-09-2026)
+             Antes eran DOS tarjetas que pedían lo mismo: "Cargar lote"
+             (capa PEPS, subía el stock) y "Registrar compra" (historial
+             + plazo de devolución, NO subía el stock). El mismo hecho
+             anotado dos veces y con resultados distintos según cuál se
+             usara. Ahora es un formulario: POST /api/productos/:id/compras
+             hace las tres cosas de una vez.
              ============================================================ -->
-        <div class="card">
-          <div class="card-head"><div><h2>Costos por lote (PEPS / FIFO)</h2></div></div>
+        <div class="card card-plegable" id="cardComprasProducto" data-seccion="compras">
+          <div class="card-head">
+            <div><h2>📥 Compras de este producto</h2>
+              <p class="subtitle">Sube el stock, queda el historial con su plazo de devolución y, si
+                usas PEPS, se crea su capa de costo. Todo con un solo formulario.</p></div>
+            <span class="estado-seccion" data-estado="compras"></span>
+          </div>
 
-          <label class="check-item" id="itemProdUsaLotes">
-            <input type="checkbox" id="prodUsaLotes">
-            <span>📚 ¿Habilitar múltiples costos por lote? (el costo de cada venta sale de la capa más antigua)</span>
+          <div class="grid grid-4">
+            <div class="field">
+              <label for="ingFecha">Fecha de compra *</label>
+              <input type="date" id="ingFecha">
+            </div>
+            <div class="field">
+              <label for="ingCantidad">¿Cuántas compraste? *</label>
+              <input type="number" id="ingCantidad" min="1" step="1" placeholder="Ej: 50" inputmode="numeric">
+            </div>
+            <div class="field">
+              <label for="ingCosto">Costo por unidad</label>
+              <input type="number" id="ingCosto" min="0" step="1" placeholder="Ej: 2000" inputmode="numeric">
+            </div>
+            <div class="field">
+              <label for="ingDevolucion">Se puede devolver hasta</label>
+              <input type="date" id="ingDevolucion">
+            </div>
+          </div>
+          <div class="grid grid-2">
+            <div class="field">
+              <label for="ingProveedor">Proveedor</label>
+              <input type="text" id="ingProveedor" maxlength="80" placeholder="A quién se la compraste">
+            </div>
+            <div class="field">
+              <label for="ingReferencia">N° de factura / guía</label>
+              <input type="text" id="ingReferencia" maxlength="80" placeholder="Opcional">
+            </div>
+          </div>
+
+          <label class="check-item" id="itemIngSumarStock" style="margin-top:12px;">
+            <input type="checkbox" id="ingSumarStock" checked>
+            <span>➕ Sumar estas unidades al stock (desmárcalo solo si ya las cargaste a mano)</span>
           </label>
 
-          <div id="bloqueProdLotes" style="display:none; margin-top:14px;">
-            <p class="modal-hint" id="prodLotesAviso">
-              Con esta opción activa, el costo unitario de arriba deja de usarse en las ventas:
-              cada venta consume primero las unidades más antiguas y toma su costo real.
-            </p>
+          <p class="modal-hint" id="ingAvisoCosto" style="margin-top:8px;"></p>
+          <p class="modal-hint">Si el proveedor no acepta devoluciones, deja la fecha vacía —
+            es distinto de una fecha ya vencida, y el informe los trata distinto.</p>
 
-            <div class="grid grid-4" style="margin-top:10px;">
-              <div class="field">
-                <label>Cantidad del lote</label>
-                <input type="number" id="prodLoteCantidad" min="1" step="1" placeholder="10">
-              </div>
-              <div class="field">
-                <label>Costo unitario</label>
-                <input type="number" id="prodLoteCosto" min="0" step="1" placeholder="2200">
-              </div>
-              <div class="field">
-                <label>Referencia (opcional)</label>
-                <input type="text" id="prodLoteReferencia" placeholder="N° factura / proveedor">
-              </div>
-              <div class="field">
-                <label class="field-ghost-label">&nbsp;</label>
-                <button class="btn btn-outline" id="btnAgregarLote" type="button">➕ Cargar lote</button>
-              </div>
-            </div>
+          <div style="display:flex; justify-content:flex-end; margin-top:8px;">
+            <button type="button" class="btn btn-primary" id="btnAgregarIngreso">📥 Registrar compra</button>
+          </div>
+          <div id="ingresosLista" style="margin-top:12px;"></div>
 
-            <div id="prodLotesLista" class="lotes-lista">
-              <p class="modal-hint">Guarda el producto para poder cargarle lotes.</p>
+          <!-- Costeo PEPS: la opción avanzada, al final y apagada por defecto.
+               Ningún producto la activa solo. -->
+          <div style="margin-top:18px; padding-top:14px; border-top:1px solid var(--border);">
+            <label class="check-item" id="itemProdUsaLotes">
+              <input type="checkbox" id="prodUsaLotes">
+              <span>📚 Llevar el costo por lotes (PEPS): cada venta toma el costo de las unidades más antiguas</span>
+            </label>
+
+            <div id="bloqueProdLotes" style="display:none; margin-top:12px;">
+              <p class="modal-hint" id="prodLotesAviso">
+                Con esta opción activa, el <strong>Costo Unit.</strong> de arriba deja de mandar en las
+                ventas: cada compra que registres acá crea su propia capa, y cada venta consume primero
+                la más antigua con su costo real.
+              </p>
+              <div id="prodLotesLista" class="lotes-lista">
+                <p class="modal-hint">Guarda el producto para poder cargarle capas.</p>
+              </div>
             </div>
           </div>
         </div>
 
         <!-- ---------- Medidas y envío ---------- -->
-        <div class="card">
-          <div class="card-head"><div><h2>Medidas y envío</h2><p class="subtitle">Mismo formato del CSV de Tiendanube.</p></div></div>
+
+        <div class="card card-plegable" data-seccion="medidas">
+          <div class="card-head"><div><h2>Medidas y envío</h2><p class="subtitle">Mismo formato del CSV de Tiendanube.</p></div><span class="estado-seccion" data-estado="medidas"></span></div>
           <div class="grid grid-4">
             <!-- Peso con unidad elegible (dueño, 16-09-2026): escribir "45"
                  pensando en gramos y que se guarde como 45 KILOS falsea el
@@ -2296,56 +2353,9 @@
           </div>
         </div>
 
-        <!-- ---------- Compras de este producto (sql/56) ----------
-             Cuándo llegó cada lote, a qué costo y hasta cuándo el
-             proveedor lo recibe de vuelta. NO toca el costeo (eso son los
-             lotes PEPS de sql/09): sirve para medir rotación y alcanzar a
-             devolver lo que sobra antes de que venza el plazo. -->
-        <div class="card" id="cardIngresosProducto">
-          <div class="card-head">
-            <div><h2>Compras de este producto</h2>
-              <p class="subtitle">Cuándo llegó cada compra y hasta cuándo se puede devolver.
-                Con esto el POS avisa si conviene devolver lo que va a sobrar.</p></div>
-          </div>
-          <div class="grid grid-4">
-            <div class="field">
-              <label for="ingFecha">Fecha de compra *</label>
-              <input type="date" id="ingFecha">
-            </div>
-            <div class="field">
-              <label for="ingCantidad">¿Cuántas compraste? *</label>
-              <input type="number" id="ingCantidad" min="1" step="1" placeholder="Ej: 50" inputmode="numeric">
-            </div>
-            <div class="field">
-              <label for="ingCosto">Costo por unidad</label>
-              <input type="number" id="ingCosto" min="0" step="1" placeholder="Ej: 2000" inputmode="numeric">
-            </div>
-            <div class="field">
-              <label for="ingDevolucion">Se puede devolver hasta</label>
-              <input type="date" id="ingDevolucion">
-            </div>
-          </div>
-          <div class="grid grid-2">
-            <div class="field">
-              <label for="ingProveedor">Proveedor</label>
-              <input type="text" id="ingProveedor" maxlength="80" placeholder="A quién se la compraste">
-            </div>
-            <div class="field">
-              <label for="ingReferencia">N° de factura / guía</label>
-              <input type="text" id="ingReferencia" maxlength="80" placeholder="Opcional">
-            </div>
-          </div>
-          <p class="modal-hint">Si el proveedor no acepta devoluciones, deja la fecha vacía —
-            es distinto de una fecha ya vencida, y el informe los trata distinto.</p>
-          <div style="display:flex; justify-content:flex-end; margin-top:8px;">
-            <button type="button" class="btn btn-outline" id="btnAgregarIngreso">📥 Registrar compra</button>
-          </div>
-          <div id="ingresosLista" style="margin-top:12px;"></div>
-        </div>
-
         <!-- ---------- Descripción ---------- -->
-        <div class="card">
-          <div class="card-head"><div><h2>Descripción</h2></div></div>
+        <div class="card card-plegable" data-seccion="descripcion">
+          <div class="card-head"><div><h2>Descripción</h2></div><span class="estado-seccion" data-estado="descripcion"></span></div>
           <div class="field">
             <p class="subtitle" style="margin-bottom:6px;">Esta es la ÚNICA descripción del producto — se usa tal cual en la ficha de la tienda web (sevelin.cl) cuando el producto está publicado.</p>
             <!-- Editor de texto enriquecido (Quill, ver <head>): negrita,
@@ -2414,7 +2424,7 @@
         <div class="editor-col-lateral">
 
           <!-- ---------- Fotos (tarjeta independiente) ---------- -->
-          <div class="card">
+          <div class="card card-plegable" data-seccion="fotos">
             <div class="card-head"><div><h2>Fotos</h2>
               <p class="subtitle">Se procesan automáticamente a 1000×1000, fondo blanco. La primera es la foto principal del catálogo.
                 Para publicar en Instagram usa "📷 Para Instagram": las baja en JPG 4:5 sin recortarlas.</p>
@@ -2426,6 +2436,7 @@
                      descargar, sin tocar cómo se guarda el catálogo. -->
                 <button type="button" class="btn btn-outline btn-sm" id="btnDescargarInstagram" style="display:none;" title="JPG de 1080×1350 (4:5) con la foto completa, sin recortar">📷 Para Instagram</button>
               </div>
+              <span class="estado-seccion" data-estado="fotos"></span>
             </div>
 
             <label class="dropzone-fotos" id="dropzoneFotos" for="prodFotoInput">
@@ -2439,10 +2450,10 @@
           </div>
 
           <!-- ---------- Categoría (tarjeta independiente) ---------- -->
-          <div class="card">
+          <div class="card card-plegable" data-seccion="categoria">
             <div class="card-head"><div><h2>Categoría</h2>
               <p class="subtitle">Mismo catálogo de "Página Web → Categorías" — crear una acá la deja disponible ahí también.</p>
-            </div></div>
+            </div><span class="estado-seccion" data-estado="categoria"></span></div>
 
             <div class="field">
               <label>Categoría</label>
@@ -2472,10 +2483,10 @@
           </div>
 
           <!-- ---------- Condición y garantía (módulo Garantías) ---------- -->
-          <div class="card">
+          <div class="card card-plegable" data-seccion="garantia">
             <div class="card-head"><div><h2>Condición y garantía</h2>
               <p class="subtitle">Nuevos y reacondicionados parten con 6 meses de garantía.</p>
-            </div></div>
+            </div><span class="estado-seccion" data-estado="garantia"></span></div>
 
             <div class="field">
               <label>Condición</label>
@@ -2491,8 +2502,8 @@
           </div>
 
           <!-- ---------- Tienda web ---------- -->
-          <div class="card">
-            <div class="card-head"><div><h2>Tienda web</h2></div></div>
+          <div class="card card-plegable" data-seccion="web">
+            <div class="card-head"><div><h2>Tienda web</h2></div><span class="estado-seccion" data-estado="web"></span></div>
 
             <label class="check-item" id="itemProdPublicadoWeb" style="margin-bottom:12px;">
               <input type="checkbox" id="prodPublicadoWeb">
@@ -5901,6 +5912,19 @@
     </div>
   </div>
 
+  <!-- Productos a los que les falta algo (sql: ninguno, se calcula al leer) -->
+  <div id="modalFichasIncompletas" class="modal-overlay">
+    <div class="modal-box" style="max-width:760px;">
+      <h2>📋 Productos por completar</h2>
+      <p class="modal-hint" id="fichasIncompletasResumen">—</p>
+      <div class="chip-group" id="fichasIncompletasFiltros" style="margin-bottom:12px;"></div>
+      <div id="fichasIncompletasLista" style="max-height:52vh; overflow:auto;"></div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCerrarFichasIncompletas" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modalF29" class="modal-overlay">
     <div class="modal-box" style="max-width:600px;">
       <h2>🧾 F29 pendiente</h2>
@@ -6069,7 +6093,8 @@
   <script src="js/encargos.js"></script>
   <script src="js/pedidos-web.js"></script>
   <script src="js/pagina-web.js"></script>   <!-- después de pedidos-web.js: envuelve su vista en el subtab "pedidos" -->
-  <script src="js/notificaciones.js"></script>   <!-- usa API.pedidosWeb (js/api.js) y activarVista (js/config.js), ya cargados antes -->
+  <script src="js/notificaciones.js"></script>
+  <script src="js/completitud.js"></script>   <!-- usa API.pedidosWeb (js/api.js) y activarVista (js/config.js), ya cargados antes -->
   <script src="js/garantias.js"></script>
   <script src="js/repuestos.js"></script>
   <script src="js/ot.js"></script>

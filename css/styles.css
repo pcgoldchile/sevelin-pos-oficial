@@ -4160,3 +4160,137 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
     border-color: rgba(239, 68, 68, .45);
     animation: pulso-notificacion 2s ease-in-out infinite;
 }
+
+/* ============================================================
+   EDITOR DE PRODUCTO PLEGABLE Y AVISOS DE LO QUE FALTA
+   (js/completitud.js, dueño 21-09-2026)
+   ------------------------------------------------------------
+   "Me pierdo rápido con tanta información." Las tarjetas del editor se
+   pliegan con un clic en su cabecera, y al abrir un producto queda
+   abierto solo lo que necesita atención.
+
+   Se pliega ocultando los hijos, NO con <details>: el editor ya tenía
+   nueve tarjetas con su markup y su CSS, y cambiarlas a details/summary
+   habría tocado cada una. Así el único cambio en el HTML es una clase.
+   ============================================================ */
+.card-plegable > .card-head {
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+    padding-right: 26px;
+}
+.card-plegable > .card-head::after {
+    content: '▾';
+    position: absolute;
+    right: 4px;
+    top: 2px;
+    color: var(--text-muted);
+    transition: transform .18s ease;
+}
+.card-plegable.plegada > .card-head::after { transform: rotate(-90deg); }
+/* .card-head es flex con wrap: si el título trae subtítulo largo, la
+   chapita se caía a una segunda línea. El bloque de texto se encoge y la
+   chapita se queda al lado, que es donde se lee de un vistazo. */
+.card-plegable > .card-head { flex-wrap: nowrap; }
+.card-plegable > .card-head > div:first-child { flex: 1 1 auto; min-width: 0; }
+.card-plegable > .card-head:hover::after { color: var(--text-100); }
+.card-plegable.plegada > *:not(.card-head) { display: none !important; }
+/* Plegada, la tarjeta es solo su título: sin el aire de una tarjeta abierta */
+.card-plegable.plegada { padding-bottom: 12px; }
+.card-plegable.plegada > .card-head { margin-bottom: 0; }
+
+/* Al llegar desde la lista de "lo que falta", la sección se señala un
+   momento: sin esto el salto deja al ojo buscando dónde quedó. */
+.seccion-destacada {
+    outline: 2px solid var(--blue);
+    outline-offset: 2px;
+    transition: outline-color .4s ease;
+}
+
+/* Chapita de estado en la cabecera de cada tarjeta */
+.estado-seccion {
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+    flex: 0 0 auto;
+    margin-left: auto;
+    margin-right: 10px;
+    padding: 2px 8px;
+    border-radius: 999px;
+}
+.estado-seccion.estado-ok { color: var(--green); background: var(--tint-green, rgba(34, 197, 94, .12)); }
+.estado-seccion.estado-pendiente { color: var(--gold); background: rgba(255, 46, 196, .12); }
+.estado-seccion.estado-critico { color: var(--red); background: var(--tint-red); }
+
+/* El resumen de arriba del editor */
+.resumen-completitud {
+    background: var(--surface-soft);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--gold);
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-bottom: 16px;
+}
+.resumen-completitud[hidden] { display: none; }
+.resumen-completitud-cab {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+}
+.resumen-completitud-lista {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 8px;
+}
+.falta-fila {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    text-align: left;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 10px;
+    color: var(--text-300);
+    cursor: pointer;
+    font: inherit;
+}
+.falta-fila:hover { border-color: var(--blue); background: var(--surface-soft); }
+.falta-fila .falta-titulo { font-weight: 600; font-size: 13px; }
+.falta-fila small { color: var(--text-muted); font-size: 11.5px; line-height: 1.35; }
+.falta-fila.falta-critica { border-color: rgba(239, 68, 68, .45); }
+.falta-fila.falta-critica .falta-titulo { color: var(--red); }
+
+/* Chapitas de la lista del catálogo */
+.falta-chip {
+    display: inline-block;
+    font-size: 10.5px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    margin-right: 4px;
+    background: rgba(255, 46, 196, .12);
+    color: var(--gold);
+}
+.falta-chip-critica { background: var(--tint-red); color: var(--red); }
+
+/* Botón del header. Ámbar por defecto: "falta completar" no es una
+   emergencia. Rojo con pulso solo si hay algo crítico — sin costo con
+   stock, sin precio, o publicado sin ninguna foto. */
+.btn-fichas[hidden] { display: none; }
+.btn-fichas {
+    background: rgba(255, 46, 196, .12);
+    color: var(--gold);
+    border-color: rgba(255, 46, 196, .40);
+}
+.btn-fichas.fichas-criticas {
+    background: var(--tint-red); color: var(--red);
+    border-color: rgba(239, 68, 68, .45);
+    animation: pulso-notificacion 2s ease-in-out infinite;
+}
+
+@media (max-width: 560px) {
+    .resumen-completitud-lista { grid-template-columns: 1fr; }
+}

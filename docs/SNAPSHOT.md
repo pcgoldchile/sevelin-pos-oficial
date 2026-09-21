@@ -31,6 +31,39 @@ remanente.** Migración `sql/58` aplicada y verificada en producción.
 - 🤖 **Para qué sirve de verdad:** el cowork "Sevelin Finanzas" ya lee esta base. Con el historial
   cargado puede responder solo cómo viene el remanente, sin que nadie le pase un PDF cada mes.
 
+**v73 (21-09-2026) — el editor de producto: una sola compra, secciones plegables y avisos de lo que
+falta.**
+
+- 🔗 **"Costos por lote" y "Compras de este producto" eran la misma cosa dos veces.** Las dos pedían
+  "compré N unidades a $X", pero hacían cosas distintas: cargar un lote subía el stock y creaba la
+  capa PEPS; registrar una compra solo dejaba el historial. Ahora hay **un formulario**
+  (`POST /api/productos/:id/compras`) que hace las tres cosas: historial con plazo de devolución,
+  stock, y capa PEPS **solo si el producto la usa**. El interruptor de PEPS quedó dentro de esa misma
+  tarjeta, al final y apagado como siempre.
+- 🧮 **Si el producto no tenía costo, la compra se lo carga.** Es justo el origen de las dos ventas
+  con utilidad inflada que encontró la auditoría. **No pisa un costo ya cargado**: reescribirlo con
+  el de la última compra cambiaría el margen de todo el catálogo sin que nadie lo pida.
+- 🗂️ **Las 9 tarjetas del editor se pliegan** (clic en la cabecera, o "Abrir todo" / "Plegar todo").
+  Al abrir un producto queda **abierto lo que necesita atención y plegado lo que está bien**. Se
+  pliega ocultando los hijos y no con `<details>`: así el único cambio en el HTML es una clase.
+- ⚠️ **Arriba del editor, qué le falta a ESE producto**, y cada línea dice **qué cuesta** que falte
+  ("Cada venta se anota con utilidad del 100%"), no solo que falta. Un clic abre su sección y pone
+  el foco en el campo. Cada tarjeta lleva además su chapita: ✔️, "falta algo" o "⚠️ falta algo".
+- 📋 **Botón nuevo en el header con los productos incompletos del catálogo**, con filtros por tipo de
+  falta y "✏️ Completar ahora" que abre ese producto. Ámbar normalmente; **rojo con pulso solo si hay
+  algo crítico** (sin costo con stock, sin precio, o publicado sin ninguna foto).
+- 🎯 **Las reglas viven SOLO en el servidor** (`REGLAS_PRODUCTO` en `api/index.js`, expuestas por
+  `GET /api/productos/reglas`). El editor pide ese mismo catálogo y lo evalúa sobre el formulario
+  abierto: escritas en los dos lados, el día que cambie una dirían cosas distintas.
+- 🚫 **Lo que es una decisión legítima NO es un aviso:** un genérico sin marca, un servicio sin peso,
+  un "precio a consultar" sin precio o un producto sin SKU (el slug lo genera la tienda) no aparecen.
+  Los archivados y los borradores tampoco. Medido hoy contra producción: **20 publicados sin
+  descripción, 19 sin categoría, 3 sin foto y 49 con stock sin medidas**; ninguno sin costo ni sin
+  precio, que es lo crítico.
+- 🖥️ Verificado en un navegador real (`preview_start` → `pos-estatico` en `.claude/launch.json`):
+  los 36 scripts cargan, el plegado se ve bien y la chapita queda en línea con el título.
+- Sin migración: no hace falta ninguna tabla nueva.
+
 **v72 (21-09-2026) — auditoría de la contabilidad del POS: tres arreglos y el código 77 automático.**
 
 - 🔴 **BUG EN PRODUCCIÓN, encontrado y corregido:** el checklist de **Gastos Fijos del mes** armaba la

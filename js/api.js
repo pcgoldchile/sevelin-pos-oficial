@@ -145,6 +145,16 @@ const API = {
        cada vez que se entraba al módulo. */
     lotesResumen: () => apiRequest('/productos/lotes-resumen'),
     crearLote: (id, lote) => apiRequest(`/productos/${id}/lotes`, { method: 'POST', body: lote }),
+
+    /* UNA compra: historial + stock + capa PEPS si corresponde (21-09-2026).
+       Reemplaza a crearLote y crearIngreso desde el editor de producto;
+       los dos endpoints viejos siguen vivos porque los usa el flujo de
+       borradores (sql/57) y el detector de reposición. */
+    crearCompra: (id, compra) => apiRequest(`/productos/${id}/compras`, { method: 'POST', body: compra }),
+
+    // Qué le falta al catálogo para estar completo
+    reglasCompletitud: () => apiRequest('/productos/reglas'),
+    incompletos: () => apiRequest('/productos/incompletos', { silencioso: true }),
     eliminarLote_capa: (id, loteId) => apiRequest(`/productos/${id}/lotes/${loteId}`, { method: 'DELETE' }),
 
     // Fotos de producto (e-commerce Fase 0). El producto debe existir ya

@@ -1487,6 +1487,15 @@ function abrirModalProducto(producto = null) {
   elViewProductoEditor.classList.add('active');
   window.scrollTo({ top: 0, behavior: 'instant' });
   setTimeout(() => elProdNombre?.focus(), 80);
+
+  /* Qué le falta a este producto, y con eso qué secciones se dejan abiertas.
+     Las categorías y las fotos se cargan en paralelo arriba, así que se
+     espera un pulso antes de mirar el formulario. */
+  if (typeof cargarReglasProducto === 'function') {
+    cargarReglasProducto().then(() => {
+      setTimeout(() => revisarCompletitudProducto({ plegarSegunEstado: true }), 120);
+    });
+  }
 }
 
 // Puebla el <select> de categoría web desde producto_categorias (módulo
@@ -1799,6 +1808,8 @@ async function guardarProducto() {
     productosBorradoresCache = null;
     cerrarModalProducto();
     cargarProductos(true);
+    // El aviso del header tiene que reflejar lo que se acaba de completar
+    if (typeof actualizarAvisoFichas === 'function') actualizarAvisoFichas();
   } catch (err) {
     console.error('Error al guardar el producto:', err.message || err);
 
@@ -3046,15 +3057,18 @@ document.addEventListener('DOMContentLoaded', () => {
    necesita a qué producto colgarse. */
 async function cargarIngresosProducto() {
   const cont = document.getElementById('ingresosLista');
-  const card = document.getElementById('cardIngresosProducto');
+  const card = document.getElementById('cardComprasProducto');
   if (!cont || !card) return;
 
+  /* Al crear un producto la tarjeta se ve, pero sin historial: el formulario
+     avisa que hay que guardar primero. Antes se escondía entera, y el dueño
+     no llegaba a enterarse de que existía. */
   if (!editingProductId) {
-    card.style.display = 'none';
     ingresosDelProducto = [];
+    limpiarFormularioIngreso();
+    cont.innerHTML = '<p class="modal-hint">Guarda el producto y después registra sus compras acá.</p>';
     return;
   }
-  card.style.display = '';
   limpiarFormularioIngreso();
   cont.innerHTML = '<p class="modal-hint">Cargando compras…</p>';
   try {
@@ -3073,6 +3087,8 @@ function limpiarFormularioIngreso() {
   set('ingDevolucion', '');
   set('ingProveedor', '');
   set('ingReferencia', '');
+  const sumar = document.getElementById('ingSumarStock');
+  if (sumar) sumar.checked = true;
 }
 
 function pintarIngresosProducto() {
@@ -3138,18 +3154,43 @@ async function agregarIngresoProducto() {
   const btn = document.getElementById('btnAgregarIngreso');
   if (btn) btn.disabled = true;
   try {
-    await API.productos.crearIngreso(editingProductId, {
+    /* Una sola llamada hace las tres cosas que implica una compra: historial,
+       stock y capa PEPS si el producto la usa (21-09-2026). */
+    const r = await API.productos.crearCompra(editingProductId, {
       fecha_compra: fecha,
       cantidad,
       costo_unitario: Number(document.getElementById('ingCosto')?.value) || 0,
       devolucion_hasta: (document.getElementById('ingDevolucion')?.value || '').trim() || null,
       proveedor: (document.getElementById('ingProveedor')?.value || '').trim() || null,
-      referencia: (document.getElementById('ingReferencia')?.value || '').trim() || null
+      referencia: (document.getElementById('ingReferencia')?.value || '').trim() || null,
+      sumar_stock: !!document.getElementById('ingSumarStock')?.checked
     });
-    showToast('Compra registrada', 'ok');
+
+    const partes = ['Compra registrada'];
+    if (r?.stock_sumado) partes.push(`stock: ${num(r.stock_nuevo)}`);
+    if (r?.lote) partes.push('capa PEPS creada');
+    showToast(partes.join(' · '), 'ok');
+    // El costo se rellenó solo: conviene decirlo, no dejarlo pasar callado
+    if (r?.costo_rellenado) {
+      setTimeout(() => showToast(`Le cargué el costo al producto: ${fmtCLP(r.costo_rellenado)} (estaba en $0)`, 'ok'), 1800);
+    }
+
     ingresosDelProducto = await API.productos.listarIngresos(editingProductId) || [];
     pintarIngresosProducto();
     limpiarFormularioIngreso();
+
+    // El stock y el costo del formulario tienen que reflejar lo que quedó
+    if (r?.stock_sumado) {
+      const elStock = document.getElementById('prodStock');
+      if (elStock) elStock.value = num(r.stock_nuevo);
+    }
+    if (r?.costo_rellenado) {
+      const elCosto = document.getElementById('prodCosto');
+      if (elCosto) elCosto.value = num(r.costo_rellenado);
+    }
+    if (r?.lote && typeof cargarLotesDelProducto === 'function') await cargarLotesDelProducto(editingProductId);
+    if (typeof cargarProductos === 'function') cargarProductos(true);
+    if (typeof revisarCompletitudProducto === 'function') revisarCompletitudProducto();
   } catch (err) {
     showToast(err.message || 'No se pudo registrar la compra', 'err');
   } finally {
