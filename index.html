@@ -2271,6 +2271,35 @@
             <span>➕ Sumar estas unidades al stock (desmárcalo solo si ya las cargaste a mano)</span>
           </label>
 
+          <!-- MERCADERÍA EN CAMINO (dueño, 21-09-2026). Antes vivía en
+               "Tienda web" como tres campos sueltos que había que acordarse
+               de llenar. Es lo mismo que una compra que todavía no llegó, así
+               que va acá: al marcarlo, la compra NO suma stock y el producto
+               queda reservable en sevelin.cl. -->
+          <label class="check-item" id="itemProdPorLlegar" style="margin-top:8px;">
+            <input type="checkbox" id="prodPorLlegar">
+            <span>🚚 Todavía no llega — es mercadería en camino (se puede reservar en la tienda)</span>
+          </label>
+
+          <div id="bloqueIngPorLlegar" style="display:none; margin-top:10px; padding:10px 12px; border:1px solid var(--border); border-radius:10px;">
+            <div class="grid grid-2">
+              <div class="field">
+                <label for="prodStockPorLlegar">¿Cuántas unidades vienen?</label>
+                <input type="number" id="prodStockPorLlegar" min="0" step="1" placeholder="0">
+              </div>
+              <div class="field">
+                <label for="prodFechaLlegada">Fecha estimada de llegada</label>
+                <input type="date" id="prodFechaLlegada">
+              </div>
+            </div>
+            <p class="subtitle" style="margin-top:8px;">Al registrar la compra, estas unidades
+              <strong>no suman stock</strong>: quedan como tope de lo que se puede reservar. Si
+              todavía tienes unidades en tienda, el cliente solo puede comprar esas.
+              La fecha se muestra siempre como <strong>estimada</strong>; déjala vacía si no sabes.</p>
+            <p class="subtitle">Cuando llegue, usa <strong>"📦 Ya llegó"</strong> en la lista de
+              abajo: suma el stock y <strong>avisa por correo</strong> a todos los que lo esperaban.</p>
+          </div>
+
           <p class="modal-hint" id="ingAvisoCosto" style="margin-top:8px;"></p>
           <p class="modal-hint">Si el proveedor no acepta devoluciones, deja la fecha vacía —
             es distinto de una fecha ya vencida, y el informe los trata distinto.</p>
@@ -2542,24 +2571,10 @@
               </select>
               <p class="subtitle">Aparece en la tienda y en la tabla del POS. Solo una a la vez.</p>
             </div>
-            <div class="field" style="margin-top:10px;">
-              <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
-                <input type="checkbox" id="prodPorLlegar" style="width:auto; margin:0;">
-                <span>📦 Por llegar (aún no está en la tienda)</span>
-              </label>
-              <p class="subtitle">Se puede reservar pagando el 100% aunque no haya stock. Cuando
-                llegue, <strong>desmarca esta casilla</strong>: eso avisa por correo a todos los que
-                lo estaban esperando.</p>
-              <label style="margin-top:8px;">¿Cuántas unidades vienen?</label>
-              <input type="number" id="prodStockPorLlegar" min="0" step="1" placeholder="0">
-              <p class="subtitle">Es el tope de lo que se puede reservar cuando no queda stock.
-                <strong>Si todavía tienes unidades en tienda, el cliente solo puede comprar esas</strong>
-                — nunca se vende lo que no va a existir.</p>
-              <label style="margin-top:8px;">Fecha estimada de llegada</label>
-              <input type="date" id="prodFechaLlegada">
-              <p class="subtitle">Se muestra siempre como <strong>estimada</strong>, en la ficha y en
-                las Preguntas Frecuentes. Déjala vacía si aún no sabes.</p>
-            </div>
+            <p class="subtitle" style="margin-top:10px; padding-top:10px; border-top:1px solid var(--border);">
+              📦 <strong>"Por llegar"</strong> se maneja ahora al registrar la compra, en
+              <strong>Compras de este producto</strong>: es la misma mercadería que compraste y
+              todavía no tienes.</p>
             <div class="field" style="margin-top:10px;">
               <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
                 <input type="checkbox" id="prodUrgenciaStockWeb" checked style="width:auto; margin:0;">

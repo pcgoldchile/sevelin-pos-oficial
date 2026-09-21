@@ -2424,11 +2424,19 @@ app.post('/api/productos/:id/compras', auth(true), async (req, res) => {
     if (errP) throw errP;
     if (!producto) return enviarError(res, 404, 'Producto no encontrado');
 
-    // Un servicio o un ítem sin inventario no tiene stock que subir
-    const sumarStock = req.body?.sumar_stock !== false && !producto.stock_ilimitado;
+    /* Mercadería en camino (sql/59): comprada pero todavía no está. No
+       suma stock — sumarlo diría que la tienes y se podría vender algo que
+       no existe. En su lugar el producto queda "por llegar" en sevelin.cl,
+       que es reservable con tope. */
+    const enCamino = req.body?.en_camino === true;
+    const sumarStock = !enCamino && req.body?.sumar_stock !== false && !producto.stock_ilimitado;
 
+    /* La capa PEPS se crea solo si la mercadería YA está. Crearla mientras
+       viaja dejaría unidades consumibles que no existen, y una venta
+       tomaría el costo de algo que todavía no llega. Cuando llega, la crea
+       PUT /api/ingresos/:id/recibida. */
     let lote = null;
-    if (producto.usa_lotes) {
+    if (producto.usa_lotes && !enCamino) {
       const { data, error } = await db.from('producto_lotes').insert([{
         producto_id: id,
         cantidad: datos.cantidad,
@@ -2444,6 +2452,7 @@ app.post('/api/productos/:id/compras', auth(true), async (req, res) => {
       ...datos,
       producto_id: id,
       estado: 'confirmado',
+      en_camino: enCamino,
       creado_por: req.usuario?.usuario || req.usuario?.rol || null
     }]).select('*').single();
     if (errI) throw errI;
@@ -2461,6 +2470,13 @@ app.post('/api/productos/:id/compras', auth(true), async (req, res) => {
     const costoRellenado = num(producto.costo_unitario) === 0 && datos.costo_unitario > 0;
     if (costoRellenado) cambios.costo_unitario = datos.costo_unitario;
 
+    if (enCamino) {
+      cambios.por_llegar = true;
+      cambios.stock_por_llegar = Math.max(0, Math.round(num(req.body?.stock_por_llegar) || datos.cantidad));
+      const eta = String(req.body?.fecha_llegada_estimada || '').trim();
+      cambios.fecha_llegada_estimada = /^\d{4}-\d{2}-\d{2}$/.test(eta) ? eta : null;
+    }
+
     if (Object.keys(cambios).length) {
       const { error: errU } = await db.from('productos').update(cambios).eq('id', id);
       if (errU) throw errU;
@@ -2471,10 +2487,92 @@ app.post('/api/productos/:id/compras', auth(true), async (req, res) => {
       lote,
       stock_nuevo: stockNuevo,
       stock_sumado: sumarStock,
+      en_camino: enCamino,
       costo_rellenado: costoRellenado ? datos.costo_unitario : null
     });
   } catch (error) {
     return enviarErrorBD(res, error, 'POST /api/productos/:id/compras');
+  }
+});
+
+/* La mercadería en camino LLEGÓ (sql/59).
+   ------------------------------------------------------------
+   Recién acá sube el stock, y recién acá el producto deja de estar "por
+   llegar" en sevelin.cl — que es lo que dispara el correo a quienes lo
+   estaban esperando. Por eso NO pasa solo al cumplirse la fecha estimada:
+   una fecha estimada no es una caja sobre el mostrador.
+
+   Si el producto tiene OTRA compra todavía en camino, `por_llegar` se
+   queda encendido: sigue habiendo mercadería que no ha llegado. */
+app.put('/api/ingresos/:id/recibida', auth(true), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return enviarError(res, 400, 'Entrada inválida');
+
+  try {
+    const { data: ing, error: errI } = await db.from('ingresos_mercaderia')
+      .select('*').eq('id', id).maybeSingle();
+    if (errI) throw errI;
+    if (!ing) return enviarError(res, 404, 'Compra no encontrada');
+    if (!ing.en_camino) return enviarError(res, 400, 'Esa compra no estaba marcada como en camino');
+
+    const { data: producto, error: errP } = await db.from('productos')
+      .select('id, stock, usa_lotes, stock_ilimitado, costo_unitario').eq('id', ing.producto_id).maybeSingle();
+    if (errP) throw errP;
+    if (!producto) return enviarError(res, 404, 'Producto no encontrado');
+
+    /* La capa PEPS se crea ahora y no al comprar: antes de llegar no hay
+       unidades que consumir, y una capa con stock que no existe haría que
+       una venta tomara el costo de mercadería que todavía viaja. */
+    let lote = null;
+    if (producto.usa_lotes) {
+      const { data, error } = await db.from('producto_lotes').insert([{
+        producto_id: producto.id,
+        cantidad: num(ing.cantidad),
+        cantidad_inicial: num(ing.cantidad),
+        costo_unitario: num(ing.costo_unitario),
+        referencia: ing.referencia || null
+      }]).select().single();
+      if (error) throw error;
+      lote = data;
+    }
+
+    const sumar = !producto.stock_ilimitado;
+    const stockNuevo = sumar ? num(producto.stock) + num(ing.cantidad) : num(producto.stock);
+
+    const { error: errU } = await db.from('ingresos_mercaderia')
+      .update({ en_camino: false, recibido_en: new Date().toISOString() }).eq('id', id);
+    if (errU) throw errU;
+
+    // ¿Queda algo más en camino de este mismo producto?
+    const { data: otras } = await db.from('ingresos_mercaderia')
+      .select('id').eq('producto_id', producto.id).eq('en_camino', true).limit(1);
+    const quedanEnCamino = Array.isArray(otras) && otras.length > 0;
+
+    const cambios = {};
+    if (sumar) { cambios.stock = stockNuevo; cambios.stock_actualizado_en = new Date().toISOString(); }
+    if (num(producto.costo_unitario) === 0 && num(ing.costo_unitario) > 0) {
+      cambios.costo_unitario = num(ing.costo_unitario);
+    }
+    if (!quedanEnCamino) {
+      cambios.por_llegar = false;
+      cambios.stock_por_llegar = 0;
+      cambios.fecha_llegada_estimada = null;
+    }
+    if (Object.keys(cambios).length) {
+      const { error } = await db.from('productos').update(cambios).eq('id', producto.id);
+      if (error) throw error;
+    }
+
+    res.json({
+      ok: true,
+      stock_nuevo: stockNuevo,
+      lote,
+      quedan_en_camino: quedanEnCamino,
+      // La tienda avisa por correo a los que reservaron cuando esto se apaga
+      aviso_tienda: quedanEnCamino ? null : 'El producto dejó de estar "por llegar": la tienda avisa a quienes lo esperaban.'
+    });
+  } catch (error) {
+    return enviarErrorBD(res, error, 'PUT /api/ingresos/:id/recibida');
   }
 });
 

@@ -49,8 +49,14 @@ function productoDelFormulario() {
     imagen_urls: fotos.filter(Boolean),
     descripcion: val('prodDescripcion'),
     descripcion_web: val('prodDescripcion'),
+    /* Se leen LOS DOS. #popFotosCategoria es el desplegable visible, que se
+       llena con DOS llamadas encadenadas a la API; #prodCategoriaWeb es el
+       estado real que lee guardarProducto(). Mirando solo el visible, un
+       producto con categoría aparecía como "sin categoría" mientras las
+       categorías todavía se estaban cargando (reportado por el dueño el
+       21-09-2026 con el Cable de Fibra Óptica, que sí la tenía). */
     categoria_id: document.getElementById('popFotosCategoria')?.value || null,
-    categoria_web: '',
+    categoria_web: document.getElementById('prodCategoriaWeb')?.value || '',
     publicado_web: chk('prodPublicadoWeb'),
     es_servicio: chk('prodEsServicio'),
     es_repuesto: chk('prodEsRepuesto'),

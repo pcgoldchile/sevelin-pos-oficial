@@ -31,6 +31,29 @@ remanente.** Migración `sql/58` aplicada y verificada en producción.
 - 🤖 **Para qué sirve de verdad:** el cowork "Sevelin Finanzas" ya lee esta base. Con el historial
   cargado puede responder solo cómo viene el remanente, sin que nadie le pase un PDF cada mes.
 
+**v74 (21-09-2026) — el falso "sin categoría", y "por llegar" pasa a ser una compra en camino.**
+Migración `sql/59` aplicada y verificada en producción.
+
+- 🐛 **BUG del aviso, reportado por el dueño:** un producto CON categoría salía como "Publicado sin
+  categoría". Era una carrera: el desplegable de categorías se llena con **dos llamadas encadenadas**
+  a la API y el chequeo corría 120 ms después de abrir, cuando todavía estaba vacío. Ahora se lee
+  también `#prodCategoriaWeb` (el estado real que ya usaba `guardarProducto`) y el aviso se recalcula
+  cuando las categorías terminan de cargar y cuando él elige una. Lo de "sin peso ni medidas" del
+  mismo producto **sí era correcto**: los cuatro campos estaban en 0 con 7 unidades en stock.
+- 📦 **"Por llegar" se fusionó con las compras.** Eran tres campos sueltos en la tarjeta de Tienda web
+  (casilla + unidades + fecha) que había que acordarse de llenar y después de vaciar. Es lo mismo que
+  una compra que todavía no tienes, así que vive dentro de **Compras de este producto**.
+- 🚚 **Al marcar "todavía no llega"**, la compra **no suma stock** (lo que no tienes no puede sumar) y
+  **no crea capa PEPS** — una capa con unidades que viajan haría que una venta tomara el costo de algo
+  que no está. El producto queda "por llegar" en sevelin.cl, reservable con tope.
+- ✅ **Botón "📦 Ya llegó"** en cada compra en camino: ahí recién sube el stock, se crea la capa PEPS y
+  el producto deja de estar "por llegar" — que es lo que **dispara el correo** a quienes lo
+  reservaron. Por eso no pasa solo al cumplirse la fecha estimada: una fecha no es una caja sobre el
+  mostrador. Y si quedan OTRAS compras en camino del mismo producto, `por_llegar` **no se apaga**.
+- 🧪 El bug que atrapó la prueba: la capa PEPS se creaba **dos veces** (al comprar y al recibir).
+- `sql/59`: `ingresos_mercaderia.en_camino` + `recibido_en`, con índice parcial. No duplica el estado
+  del producto — `productos.por_llegar` sigue siendo el que manda en la tienda.
+
 **v73 (21-09-2026) — el editor de producto: una sola compra, secciones plegables y avisos de lo que
 falta.**
 

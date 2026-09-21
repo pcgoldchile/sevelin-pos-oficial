@@ -1396,6 +1396,7 @@ function abrirModalProducto(producto = null) {
     // de la base es true, así que undefined debe leerse como activado.
     if (elProdUrgenciaStockWeb) elProdUrgenciaStockWeb.checked = producto.urgencia_stock_web !== false;
     if (elProdPorLlegar) elProdPorLlegar.checked = !!producto.por_llegar;
+    if (typeof alternarIngresoEnCamino === 'function') alternarIngresoEnCamino();
     // El nombre se escribe en cada medición: no se arrastra del producto anterior.
     if (elProdMedidoPor) elProdMedidoPor.value = '';
     if (elProdFechaLlegada) elProdFechaLlegada.value = producto.fecha_llegada_estimada || '';
@@ -1407,7 +1408,9 @@ function abrirModalProducto(producto = null) {
     // en el <select> (no la categoría padre) — si no, cada vez que se
     // reabre el editor de un producto subcategorizado, se pierde la
     // subcategoría al guardar de nuevo sin tocar el campo.
-    poblarSelectCategoriaWeb(producto.subcategoria_web || producto.categoria_web || '').then(cargarCategoriasEditor);
+    poblarSelectCategoriaWeb(producto.subcategoria_web || producto.categoria_web || '')
+      .then(cargarCategoriasEditor)
+      .then(() => { if (typeof revisarCompletitudProducto === 'function') revisarCompletitudProducto(); });
     productoEnEdicionImagenUrls = Array.isArray(producto.imagen_urls) ? [...producto.imagen_urls] : [];
     fotosNuevasStaged = [];
     productoEnEdicionArchivado = !!producto.archivado;
@@ -2516,6 +2519,8 @@ function aplicarSeleccionCategoria() {
       (categoria ? `<option value="${escHtml(categoria.nombre)}" data-id="${categoria.id}" selected>${escHtml(categoria.nombre)}</option>` : '');
     elProdCategoriaWeb.value = categoria ? categoria.nombre : '';
   }
+  // Elegir una categoría puede tachar un aviso: se revisa en el momento
+  if (typeof revisarCompletitudProducto === 'function') revisarCompletitudProducto();
 }
 
 // ---------- Eliminar ----------
@@ -3045,13 +3050,52 @@ let ingresosDelProducto = [];
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnAgregarIngreso')?.addEventListener('click', agregarIngresoProducto);
+  document.getElementById('prodPorLlegar')?.addEventListener('change', alternarIngresoEnCamino);
   document.getElementById('ingresosLista')?.addEventListener('click', (e) => {
+    const recibir = e.target.closest('[data-recibir-ingreso]');
+    if (recibir) { recibirCompraEnCamino(Number(recibir.dataset.recibirIngreso)); return; }
     const cerrar = e.target.closest('[data-cerrar-ingreso]');
     if (cerrar) { cerrarIngresoProducto(Number(cerrar.dataset.cerrarIngreso), cerrar.dataset.motivo); return; }
     const borrar = e.target.closest('[data-borrar-ingreso]');
     if (borrar) borrarIngresoProducto(Number(borrar.dataset.borrarIngreso));
   });
 });
+
+/* "Ya llegó": sube el stock y, si no queda nada más en camino, apaga el
+   "por llegar" del producto — lo que hace que la tienda le avise por
+   correo a quienes lo reservaron. Por eso se confirma antes. */
+async function recibirCompraEnCamino(id) {
+  const ing = ingresosDelProducto.find(x => Number(x.id) === Number(id));
+  if (!ing) return;
+  if (!confirm(`¿Llegaron las ${num(ing.cantidad)} unidades?
+
+Se suman al stock y, si no queda nada más en camino, la tienda le avisa por correo a quienes lo estaban esperando.`)) return;
+
+  try {
+    const r = await API.productos.compraRecibida(id);
+    showToast(`Llegó: stock ${num(r.stock_nuevo)}`, 'ok');
+    if (r?.aviso_tienda) setTimeout(() => showToast(r.aviso_tienda, 'ok'), 1800);
+
+    const elStock = document.getElementById('prodStock');
+    if (elStock) elStock.value = num(r.stock_nuevo);
+    if (!r.quedan_en_camino) {
+      const chk = document.getElementById('prodPorLlegar');
+      if (chk) { chk.checked = false; alternarIngresoEnCamino(); }
+      const cuantas = document.getElementById('prodStockPorLlegar');
+      if (cuantas) cuantas.value = '';
+      const fecha = document.getElementById('prodFechaLlegada');
+      if (fecha) fecha.value = '';
+    }
+
+    ingresosDelProducto = await API.productos.listarIngresos(editingProductId) || [];
+    pintarIngresosProducto();
+    if (r?.lote && typeof cargarLotesDelProducto === 'function') await cargarLotesDelProducto(editingProductId);
+    if (typeof cargarProductos === 'function') cargarProductos(true);
+    if (typeof revisarCompletitudProducto === 'function') revisarCompletitudProducto();
+  } catch (err) {
+    showToast(err.message || 'No se pudo marcar como recibida', 'err');
+  }
+}
 
 /* La sección solo tiene sentido con un producto ya guardado: una compra
    necesita a qué producto colgarse. */
@@ -3079,6 +3123,25 @@ async function cargarIngresosProducto() {
   }
 }
 
+/* "Todavía no llega" y "sumar al stock" se contradicen: lo que no tienes
+   no puede sumar stock. Al marcar uno, el otro se apaga y se bloquea, en
+   vez de dejar dos casillas que juntas mienten. */
+function alternarIngresoEnCamino() {
+  const enCamino = !!document.getElementById('prodPorLlegar')?.checked;
+  const bloque = document.getElementById('bloqueIngPorLlegar');
+  if (bloque) bloque.style.display = enCamino ? 'block' : 'none';
+
+  const sumar = document.getElementById('ingSumarStock');
+  const item = document.getElementById('itemIngSumarStock');
+  if (sumar) { sumar.disabled = enCamino; if (enCamino) sumar.checked = false; else sumar.checked = true; }
+  if (item) item.style.opacity = enCamino ? '.45' : '';
+
+  // Si no dijo cuántas vienen, vienen las que compró
+  const cuantas = document.getElementById('prodStockPorLlegar');
+  const cantidad = document.getElementById('ingCantidad')?.value;
+  if (enCamino && cuantas && !cuantas.value && cantidad) cuantas.value = cantidad;
+}
+
 function limpiarFormularioIngreso() {
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
   set('ingFecha', todayISO());
@@ -3089,6 +3152,8 @@ function limpiarFormularioIngreso() {
   set('ingReferencia', '');
   const sumar = document.getElementById('ingSumarStock');
   if (sumar) sumar.checked = true;
+  // Y si el producto está marcado como "todavía no llega", manda eso
+  alternarIngresoEnCamino();
 }
 
 function pintarIngresosProducto() {
@@ -3111,7 +3176,9 @@ function pintarIngresosProducto() {
             <td>${escHtml(fechaCorta(i.fecha_compra))}
               ${i.estado === 'borrador'
                 ? '<br><small style="color:var(--valor);">📥 sin confirmar</small>'
-                : ''}</td>
+                : ''}
+              ${i.en_camino ? '<br><small style="color:var(--gold);">🚚 en camino</small>' : ''}
+              ${i.recibido_en ? `<br><small style="color:var(--green);">📦 llegó ${escHtml(fechaCorta(i.recibido_en))}</small>` : ''}</td>
             <td>${num(i.cantidad)}</td>
             <td class="num">${fmtCLP(i.costo_unitario)}</td>
             <td>${i.devolucion_hasta
@@ -3120,7 +3187,9 @@ function pintarIngresosProducto() {
             <td>${escHtml(i.proveedor || '—')}</td>
             <td>
               <div class="cell-actions">
-                ${i.cerrado_en
+                ${i.en_camino
+                  ? `<button class="btn btn-green btn-sm" data-recibir-ingreso="${i.id}" title="Súbele el stock y avisa a quienes la esperaban">📦 Ya llegó</button>`
+                  : i.cerrado_en
                   ? `<small style="color:var(--text-muted);">${escHtml(i.cerrado_motivo || 'cerrada')}</small>`
                   : i.estado === 'borrador'
                     ? '<small style="color:var(--text-muted);">Confírmala en el botón 📥 del header</small>'
@@ -3163,10 +3232,14 @@ async function agregarIngresoProducto() {
       devolucion_hasta: (document.getElementById('ingDevolucion')?.value || '').trim() || null,
       proveedor: (document.getElementById('ingProveedor')?.value || '').trim() || null,
       referencia: (document.getElementById('ingReferencia')?.value || '').trim() || null,
-      sumar_stock: !!document.getElementById('ingSumarStock')?.checked
+      sumar_stock: !!document.getElementById('ingSumarStock')?.checked,
+      en_camino: !!document.getElementById('prodPorLlegar')?.checked,
+      stock_por_llegar: Number(document.getElementById('prodStockPorLlegar')?.value) || 0,
+      fecha_llegada_estimada: (document.getElementById('prodFechaLlegada')?.value || '').trim() || null
     });
 
     const partes = ['Compra registrada'];
+    if (r?.en_camino) partes.push('queda en camino, sin sumar stock');
     if (r?.stock_sumado) partes.push(`stock: ${num(r.stock_nuevo)}`);
     if (r?.lote) partes.push('capa PEPS creada');
     showToast(partes.join(' · '), 'ok');
