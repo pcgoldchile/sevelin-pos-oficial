@@ -7,7 +7,34 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
-**Fecha:** 22-09-2026 · **v78 publicada (hotfix, ~15 min después de v77) — presupuesto TOTAL para los
+**Fecha:** 22-09-2026 · **v79 publicada — copiar el prompt en vez de esperar a la API.**
+
+- 💡 **Idea del dueño, y es la correcta para este caso:** "¿y si en vez de usar APIs, que sea un botón
+  para copiar el prompt y dárselo a Gemini en una pestaña abierta?". Ahora la tarjeta de Descripción
+  muestra **dos caminos rotulados** para lo mismo: *Automático (a veces lento)* con los dos botones de
+  siempre, y *A mano (siempre funciona, más rápido)* con **📋 Copiar prompt de la ficha**, **📋 Copiar
+  prompt de Facebook** y **📥 Pegar la ficha que te dio la IA**.
+- ⚡ **Por qué el camino a mano es mejor, y no por comodidad:** la web de Gemini/ChatGPT/Claude no
+  comparte cola con el nivel gratis de la API — responde en segundos y nunca devuelve "high demand".
+  El dueño **ya** pegaba la información real y **ya** leía la ficha antes de aceptarla, así que la API
+  solo le ahorraba cambiar de pestaña, y a cambio le costaba 35-70 s y fallar seguido.
+- 🔒 **El prompt lo sigue armando el SERVIDOR** (son regla de negocio: qué se puede decir de un
+  producto y qué no). El botón lo pide armado, no tiene su propia copia. La prueba compara los dos
+  caminos **carácter por carácter**: si algún día divergen, falla.
+- ✅ **Misma validación en los dos caminos:** sin información real, tampoco entrega el prompt —
+  copiarlo sin datos hace que la IA invente exactamente igual que pedirlo por API.
+- 🔁 **La vuelta usa la MISMA previsualización**: "📥 Pegar la ficha" abre el modal de siempre, y al
+  pegar se separa el título igual que lo hace el servidor con la respuesta de la API
+  (`separarTituloDeFicha()`, ahora compartida por los dos caminos). Revisar y aceptar es idéntico.
+- 🧹 De paso, el handler de `/generar-texto` quedó en 3 líneas: el armado del prompt y el corte del
+  título salieron a `armarPromptTexto()` y `separarTituloDeFicha()`, que usan los dos caminos.
+- 💵 **Sobre la API de Claude, que el dueño preguntó:** costaría ~US$0,003 por ficha con Haiku 4.5
+  (~300 pesos al mes con 100 fichas) y sería rápida y confiable, pero pide tarjeta y otro proveedor.
+  Queda como opción abierta; el camino a mano no cuesta nada y ya funciona.
+- Los botones automáticos **siguen estando**: el día que Google no está saturado, un clic sigue siendo
+  más cómodo. No se quitó nada.
+
+**v78 (22-09-2026, hotfix ~15 min después de v77) — presupuesto TOTAL para los
 reintentos de Gemini, no por modelo.**
 
 - 🔴 **BUG EN PRODUCCIÓN introducido por la propia v77, encontrado en los logs de Vercel:** al agregar

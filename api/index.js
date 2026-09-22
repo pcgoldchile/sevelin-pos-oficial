@@ -1579,30 +1579,45 @@ La respuesta final contiene ÚNICAMENTE la publicación completa, lista para cop
 
 const DESTINOS_TEXTO_IA = ['ficha', 'facebook'];
 
-app.post('/api/productos/generar-texto', auth(true), async (req, res) => {
-  const destino = String(req.body?.destino || '').trim().toLowerCase();
+/* ============================================================
+   ARMAR EL PROMPT Y SEPARAR EL TÍTULO (22-09-2026)
+   ------------------------------------------------------------
+   Las dos cosas estaban adentro del handler de /generar-texto. Se sacan
+   acá porque ahora las usan DOS caminos: el botón que llama a Gemini por
+   API y el botón que copia el prompt para pegarlo a mano en Gemini,
+   ChatGPT o Claude.
+
+   Escritas UNA sola vez a propósito: si el prompt se armara distinto en
+   cada camino, la ficha que sale por API y la que sale copiando el prompt
+   dejarían de ser la misma — y ese es justo el tipo de diferencia que
+   nadie nota hasta que una de las dos empieza a inventar cosas.
+   ============================================================ */
+function armarPromptTexto(body) {
+  const destino = String(body?.destino || '').trim().toLowerCase();
   if (!DESTINOS_TEXTO_IA.includes(destino)) {
-    return enviarError(res, 400, 'Destino inválido: tiene que ser "ficha" o "facebook".');
+    return { error: 'Destino inválido: tiene que ser "ficha" o "facebook".' };
   }
 
   /* El nombre es OPCIONAL (16-09-2026): los dos prompts de ficha ya le
      piden a la IA que proponga un título comercial en la primera línea a
      partir de la info real — exigirlo antes de generar era un candado de
      más, que obligaba a subir hasta el campo Nombre y escribir algo a
-     mano solo para poder apretar el botón. El POS ya sabe usar ese título
-     propuesto (ver más abajo, y generarTextoConIA() en productos.js). */
-  const nombre = String(req.body?.nombre || '').trim();
-
-  const esServicio = req.body?.es_servicio === true || req.body?.es_servicio === 'true';
-  const datosPegados = String(req.body?.datos || '').trim();
-  const descripcionActual = textoPlanoParaPrompt(req.body?.descripcion_html);
+     mano solo para poder apretar el botón. */
+  const nombre = String(body?.nombre || '').trim();
+  const esServicio = body?.es_servicio === true || body?.es_servicio === 'true';
+  const datosPegados = String(body?.datos || '').trim();
+  const descripcionActual = textoPlanoParaPrompt(body?.descripcion_html);
 
   /* Sin información real, el modelo inventa. Es la regla de oro de los tres
-     prompts y la única validación que de verdad protege al negocio acá. */
+     prompts y la única validación que de verdad protege al negocio acá.
+     Vale para los dos caminos: copiar un prompt sin datos reales produce
+     exactamente la misma ficha inventada que pedirlo por API. */
   if (!datosPegados && !descripcionActual) {
-    return enviarError(res, 400, destino === 'facebook'
-      ? 'Falta la información real del producto. Escribe la Descripción primero, o pega las specs en el cuadro — la IA no inventa características.'
-      : 'Falta la información real del producto. Pega las specs (o lo que sepas de él) en el cuadro de abajo — la IA no inventa características.');
+    return {
+      error: destino === 'facebook'
+        ? 'Falta la información real del producto. Escribe la Descripción primero, o pega las specs en el cuadro — la IA no inventa características.'
+        : 'Falta la información real del producto. Pega las specs (o lo que sepas de él) en el cuadro de abajo — la IA no inventa características.'
+    };
   }
 
   /* Los datos que el POS ya conoce se mandan como contexto, pero SIEMPRE
@@ -1611,9 +1626,9 @@ app.post('/api/productos/generar-texto', auth(true), async (req, res) => {
     nombre
       ? `Nombre actual en el sistema: ${nombre}`
       : 'Todavía no tiene nombre en el sistema — proponlo tú, basado en la información real de abajo.',
-    req.body?.marca ? `Marca: ${String(req.body.marca).trim()}` : null,
-    req.body?.condicion ? `Condición: ${String(req.body.condicion).trim()}` : null,
-    req.body?.categoria ? `Categoría: ${String(req.body.categoria).trim()}` : null,
+    body?.marca ? `Marca: ${String(body.marca).trim()}` : null,
+    body?.condicion ? `Condición: ${String(body.condicion).trim()}` : null,
+    body?.categoria ? `Categoría: ${String(body.categoria).trim()}` : null,
     esServicio ? 'Este ítem es un SERVICIO TÉCNICO, no un producto físico.' : null,
     datosPegados ? `\nInformación real entregada por el dueño:\n"""\n${datosPegados.slice(0, 6000)}\n"""` : null,
     descripcionActual ? `\nDescripción que ya tiene hoy (úsala como fuente, no la copies textual):\n"""\n${descripcionActual.slice(0, 4000)}\n"""` : null,
@@ -1623,7 +1638,65 @@ app.post('/api/productos/generar-texto', auth(true), async (req, res) => {
     ? PROMPT_FACEBOOK
     : (esServicio ? PROMPT_FICHA_SERVICIO : PROMPT_FICHA_PRODUCTO);
 
-  const prompt = `${base}\n\nInformación real del ${esServicio ? 'servicio' : 'producto'}:\n${contexto}`;
+  return {
+    destino,
+    esServicio,
+    prompt: `${base}\n\nInformación real del ${esServicio ? 'servicio' : 'producto'}:\n${contexto}`
+  };
+}
+
+/* La ficha viene con el título comercial en la primera línea (así lo piden
+   los dos prompts). Se separa para que el POS pueda ofrecerlo como nombre
+   del producto sin que el dueño tenga que cortarlo a mano. Si la primera
+   línea ya es la intro (empieza con ✨ o ###), no hay título separado y se
+   devuelve la ficha entera. */
+function separarTituloDeFicha(texto) {
+  const limpio = String(texto || '').trim();
+  const lineas = limpio.split('\n');
+  const primera = (lineas[0] || '').trim();
+  const pareceTitulo = primera && !/^[✨#>\-*✅⚠️]/u.test(primera) && primera.length <= 150;
+  return {
+    titulo: pareceTitulo ? primera : '',
+    cuerpo: pareceTitulo ? lineas.slice(1).join('\n').trim() : limpio
+  };
+}
+
+/* ============================================================
+   EL PROMPT, PARA PEGARLO A MANO (dueño, 22-09-2026)
+   ------------------------------------------------------------
+   "¿Y si mejor, en vez de usar APIs, que sea un botón para copiar el
+   prompt para dárselo a Gemini en una pestaña abierta?"
+
+   Es mejor que la API para este caso, y no por comodidad: la web de
+   Gemini/ChatGPT/Claude responde en segundos y nunca devuelve "high
+   demand", porque no comparte cola con el nivel gratis de la API. El
+   dueño YA pega la información real a mano y YA lee la ficha antes de
+   aceptarla — la API solo le ahorraba cambiar de pestaña, y a cambio le
+   costaba 35-70 s de espera y fallar la mitad de las veces.
+
+   El prompt se arma en el SERVIDOR igual que siempre (son regla de
+   negocio: qué se puede decir de un producto y qué no). Acá solo se
+   entrega armado en vez de mandárselo a Google. */
+app.post('/api/productos/prompt-texto', auth(true), (req, res) => {
+  const { prompt, destino, error } = armarPromptTexto(req.body);
+  if (error) return enviarError(res, 400, error);
+  res.json({ destino, prompt });
+});
+
+/* La vuelta: el dueño trae pegada la respuesta de la IA y el POS le hace
+   el MISMO corte de título que le haría a la respuesta de la API, para
+   que la previsualización y el "Usar esta ficha" funcionen igual por los
+   dos caminos. No guarda nada: sigue decidiendo él en el modal. */
+app.post('/api/productos/separar-ficha', auth(true), (req, res) => {
+  const texto = String(req.body?.texto || '').trim();
+  if (!texto) return enviarError(res, 400, 'Pega primero la respuesta de la IA.');
+  res.json(separarTituloDeFicha(texto));
+});
+
+
+app.post('/api/productos/generar-texto', auth(true), async (req, res) => {
+  const { prompt, destino, error } = armarPromptTexto(req.body);
+  if (error) return enviarError(res, 400, error);
 
   try {
     /* Sin responseMimeType: estos prompts piden texto listo para pegar, no
@@ -1642,21 +1715,8 @@ app.post('/api/productos/generar-texto', auth(true), async (req, res) => {
       return res.json({ destino, texto: limpio, modelo });
     }
 
-    /* La ficha viene con el título comercial en la primera línea (así lo
-       piden los dos prompts). Se separa acá para que el POS pueda ofrecerlo
-       como nombre del producto sin que el dueño tenga que cortarlo a mano.
-       Si la primera línea ya es la intro (empieza con ✨ o ###), no hay
-       título separado y se devuelve la ficha entera. */
-    const lineas = limpio.split('\n');
-    const primera = (lineas[0] || '').trim();
-    const pareceTitulo = primera && !/^[✨#>\-*✅⚠️]/u.test(primera) && primera.length <= 150;
-
-    return res.json({
-      destino,
-      titulo: pareceTitulo ? primera : '',
-      cuerpo: pareceTitulo ? lineas.slice(1).join('\n').trim() : limpio,
-      modelo
-    });
+    // El mismo corte que se le hace a una respuesta pegada a mano
+    return res.json({ destino, ...separarTituloDeFicha(limpio), modelo });
   } catch (err) {
     return responderFalloGemini(res, err, `generar-texto:${destino}`,
       'Mientras tanto puedes pegar el prompt en Gemini a mano, como antes.');

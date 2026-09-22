@@ -110,6 +110,9 @@ const elProdSeoIAAviso = document.getElementById('prodSeoIAAviso');
 const elProdDatosReales = document.getElementById('prodDatosReales');
 const elBtnGenerarFichaIA = document.getElementById('btnGenerarFichaIA');
 const elBtnGenerarFacebookIA = document.getElementById('btnGenerarFacebookIA');
+const elBtnCopiarPromptFicha = document.getElementById('btnCopiarPromptFicha');
+const elBtnCopiarPromptFacebook = document.getElementById('btnCopiarPromptFacebook');
+const elBtnPegarFichaIA = document.getElementById('btnPegarFichaIA');
 const elModalTextoFacebook = document.getElementById('modalTextoFacebook');
 const elTextoFacebookResultado = document.getElementById('textoFacebookResultado');
 const elModalFichaGenerada = document.getElementById('modalFichaGenerada');
@@ -226,6 +229,10 @@ function setupProductosEventListeners() {
   if (elBtnGenerarSeoIA) elBtnGenerarSeoIA.addEventListener('click', generarSeoConIA);
   if (elBtnGenerarFichaIA) elBtnGenerarFichaIA.addEventListener('click', () => generarTextoConIA('ficha'));
   if (elBtnGenerarFacebookIA) elBtnGenerarFacebookIA.addEventListener('click', () => generarTextoConIA('facebook'));
+  if (elBtnCopiarPromptFicha) elBtnCopiarPromptFicha.addEventListener('click', () => copiarPromptIA('ficha'));
+  if (elBtnCopiarPromptFacebook) elBtnCopiarPromptFacebook.addEventListener('click', () => copiarPromptIA('facebook'));
+  if (elBtnPegarFichaIA) elBtnPegarFichaIA.addEventListener('click', abrirPegarFichaIA);
+  engancharPegadoDeFicha();
   document.getElementById('btnCerrarTextoFacebook')?.addEventListener('click', cerrarModalTextoFacebook);
   document.getElementById('btnCopiarTextoFacebook')?.addEventListener('click', copiarTextoFacebook);
   document.getElementById('btnDescartarFichaGenerada')?.addEventListener('click', cerrarModalFichaGenerada);
@@ -1210,12 +1217,138 @@ async function generarTextoConIA(destino) {
     /* No se aplica nada todavía: se abre la previsualización con el
        Markdown tal cual lo devolvió la IA, para revisarlo (y corregirlo)
        antes de que reemplace la Descripción. */
+    fichaGeneradaPegada = false;
     abrirModalFichaGenerada(resultado.cuerpo || '', resultado.titulo || '');
   } catch (err) {
     showToast(err.message || 'No se pudo generar el texto', 'err');
   } finally {
     if (boton) { boton.disabled = false; boton.textContent = textoOriginal; }
   }
+}
+
+/* ============================================================
+   COPIAR EL PROMPT Y TRAER LA RESPUESTA A MANO (dueño, 22-09-2026)
+   ------------------------------------------------------------
+   "¿Y si mejor, en vez de usar APIs, que sea un botón para copiar el
+   prompt para dárselo a Gemini en una pestaña abierta?"
+
+   Es el mismo prompt que usa el botón automático — lo arma el servidor en
+   los dos casos, así que la ficha sale igual por los dos caminos. Lo que
+   cambia es quién se lo pregunta a la IA: por API compite con todo el
+   mundo en el nivel gratis y hay días que no responde; por la web de
+   Gemini/ChatGPT/Claude responde en segundos.
+
+   El dueño YA pegaba la información real y YA leía la ficha antes de
+   aceptarla. Este camino no le agrega trabajo de decisión: le cambia una
+   espera de 35-70 s por un cambio de pestaña.
+   ============================================================ */
+
+// Si está en "pegar" o vino del botón automático: cambia qué hace "Usar esta ficha"
+let fichaGeneradaPegada = false;
+
+/* Junta lo que el prompt necesita del formulario. Es EXACTAMENTE el mismo
+   cuerpo que manda generarTextoConIA(), para que el prompt no pueda salir
+   distinto según qué botón se apriete. */
+function cuerpoParaPromptIA(destino) {
+  return {
+    destino,
+    nombre: elProdNombre?.value.trim() || '',
+    es_servicio: !!(elProdEsServicio && elProdEsServicio.checked),
+    marca: elProdMarca?.value.trim() || '',
+    condicion: elProdCondicion?.value || '',
+    categoria: elPopFotosCategoria?.selectedOptions?.[0]?.textContent?.trim() || '',
+    datos: elProdDatosReales?.value.trim() || '',
+    descripcion_html: elProdDescripcion?.value || ''
+  };
+}
+
+async function copiarPromptIA(destino) {
+  const boton = destino === 'facebook' ? elBtnCopiarPromptFacebook : elBtnCopiarPromptFicha;
+  const datos = elProdDatosReales?.value.trim() || '';
+  const descripcion = elProdDescripcion?.value || '';
+  if (!datos && !descripcion.trim()) {
+    showToast('Pega primero la información real del producto — el prompt sin datos hace que la IA invente', 'err');
+    elProdDatosReales?.focus();
+    return;
+  }
+
+  const textoOriginal = boton?.textContent;
+  if (boton) { boton.disabled = true; boton.textContent = '📋 Armando…'; }
+  try {
+    const { prompt } = await API.productos.promptTexto(cuerpoParaPromptIA(destino));
+    await copiarAlPortapapeles(prompt);
+    showToast(destino === 'facebook'
+      ? 'Prompt copiado. Pégalo en Gemini o ChatGPT y copia la respuesta a Facebook'
+      : 'Prompt copiado. Pégalo en Gemini o ChatGPT, y la respuesta tráela con "📥 Pegar la ficha"', 'ok');
+  } catch (err) {
+    showToast(err.message || 'No se pudo armar el prompt', 'err');
+  } finally {
+    if (boton) { boton.disabled = false; boton.textContent = textoOriginal; }
+  }
+}
+
+/* navigator.clipboard necesita HTTPS y permiso. En producción (Vercel) hay
+   HTTPS, pero si falla igual hay que dejarle el texto a mano: un prompt que
+   no se puede copiar no sirve de nada. El textarea temporal es el respaldo
+   que funciona en cualquier navegador. */
+async function copiarAlPortapapeles(texto) {
+  try {
+    await navigator.clipboard.writeText(texto);
+  } catch {
+    const tmp = document.createElement('textarea');
+    tmp.value = texto;
+    tmp.setAttribute('readonly', '');
+    tmp.style.position = 'fixed';
+    tmp.style.left = '-9999px';
+    document.body.appendChild(tmp);
+    tmp.select();
+    const ok = document.execCommand && document.execCommand('copy');
+    document.body.removeChild(tmp);
+    if (!ok) throw new Error('El navegador no dejó copiar. Genera la ficha con el botón automático.');
+  }
+}
+
+/* Abre la MISMA previsualización que usa el botón automático, pero vacía:
+   así revisar y aceptar una ficha traída a mano es idéntico a revisar una
+   generada por API — mismo modal, mismo "Usar esta ficha", mismas reglas. */
+function abrirPegarFichaIA() {
+  fichaGeneradaPegada = true;
+  if (elFichaGeneradaTexto) elFichaGeneradaTexto.value = '';
+  if (elFichaGeneradaTituloFila) elFichaGeneradaTituloFila.style.display = 'none';
+  if (elFichaGeneradaTitulo) elFichaGeneradaTitulo.value = '';
+  elModalFichaGenerada?.classList.add('show');
+  setTimeout(() => elFichaGeneradaTexto?.focus(), 80);
+}
+
+/* Al pegar, se le hace a la respuesta el MISMO corte de título que el
+   servidor le hace a la de la API (endpoint separar-ficha, misma función).
+   Se dispara en el evento `paste` y no mientras escribe: mover el texto
+   bajo el cursor de alguien que está corrigiendo a mano sería peor que
+   no separar el título. */
+function engancharPegadoDeFicha() {
+  elFichaGeneradaTexto?.addEventListener('paste', () => {
+    if (!fichaGeneradaPegada) return;
+    // El valor recién está completo después de que el navegador pega
+    setTimeout(async () => {
+      const texto = (elFichaGeneradaTexto?.value || '').trim();
+      if (!texto) return;
+      try {
+        const { titulo, cuerpo } = await API.productos.separarFicha(texto);
+        if (!titulo) return;
+        elFichaGeneradaTexto.value = cuerpo;
+        const ofrecer = !!(elProdNombre && !elProdNombre.value.trim());
+        if (elFichaGeneradaTituloFila) elFichaGeneradaTituloFila.style.display = ofrecer ? '' : 'none';
+        if (elFichaGeneradaTitulo) elFichaGeneradaTitulo.value = ofrecer ? titulo : '';
+        if (elFichaGeneradaTituloAviso && ofrecer) {
+          elFichaGeneradaTituloAviso.textContent = 'El producto todavía no tiene nombre, así que se va a usar este. Puedes corregirlo acá.';
+        }
+      } catch (err) {
+        // Separar el título es una comodidad: si falla, la ficha pegada
+        // sigue sirviendo entera. No vale interrumpir por esto.
+        console.error('No se pudo separar el título de la ficha pegada:', err.message || err);
+      }
+    }, 0);
+  });
 }
 
 /* ---------- Previsualización de la ficha generada ----------

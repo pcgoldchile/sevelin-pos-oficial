@@ -4341,3 +4341,43 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
     border-color: rgba(239, 68, 68, .45);
     animation: pulso-notificacion 2s ease-in-out infinite;
 }
+
+/* ============================================================
+   LOS DOS CAMINOS DE LA IA (js/productos.js, dueño 22-09-2026)
+   ------------------------------------------------------------
+   Izquierda: llamar a Gemini por API (un clic, pero depende de que
+   Google tenga cola). Derecha: copiar el mismo prompt y pegarlo en la
+   web de la IA (dos pasos, pero responde en segundos y nunca se satura).
+   Se muestran uno al lado del otro y rotulados, para que se vea que son
+   dos formas de hacer LO MISMO y no cuatro botones sueltos.
+   ============================================================ */
+.ia-dos-caminos {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 10px;
+}
+.ia-camino {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+/* El camino a mano es el recomendado: se destaca con el borde de acento */
+.ia-camino-manual { border-color: rgba(0, 240, 255, .35); background: var(--surface-soft); }
+.ia-camino-titulo {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--text-muted);
+}
+.ia-camino-manual .ia-camino-titulo { color: var(--blue); }
+.ia-camino .btn { width: 100%; justify-content: center; }
+
+@media (max-width: 760px) {
+    .ia-dos-caminos { grid-template-columns: 1fr; }
+}

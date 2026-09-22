@@ -2515,13 +2515,36 @@
                       placeholder="Pega acá las specs del proveedor, lo que dice la caja, o lo que sepas de verdad del producto. La IA no inventa: solo usa esto."></textarea>
             <p class="subtitle">No se guarda en la base — es solo el material que se le pasa a la IA.
               Si el producto ya tiene Descripción escrita, también se usa como fuente.</p>
-            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
-              <button type="button" class="btn btn-outline btn-sm" id="btnGenerarFichaIA">
-                🛒 Generar ficha para la tienda
-              </button>
-              <button type="button" class="btn btn-outline btn-sm" id="btnGenerarFacebookIA">
-                📣 Generar publicación para Facebook
-              </button>
+            <!-- DOS CAMINOS PARA LO MISMO (dueño, 22-09-2026).
+                 El de la izquierda llama a Gemini por API: un clic, pero
+                 depende de que Google tenga cola libre — el día que está
+                 saturado tarda 35-70 s o no responde.
+                 El de la derecha copia el MISMO prompt para pegarlo en la
+                 web de Gemini/ChatGPT/Claude, que responde en segundos y
+                 nunca se satura. El prompt es idéntico: lo arma el
+                 servidor en los dos casos. -->
+            <div class="ia-dos-caminos">
+              <div class="ia-camino">
+                <span class="ia-camino-titulo">Automático (a veces lento)</span>
+                <button type="button" class="btn btn-outline btn-sm" id="btnGenerarFichaIA">
+                  🛒 Generar ficha para la tienda
+                </button>
+                <button type="button" class="btn btn-outline btn-sm" id="btnGenerarFacebookIA">
+                  📣 Generar publicación para Facebook
+                </button>
+              </div>
+              <div class="ia-camino ia-camino-manual">
+                <span class="ia-camino-titulo">A mano (siempre funciona, más rápido)</span>
+                <button type="button" class="btn btn-primary btn-sm" id="btnCopiarPromptFicha">
+                  📋 Copiar prompt de la ficha
+                </button>
+                <button type="button" class="btn btn-outline btn-sm" id="btnCopiarPromptFacebook">
+                  📋 Copiar prompt de Facebook
+                </button>
+                <button type="button" class="btn btn-outline btn-sm" id="btnPegarFichaIA">
+                  📥 Pegar la ficha que te dio la IA
+                </button>
+              </div>
             </div>
             <p class="subtitle" id="prodTextoIAAviso">La ficha reemplaza la Descripción de arriba (revísala antes de guardar). La de Facebook se abre aparte, con botón para copiar.</p>
           </div>

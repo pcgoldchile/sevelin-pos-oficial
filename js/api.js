@@ -136,6 +136,13 @@ const API = {
        servidor. Tampoco guarda nada: devuelve el texto para revisarlo. */
     generarTexto: (datos) => apiRequest('/productos/generar-texto', { method: 'POST', body: datos }),
 
+    /* El MISMO prompt que se le manda a Gemini, pero devuelto para
+       copiarlo y pegarlo a mano en la web de Gemini/ChatGPT/Claude
+       (22-09-2026). No llama a ninguna IA: solo arma el texto. */
+    promptTexto: (datos) => apiRequest('/productos/prompt-texto', { method: 'POST', body: datos }),
+    // La vuelta: parte la respuesta pegada en título + cuerpo, igual que la de la API
+    separarFicha: (texto) => apiRequest('/productos/separar-ficha', { method: 'POST', body: { texto } }),
+
     // Capas de costo (PEPS / FIFO)
     listarLotes: (id) => apiRequest(`/productos/${id}/lotes`),
 
