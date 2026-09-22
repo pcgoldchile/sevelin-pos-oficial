@@ -1726,11 +1726,14 @@ function pesoKgDelFormulario() {
 
 /* Pone en el formulario un peso que viene en kilos, eligiendo la unidad
    que se lee mejor: menos de 1 kg se muestra en gramos (0,045 kg → 45 g),
-   de 1 kg para arriba en kilos. */
+   de 1 kg para arriba en kilos. Un producto SIN peso todavía (kg <= 0,
+   ej. uno recién creado) queda preseleccionado en GRAMOS — es la unidad
+   en la que piensa la mayoría de lo que se vende acá, y así no hay que
+   cambiar el selector a mano cada vez (pedido del dueño, 22-09-2026). */
 function ponerPesoEnFormulario(kg) {
   if (!elProdPeso) return;
   const v = Number(kg) || 0;
-  const enGramos = v > 0 && v < 1;
+  const enGramos = v < 1;   // incluye v === 0 (producto todavía sin peso)
   if (elProdPesoUnidad) elProdPesoUnidad.value = enGramos ? 'g' : 'kg';
   elProdPeso.value = enGramos ? Math.round(v * 1000 * 1000) / 1000 : v;
   actualizarLecturaPeso();

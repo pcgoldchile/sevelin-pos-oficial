@@ -7,29 +7,17 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
-**Fecha:** 21-09-2026 · **v71 publicada — el F29 guarda sus códigos y el POS lleva el historial del
-remanente.** Migración `sql/58` aplicada y verificada en producción.
+**Fecha:** 22-09-2026 · **v76 publicada — el peso viene en gramos por defecto.**
 
-- 🧾 **El modal del botón 🧾 ahora guarda los códigos del Formulario Compacto** del SII (563, 538,
-  537, 089, 062, 504, 110, 519) más el folio y la fecha real de presentación. Van en un bloque
-  **plegado**: marcar un F29 sigue siendo de dos clics para quien no los quiera copiar.
-- 📄 **Cuál de los dos PDF del SII sirve:** el **Formulario Compacto** (trae los ~20 códigos). El
-  *Certificado Solemne* solo trae 5 y es el comprobante de que se presentó. El modal lo dice.
-- 📊 **"Ver historial del F29 mes a mes"** en Finanzas → Utilidades, dentro de la tarjeta del IVA:
-  venta declarada, débito, crédito, IVA pagado, remanente y folio por período. Con **dos meses o más**
-  estima a qué ritmo se consume el remanente y cuántos meses alcanza — y **dice que es una
-  estimación**, porque con dos puntos no hay tendencia.
-- 🧮 **Chequeo de cuadratura que avisa pero NO bloquea**, en el navegador y otra vez en el servidor:
-  si el 538 no es el 19% del 563, o el 089 no es débito − crédito, se avisa y **se guarda igual**. El
-  F29 se anota como el SII lo recibió; quien decide es el dueño.
-- 🕳️ **Vacío queda NULL, no 0** (misma regla que `envios.cobrado_cliente`): un débito en 0 diría "no
-  vendí ese mes" e inventaría un dato. Los períodos marcados antes de hoy quedan sin códigos.
-- 🔒 El código 77 **no se duplicó**: sigue en `iva_remanentes` (sql/51), porque se conoce desde la
-  propuesta. La vista `v_f29_historial` los junta y calcula la variación al leer.
-- ⚠️ **Una vista NO hereda la RLS de su tabla.** `revoke all ... from anon, authenticated` en la
-  migración; verificado en producción con `has_table_privilege` (anon false, service_role true).
-- 🤖 **Para qué sirve de verdad:** el cowork "Sevelin Finanzas" ya lee esta base. Con el historial
-  cargado puede responder solo cómo viene el remanente, sin que nadie le pase un PDF cada mes.
+- ⚖️ **El selector kg/g del editor de producto ahora preselecciona gramos** en vez de kg. Aplica a un
+  producto nuevo y a cualquiera que todavía no tenga peso cargado (0 kg) — la unidad en la que piensa
+  la mayoría de lo que se vende acá, para no tener que cambiar el selector a mano cada vez.
+- 🧮 **Lo que YA pesa 1 kg o más sigue mostrándose en kg**, sin cambios: un PC Gamer de 9 kg se sigue
+  viendo "9", no "9000". Solo cambió el punto de partida cuando el peso está vacío; la conversión
+  automática entre unidades (0,045 kg ↔ 45 g) sigue igual que en v66.
+- El selector sigue totalmente editable: cambiar a kg a mano sigue disponible en cualquier momento.
+- Sin migración ni endpoint nuevo — solo el valor por defecto de `ponerPesoEnFormulario()`
+  (`js/productos.js`) y el atributo `selected` del `<option>` en `index.html`.
 
 **v75 (21-09-2026) — dónde está guardado cada producto, aviso de mercadería en camino, y las
 cuatro automatizaciones (A, B, C, D).** Migración `sql/60` aplicada y verificada en producción.
@@ -160,6 +148,30 @@ producto **no** reescribe la venta ya cerrada.
 **Riesgo anotado, sin tocar:** las consultas de finanzas no llevan `.limit()` y PostgREST corta en
 1.000 filas por defecto. Con 202 ventas no molesta; a ~135 ventas/mes, un informe anual empieza a
 truncar en unos 7 meses.
+
+**v71 (21-09-2026) — el F29 guarda sus códigos y el POS lleva el historial del
+remanente.** Migración `sql/58` aplicada y verificada en producción.
+
+- 🧾 **El modal del botón 🧾 ahora guarda los códigos del Formulario Compacto** del SII (563, 538,
+  537, 089, 062, 504, 110, 519) más el folio y la fecha real de presentación. Van en un bloque
+  **plegado**: marcar un F29 sigue siendo de dos clics para quien no los quiera copiar.
+- 📄 **Cuál de los dos PDF del SII sirve:** el **Formulario Compacto** (trae los ~20 códigos). El
+  *Certificado Solemne* solo trae 5 y es el comprobante de que se presentó. El modal lo dice.
+- 📊 **"Ver historial del F29 mes a mes"** en Finanzas → Utilidades, dentro de la tarjeta del IVA:
+  venta declarada, débito, crédito, IVA pagado, remanente y folio por período. Con **dos meses o más**
+  estima a qué ritmo se consume el remanente y cuántos meses alcanza — y **dice que es una
+  estimación**, porque con dos puntos no hay tendencia.
+- 🧮 **Chequeo de cuadratura que avisa pero NO bloquea**, en el navegador y otra vez en el servidor:
+  si el 538 no es el 19% del 563, o el 089 no es débito − crédito, se avisa y **se guarda igual**. El
+  F29 se anota como el SII lo recibió; quien decide es el dueño.
+- 🕳️ **Vacío queda NULL, no 0** (misma regla que `envios.cobrado_cliente`): un débito en 0 diría "no
+  vendí ese mes" e inventaría un dato. Los períodos marcados antes de hoy quedan sin códigos.
+- 🔒 El código 77 **no se duplicó**: sigue en `iva_remanentes` (sql/51), porque se conoce desde la
+  propuesta. La vista `v_f29_historial` los junta y calcula la variación al leer.
+- ⚠️ **Una vista NO hereda la RLS de su tabla.** `revoke all ... from anon, authenticated` en la
+  migración; verificado en producción con `has_table_privilege` (anon false, service_role true).
+- 🤖 **Para qué sirve de verdad:** el cowork "Sevelin Finanzas" ya lee esta base. Con el historial
+  cargado puede responder solo cómo viene el remanente, sin que nadie le pase un PDF cada mes.
 
 **Versión anterior: v70 — despachos por entregar, despacho en el detalle de venta, y
 PIN para editar una venta.**
