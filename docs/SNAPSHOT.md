@@ -7,7 +7,28 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
-**Fecha:** 22-09-2026 · **v76 publicada — el peso viene en gramos por defecto.**
+**Fecha:** 22-09-2026 · **v77 publicada — un tercer modelo de respaldo para los botones de IA.**
+
+- 🐛 **Reportado por el dueño:** "Generar ficha" y "Generar publicación para Facebook" devolvían
+  "Google está saturado en este momento y no respondió". Verificado en vivo contra la API real de
+  Gemini (no era un bug del código): un día de saturación general, **los dos modelos de siempre**
+  (`gemini-flash-latest` y `gemini-flash-lite-latest`) respondieron 503 "high demand" — Google entero
+  con las colas llenas, no algo que este backend pudiera arreglar directamente.
+- 🆕 **Tercer modelo de respaldo: `gemini-3-flash-preview`.** Probado 3 de 3 veces en vivo (2-3 s cada
+  una) mientras los otros dos seguían saturados: casi nadie lo usa todavía, así que tiene cola vacía
+  cuando el resto no da abasto. Se agrega al final de la cadena (`MODELOS_GEMINI` en `api/index.js`),
+  después de los dos alias de siempre — esos siguen siendo la primera opción porque responden bien
+  fuera de los picos de demanda.
+- ⚠️ **Es un nombre fijo, no un alias** (raro en un "preview" de Google): puede dejar de existir sin
+  aviso cuando salga la versión estable de la familia Gemini 3. Si este paso empieza a fallar con 404,
+  toca revisar qué reemplazo hay publicado en la documentación de modelos de Gemini.
+- ⏱️ Peor caso (los tres modelos saturados a la vez) sube de ~22 s a ~34 s antes de mostrar el aviso
+  — el botón ya se deshabilita y dice "Generando…" mientras espera, así que no cambia la experiencia,
+  solo la probabilidad de que el botón funcione a la primera durante un pico.
+- Sin migración ni cambio de contrato: afecta solo el orden de reintento interno que ya usan los tres
+  botones de IA (SEO, ficha web y Facebook), todos por la misma función `pedirAGemini()`.
+
+**v76 (22-09-2026) — el peso viene en gramos por defecto.**
 
 - ⚖️ **El selector kg/g del editor de producto ahora preselecciona gramos** en vez de kg. Aplica a un
   producto nuevo y a cualquiera que todavía no tenga peso cargado (0 kg) — la unidad en la que piensa

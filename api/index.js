@@ -1250,13 +1250,25 @@ function textoPlanoParaPrompt(html) {
     .trim();
 }
 /* ---------- Gemini: una sola puerta para todos los botones de IA ----------
-   MODELOS, EN ORDEN (12-09-2026)
+   MODELOS, EN ORDEN (actualizado 22-09-2026)
    gemini-flash-latest, el modelo estrella de Google, vive saturado: en 9
    pruebas reales respondió 1 vez y el resto "high demand" tras 14–30 s.
    gemini-flash-lite-latest respondió 5 de 5, casi siempre en ~1 s.
    Los dos son ALIAS: Google los mueve al modelo vigente, así no se rompen
    cuando retira una versión fija (ya pasó con 2.0 y 2.5).
-   Cada intento tiene tope de tiempo: el botón nunca queda colgado.
+
+   TERCER RESPALDO (22-09-2026): un día de saturación general, los DOS
+   alias de arriba devolvieron 503 "high demand" en pruebas reales —
+   Google entero con las colas llenas, no un problema de este código.
+   gemini-3-flash-preview respondió bien 3 de 3 veces (2-3 s): casi nadie
+   lo usa todavía, así que tiene cola vacía cuando el resto no da abasto.
+   Es un nombre FIJO y no un alias (raro en un "preview"), así que puede
+   dejar de existir sin aviso cuando Google publique la versión estable de
+   la familia 3 — si un día este paso empieza a fallar con 404, es momento
+   de revisar qué reemplazo hay en https://ai.google.dev/gemini-api/docs/models.
+
+   Cada intento tiene tope de tiempo: el botón nunca queda colgado (peor
+   caso con los tres agotados: ~34 s, contra ~22 s de antes).
 
    Está extraído acá porque lo usan TRES botones (SEO, ficha web y
    Facebook) — antes vivía adentro de /generar-seo y copiarlo habría
@@ -1264,6 +1276,7 @@ function textoPlanoParaPrompt(html) {
 const MODELOS_GEMINI = [
   { modelo: 'gemini-flash-lite-latest', topeMs: 10000 },
   { modelo: 'gemini-flash-latest', topeMs: 12000 },
+  { modelo: 'gemini-3-flash-preview', topeMs: 12000 },
 ];
 
 /* Devuelve { texto, modelo } o lanza un Error con `fallas` adjunto.
