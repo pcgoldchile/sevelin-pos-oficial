@@ -1282,6 +1282,23 @@ const MODELOS_GEMINI = [
 /* Devuelve { texto, modelo } o lanza un Error con `fallas` adjunto.
    `generationConfig` lo arma quien llama: el SEO pide JSON con esquema,
    los textos de ficha/Facebook piden texto plano. */
+/* PRESUPUESTO TOTAL, no solo por modelo (22-09-2026).
+   BUG REAL encontrado en producción: "Generar ficha" usa topeMsExtra=12000,
+   así que el peor caso de verdad era 22s + 24s + 24s = 70s — por encima
+   del maxDuration:60 de vercel.json. Vercel mata la función a los 60s con
+   un "Vercel Runtime Timeout Error" crudo, que NUNCA pasa por
+   responderFalloGemini(): al dueño le llegó un error genérico en vez del
+   mensaje de "Google está saturado", justo el minuto en que se agregó el
+   tercer modelo de respaldo (v77) sin recalcular el peor caso combinado.
+
+   Esto pone un techo al tiempo TOTAL de la cadena, no a cada intento por
+   separado: cada modelo recibe como mucho el tiempo que le queda del
+   presupuesto, y si no queda tiempo razonable para intentar uno más, se
+   omite en vez de arrancar un fetch que Vercel va a cortar de todos
+   modos. 50s deja ~10s de margen bajo el límite de 60s de Vercel para el
+   resto de la función (parseo, armar el prompt, responder al cliente). */
+const PRESUPUESTO_TOTAL_GEMINI_MS = 50000;
+
 async function pedirAGemini(prompt, generationConfig, topeMsExtra = 0) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -1292,9 +1309,17 @@ async function pedirAGemini(prompt, generationConfig, topeMsExtra = 0) {
 
   const cuerpo = JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig });
   const fallas = [];
+  const inicio = Date.now();
 
   for (const { modelo, topeMs } of MODELOS_GEMINI) {
-    const tope = topeMs + topeMsExtra;
+    const restante = PRESUPUESTO_TOTAL_GEMINI_MS - (Date.now() - inicio);
+    // Menos de 3s no alcanza ni para una respuesta rápida: no vale la
+    // pena arrancar el fetch, mejor rendirse ya y avisar por qué.
+    if (restante < 3000) {
+      fallas.push(`${modelo}: sin tiempo suficiente (quedaban ${Math.max(0, Math.round(restante / 1000))} s de los 50 s totales)`);
+      continue;
+    }
+    const tope = Math.min(topeMs + topeMsExtra, restante);
     try {
       const respuesta = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey}`,

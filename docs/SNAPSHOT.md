@@ -7,7 +7,32 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
-**Fecha:** 22-09-2026 · **v77 publicada — un tercer modelo de respaldo para los botones de IA.**
+**Fecha:** 22-09-2026 · **v78 publicada (hotfix, ~15 min después de v77) — presupuesto TOTAL para los
+reintentos de Gemini, no por modelo.**
+
+- 🔴 **BUG EN PRODUCCIÓN introducido por la propia v77, encontrado en los logs de Vercel:** al agregar
+  el tercer modelo de respaldo, no se recalculó el peor caso COMBINADO. `/api/productos/generar-texto`
+  (los botones "Generar ficha" y "Generar publicación para Facebook") usa `topeMsExtra=12000`, así que
+  el peor caso real quedó en **22 s + 24 s + 24 s = 70 s** — por encima del `maxDuration: 60` de
+  `vercel.json`. Vercel mata la función a los 60 s con un **"Vercel Runtime Timeout Error" crudo**, que
+  nunca pasa por `responderFalloGemini()`: en vez del mensaje "Google está saturado", al dueño le llegó
+  un error genérico. Confirmado en los logs reales: dos intentos suyos a las 12:54 murieron así.
+- 🕵️ **Encontrado con los logs de Vercel, no adivinando:** `npx vercel logs <deployment> --since` dejó
+  ver el mensaje exacto de cada intento fallido y el timestamp — así se pudo confirmar que el primer
+  reporte del dueño (12:45) fue contra la v76 vieja (2 modelos, mismo problema de fondo: Google
+  saturado) y que el error crudo (12:54) fue ya con la v77 nueva, con el presupuesto mal calculado.
+- ✅ **`pedirAGemini()` ahora reparte un presupuesto TOTAL de 50 s** (`PRESUPUESTO_TOTAL_GEMINI_MS`),
+  no un tope fijo por modelo: cada intento recibe como máximo el tiempo que queda del presupuesto, y si
+  a un modelo le quedan menos de 3 s, se omite en vez de arrancar un fetch que Vercel va a cortar de
+  todos modos. 50 s deja ~10 s de margen bajo los 60 s de Vercel para el resto de la función.
+- 🧮 Con `topeMsExtra=12000` (ficha/Facebook): el 1º y 2º modelo siguen usando su tope completo (22 s,
+  24 s — suman 46 s), pero el 3º queda con los ~4 s reales que sobran, no los 24 s completos. Con
+  `topeMsExtra=0` (SEO): los tres caben enteros (34 s), sin ningún recorte — no cambia nada ahí.
+- Probado con un reloj simulado (`Date.now()` avanza lo que tardaría cada modelo, sin esperar los 50 s
+  reales): 8 comprobaciones, incluida la aritmética exacta del recorte y que el caso sin recorte (SEO)
+  sigue igual que antes.
+
+**v77 (22-09-2026) — un tercer modelo de respaldo para los botones de IA.**
 
 - 🐛 **Reportado por el dueño:** "Generar ficha" y "Generar publicación para Facebook" devolvían
   "Google está saturado en este momento y no respondió". Verificado en vivo contra la API real de
