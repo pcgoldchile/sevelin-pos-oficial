@@ -5401,6 +5401,295 @@ app.post('/api/devoluciones/:id/registrar-egreso', auth(), async (req, res) => {
   res.status(201).json({ ok: true, movimiento: mov });
 });
 
+/* ============================================================
+   SEGUIMIENTO DEL PRODUCTO DEVUELTO (sql/63 · v84)
+   ------------------------------------------------------------
+   Va por LÍNEA devuelta y no por devolución: si vuelven dos cosas juntas,
+   una puede irse al proveedor y la otra a la basura.
+
+   ⚠️ REGLA DEL DUEÑO: el ajuste del gasto NUNCA es automático. Cuando el
+   proveedor devuelve la plata, la merma que se creó en la v82 dejó de ser
+   una pérdida real — pero el POS solo PROPONE cuánto habría que
+   descontarle. No toca un peso del balance hasta que él lo aprueba.
+   ============================================================ */
+
+const DESTINOS_DEVOLUCION = [
+  'SIN_DECIDIR', 'AL_PROVEEDOR', 'A_GARANTIA_FABRICANTE',
+  'BOTADO', 'REPARADO', 'ME_LO_QUEDE'
+];
+const RESULTADOS_DEVOLUCION = ['ESPERANDO', 'PLATA_DEVUELTA', 'CAMBIADO', 'RECHAZADO'];
+// Los dos caminos donde un tercero tiene que responder algo.
+const DESTINOS_CON_ESPERA = ['AL_PROVEEDOR', 'A_GARANTIA_FABRICANTE'];
+
+/* Cuánto de la merma de esta línea dejó de ser pérdida.
+   · Plata devuelta → lo que devolvieron, sin pasarse del costo perdido.
+   · Cambiado y el reemplazo entró al stock → la pérdida fue cero.
+   Devuelve 0 si no hay merma que ajustar (el producto sí volvió al stock,
+   o era un servicio). */
+async function calcularAjusteDeMerma(seguimiento, linea) {
+  if (!linea?.merma_id) return 0;
+
+  const { data: merma } = await db.from('mermas')
+    .select('id, costo_total').eq('id', linea.merma_id).maybeSingle();
+  if (!merma) return 0;
+
+  const perdido = num(merma.costo_total);
+  if (perdido <= 0) return 0;
+
+  if (seguimiento.resultado === 'PLATA_DEVUELTA') {
+    return Math.min(num(seguimiento.monto_recuperado), perdido);
+  }
+  if (seguimiento.resultado === 'CAMBIADO' && seguimiento.reemplazo_a_stock) {
+    return perdido;
+  }
+  return 0;
+}
+
+/* Crea o actualiza la ficha de seguimiento de una línea devuelta. */
+app.put('/api/devolucion-items/:id/seguimiento', auth(), async (req, res) => {
+  const itemId = Number(req.params.id);
+  if (!Number.isFinite(itemId)) return enviarError(res, 400, 'Línea inválida');
+
+  const destino = String(req.body?.destino || '').trim().toUpperCase();
+  if (!DESTINOS_DEVOLUCION.includes(destino)) {
+    return enviarError(res, 400, 'Elige qué se hizo con el producto');
+  }
+
+  let resultado = req.body?.resultado ? String(req.body.resultado).trim().toUpperCase() : null;
+  if (resultado && !RESULTADOS_DEVOLUCION.includes(resultado)) {
+    return enviarError(res, 400, 'Estado de respuesta inválido');
+  }
+  if (DESTINOS_CON_ESPERA.includes(destino)) {
+    // Mandarlo sin decir en qué va es lo que hace que se olvide.
+    if (!resultado) resultado = 'ESPERANDO';
+  } else {
+    resultado = null;   // botado / reparado / me lo quedé no esperan nada
+  }
+
+  const fecha = v => (v && fechaValidaISO(String(v).slice(0, 10)) ? String(v).slice(0, 10) : null);
+  const esperadoPara = fecha(req.body?.esperado_para);
+  const enviadoEl = fecha(req.body?.enviado_el);
+  if (esperadoPara && enviadoEl && esperadoPara < enviadoEl) {
+    return enviarError(res, 400, 'La fecha en que esperas respuesta no puede ser anterior al envío');
+  }
+
+  const montoRecuperado = Math.max(0, num(req.body?.monto_recuperado));
+  if (resultado === 'PLATA_DEVUELTA' && montoRecuperado <= 0) {
+    return enviarError(res, 400, 'Escribe cuánta plata te devolvieron');
+  }
+
+  try {
+    const { data: linea } = await db.from('devolucion_items')
+      .select('*').eq('id', itemId).maybeSingle();
+    if (!linea) return enviarError(res, 404, 'Esa línea devuelta no existe');
+
+    const { data: previo } = await db.from('devolucion_seguimiento')
+      .select('*').eq('devolucion_item_id', itemId).maybeSingle();
+
+    const cerrado = resultado && resultado !== 'ESPERANDO';
+    const fila = {
+      devolucion_item_id: itemId,
+      destino,
+      resultado,
+      destinatario: String(req.body?.destinatario || '').trim().slice(0, 120) || null,
+      enviado_el: enviadoEl,
+      esperado_para: esperadoPara,
+      resuelto_el: cerrado || ['BOTADO', 'REPARADO', 'ME_LO_QUEDE'].includes(destino)
+        ? (fecha(req.body?.resuelto_el) || fechaHoyChile())
+        : null,
+      monto_recuperado: montoRecuperado,
+      reemplazo_a_stock: req.body?.reemplazo_a_stock === true,
+      nota: String(req.body?.nota || '').trim().slice(0, 500) || null,
+      actualizado_en: new Date().toISOString()
+    };
+
+    /* El ajuste del gasto: se PROPONE, no se aplica. Si ya estaba aplicado
+       no se vuelve a proponer — deshacerlo es otra conversación. */
+    const yaAplicado = previo?.ajuste_estado === 'APLICADO';
+    if (!yaAplicado) {
+      const monto = await calcularAjusteDeMerma(fila, linea);
+      fila.ajuste_estado = monto > 0 ? 'PROPUESTO' : 'NO_APLICA';
+      fila.ajuste_monto = monto;
+      fila.ajuste_resuelto_en = null;
+    }
+
+    let guardado;
+    if (previo) {
+      const { data, error } = await db.from('devolucion_seguimiento')
+        .update(fila).eq('id', previo.id).select().single();
+      if (error) throw new Error(error.message);
+      guardado = data;
+    } else {
+      const { data, error } = await db.from('devolucion_seguimiento')
+        .insert([fila]).select().single();
+      if (error) throw new Error(error.message);
+      guardado = data;
+    }
+
+    /* La unidad de reemplazo SÍ entra al stock al marcarla: ese clic es su
+       acción manual, y es un hecho físico (la unidad está en la repisa).
+       Lo que no se toca sin su visto bueno es el BALANCE. */
+    let stockRepuesto = false;
+    if (fila.reemplazo_a_stock && fila.resultado === 'CAMBIADO' && !previo?.reemplazo_a_stock && linea.producto_id) {
+      const { data: p } = await db.from('productos')
+        .select('stock, stock_ilimitado').eq('id', linea.producto_id).maybeSingle();
+      if (p && !p.stock_ilimitado) {
+        await db.from('productos').update({
+          stock: num(p.stock) + num(linea.cantidad),
+          stock_actualizado_en: new Date().toISOString()
+        }).eq('id', linea.producto_id);
+        stockRepuesto = true;
+      }
+    }
+
+    res.json({
+      ok: true,
+      seguimiento: guardado,
+      stock_repuesto: stockRepuesto,
+      /* Si hay algo que proponer se dice explícito, para que la pantalla
+         pueda avisarle que falta SU decisión. */
+      ajuste_propuesto: guardado.ajuste_estado === 'PROPUESTO'
+        ? { monto: num(guardado.ajuste_monto) } : null
+    });
+  } catch (err) {
+    enviarError(res, 500, err.message || 'No se pudo guardar el seguimiento');
+  }
+});
+
+/* Aprobar o rechazar el ajuste del gasto. Es el ÚNICO lugar donde una
+   devolución llega a tocar el balance, y solo con el dueño apretando. */
+app.post('/api/devoluciones/seguimiento/:id/ajuste', auth(true), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return enviarError(res, 400, 'Seguimiento inválido');
+
+  const aprobar = req.body?.aprobar === true;
+
+  try {
+    const { data: seg } = await db.from('devolucion_seguimiento')
+      .select('*').eq('id', id).maybeSingle();
+    if (!seg) return enviarError(res, 404, 'Seguimiento no encontrado');
+    if (seg.ajuste_estado !== 'PROPUESTO') {
+      return enviarError(res, 409, 'Este ajuste ya se resolvió o no hay nada que ajustar');
+    }
+
+    if (!aprobar) {
+      const { data } = await db.from('devolucion_seguimiento').update({
+        ajuste_estado: 'RECHAZADO',
+        ajuste_resuelto_en: new Date().toISOString(),
+        actualizado_en: new Date().toISOString()
+      }).eq('id', id).select().single();
+      return res.json({ ok: true, aplicado: false, seguimiento: data });
+    }
+
+    const { data: linea } = await db.from('devolucion_items')
+      .select('id, merma_id, nombre').eq('id', seg.devolucion_item_id).maybeSingle();
+    const { data: merma } = linea?.merma_id
+      ? await db.from('mermas').select('*').eq('id', linea.merma_id).maybeSingle()
+      : { data: null };
+    if (!merma) return enviarError(res, 409, 'La merma de esta línea ya no existe');
+
+    const recuperado = Math.min(num(seg.ajuste_monto), num(merma.costo_total));
+    const restante = Math.max(0, num(merma.costo_total) - recuperado);
+    const nota = ` — recuperado ${recuperado} el ${fechaHoyChile()} (${seg.destinatario || 'proveedor'})`;
+
+    /* El gasto es lo que pesa en el balance: se rebaja a lo que de verdad
+       se perdió. Si ya no se perdió nada, se borra en vez de dejar una
+       línea de $0 ensuciando la lista de Gastos; la merma conserva la
+       historia. */
+    if (merma.compra_id) {
+      if (restante > 0) {
+        await db.from('compras').update({ costo_total: restante }).eq('id', merma.compra_id);
+      } else {
+        await db.from('compras').delete().eq('id', merma.compra_id);
+      }
+    }
+
+    await db.from('mermas').update({
+      costo_total: restante,
+      costo_unitario: num(merma.cantidad) > 0 ? restante / num(merma.cantidad) : 0,
+      compra_id: restante > 0 ? merma.compra_id : null,
+      observacion: String(merma.observacion || '') + nota
+    }).eq('id', merma.id);
+
+    const { data } = await db.from('devolucion_seguimiento').update({
+      ajuste_estado: 'APLICADO',
+      ajuste_resuelto_en: new Date().toISOString(),
+      actualizado_en: new Date().toISOString()
+    }).eq('id', id).select().single();
+
+    res.json({
+      ok: true, aplicado: true, seguimiento: data,
+      merma: { id: merma.id, perdida_antes: num(merma.costo_total), perdida_ahora: restante }
+    });
+  } catch (err) {
+    enviarError(res, 500, err.message || 'No se pudo aplicar el ajuste');
+  }
+});
+
+/* Lo que espera una acción suya. Alimenta el botón del header. */
+app.get('/api/devoluciones/seguimiento/avisos', auth(), async (req, res) => {
+  const hoy = fechaHoyChile();
+  const diasSinDecidir = 7;
+
+  try {
+    const { data: segsRaw } = await db.from('devolucion_seguimiento')
+      .select('*').order('id', { ascending: false }).limit(300);
+    const segs = segsRaw || [];
+
+    const vencidas = segs.filter(s =>
+      s.resultado === 'ESPERANDO' && s.esperado_para && String(s.esperado_para) < hoy);
+    const ajustes = segs.filter(s => s.ajuste_estado === 'PROPUESTO');
+
+    /* "Sin decidir" solo molesta después de una semana: el mismo día de la
+       devolución es normal no saber todavía qué vas a hacer con el producto. */
+    const corte = new Date(Date.now() - diasSinDecidir * 86400000).toISOString();
+    const sinDecidir = segs.filter(s => s.destino === 'SIN_DECIDIR' && String(s.creado_en) < corte);
+
+    const ids = [...new Set([...vencidas, ...ajustes, ...sinDecidir].map(s => s.devolucion_item_id))];
+    let lineas = new Map(), devoluciones = new Map(), ventas = new Map();
+    if (ids.length) {
+      const { data: ls } = await db.from('devolucion_items').select('*').in('id', ids);
+      lineas = new Map((ls || []).map(l => [l.id, l]));
+
+      const devIds = [...new Set((ls || []).map(l => l.devolucion_id).filter(Boolean))];
+      if (devIds.length) {
+        const { data: ds } = await db.from('devoluciones').select('id, venta_id, fecha').in('id', devIds);
+        devoluciones = new Map((ds || []).map(d => [d.id, d]));
+        const ventaIds = [...new Set((ds || []).map(d => d.venta_id).filter(Boolean))];
+        if (ventaIds.length) {
+          const { data: vs } = await db.from('ventas').select('id, numero_orden').in('id', ventaIds);
+          ventas = new Map((vs || []).map(v => [v.id, v]));
+        }
+      }
+    }
+
+    const enriquecer = s => {
+      const l = lineas.get(s.devolucion_item_id) || null;
+      const d = l ? devoluciones.get(l.devolucion_id) : null;
+      const v = d ? ventas.get(d.venta_id) : null;
+      return {
+        ...s,
+        producto: l?.nombre || '—',
+        cantidad: l ? num(l.cantidad) : 0,
+        devolucion_fecha: d?.fecha || null,
+        numero_orden: v?.numero_orden ?? null,
+        dias_vencida: s.esperado_para ? diasEntre(String(s.esperado_para), hoy) : null
+      };
+    };
+
+    res.json({
+      total: vencidas.length + ajustes.length + sinDecidir.length,
+      // El ajuste va primero: es el único que mueve plata.
+      ajustes_por_aprobar: ajustes.map(enriquecer),
+      monto_ajustes: ajustes.reduce((s, a) => s + num(a.ajuste_monto), 0),
+      vencidas: vencidas.map(enriquecer),
+      sin_decidir: sinDecidir.map(enriquecer)
+    });
+  } catch (err) {
+    enviarError(res, 500, err.message || 'No se pudieron revisar los seguimientos');
+  }
+});
+
 /* Marcar que la Nota de Crédito ya se emitió en el SII (sql/62).
    El POS NUNCA entra al SII: esto lo marca el dueño a mano después de
    emitirla. Sin esto la lista de pendientes no se vacía nunca y deja de
@@ -5485,6 +5774,14 @@ app.get('/api/finanzas/devoluciones-resumen', auth(true), async (req, res) => {
     const vendido = ventasPeriodo
       .reduce((s, v) => s + num(v.total) + (rebajado.get(v.id) || 0), 0);
 
+    // Qué se hizo con cada producto devuelto (sql/63)
+    const seguimientos = new Map();
+    if (lineas.length) {
+      const { data: segs } = await db.from('devolucion_seguimiento')
+        .select('*').in('devolucion_item_id', lineas.map(l => l.id));
+      (segs || []).forEach(s => seguimientos.set(s.devolucion_item_id, s));
+    }
+
     // Lo que se perdió de verdad: las mermas creadas por estas devoluciones.
     const mermaIds = [...new Set(lineas.map(l => l.merma_id).filter(Boolean))];
     let perdidaMermas = 0;
@@ -5539,7 +5836,9 @@ app.get('/api/finanzas/devoluciones-resumen', auth(true), async (req, res) => {
       devoluciones: devs.map(d => ({
         ...d,
         venta: ventas.get(d.venta_id) || null,
+        // Cada línea con su seguimiento (sql/63): qué se hizo con ese producto
         items: lineas.filter(l => l.devolucion_id === d.id)
+          .map(l => ({ ...l, seguimiento: seguimientos.get(l.id) || null }))
       }))
     });
   } catch (err) {

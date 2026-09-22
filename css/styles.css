@@ -912,6 +912,30 @@ body.theme-light .modal-login-overlay {
 /* En el panel de Finanzas: la línea que volvió rota y se dio de baja */
 .dev-chip-rota { background: var(--tint-red); color: var(--red); }
 
+/* Seguimiento del producto devuelto (v84) */
+.dev-linea-item { padding: 3px 0; }
+.dev-linea-item a { text-decoration: none; }
+.dev-chip-seg { background: var(--tint-blue); color: var(--blue-light); }
+.dev-chip-pendiente { background: var(--surface-soft); color: var(--text-300); }
+/* El ajuste es lo único que espera una decisión de plata: se ve distinto */
+.dev-chip-ajuste {
+    background: var(--tint-gold); color: var(--gold);
+    border: 1px solid rgba(255, 46, 196, .45);
+}
+
+.btn-seg-dev[hidden] { display: none; }
+.btn-seg-dev {
+    background: var(--tint-blue, rgba(0, 240, 255, .12));
+    color: var(--blue);
+    border-color: rgba(0, 240, 255, .35);
+}
+/* Con plata esperando su visto bueno pasa a magenta y pulsa */
+.btn-seg-dev.seg-con-plata {
+    background: var(--tint-gold); color: var(--gold);
+    border-color: rgba(255, 46, 196, .45);
+    animation: pulso-notificacion 2s ease-in-out infinite;
+}
+
 @media (max-width: 560px) {
     .dev-linea { flex-direction: column; align-items: stretch; }
     /* Sin esto el `flex: 1 1 220px` de la ficha la estira a lo alto y deja

@@ -229,6 +229,11 @@
       <!-- Plata devuelta en efectivo que no quedó en ninguna caja (sql/61).
            NO es admin-only: el trabajador también devuelve, y el arqueo de
            su turno es el que va a dar de menos. -->
+      <!-- Productos devueltos esperando una decisión, una respuesta del
+           proveedor, o el visto bueno de un ajuste de plata (sql/63). -->
+      <button id="btnSeguimientoDev" class="btn-notificaciones btn-seg-dev admin-only" title="Productos devueltos con seguimiento pendiente" hidden>
+        📮 <span id="textoSeguimientoDev">Seguimiento</span>
+      </button>
       <button id="btnDevolucionesCaja" class="btn-notificaciones btn-dev-caja" title="Devoluciones en efectivo sin registrar en caja" hidden>
         💸 <span id="textoDevolucionesCaja">Devoluciones sin caja</span>
       </button>
@@ -4257,6 +4262,82 @@
     </div>
   </div>
 
+  <!-- ¿Qué se hizo con el producto devuelto? (v84 · sql/63)
+       Va por LÍNEA: de dos productos devueltos juntos, uno puede irse al
+       proveedor y el otro a la basura. -->
+  <div id="modalSeguimientoDev" class="modal-overlay">
+    <div class="modal-box">
+      <h2>📮 ¿Qué se hizo con este producto?</h2>
+      <p class="modal-hint" id="segRef">—</p>
+
+      <div id="segAvisoMerma" class="dev-aviso" style="display:none;"></div>
+
+      <div class="field" style="margin-top:14px;">
+        <label for="segDestino">Destino</label>
+        <select id="segDestino"></select>
+      </div>
+
+      <div id="segBloqueEnvio">
+        <div class="field">
+          <label for="segDestinatario" id="segEtiquetaDestinatario">¿A qué proveedor se lo devolviste?</label>
+          <input type="text" id="segDestinatario" maxlength="120" placeholder="Ej: PC Factory, Sony, importador">
+        </div>
+        <div class="grid grid-2">
+          <div class="field">
+            <label for="segEnviado">¿Cuándo lo mandaste?</label>
+            <input type="date" id="segEnviado">
+          </div>
+          <div class="field">
+            <label for="segEsperado">¿Para cuándo esperas respuesta?</label>
+            <input type="date" id="segEsperado">
+          </div>
+        </div>
+        <p class="modal-hint">Cuando se pase esa fecha sin respuesta, va a aparecer en el aviso del header.</p>
+      </div>
+
+      <div class="field" id="segBloqueResultado">
+        <label for="segResultado">¿En qué quedó?</label>
+        <select id="segResultado"></select>
+      </div>
+
+      <div class="field" id="segBloqueMonto">
+        <label for="segMonto">¿Cuánta plata te devolvieron?</label>
+        <input type="number" id="segMonto" min="0" step="100" inputmode="numeric" placeholder="Ej: 45000">
+      </div>
+
+      <div class="field" id="segBloqueCambio">
+        <label class="dev-stock">
+          <input type="checkbox" id="segReemplazoStock">
+          <span>La unidad de reemplazo entró al stock</span>
+        </label>
+      </div>
+
+      <div class="field">
+        <label for="segNota">Observación</label>
+        <textarea id="segNota" rows="2" maxlength="500" placeholder="Ej: lo mandé con la boleta y el número de serie"></textarea>
+      </div>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarSeguimiento" type="button">Cancelar</button>
+        <button class="btn btn-primary" id="btnGuardarSeguimiento" type="button">Guardar seguimiento</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lo que espera una acción del dueño (v84) -->
+  <div id="modalAvisosSeguimiento" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <h2>📮 Seguimiento de devoluciones</h2>
+      <p class="modal-hint">
+        Nada de lo que ves acá descontó plata todavía. Los ajustes solo se aplican si tú los apruebas.
+      </p>
+      <div id="segAvisosLista" style="display:flex; flex-direction:column; gap:8px; margin-top:14px;"></div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCerrarAvisosSeguimiento" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Devoluciones en efectivo que quedaron fuera de toda caja (v82) -->
   <div id="modalDevolucionesCaja" class="modal-overlay">
     <div class="modal-box modal-lg">
@@ -6407,6 +6488,7 @@
   <script src="js/finanzas-ajustes.js"></script>   <!-- ajustes de saldo + checklist (req 3 y 4) -->
   <script src="js/utilidades.js"></script>   <!-- después de balance.js: reutiliza cerrarModal y el panel de Finanzas -->
   <script src="js/finanzas-devoluciones.js"></script>   <!-- después de balance.js: usa calcularRango y el panel de Finanzas -->
+  <script src="js/devoluciones-seguimiento.js"></script>   <!-- después de finanzas-devoluciones.js: su modal se abre desde ese panel -->
   <script src="js/inteligencia.js"></script>   <!-- después de balance.js: reutiliza calcularRango y el panel de Finanzas -->
   <script src="js/informe-semanal.js"></script>   <!-- después de balance.js: usa el panel de Finanzas y fmtCLP -->
   <script src="js/finanzas-gate.js"></script>   <!-- después de balance/config: intercepta la navegación a Finanzas -->

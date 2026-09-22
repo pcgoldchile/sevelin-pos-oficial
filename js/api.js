@@ -282,7 +282,17 @@ const API = {
       apiRequest(`/finanzas/devoluciones-resumen?desde=${encodeURIComponent(desde)}&hasta=${encodeURIComponent(hasta)}`),
     // El POS no entra al SII: solo anota que el dueño ya emitió la NC.
     notaCredito: (id, datos) =>
-      apiRequest(`/devoluciones/${id}/nota-credito`, { method: 'POST', body: datos })
+      apiRequest(`/devoluciones/${id}/nota-credito`, { method: 'POST', body: datos }),
+
+    /* Seguimiento del producto devuelto (sql/63). Va por LÍNEA: si vuelven
+       dos cosas juntas, una puede ir al proveedor y la otra a la basura. */
+    guardarSeguimiento: (devolucionItemId, datos) =>
+      apiRequest(`/devolucion-items/${devolucionItemId}/seguimiento`, { method: 'PUT', body: datos }),
+    avisosSeguimiento: () => apiRequest('/devoluciones/seguimiento/avisos'),
+    /* El ÚNICO punto donde una devolución llega a tocar el balance, y solo
+       con el dueño apretando: el POS propone, él aprueba o rechaza. */
+    resolverAjuste: (seguimientoId, aprobar) =>
+      apiRequest(`/devoluciones/seguimiento/${seguimientoId}/ajuste`, { method: 'POST', body: { aprobar } })
   },
 
   compras: {

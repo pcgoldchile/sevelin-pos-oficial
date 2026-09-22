@@ -120,6 +120,40 @@ function pintarResumenDevoluciones() {
   pintarDetalleDevoluciones();
 }
 
+/* Resumen de una línea para el chip de la tabla: lo que se ve de un
+   vistazo sin abrir nada. Si hay un ajuste esperando, ESO es lo que se
+   muestra: es lo único que pide una decisión suya. */
+function etiquetaDestinoCorta(s) {
+  if (s.ajuste_estado === 'PROPUESTO') return '💵 ajuste por aprobar';
+  const corta = {
+    SIN_DECIDIR: 'sin decidir',
+    AL_PROVEEDOR: '📮 al proveedor',
+    A_GARANTIA_FABRICANTE: '🏭 a garantía',
+    BOTADO: '🗑️ botado',
+    REPARADO: '🔧 reparado',
+    ME_LO_QUEDE: '📦 me lo quedé'
+  }[s.destino] || s.destino;
+
+  if (s.resultado === 'ESPERANDO') {
+    const vencida = s.esperado_para && String(s.esperado_para) < todayISO();
+    return `${corta} · ${vencida ? '⏰ vencido' : 'esperando'}`;
+  }
+  if (s.resultado === 'PLATA_DEVUELTA') return `${corta} · 💵 pagaron`;
+  if (s.resultado === 'CAMBIADO') return `${corta} · 🔄 cambiado`;
+  if (s.resultado === 'RECHAZADO') return `${corta} · ❌ rechazado`;
+  return corta;
+}
+
+/* Busca una línea devuelta en lo que ya está cargado, para abrir su
+   seguimiento sin volver a pedir nada al servidor. */
+function lineaDevueltaPorId(id) {
+  for (const d of (devPanelCache?.devoluciones || [])) {
+    const encontrada = (d.items || []).find(i => Number(i.id) === Number(id));
+    if (encontrada) return encontrada;
+  }
+  return null;
+}
+
 function pintarDetalleDevoluciones() {
   const cuerpo = document.getElementById('devPanelFilas');
   if (!cuerpo || !devPanelCache) return;
@@ -138,9 +172,22 @@ function pintarDetalleDevoluciones() {
   cuerpo.innerHTML = lista.map(d => {
     const orden = d.venta?.numero_orden ?? d.venta_id;
     const anulada = d.tipo === 'TOTAL';
-    const queVolvio = (d.items || [])
-      .map(i => `${num(i.cantidad)} × ${escHtml(i.nombre)}${i.merma_id ? ' <span class="dev-chip dev-chip-rota">rota</span>' : ''}`)
-      .join('<br>') || '—';
+    /* Cada línea es clickeable: ahí se registra qué se hizo con ESE
+       producto (sql/63). Va por línea porque de dos productos devueltos
+       uno puede irse al proveedor y el otro a la basura. */
+    const queVolvio = (d.items || []).map(i => {
+      const s = i.seguimiento;
+      const estado = s
+        ? `<span class="dev-chip ${s.ajuste_estado === 'PROPUESTO' ? 'dev-chip-ajuste' : 'dev-chip-seg'}">${
+             escHtml(etiquetaDestinoCorta(s))}</span>`
+        : '<span class="dev-chip dev-chip-pendiente">sin decidir</span>';
+      return `
+        <div class="dev-linea-item">
+          ${num(i.cantidad)} × ${escHtml(i.nombre)}
+          ${i.merma_id ? '<span class="dev-chip dev-chip-rota">rota</span>' : ''}
+          <a href="#" data-seguimiento="${i.id}" title="¿Qué se hizo con este producto?">${estado}</a>
+        </div>`;
+    }).join('') || '—';
 
     /* Tres estados posibles para la Nota de Crédito: no hace falta, ya se
        emitió, o falta. Solo el tercero pide una acción. */
@@ -215,6 +262,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const marcar = e.target.closest('[data-marcar-nc]');
     if (marcar) { marcarNotaCredito(Number(marcar.dataset.marcarNc), true); return; }
     const desmarcar = e.target.closest('[data-desmarcar-nc]');
-    if (desmarcar) { e.preventDefault(); marcarNotaCredito(Number(desmarcar.dataset.desmarcarNc), false); }
+    if (desmarcar) { e.preventDefault(); marcarNotaCredito(Number(desmarcar.dataset.desmarcarNc), false); return; }
+
+    // El modal vive en js/devoluciones-seguimiento.js
+    const seg = e.target.closest('[data-seguimiento]');
+    if (seg) {
+      e.preventDefault();
+      const linea = lineaDevueltaPorId(seg.dataset.seguimiento);
+      if (linea && typeof abrirSeguimientoDevolucion === 'function') abrirSeguimientoDevolucion(linea);
+    }
   });
 });

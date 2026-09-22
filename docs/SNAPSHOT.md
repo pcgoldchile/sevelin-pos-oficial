@@ -7,7 +7,35 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
-**Fecha:** 22-09-2026 · **v83 publicada — devoluciones Etapa 3: el panel de Finanzas. Ciclo cerrado.**
+**Fecha:** 22-09-2026 · **v84 publicada — seguimiento del producto devuelto, con el balance bajo su control.**
+
+- 📮 **Qué pasó con el producto DESPUÉS de la devolución** (`sql/63`): al proveedor, a la garantía del
+  fabricante, reparado, me lo quedé, o botado. Va **por producto** y no por devolución (decisión del
+  dueño): de dos cosas devueltas juntas, una puede ir al proveedor y la otra a la basura.
+- 🏭 **Proveedor y fabricante son caminos distintos** (decisión del dueño: *"Sí, son diferentes"*):
+  cambian a quién le reclamas, los plazos y qué esperas de vuelta.
+- 🔴 **LA REGLA QUE DEFINE TODO EL MÓDULO** (decisión del dueño): *"siempre yo debo vigilar y aprobar
+  si se debe ajustar o no manualmente, para que no se descuente de forma automática del balance"*.
+  Cuando el proveedor devuelve la plata, la merma de la v82 dejó de ser pérdida real — pero el POS
+  **solo PROPONE** el monto. No toca un peso hasta que él aprieta "Aplicar al balance". Rechazarlo
+  también se guarda.
+- 🔒 `POST /api/devoluciones/seguimiento/:id/ajuste` es **el único punto de todo el módulo de
+  devoluciones que modifica un gasto ya registrado**, y pide admin. El trabajador puede anotar el
+  seguimiento pero no tocar el balance.
+- 💵 **Al aplicarlo:** el gasto se rebaja a lo que de verdad se perdió (si queda en $0 se borra, para
+  no ensuciar Gastos), la merma se rebaja igual y guarda "— recuperado $X el DD-MM (proveedor)".
+  Nunca se propone más de lo que se había perdido.
+- 📦 **El reemplazo SÍ sube el stock al marcarlo** — es un hecho físico y ese clic es su acción
+  manual. Lo que no se mueve sin su visto bueno es el BALANCE. Guardar dos veces no duplica.
+- 🔔 **Aviso 📮 en el header** con tres cosas: ajustes por aprobar (primero, y pulsa en magenta
+  porque es lo único que mueve plata), plazos vencidos con sus días, y lo que lleva **más de una
+  semana** sin decisión — una semana y no el mismo día, porque recién devuelto es normal no saber.
+- 🧪 175 comprobaciones de backend + 151 de interfaz + navegador real. Detalle en
+  `docs/CHANGELOG-V84.md`.
+- ⏭️ **Anotado, no hecho:** el plazo se escribe a mano; `proveedores_plazos` (sql/60) podría
+  sugerirlo, se dejó fuera para no adivinar antes de ver cómo lo usa.
+
+**v83 (22-09-2026) — devoluciones Etapa 3: el panel de Finanzas.**
 
 - ↩️ **Nueva sub-pestaña Finanzas → Devoluciones.** Responde tres preguntas que un solo total no
   contesta: cuánta plata se fue, cuánto se perdió DE VERDAD (las mermas de lo que volvió roto, a
