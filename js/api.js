@@ -274,7 +274,15 @@ const API = {
     /* Devoluciones en efectivo que quedaron fuera de toda caja: la plata
        salió del cajón igual y el arqueo de ese turno va a dar de menos. */
     pendientesCaja: () => apiRequest('/devoluciones/pendientes-caja'),
-    registrarEgreso: (id) => apiRequest(`/devoluciones/${id}/registrar-egreso`, { method: 'POST' })
+    registrarEgreso: (id) => apiRequest(`/devoluciones/${id}/registrar-egreso`, { method: 'POST' }),
+
+    /* Panel de Finanzas → Devoluciones. Todas las cifras las calcula el
+       servidor: si se sumaran también acá, tarde o temprano discreparían. */
+    resumen: (desde, hasta) =>
+      apiRequest(`/finanzas/devoluciones-resumen?desde=${encodeURIComponent(desde)}&hasta=${encodeURIComponent(hasta)}`),
+    // El POS no entra al SII: solo anota que el dueño ya emitió la NC.
+    notaCredito: (id, datos) =>
+      apiRequest(`/devoluciones/${id}/nota-credito`, { method: 'POST', body: datos })
   },
 
   compras: {

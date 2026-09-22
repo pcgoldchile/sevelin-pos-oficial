@@ -5401,6 +5401,152 @@ app.post('/api/devoluciones/:id/registrar-egreso', auth(), async (req, res) => {
   res.status(201).json({ ok: true, movimiento: mov });
 });
 
+/* Marcar que la Nota de Crédito ya se emitió en el SII (sql/62).
+   El POS NUNCA entra al SII: esto lo marca el dueño a mano después de
+   emitirla. Sin esto la lista de pendientes no se vacía nunca y deja de
+   servir para revisar el F29. */
+app.post('/api/devoluciones/:id/nota-credito', auth(true), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return enviarError(res, 400, 'Devolución inválida');
+
+  const folio = String(req.body?.folio || '').trim().slice(0, 40) || null;
+  const desmarcar = req.body?.emitida === false;
+
+  const { data: dev } = await db.from('devoluciones')
+    .select('id, requiere_nota_credito').eq('id', id).maybeSingle();
+  if (!dev) return enviarError(res, 404, 'Devolución no encontrada');
+  if (!dev.requiere_nota_credito) {
+    return enviarError(res, 400, 'Esta devolución no necesita Nota de Crédito: la venta no emitió documento');
+  }
+
+  const { data, error } = await db.from('devoluciones').update({
+    nota_credito_emitida_en: desmarcar ? null : new Date().toISOString(),
+    nota_credito_folio: desmarcar ? null : folio
+  }).eq('id', id).select().single();
+  if (error) return enviarErrorBD(res, error);
+
+  res.json({ ok: true, devolucion: data });
+});
+
+/* Panel de Devoluciones de Finanzas (v83).
+   ------------------------------------------------------------
+   Responde tres preguntas distintas, y por eso no alcanza con un total:
+     · ¿cuánta plata se fue?           → monto devuelto y cuánto salió del cajón
+     · ¿cuánto se perdió de verdad?    → las mermas de lo que volvió roto
+     · ¿por qué está pasando?          → motivos y productos más devueltos
+   El último es el que sirve para decidir; los otros dos son el control. */
+app.get('/api/finanzas/devoluciones-resumen', auth(true), async (req, res) => {
+  const desde = String(req.query.desde || '').slice(0, 10);
+  const hasta = String(req.query.hasta || '').slice(0, 10);
+  if (!fechaValidaISO(desde) || !fechaValidaISO(hasta)) {
+    return enviarError(res, 400, 'Indica un rango de fechas válido (YYYY-MM-DD)');
+  }
+
+  try {
+    const { data: devsRaw, error } = await db.from('devoluciones')
+      .select('*').gte('fecha', desde).lte('fecha', hasta).order('id', { ascending: false });
+    if (error) throw new Error(error.message);
+    const devs = devsRaw || [];
+    const ids = devs.map(d => d.id);
+
+    const ventaIds = [...new Set(devs.map(d => d.venta_id).filter(Boolean))];
+    const [lineasRes, ventasRes, ventasPeriodoRes] = await Promise.all([
+      ids.length ? db.from('devolucion_items').select('*').in('devolucion_id', ids) : { data: [] },
+      ventaIds.length ? db.from('ventas').select('id, numero_orden, fecha, cliente, tipo_dte, estado').in('id', ventaIds) : { data: [] },
+      /* Para la tasa de devolución hace falta cuánto se vendió en el mismo
+         período. Se cuentan también las ANULADAS: si no, devolver una venta
+         la sacaría del denominador y la tasa saldría más baja justo cuando
+         hay más devoluciones. */
+      db.from('ventas').select('id, total, estado').gte('fecha', desde).lte('fecha', hasta)
+    ]);
+    const lineas = lineasRes.data || [];
+    const ventas = new Map((ventasRes.data || []).map(v => [v.id, v]));
+
+    /* EL DENOMINADOR ES LO QUE SE VENDIÓ, NO LO QUE QUEDÓ.
+       Una devolución parcial rebaja `ventas.total`, así que sumar los
+       totales tal cual daría una tasa INFLADA: vender $320.000 y devolver
+       $100.000 daría 100/220 = 45% en vez del 100/320 = 31% real. Por eso
+       se le devuelve a cada venta lo que se le rebajó — incluidas las
+       devoluciones de OTRO período, que si no dejarían el mes viejo corto.
+       Las anuladas no necesitan ajuste: su total nunca se tocó. */
+    const ventasPeriodo = (ventasPeriodoRes.data || [])
+      .filter(v => v.estado === 'PAGADA' || v.estado === 'ANULADA');
+
+    const rebajado = new Map();
+    if (ventasPeriodo.length) {
+      const { data: parciales } = await db.from('devoluciones')
+        .select('venta_id, monto').eq('tipo', 'PARCIAL')
+        .in('venta_id', ventasPeriodo.map(v => v.id));
+      (parciales || []).forEach(d => {
+        rebajado.set(d.venta_id, (rebajado.get(d.venta_id) || 0) + num(d.monto));
+      });
+    }
+
+    const vendido = ventasPeriodo
+      .reduce((s, v) => s + num(v.total) + (rebajado.get(v.id) || 0), 0);
+
+    // Lo que se perdió de verdad: las mermas creadas por estas devoluciones.
+    const mermaIds = [...new Set(lineas.map(l => l.merma_id).filter(Boolean))];
+    let perdidaMermas = 0;
+    if (mermaIds.length) {
+      const { data: mermas } = await db.from('mermas').select('id, costo_total').in('id', mermaIds);
+      perdidaMermas = (mermas || []).reduce((s, m) => s + num(m.costo_total), 0);
+    }
+
+    const montoDevuelto = devs.reduce((s, d) => s + num(d.monto), 0);
+    const salioDelCajon = devs
+      .filter(d => d.metodo_devolucion !== 'Sin devolución de dinero')
+      .reduce((s, d) => s + num(d.monto), 0);
+
+    // Notas de Crédito que todavía faltan (sql/62)
+    const pendientesNC = devs.filter(d => d.requiere_nota_credito && !d.nota_credito_emitida_en);
+    const montoNC = pendientesNC.reduce((s, d) => s + num(d.monto), 0);
+
+    const agrupar = (filas, clave, monto, unidades) => {
+      const mapa = new Map();
+      filas.forEach(f => {
+        const k = clave(f);
+        if (!k) return;
+        const acc = mapa.get(k) || { clave: k, cantidad: 0, unidades: 0, monto: 0 };
+        acc.cantidad += 1;
+        acc.unidades += unidades ? num(unidades(f)) : 0;
+        acc.monto += num(monto(f));
+        mapa.set(k, acc);
+      });
+      return [...mapa.values()].sort((a, b) => b.monto - a.monto);
+    };
+
+    res.json({
+      periodo: { desde, hasta },
+      resumen: {
+        devoluciones: devs.length,
+        monto_devuelto: Math.round(montoDevuelto),
+        salio_del_cajon: Math.round(salioDelCajon),
+        sin_dinero: Math.round(montoDevuelto - salioDelCajon),
+        perdida_mermas: Math.round(perdidaMermas),
+        vendido_periodo: Math.round(vendido),
+        // Qué porcentaje de lo vendido terminó volviendo
+        tasa: vendido > 0 ? Math.round((montoDevuelto / vendido) * 1000) / 10 : 0,
+        anuladas: devs.filter(d => d.tipo === 'TOTAL').length,
+        parciales: devs.filter(d => d.tipo === 'PARCIAL').length,
+        nota_credito_pendientes: pendientesNC.length,
+        nota_credito_monto: Math.round(montoNC),
+        // IVA que esas Notas de Crédito van a recuperar (precios brutos)
+        nota_credito_iva: Math.round(montoNC - montoNC / 1.19)
+      },
+      por_motivo: agrupar(devs, d => d.motivo, d => d.monto),
+      por_producto: agrupar(lineas, l => l.nombre, l => l.monto, l => l.cantidad).slice(0, 10),
+      devoluciones: devs.map(d => ({
+        ...d,
+        venta: ventas.get(d.venta_id) || null,
+        items: lineas.filter(l => l.devolucion_id === d.id)
+      }))
+    });
+  } catch (err) {
+    enviarError(res, 500, err.message || 'No se pudo armar el resumen de devoluciones');
+  }
+});
+
 /* Listado de devoluciones por período, con el detalle de cada una.
    `solo_nota_credito=true` deja únicamente las que esperan Nota de Crédito
    en el SII, que es la vista que sirve al revisar el F29 del mes. */
@@ -5410,7 +5556,12 @@ app.get('/api/devoluciones', auth(), async (req, res) => {
   let q = db.from('devoluciones').select('*').order('id', { ascending: false });
   if (desde) q = q.gte('fecha', desde);
   if (hasta) q = q.lte('fecha', hasta);
-  if (String(req.query.solo_nota_credito) === 'true') q = q.eq('requiere_nota_credito', true);
+  /* "solo_nota_credito" significa las que FALTAN por emitir (sql/62): una
+     lista que incluyera las ya emitidas no se vaciaría nunca y dejaría de
+     servir para revisar el F29 del mes. */
+  if (String(req.query.solo_nota_credito) === 'true') {
+    q = q.eq('requiere_nota_credito', true).is('nota_credito_emitida_en', null);
+  }
 
   const { data: devs, error } = await q.limit(limiteDe(req));
   if (error) return enviarErrorBD(res, error);

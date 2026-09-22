@@ -140,6 +140,7 @@
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="ventas">Historial de Ventas</button>
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="balance">Balance</button>
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="utilidades">Utilidades</button>
+          <button class="nav-subitem" data-view="view-finanzas" data-subtab="devoluciones">Devoluciones</button>
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="inteligencia">Inteligencia</button>
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="semanal">Informe Semanal</button>
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="gastos">Gastos</button>
@@ -980,6 +981,7 @@
         <button class="subtab activo" data-subtab="ventas">📜 Historial de Ventas</button>
         <button class="subtab" data-subtab="balance">📊 Balance</button>
         <button class="subtab" data-subtab="utilidades">💎 Utilidades</button>
+        <button class="subtab" data-subtab="devoluciones">↩️ Devoluciones</button>
         <button class="subtab" data-subtab="inteligencia">🧠 Inteligencia</button>
         <button class="subtab" data-subtab="semanal">📅 Semanal</button>
         <button class="subtab" data-subtab="gastos">📑 Gastos</button>
@@ -1058,6 +1060,104 @@
            Todo el cálculo vive en GET /api/pos/inteligencia; acá solo se
            pinta (ver js/inteligencia.js).
            ============================================================ -->
+      <!-- ============================================================
+           DEVOLUCIONES (v83 · sql/61 y 62) — js/finanzas-devoluciones.js
+           Responde tres preguntas distintas y por eso no basta un total:
+           cuánta plata se fue, cuánto se perdió DE VERDAD (las mermas de
+           lo que volvió roto) y POR QUÉ está pasando. La última es la que
+           sirve para decidir.
+           ============================================================ -->
+      <div class="panel-finanzas" data-panel-finanzas="devoluciones">
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>↩️ Devoluciones</h2>
+              <p class="subtitle" id="devPanelPeriodo">—</p>
+            </div>
+          </div>
+
+          <div class="filtros-rango">
+            <button class="btn btn-outline btn-sm" data-rango-dev="hoy">Hoy</button>
+            <button class="btn btn-outline btn-sm" data-rango-dev="semana">Esta semana</button>
+            <button class="btn btn-outline btn-sm activo" data-rango-dev="mes">Este mes</button>
+            <button class="btn btn-outline btn-sm" data-rango-dev="mes-anterior">Mes anterior</button>
+            <span class="filtro-sep"></span>
+            <input type="date" id="devPanelDesde" class="filtro-fecha">
+            <input type="date" id="devPanelHasta" class="filtro-fecha">
+            <button class="btn btn-outline btn-sm" id="btnDevPanelRango">Aplicar</button>
+          </div>
+
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <span class="kpi-label">Mercadería devuelta</span>
+              <b class="kpi-valor" id="devKpiMonto">$0</b>
+              <small class="kpi-detalle" id="devKpiTasa">—</small>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">Salió del cajón</span>
+              <b class="kpi-valor" id="devKpiCajon">$0</b>
+              <small class="kpi-detalle" id="devKpiSinDinero">—</small>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">Pérdida real (mermas)</span>
+              <b class="kpi-valor" id="devKpiPerdida" style="color:var(--red);">$0</b>
+              <small class="kpi-detalle">Lo que volvió roto, a costo</small>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">Notas de Crédito pendientes</span>
+              <b class="kpi-valor" id="devKpiNC">0</b>
+              <small class="kpi-detalle" id="devKpiNCMonto">—</small>
+            </div>
+          </div>
+
+          <div class="grid grid-2" style="margin-top:6px;">
+            <div>
+              <span class="section-label">Por qué se devuelve</span>
+              <div class="table-wrapper">
+                <table class="data-table">
+                  <thead><tr><th>Motivo</th><th class="num">Veces</th><th class="num">Monto</th></tr></thead>
+                  <tbody id="devPorMotivo"><tr class="empty-row"><td colspan="3">Sin datos</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+            <div>
+              <span class="section-label">Qué se devuelve más</span>
+              <div class="table-wrapper">
+                <table class="data-table">
+                  <thead><tr><th>Producto</th><th class="num">Unidades</th><th class="num">Monto</th></tr></thead>
+                  <tbody id="devPorProducto"><tr class="empty-row"><td colspan="3">Sin datos</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Detalle del período</h2>
+              <p class="subtitle">Marca la Nota de Crédito cuando ya la hayas emitido en el SII.</p>
+            </div>
+            <label class="util-casilla" style="margin:0;">
+              <input type="checkbox" id="chkDevSoloNC" class="w-4 h-4 accent-blue-600">
+              <span>Solo las que esperan Nota de Crédito</span>
+            </label>
+          </div>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Fecha</th><th>Venta</th><th>Qué volvió</th><th>Motivo</th>
+                  <th>Devuelto por</th><th class="num">Monto</th><th>Nota de Crédito</th>
+                </tr>
+              </thead>
+              <tbody id="devPanelFilas"><tr class="empty-row"><td colspan="7">Sin devoluciones en este período.</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       <div class="panel-finanzas" data-panel-finanzas="inteligencia">
 
         <div class="card">
@@ -6306,6 +6406,7 @@
   <script src="js/balance.js"></script>
   <script src="js/finanzas-ajustes.js"></script>   <!-- ajustes de saldo + checklist (req 3 y 4) -->
   <script src="js/utilidades.js"></script>   <!-- después de balance.js: reutiliza cerrarModal y el panel de Finanzas -->
+  <script src="js/finanzas-devoluciones.js"></script>   <!-- después de balance.js: usa calcularRango y el panel de Finanzas -->
   <script src="js/inteligencia.js"></script>   <!-- después de balance.js: reutiliza calcularRango y el panel de Finanzas -->
   <script src="js/informe-semanal.js"></script>   <!-- después de balance.js: usa el panel de Finanzas y fmtCLP -->
   <script src="js/finanzas-gate.js"></script>   <!-- después de balance/config: intercepta la navegación a Finanzas -->

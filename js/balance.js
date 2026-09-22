@@ -105,6 +105,13 @@ function mostrarPanelFinanzas(nombre) {
     aplicarRangoUtilidades('mes');
   }
 
+  /* Devoluciones (js/finanzas-devoluciones.js): abre en "Este mes", que es
+     el período que importa para revisar el F29 y las Notas de Crédito
+     que quedan pendientes. */
+  if (nombre === 'devoluciones' && typeof aplicarRangoDevoluciones === 'function') {
+    aplicarRangoDevoluciones('mes');
+  }
+
   /* Inteligencia (js/inteligencia.js): abre en "Todo el histórico" a
      propósito, no en el mes. El panel existe para ver tendencias de
      rotación, margen y capital dormido — con un mes suelto de datos

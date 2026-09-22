@@ -7,7 +7,30 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
-**Fecha:** 22-09-2026 · **v82 publicada — devoluciones Etapa 2: la pérdida se registra sola.**
+**Fecha:** 22-09-2026 · **v83 publicada — devoluciones Etapa 3: el panel de Finanzas. Ciclo cerrado.**
+
+- ↩️ **Nueva sub-pestaña Finanzas → Devoluciones.** Responde tres preguntas que un solo total no
+  contesta: cuánta plata se fue, cuánto se perdió DE VERDAD (las mermas de lo que volvió roto, a
+  costo) y POR QUÉ está pasando (motivos y productos más devueltos). La última es la única que sirve
+  para decidir: si un producto aparece arriba tres meses seguidos, el problema es el producto o el
+  proveedor, no la devolución.
+- 📉 **La tasa de devolución tenía una trampa, y la encontró un test:** una devolución parcial rebaja
+  `ventas.total`, así que el denominador venía ya reducido y la tasa salía INFLADA justo cuando hay
+  más devoluciones ($100.000 sobre $320.000 daba 45% en vez de 31%). El resumen ahora le devuelve a
+  cada venta lo que se le rebajó, incluidas las devoluciones de otro período.
+- 🧾 **`sql/62`: `nota_credito_emitida_en` + `nota_credito_folio`.** Sin esto la lista de Notas de
+  Crédito pendientes no se vaciaba nunca y dejaba de servir. El folio es OPCIONAL a propósito:
+  obligarlo haría que no marque nada por no ir a buscar el número. `solo_nota_credito=true` ahora
+  significa **las que faltan**.
+- ⚠️ **El POS sigue sin entrar al SII:** marcar la NC es anotar que él ya la emitió.
+- 🧠 **El ajuste del débito del F29 (v81) NO depende de que la NC esté emitida.** Son dos cosas: el
+  ajuste es de PERÍODOS (la reversa va en el mes de la NC), la lista de pendientes es de ACCIONES. El
+  POS muestra lo que debería declarar; la lista dice qué falta para que la realidad calce.
+- 🧪 122 comprobaciones de backend + 100 de interfaz + navegador real.
+- ✅ **Con esto se cierra la propuesta de devoluciones (v81 + v82 + v83).** Detalle en
+  `docs/CHANGELOG-V83.md`.
+
+**v82 (22-09-2026) — devoluciones Etapa 2: la pérdida se registra sola.**
 
 - 💸 **Se cerró el hueco de la v81:** la mercadería que NO vuelve al stock ahora genera **merma
   automática con su costo PEPS real** y su gasto. Antes la venta salía del balance (queda ANULADA)
