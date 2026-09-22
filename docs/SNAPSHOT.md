@@ -7,7 +7,36 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
-**Fecha:** 22-09-2026 · **v80 publicada — SEO cargado a mano en 31 fichas, y el bug del texto "null".**
+**Fecha:** 22-09-2026 · **v81 publicada — devoluciones: la venta ya no se borra, se anula.**
+
+- 🔴 **El hallazgo que cambió el diseño:** hasta hoy la única forma de revertir una venta era
+  **borrarla** (`DELETE /api/ventas/:id`). Y **60 de las 202 ventas tienen BOLETA declarada al SII**:
+  borrar una de esas deja al POS diciendo algo distinto de lo ya declarado, y la diferencia reaparece
+  en el F29 sin rastro. Una boleta no se borra: se reversa con Nota de Crédito.
+- ✅ **Nuevo estado `ANULADA`** (`sql/61`). La venta se conserva siempre. Como los 8 lugares donde
+  Finanzas lee ventas ya filtraban por `estado = 'PAGADA'`, la venta anulada sale de todos ellos sin
+  tocar una línea de esos cálculos.
+- 🧾 **El F29 es la única excepción, y está resuelta:** el débito de un mes ya declarado **no puede
+  encoger hacia atrás**. El cálculo suma de vuelta las devoluciones *posteriores* al período. Por eso
+  `devoluciones.monto` guarda SIEMPRE el valor de lo devuelto, aunque no haya salido plata del cajón.
+- ↩️ **Devolución parcial:** la venta sigue PAGADA y se le rebajan total, costo y utilidad. El
+  descuento de la venta se reparte a prorrata. **`comision_pos` NO se rebaja a propósito:** la
+  pasarela no reintegra su comisión, y borrarla inflaría la utilidad del mes.
+- 📦 **PEPS al revés** (`devolverLotesDeLinea`): devuelve cantidades parciales de UNA línea,
+  recorriendo su consumo en orden inverso. `devolverConsumoLotes` no servía: trabaja por venta
+  completa y borra el libro entero.
+- 💵 **El egreso de caja se crea solo** si la devolución es en efectivo y hay caja abierta. Si no hay
+  caja, la devolución se registra igual y avisa — nunca falla por eso.
+- 🔒 **Borrar quedó restringido** a su único caso legítimo: venta de HOY y SIN documento. El resto
+  responde 409 y manda a "Devolver / Anular".
+- 👤 **El trabajador también puede devolver** (decisión del dueño): es operación de mostrador, no
+  edición del historial. Sin PIN. Sigue sin ver costos ni utilidad.
+- ⚠️ **Pendiente de la Etapa 2:** la mercadería que NO vuelve al stock queda registrada pero
+  **todavía no genera merma ni gasto**. La columna `devolucion_items.merma_id` ya está esperando.
+- 🧪 58 comprobaciones de backend + 45 de interfaz (jsdom) + navegador real, escritorio y móvil.
+  Detalle en `docs/CHANGELOG-V81.md`.
+
+**v80 (22-09-2026) — SEO cargado a mano en 31 fichas, y el bug del texto "null".**
 
 - 🔴 **BUG ENCONTRADO Y REPARADO, con riesgo real de perder datos:** 26 productos tenían el campo
   `descripcion` con la palabra **"null" escrita como texto** (no vacío). El editor carga

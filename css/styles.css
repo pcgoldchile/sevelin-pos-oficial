@@ -448,6 +448,10 @@ input[type="checkbox"] { width: auto; height: auto; accent-color: var(--blue); c
 .btn-icon-del:hover { background: rgba(239, 68, 68, .26); border-color: var(--red); }
 .btn-icon-view { color: var(--blue-light); border-color: rgba(0, 240, 255, .45); background: var(--tint-blue); }
 .btn-icon-view:hover { background: rgba(0, 240, 255, .26); border-color: var(--blue); }
+/* Devolver / anular (v81): ámbar, entre "ver" (neutro) y "borrar" (rojo).
+   Revierte una venta pero NO la destruye, y el color lo dice. */
+.btn-icon-devolver { color: var(--gold); border-color: rgba(255, 46, 196, .35); background: var(--tint-gold); font-size: 14px; }
+.btn-icon-devolver:hover { background: rgba(255, 46, 196, .26); border-color: var(--gold); }
 
 /* Barra de acciones: grupo izquierdo (neutro) y grupo derecho (destructivo) */
 .toolbar-bar {
@@ -860,6 +864,51 @@ body.theme-light .modal-login-overlay {
 .kpi-card.sin-datos { opacity: .72; }
 .data-table tbody tr.fila-pendiente { background: rgba(255, 46, 196, .07); }
 .data-table tbody tr.fila-pendiente:hover { background: rgba(255, 46, 196, .13); }
+
+/* Venta anulada (v81 · sql/61): se queda en el historial, apagada y tachada
+   en el número de orden. Nunca se borra, para que el POS siga coincidiendo
+   con lo ya declarado al SII. */
+.data-table tbody tr.fila-anulada { opacity: .58; }
+.data-table tbody tr.fila-anulada:hover { opacity: .8; }
+.data-table tbody tr.fila-anulada .strong { text-decoration: line-through; }
+
+/* ---- Modal de devolución (v81) ---- */
+.dev-aviso {
+    margin: 12px 0 0; padding: 10px 12px; border-radius: 10px;
+    background: var(--tint-gold); border: 1px solid rgba(255, 46, 196, .45);
+    color: var(--text-200); font-size: 13px; line-height: 1.5;
+}
+.dev-aviso-sii { background: var(--tint-red); border-color: rgba(239, 68, 68, .45); }
+
+#devLineas { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 16px; }
+.dev-linea {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: 10px; padding: 10px 12px; border-radius: 10px;
+    background: var(--surface-soft); border: 1.5px solid var(--border);
+}
+.dev-linea-lista { opacity: .5; }
+.dev-linea-info { display: flex; flex-direction: column; gap: 2px; min-width: 180px; flex: 1 1 220px; }
+.dev-linea-meta { font-size: 12px; color: var(--text-300); }
+.dev-linea-campos { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.dev-cantidad { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-300); }
+.dev-cantidad input { width: 72px; text-align: center; }
+.dev-stock { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-300); cursor: pointer; }
+.dev-stock input { cursor: pointer; }
+
+.dev-resumen {
+    margin: 14px 0 0; padding: 10px 12px; border-radius: 10px;
+    background: var(--tint-blue); border: 1px solid rgba(0, 240, 255, .35);
+    font-size: 14px; text-align: center;
+}
+.dev-resumen-vacio { color: var(--text-300); }
+
+@media (max-width: 560px) {
+    .dev-linea { flex-direction: column; align-items: stretch; }
+    /* Sin esto el `flex: 1 1 220px` de la ficha la estira a lo alto y deja
+       un hueco enorme entre el nombre del producto y sus campos. */
+    .dev-linea-info { flex: 0 0 auto; }
+    .dev-linea-campos { justify-content: space-between; }
+}
 
 /* ========== 12. COMPRAS: DOCUMENTOS ========== */
 .doc-slot {

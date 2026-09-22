@@ -4103,6 +4103,54 @@
     </div>
   </div>
 
+  <!-- Devolver / Anular una venta (v81 · sql/61).
+       Reemplaza al borrado: la venta se conserva SIEMPRE. Sin PIN a
+       propósito — el dueño pidió que el trabajador también pueda devolver. -->
+  <div id="modalDevolucion" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <h2>↩️ Devolver / Anular venta</h2>
+      <p class="modal-hint" id="devVentaRef">—</p>
+
+      <div id="devAvisoNotaCredito" class="dev-aviso dev-aviso-sii" style="display:none;"></div>
+      <div id="devAvisoImpaga" class="dev-aviso" style="display:none;">
+        Esta venta está <strong>"Por Pagar"</strong>: nunca entró el dinero, así que no hay nada que
+        devolver. Solo se puede deshacer.
+      </div>
+
+      <div class="field" style="margin-top:14px;">
+        <label style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+          <span>¿Qué vuelve?</span>
+          <button class="btn btn-ghost btn-sm" id="btnDevolverTodo" type="button">Devolver todo</button>
+        </label>
+        <div id="devLineas"></div>
+      </div>
+
+      <div class="grid grid-2">
+        <div class="field">
+          <label for="devMotivo">Motivo</label>
+          <select id="devMotivo"></select>
+        </div>
+        <div class="field">
+          <label for="devMedio">¿Por dónde se le devuelve la plata?</label>
+          <select id="devMedio"></select>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="devObservacion">Observación</label>
+        <textarea id="devObservacion" rows="2" maxlength="500"
+                  placeholder="Ej: el monitor llegó con una línea en la pantalla"></textarea>
+      </div>
+
+      <p id="devResumen" class="dev-resumen">—</p>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarDevolucion" type="button">Cancelar</button>
+        <button class="btn btn-primary" id="btnConfirmarDevolucion" type="button" disabled>↩️ Confirmar devolución</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modalPedidoWeb" class="modal-overlay">
     <div class="modal-box modal-lg">
       <h2>🌐 Pedido <span id="pedidoWebNumero">—</span></h2>
@@ -6215,6 +6263,7 @@
   <script src="js/lotes.js"></script>
   <script src="js/productos.js"></script>
   <script src="js/historial.js"></script>
+  <script src="js/devoluciones.js"></script>   <!-- después de historial.js: su botón vive en las filas del historial y llama a cargarHistorial() -->
   <script src="js/escaner.js"></script>
   <script src="js/etiquetas.js"></script>
   <script src="js/compras.js"></script>

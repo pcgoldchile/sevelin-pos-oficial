@@ -255,6 +255,24 @@ const API = {
     eliminarLote: (ids, pin) => apiRequest('/ventas/eliminar-lote', { method: 'POST', body: { ids, pin } })
   },
 
+  /* Devoluciones y anulación de ventas (sql/61).
+     Reemplazan al borrado: la venta se conserva siempre. Sin PIN a
+     propósito — el dueño pidió que el trabajador también pueda devolver,
+     porque es una operación de mostrador. */
+  devoluciones: {
+    registrar: (ventaId, datos) =>
+      apiRequest(`/ventas/${ventaId}/devolucion`, { method: 'POST', body: datos }),
+    deVenta: (ventaId) => apiRequest(`/ventas/${ventaId}/devoluciones`),
+    listar: (desde, hasta, soloNotaCredito) => {
+      const q = new URLSearchParams();
+      if (desde) q.set('desde', desde);
+      if (hasta) q.set('hasta', hasta);
+      if (soloNotaCredito) q.set('solo_nota_credito', 'true');
+      const cadena = q.toString();
+      return apiRequest('/devoluciones' + (cadena ? `?${cadena}` : ''));
+    }
+  },
+
   compras: {
     listar: (filtros = {}) => {
       const q = new URLSearchParams();

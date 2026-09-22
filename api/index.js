@@ -4865,12 +4865,396 @@ app.delete('/api/ventas', auth(true), exigirPinAdmin, async (req, res) => {
   res.json({ ok: true, eliminadas: ids.length });
 });
 
+/* Borrar una venta suelta quedó restringido a su único caso legítimo: un
+   error de tipeo recién cometido, en una venta que NO emitió documento.
+   Todo lo demás se anula (sql/61), que conserva la venta y su rastro.
+
+   El motivo es de plata: 60 de las 202 ventas tienen BOLETA declarada al
+   SII. Borrar una de esas deja al POS diciendo algo distinto de lo ya
+   declarado, y la diferencia reaparece en el F29 sin rastro. */
 app.delete('/api/ventas/:id', auth(true), async (req, res) => {
+  const { data: venta } = await db.from('ventas')
+    .select('id, fecha, tipo_dte, estado').eq('id', req.params.id).maybeSingle();
+  if (!venta) return enviarError(res, 404, 'Venta no encontrada');
+
+  const conDocumento = venta.tipo_dte && String(venta.tipo_dte).toUpperCase() !== 'SIN DTE';
+  if (conDocumento) {
+    return enviarError(res, 409,
+      `Esta venta emitió ${venta.tipo_dte} y ya está declarada: no se puede borrar. ` +
+      'Anúlala desde "Devolver / Anular" y emite la Nota de Crédito en el SII.');
+  }
+  if (String(venta.fecha) !== fechaHoyChile()) {
+    return enviarError(res, 409,
+      'Solo se puede borrar una venta del día. Para una venta de otro día usa "Devolver / Anular", ' +
+      'que la conserva en el historial.');
+  }
+
   await revertirEfectosDeVentas([Number(req.params.id)]);
 
   const { error } = await db.from('ventas').delete().eq('id', req.params.id);
   if (error) return enviarErrorBD(res, error);
   res.json({ ok: true });
+});
+
+
+/* ============================================================
+   DEVOLUCIONES Y ANULACIÓN DE VENTAS (sql/61 · v81)
+   ------------------------------------------------------------
+   Reemplaza al borrado como forma de revertir una venta. La venta queda
+   para siempre; lo que cambia es su estado y, si la devolución fue
+   parcial, sus totales.
+
+   LO PUEDE HACER EL TRABAJADOR (decisión del dueño, 22-09-2026): es una
+   operación de mostrador, no una edición del historial. Por eso auth() y
+   no auth(true).
+   ============================================================ */
+
+const MOTIVOS_DEVOLUCION = [
+  'FALLA', 'GARANTIA', 'ARREPENTIMIENTO',
+  'PRODUCTO_EQUIVOCADO', 'ERROR_DE_VENTA', 'OTRO'
+];
+const METODOS_DEVOLUCION = [
+  'Efectivo', 'Transferencia', 'Tarjeta Débito',
+  'Tarjeta Crédito', 'Sin devolución de dinero'
+];
+
+/* Devuelve a sus capas PEPS una CANTIDAD PARCIAL de una línea de venta.
+   `devolverConsumoLotes` no sirve acá: trabaja por venta completa y borra
+   el libro de consumo entero, lo que haría imposible devolver 1 de 3.
+
+   Se recorre el consumo de la línea en orden inverso (id descendente): lo
+   último que se consumió es lo primero que vuelve, que es el reverso exacto
+   del PEPS. Cada fila del libro se rebaja o se borra según cuánto se tome. */
+async function devolverLotesDeLinea(ventaItemId, cantidad) {
+  let restante = num(cantidad);
+  if (!ventaItemId || restante <= 0) return { cubierto: 0, costo: 0 };
+
+  const { data: consumos } = await db.from('venta_item_lotes')
+    .select('id, lote_id, cantidad, costo_unitario')
+    .eq('venta_item_id', ventaItemId)
+    .order('id', { ascending: false });
+
+  let costo = 0;
+  for (const c of (consumos || [])) {
+    if (restante <= 0) break;
+    const toma = Math.min(num(c.cantidad), restante);
+    if (toma <= 0) continue;
+
+    if (c.lote_id) {
+      const { error } = await db.rpc('fifo_devolver', { p_lote_id: c.lote_id, p_cantidad: toma });
+      if (error) console.error('[FIFO] fifo_devolver falló al devolver:', error.message);
+    }
+
+    costo += toma * num(c.costo_unitario);
+    restante -= toma;
+
+    if (toma >= num(c.cantidad)) await db.from('venta_item_lotes').delete().eq('id', c.id);
+    else await db.from('venta_item_lotes').update({ cantidad: num(c.cantidad) - toma }).eq('id', c.id);
+  }
+
+  return { cubierto: num(cantidad) - restante, costo };
+}
+
+/* Cuánto se devolvió ya de cada línea de una venta, para no dejar devolver
+   más unidades de las que se vendieron. */
+async function devueltoPorLinea(ventaId) {
+  const { data: devs } = await db.from('devoluciones').select('id').eq('venta_id', ventaId);
+  const ids = (devs || []).map(d => d.id);
+  const mapa = new Map();
+  if (!ids.length) return mapa;
+
+  const { data: lineas } = await db.from('devolucion_items')
+    .select('venta_item_id, cantidad').in('devolucion_id', ids);
+  (lineas || []).forEach(l => {
+    if (!l.venta_item_id) return;
+    mapa.set(l.venta_item_id, (mapa.get(l.venta_item_id) || 0) + num(l.cantidad));
+  });
+  return mapa;
+}
+
+app.post('/api/ventas/:id/devolucion', auth(), async (req, res) => {
+  const ventaId = Number(req.params.id);
+  if (!Number.isFinite(ventaId)) return enviarError(res, 400, 'Venta inválida');
+
+  const motivo = String(req.body?.motivo || '').trim().toUpperCase();
+  const metodo = String(req.body?.metodo_devolucion || '').trim();
+  const observacion = String(req.body?.observacion || '').trim() || null;
+  const lineasPedidas = Array.isArray(req.body?.items) ? req.body.items : [];
+
+  if (!MOTIVOS_DEVOLUCION.includes(motivo)) {
+    return enviarError(res, 400, 'Selecciona un motivo de devolución válido');
+  }
+  if (!METODOS_DEVOLUCION.includes(metodo)) {
+    return enviarError(res, 400, 'Selecciona por qué medio se devuelve el dinero');
+  }
+  if (motivo === 'OTRO' && !observacion) {
+    return enviarError(res, 400, 'Con motivo "Otro" la observación es obligatoria');
+  }
+  if (!lineasPedidas.length) {
+    return enviarError(res, 400, 'Selecciona al menos un producto a devolver');
+  }
+
+  try {
+    const { data: venta, error: errVenta } = await db.from('ventas')
+      .select('*').eq('id', ventaId).maybeSingle();
+    if (errVenta) throw new Error(errVenta.message);
+    if (!venta) return enviarError(res, 404, 'Venta no encontrada');
+    if (venta.estado === 'ANULADA') {
+      return enviarError(res, 409, 'Esta venta ya está anulada por completo');
+    }
+    /* Una venta "Por Pagar" nunca entregó plata: no hay nada que devolver,
+       solo se deshace. Aceptar un método de pago acá sacaría del cajón un
+       dinero que jamás entró. */
+    if (venta.estado === 'PENDIENTE' && metodo !== 'Sin devolución de dinero') {
+      return enviarError(res, 400,
+        'Esta venta está "Por Pagar": nunca entró el dinero, así que no hay nada que devolver. ' +
+        'Usa "Sin devolución de dinero".');
+    }
+
+    const { data: itemsRaw, error: errItems } = await db.from('venta_items')
+      .select('*').eq('venta_id', ventaId);
+    if (errItems) throw new Error(errItems.message);
+    const itemsVenta = itemsRaw || [];
+    if (!itemsVenta.length) return enviarError(res, 400, 'Esta venta no tiene líneas que devolver');
+
+    const porId = new Map(itemsVenta.map(i => [i.id, i]));
+    const yaDevuelto = await devueltoPorLinea(ventaId);
+
+    /* El descuento de la venta se reparte entre las líneas a prorrata de su
+       subtotal. Sin esto, devolver una línea de una venta con descuento
+       devolvería más plata de la que el cliente pagó por ella. */
+    const subtotalVenta = itemsVenta.reduce((s, i) => s + num(i.precio_unitario) * num(i.cantidad), 0);
+    const descuentoVenta = num(venta.descuento_monto);
+    const factorDescuento = subtotalVenta > 0 ? (1 - descuentoVenta / subtotalVenta) : 1;
+
+    // ---- Validación línea por línea, ANTES de tocar nada ----
+    const aDevolver = [];
+    for (const pedida of lineasPedidas) {
+      const item = porId.get(Number(pedida?.venta_item_id));
+      if (!item) return enviarError(res, 400, 'Una de las líneas no pertenece a esta venta');
+
+      const cantidad = num(pedida?.cantidad);
+      if (!(cantidad > 0)) return enviarError(res, 400, `Indica cuántas unidades vuelven de "${item.nombre}"`);
+
+      const disponible = num(item.cantidad) - (yaDevuelto.get(item.id) || 0);
+      if (cantidad > disponible + 0.0001) {
+        return enviarError(res, 400,
+          `De "${item.nombre}" se vendieron ${num(item.cantidad)} y ya se devolvieron ` +
+          `${yaDevuelto.get(item.id) || 0}: no puedes devolver ${cantidad}.`);
+      }
+
+      aDevolver.push({
+        item,
+        cantidad,
+        // Una pieza usada en una OT ya se gastó físicamente en el taller:
+        // vuelve la plata, no el repuesto.
+        reingresa_stock: item.ot_repuesto_id ? false : pedida?.reingresa_stock !== false,
+        monto: Math.round(num(item.precio_unitario) * cantidad * factorDescuento),
+        costo: num(item.costo_unitario) * cantidad
+      });
+    }
+
+    const montoTotal = aDevolver.reduce((s, l) => s + l.monto, 0);
+    const costoTotal = aDevolver.reduce((s, l) => s + l.costo, 0);
+
+    // ¿Vuelve TODO lo que quedaba vivo de la venta?
+    const quedaAlgo = itemsVenta.some(i => {
+      const devueltoAhora = aDevolver.filter(l => l.item.id === i.id).reduce((s, l) => s + l.cantidad, 0);
+      return num(i.cantidad) - (yaDevuelto.get(i.id) || 0) - devueltoAhora > 0.0001;
+    });
+    const tipo = quedaAlgo ? 'PARCIAL' : 'TOTAL';
+
+    const conDocumento = !!venta.tipo_dte && String(venta.tipo_dte).toUpperCase() !== 'SIN DTE';
+    const hoy = fechaHoyChile();
+
+    // ---- 1) El registro primero: si algo falla después, queda el rastro ----
+    const { data: devolucion, error: errDev } = await db.from('devoluciones').insert([{
+      venta_id: ventaId,
+      tipo,
+      fecha: hoy,
+      motivo,
+      observacion,
+      metodo_devolucion: metodo,
+      /* `monto` es SIEMPRE el valor de la mercadería que volvió, aunque no
+         haya salido plata del cajón (cambio por otro producto). Si acá se
+         guardara 0, el débito del F29 de un mes ya declarado encogería al
+         devolver una boleta vieja — justo lo que este diseño evita. Que el
+         dinero haya salido o no lo dicen `metodo_devolucion` y
+         `caja_movimiento_id`. */
+      monto: montoTotal,
+      costo_devuelto: costoTotal,
+      reingresa_stock: aDevolver.every(l => l.reingresa_stock),
+      tipo_dte_original: venta.tipo_dte || null,
+      requiere_nota_credito: conDocumento,
+      usuario: req.usuario?.rol || null
+    }]).select().single();
+
+    if (errDev) {
+      // Lo lanza el índice único idx_devoluciones_una_total (sql/61)
+      if (/idx_devoluciones_una_total|duplicate key/i.test(errDev.message || '')) {
+        return enviarError(res, 409, 'Esta venta ya se anuló. Recarga el historial.');
+      }
+      throw new Error(errDev.message);
+    }
+
+    const filasItems = aDevolver.map(l => ({
+      devolucion_id: devolucion.id,
+      venta_item_id: l.item.id,
+      producto_id: l.item.producto_id || null,
+      nombre: l.item.nombre,
+      cantidad: l.cantidad,
+      precio_unitario: num(l.item.precio_unitario),
+      costo_unitario: num(l.item.costo_unitario),
+      monto: l.monto,
+      reingresa_stock: l.reingresa_stock
+    }));
+    const { error: errFilas } = await db.from('devolucion_items').insert(filasItems);
+    if (errFilas) throw new Error(errFilas.message);
+
+    // ---- 2) El stock vuelve ----
+    let lineasRepuestas = 0, lineasSinReingreso = 0;
+    for (const l of aDevolver) {
+      if (!l.reingresa_stock) { lineasSinReingreso++; continue; }
+
+      // Las capas PEPS se restauran aparte del stock del catálogo: cada una
+      // lleva su propio libro (mismo criterio que devolverConsumoLotes).
+      await devolverLotesDeLinea(l.item.id, l.cantidad);
+
+      if (l.item.producto_id) {
+        const { data: p } = await db.from('productos')
+          .select('stock, stock_ilimitado').eq('id', l.item.producto_id).maybeSingle();
+        // Un servicio no tiene inventario que devolver.
+        if (p && !p.stock_ilimitado) {
+          await db.from('productos').update({
+            stock: num(p.stock) + l.cantidad,
+            stock_actualizado_en: new Date().toISOString()
+          }).eq('id', l.item.producto_id);
+          lineasRepuestas++;
+        }
+      } else if (l.item.repuesto_id) {
+        const { data: r } = await db.from('repuestos')
+          .select('stock, stock_ilimitado').eq('id', l.item.repuesto_id).maybeSingle();
+        if (r && !r.stock_ilimitado) {
+          await db.from('repuestos').update({
+            stock: num(r.stock) + l.cantidad,
+            stock_actualizado_en: new Date().toISOString()
+          }).eq('id', l.item.repuesto_id);
+          lineasRepuestas++;
+        }
+      }
+    }
+
+    // ---- 3) La venta ----
+    const cambios = { devuelta_en: new Date().toISOString(), devolucion_estado: tipo };
+    if (tipo === 'TOTAL') {
+      cambios.estado = 'ANULADA';
+    } else {
+      /* Parcial: se rebajan los totales para que los 8 lugares donde
+         Finanzas lee ventas queden bien sin tocarlos. `comision_pos` NO se
+         rebaja a propósito: la pasarela no reintegra su comisión. */
+      const nuevoTotal = Math.max(0, num(venta.total) - montoTotal);
+      const nuevoCosto = Math.max(0, num(venta.costo_total) - costoTotal);
+      cambios.total = nuevoTotal;
+      cambios.costo_total = nuevoCosto;
+      cambios.utilidad = nuevoTotal - nuevoCosto;
+    }
+    const { error: errVta } = await db.from('ventas').update(cambios).eq('id', ventaId);
+    if (errVta) throw new Error(errVta.message);
+
+    // ---- 4) El cajón, si salió efectivo ----
+    let movimientoCaja = null, avisoCaja = null;
+    if (metodo === 'Efectivo' && montoTotal > 0) {
+      const { data: caja } = await db.from('cajas_diarias')
+        .select('id').eq('estado', 'abierta').limit(1).maybeSingle();
+      if (caja) {
+        const { data: mov, error: errMov } = await db.from('caja_movimientos').insert([{
+          caja_id: caja.id,
+          tipo: 'EGRESO',
+          monto: montoTotal,
+          concepto: `Devolución venta #${venta.numero_orden ?? ventaId} — ${motivo.toLowerCase().replace(/_/g, ' ')}`
+        }]).select().single();
+        if (errMov) {
+          avisoCaja = 'No se pudo registrar el egreso en la caja. Regístralo a mano o el arqueo no va a cuadrar.';
+        } else {
+          movimientoCaja = mov;
+          await db.from('devoluciones')
+            .update({ caja_id: caja.id, caja_movimiento_id: mov.id }).eq('id', devolucion.id);
+        }
+      } else {
+        avisoCaja = 'No hay caja abierta: el egreso en efectivo no quedó registrado en ningún turno.';
+      }
+    }
+
+    res.status(201).json({
+      ok: true,
+      devolucion: { ...devolucion, caja_movimiento_id: movimientoCaja?.id || null },
+      tipo,
+      monto: montoTotal,
+      salio_dinero: metodo !== 'Sin devolución de dinero',
+      requiere_nota_credito: conDocumento,
+      tipo_dte: venta.tipo_dte || null,
+      aviso_caja: avisoCaja,
+      stock: { lineas_repuestas: lineasRepuestas, lineas_sin_reingreso: lineasSinReingreso },
+      venta: {
+        id: ventaId,
+        estado: tipo === 'TOTAL' ? 'ANULADA' : venta.estado,
+        devolucion_estado: tipo,
+        total: tipo === 'TOTAL' ? num(venta.total) : cambios.total
+      }
+    });
+  } catch (err) {
+    enviarError(res, 500, err.message || 'No se pudo registrar la devolución');
+  }
+});
+
+/* Qué se devolvió de una venta: lo usa el modal para mostrar cuántas
+   unidades quedan disponibles en cada línea. */
+app.get('/api/ventas/:id/devoluciones', auth(), async (req, res) => {
+  const ventaId = Number(req.params.id);
+  if (!Number.isFinite(ventaId)) return enviarError(res, 400, 'Venta inválida');
+
+  const { data: devs, error } = await db.from('devoluciones')
+    .select('*').eq('venta_id', ventaId).order('id', { ascending: false });
+  if (error) return enviarErrorBD(res, error);
+
+  const ids = (devs || []).map(d => d.id);
+  let items = [];
+  if (ids.length) {
+    const { data } = await db.from('devolucion_items').select('*').in('devolucion_id', ids);
+    items = data || [];
+  }
+  res.json((devs || []).map(d => ({ ...d, items: items.filter(i => i.devolucion_id === d.id) })));
+});
+
+/* Listado de devoluciones por período, con el detalle de cada una.
+   `solo_nota_credito=true` deja únicamente las que esperan Nota de Crédito
+   en el SII, que es la vista que sirve al revisar el F29 del mes. */
+app.get('/api/devoluciones', auth(), async (req, res) => {
+  const { desde, hasta } = req.query;
+
+  let q = db.from('devoluciones').select('*').order('id', { ascending: false });
+  if (desde) q = q.gte('fecha', desde);
+  if (hasta) q = q.lte('fecha', hasta);
+  if (String(req.query.solo_nota_credito) === 'true') q = q.eq('requiere_nota_credito', true);
+
+  const { data: devs, error } = await q.limit(limiteDe(req));
+  if (error) return enviarErrorBD(res, error);
+
+  const ids = (devs || []).map(d => d.id);
+  const ventaIds = [...new Set((devs || []).map(d => d.venta_id).filter(Boolean))];
+
+  const [itemsRes, ventasRes] = await Promise.all([
+    ids.length ? db.from('devolucion_items').select('*').in('devolucion_id', ids) : { data: [] },
+    ventaIds.length ? db.from('ventas').select('id, numero_orden, fecha, cliente, tipo_dte').in('id', ventaIds) : { data: [] }
+  ]);
+  const items = itemsRes.data || [];
+  const ventas = new Map((ventasRes.data || []).map(v => [v.id, v]));
+
+  res.json((devs || []).map(d => ({
+    ...d,
+    venta: ventas.get(d.venta_id) || null,
+    items: items.filter(i => i.devolucion_id === d.id)
+  })));
 });
 
 /* Cobrar una venta pendiente ("Por Pagar" → PAGADA).
@@ -7589,9 +7973,37 @@ async function calcularIvaMes(periodoAAAAMM) {
   } else {
     const desde = `${a}-${String(m).padStart(2, '0')}-01`;
     const hasta = ultimoDiaDelMes(`${a}-${String(m).padStart(2, '0')}`);
-    const { data: ventasPos } = await db.from('ventas').select('total, tipo_dte')
+    const { data: ventasPos } = await db.from('ventas').select('id, total, tipo_dte')
       .gte('fecha', desde).lte('fecha', hasta).eq('estado', 'PAGADA').in('tipo_dte', ['BOLETA', 'FACTURA']);
-    debito = Math.round((ventasPos || []).reduce((s, v) => s + num(v.total) - num(v.total) / 1.19, 0));
+    let baseDebito = (ventasPos || []).reduce((s, v) => s + num(v.total), 0);
+
+    /* UN MES YA DECLARADO NO PUEDE ENCOGER HACIA ATRÁS (sql/61).
+       Si una boleta de agosto se devuelve en septiembre, el débito de
+       agosto tiene que seguir siendo el que se declaró: la reversa va en
+       septiembre, con su Nota de Crédito. Sin esto, al devolver una boleta
+       vieja el POS mostraría un débito distinto al del F29 ya presentado y
+       la diferencia sería imposible de rastrear después.
+
+       Las devoluciones DENTRO del período no se suman de vuelta: ahí la
+       Nota de Crédito también cae en el mismo mes y ya está descontada
+       (la venta salió por ANULADA o se le rebajó el total). */
+    const { data: devueltasDespues } = await db.from('devoluciones')
+      .select('monto, venta_id').gt('fecha', hasta);
+    const idsDevueltas = [...new Set((devueltasDespues || []).map(d => d.venta_id).filter(Boolean))];
+    if (idsDevueltas.length) {
+      const { data: ventasDevueltas } = await db.from('ventas')
+        .select('id, fecha, tipo_dte').in('id', idsDevueltas);
+      // Solo las que emitieron documento Y son del período que se consulta.
+      const declaradas = new Set((ventasDevueltas || [])
+        .filter(v => ['BOLETA', 'FACTURA'].includes(String(v.tipo_dte || '').toUpperCase()))
+        .filter(v => String(v.fecha) >= desde && String(v.fecha) <= hasta)
+        .map(v => v.id));
+      baseDebito += (devueltasDespues || [])
+        .filter(d => declaradas.has(d.venta_id))
+        .reduce((s, d) => s + num(d.monto), 0);
+    }
+
+    debito = Math.round(baseDebito - baseDebito / 1.19);
     fuenteDebito = 'pos';
   }
 

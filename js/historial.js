@@ -1392,8 +1392,12 @@ function renderHistorialTabla(ventas) {
   elHistorialTableBody.innerHTML = lista.map(v => {
     const pendiente = estaPendiente(v);
     const marcada = ventasSeleccionadas.has(String(v.id));
+    /* Una venta anulada NO se borra (sql/61): se queda en el historial
+       marcada, para que el POS siga coincidiendo con lo declarado al SII. */
+    const anulada = v.estado === 'ANULADA';
+    const parcial = !anulada && v.devolucion_estado === 'PARCIAL';
     return `
-    <tr class="row-in${pendiente ? ' fila-pendiente' : ''}${marcada ? ' fila-marcada' : ''}">
+    <tr class="row-in${pendiente ? ' fila-pendiente' : ''}${anulada ? ' fila-anulada' : ''}${marcada ? ' fila-marcada' : ''}">
       <td class="col-check"><input type="checkbox" data-sel="${v.id}" ${marcada ? 'checked' : ''}></td>
       <td class="strong">#${String(v.numero_orden ?? v.id).padStart(5, '0')}</td>
       <td>${v.fecha || '-'}${v.hora ? ' · ' + v.hora : ''}</td>
@@ -1405,7 +1409,10 @@ function renderHistorialTabla(ventas) {
         </select>
       </td>
       <td>
-        <span class="badge ${pendiente ? 'badge-red' : 'badge-green'}">${pendiente ? 'PENDIENTE' : 'PAGADA'}</span>
+        ${anulada
+          ? '<span class="badge badge-red" title="Venta anulada: se conserva en el historial">ANULADA</span>'
+          : `<span class="badge ${pendiente ? 'badge-red' : 'badge-green'}">${pendiente ? 'PENDIENTE' : 'PAGADA'}</span>` +
+            (parcial ? '<span class="badge badge-gold" title="Se devolvió parte de esta venta">PARCIAL</span>' : '')}
       </td>
       <td>${celdaEnvio(v)}</td>
       <td class="num strong">${fmtCLP(v.total)}</td>
@@ -1414,8 +1421,9 @@ function renderHistorialTabla(ventas) {
         <div class="cell-actions">
           ${pendiente ? `<button class="btn btn-green btn-sm" data-pagar="${v.id}" title="Registrar el pago">💵 Pagar</button>` : ''}
           <button class="btn btn-icon btn-icon-view" data-ver="${v.id}" title="Ver detalle y reimprimir">${ICONO_VER}</button>
+          ${anulada ? '' : `<button class="btn btn-icon btn-icon-devolver" data-devolver="${v.id}" title="Devolver o anular esta venta">↩️</button>`}
           <button class="btn btn-icon btn-icon-edit admin-only" data-editar="${v.id}" title="Editar venta">${ICONO_EDITAR}</button>
-          <button class="btn btn-icon btn-icon-del admin-only" data-eliminar="${v.id}" title="Eliminar venta">${ICONO_ELIMINAR}</button>
+          <button class="btn btn-icon btn-icon-del admin-only" data-eliminar="${v.id}" title="Borrar (solo ventas del día sin documento)">${ICONO_ELIMINAR}</button>
         </div>
       </td>
     </tr>`;
@@ -1451,11 +1459,20 @@ function renderHistorialTabla(ventas) {
   elHistorialTableBody.querySelectorAll('button[data-eliminar]').forEach(btn => {
     btn.addEventListener('click', () => eliminarVentaIndividual(btn.dataset.eliminar));
   });
+  // El modal vive en js/devoluciones.js, que se carga después de este archivo.
+  elHistorialTableBody.querySelectorAll('button[data-devolver]').forEach(btn => {
+    btn.addEventListener('click', () => abrirModalDevolucion(btn.dataset.devolver));
+  });
 }
 
 // ---------- Eliminar ----------
+/* Borrar quedó restringido a su único caso legítimo: un error de tipeo del
+   día, en una venta sin documento (sql/61). El servidor rechaza el resto y
+   manda a "Devolver / Anular", que conserva la venta. */
 async function eliminarVentaIndividual(id) {
-  if (!confirm('¿Eliminar esta venta del historial? Esta acción no se puede deshacer.')) return;
+  if (!confirm('¿Borrar esta venta del historial?\n\n' +
+               'Solo se pueden borrar ventas de HOY y SIN documento tributario. ' +
+               'Para cualquier otra usa "↩️ Devolver / Anular", que la conserva en el historial.')) return;
 
   try {
     await API.ventas.eliminar(id);
