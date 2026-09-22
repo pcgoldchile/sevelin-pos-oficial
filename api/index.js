@@ -896,6 +896,24 @@ function sanearProducto(body = {}) {
   p.nombre = String(p.nombre).trim();
   ['costo_unitario', 'precio_unitario', 'stock', 'peso_kg', 'alto_cm', 'ancho_cm', 'profundidad_cm', 'stock_minimo']
     .forEach(k => { if (p[k] !== undefined) p[k] = num(p[k]); });
+  /* El TEXTO "null" no es contenido (22-09-2026).
+     ------------------------------------------------------------
+     Se encontraron 26 productos con `descripcion` = la palabra "null",
+     escrita como texto. El editor carga `producto.descripcion ||
+     producto.descripcion_web`, y para JavaScript la cadena "null" es
+     un valor válido: cargaba "null" y tapaba la descripción buena. Como
+     al guardar se escriben LOS DOS campos con lo del editor, abrir uno
+     de esos productos y apretar Guardar borraba la descripción real de
+     sevelin.cl y la dejaba en "null".
+     Se normaliza en el servidor y no en el navegador porque protege
+     todos los caminos a la vez: el editor, la importación masiva y
+     cualquier llamada futura a este endpoint. */
+  for (const campo of ['descripcion', 'descripcion_web', 'meta_titulo_web', 'meta_descripcion_web']) {
+    if (p[campo] === undefined) continue;
+    const texto = String(p[campo] ?? '').trim();
+    if (texto === '' || texto.toLowerCase() === 'null' || texto.toLowerCase() === 'undefined') p[campo] = null;
+  }
+
   p.requiere_sn = !!p.requiere_sn;
   if (body.alerta_stock !== undefined) p.alerta_stock = !!body.alerta_stock;
   if (body.es_repuesto !== undefined) p.es_repuesto = !!body.es_repuesto;

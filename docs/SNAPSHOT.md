@@ -7,7 +7,31 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
-**Fecha:** 22-09-2026 · **v79 publicada — copiar el prompt en vez de esperar a la API.**
+**Fecha:** 22-09-2026 · **v80 publicada — SEO cargado a mano en 31 fichas, y el bug del texto "null".**
+
+- 🔴 **BUG ENCONTRADO Y REPARADO, con riesgo real de perder datos:** 26 productos tenían el campo
+  `descripcion` con la palabra **"null" escrita como texto** (no vacío). El editor carga
+  `producto.descripcion || producto.descripcion_web`, y para JavaScript la cadena `"null"` es un valor
+  válido: cargaba "null" y **tapaba la descripción buena**. Como al guardar se escriben LOS DOS
+  campos con lo del editor, **abrir uno de esos productos y apretar Guardar borraba la descripción
+  real de sevelin.cl**. 25 de los 26 tenían la descripción buena a salvo en `descripcion_web`; se
+  restauró desde ahí. El 26º (id 175, Kit de Limpieza para Zapatillas) no tenía ninguna: quedó en
+  NULL de verdad.
+- 🛡️ **Blindaje en el servidor** (`sanearProducto`): el texto "null"/"undefined"/vacío en
+  `descripcion`, `descripcion_web`, `meta_titulo_web` y `meta_descripcion_web` se normaliza a NULL de
+  verdad. Va en el servidor y no en el navegador porque protege todos los caminos: el editor, la
+  importación masiva y cualquier llamada futura. Una descripción que solo *menciona* la palabra
+  ("devuelve null si el disco no responde") NO se toca.
+- 🔍 **SEO cargado a mano en 31 fichas publicadas**, porque el botón sigue sin poder generarlo:
+  verificado en vivo que los tres modelos de Gemini seguían caídos (dos TimeoutError y un 503).
+  Escrito **solo desde la descripción que ya había redactado el dueño**, sin inventar ninguna spec.
+  Todos dentro de los límites (título ≤60, meta ≤155), sin emojis ni markdown, sin repetir "Sevelin".
+- 🚫 **Los 21 restantes quedaron a propósito sin SEO**: 20 no tienen ninguna descripción escrita y
+  1 es el del "null". Sin descripción propia, el SEO solo se podría inventar.
+- 🌐 Ya está vivo: el webhook de la base sincronizó las 31 fichas a `productos_web` solo, y la tienda
+  usa `meta_titulo_web`/`meta_descripcion_web` en el `<title>` y la descripción que ve Google.
+
+**v79 (22-09-2026) — copiar el prompt en vez de esperar a la API.**
 
 - 💡 **Idea del dueño, y es la correcta para este caso:** "¿y si en vez de usar APIs, que sea un botón
   para copiar el prompt y dárselo a Gemini en una pestaña abierta?". Ahora la tarjeta de Descripción
