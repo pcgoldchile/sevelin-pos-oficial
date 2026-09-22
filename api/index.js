@@ -4273,9 +4273,18 @@ app.get('/api/ventas/:id', auth(), async (req, res) => {
     else envio = data || null;
   }
 
+  /* Estado de garantía de cada línea (v82). Se calcula acá y no en el
+     navegador para que la regla viva en un solo lugar: es la misma
+     `calcularEstadoGarantia` que usa el panel de Garantías. El modal de
+     devolución lo usa para preseleccionar el motivo "Garantía". */
+  const itemsConGarantia = (items || []).map(it => ({
+    ...it,
+    ...calcularEstadoGarantia(venta.fecha, it.meses_garantia)
+  }));
+
   res.json({
     ...limpiarParaRol(venta, req.usuario.rol),
-    items: limpiarLista(items, req.usuario.rol),
+    items: limpiarLista(itemsConGarantia, req.usuario.rol),
     envio
   });
 });
@@ -4972,6 +4981,76 @@ async function devueltoPorLinea(ventaId) {
   return mapa;
 }
 
+/* Da de baja la mercadería que volvió ROTA (v82 · Etapa 2).
+   ------------------------------------------------------------
+   Sin esto, una devolución donde el producto no vuelve al stock hacía
+   desaparecer el ingreso de la venta (queda ANULADA) SIN dejar el costo:
+   el mes se veía mejor de lo que fue. Ahora esa mercadería se registra
+   como merma con su costo PEPS real, igual que una baja manual.
+
+   OJO con lo que NO se da de baja:
+   · El stock NO se descuenta: estas unidades nunca volvieron al inventario,
+     así que ya estaban descontadas desde la venta. Descontarlas otra vez
+     dejaría el stock en negativo.
+   · Un repuesto usado en una OT no se da de baja: su costo ya se cargó a la
+     orden de trabajo, y contarlo acá sería el mismo gasto dos veces.
+   · Un servicio no pierde mercadería: no hay nada físico que dar de baja. */
+async function darDeBajaDevolucion(linea, devolucion, venta) {
+  const item = linea.item;
+  if (item.ot_repuesto_id || !item.producto_id) return null;
+
+  const { data: p } = await db.from('productos')
+    .select('id, stock_ilimitado').eq('id', item.producto_id).maybeSingle();
+  if (!p || p.stock_ilimitado) return null;
+
+  const costoTotal = Math.round(num(linea.costo));
+  const motivoLegible = String(devolucion.motivo || '').toLowerCase().replace(/_/g, ' ');
+  const detalle = `Devolución venta #${venta.numero_orden ?? venta.id}: ` +
+    `${linea.cantidad} × ${item.nombre} no volvió al stock (${motivoLegible})`;
+
+  /* El gasto solo se crea si hay costo. Una merma de $0 ensucia la lista de
+     Gastos sin aportar nada; la merma en sí SÍ se registra igual, porque es
+     el rastro de inventario. */
+  let gastoId = null;
+  if (costoTotal > 0) {
+    await db.from('compra_clasificaciones').upsert(
+      [{ nombre: CLASIFICACION_MERMA, descripcion: 'Stock dado de baja por daño, robo o vencimiento', activo: true }],
+      { onConflict: 'nombre', ignoreDuplicates: true });
+
+    const { data: gasto, error: errGasto } = await db.from('compras').insert([{
+      fecha: new Date().toISOString(),
+      proveedor: 'Ajuste interno de inventario',
+      clasificacion: CLASIFICACION_MERMA,
+      costo_total: costoTotal,
+      descripcion: detalle,
+      origen: 'MERMA'
+    }]).select().single();
+    if (errGasto) console.error('[DEVOLUCION] no se pudo cargar el gasto de la merma:', errGasto.message);
+    else gastoId = gasto.id;
+  }
+
+  const { data: merma, error: errMerma } = await db.from('mermas').insert([{
+    tipo: 'PRODUCTO',
+    producto_id: item.producto_id,
+    repuesto_id: null,
+    nombre: item.nombre,
+    cantidad: linea.cantidad,
+    costo_unitario: num(item.costo_unitario),
+    costo_total: costoTotal,
+    observacion: detalle,
+    compra_id: gastoId
+  }]).select().single();
+
+  if (errMerma) {
+    /* Que falle la baja NO tumba la devolución: la plata ya se devolvió y
+       el stock ya se movió. Queda el aviso y la línea sin merma_id, que es
+       justo lo que el panel de devoluciones muestra como pendiente. */
+    console.error('[DEVOLUCION] no se pudo registrar la merma:', errMerma.message);
+    return null;
+  }
+  return merma;
+}
+
 app.post('/api/ventas/:id/devolucion', auth(), async (req, res) => {
   const ventaId = Number(req.params.id);
   if (!Number.isFinite(ventaId)) return enviarError(res, 400, 'Venta inválida');
@@ -5108,13 +5187,26 @@ app.post('/api/ventas/:id/devolucion', auth(), async (req, res) => {
       monto: l.monto,
       reingresa_stock: l.reingresa_stock
     }));
-    const { error: errFilas } = await db.from('devolucion_items').insert(filasItems);
+    const { data: filasGuardadas, error: errFilas } = await db.from('devolucion_items')
+      .insert(filasItems).select();
     if (errFilas) throw new Error(errFilas.message);
+    // venta_item_id → id de la fila de devolucion_items, para enlazar su merma
+    const idPorLinea = new Map((filasGuardadas || []).map(f => [f.venta_item_id, f.id]));
 
     // ---- 2) El stock vuelve ----
     let lineasRepuestas = 0, lineasSinReingreso = 0;
+    const mermasCreadas = [];
     for (const l of aDevolver) {
-      if (!l.reingresa_stock) { lineasSinReingreso++; continue; }
+      if (!l.reingresa_stock) {
+        lineasSinReingreso++;
+        const merma = await darDeBajaDevolucion(l, devolucion, venta);
+        if (merma) {
+          mermasCreadas.push(merma);
+          const filaId = idPorLinea.get(l.item.id);
+          if (filaId) await db.from('devolucion_items').update({ merma_id: merma.id }).eq('id', filaId);
+        }
+        continue;
+      }
 
       // Las capas PEPS se restauran aparte del stock del catálogo: cada una
       // lleva su propio libro (mismo criterio que devolverConsumoLotes).
@@ -5195,6 +5287,7 @@ app.post('/api/ventas/:id/devolucion', auth(), async (req, res) => {
       tipo_dte: venta.tipo_dte || null,
       aviso_caja: avisoCaja,
       stock: { lineas_repuestas: lineasRepuestas, lineas_sin_reingreso: lineasSinReingreso },
+      mermas: mermasCreadas.map(m => ({ id: m.id, nombre: m.nombre, cantidad: m.cantidad, costo_total: m.costo_total })),
       venta: {
         id: ventaId,
         estado: tipo === 'TOTAL' ? 'ANULADA' : venta.estado,
@@ -5224,6 +5317,88 @@ app.get('/api/ventas/:id/devoluciones', auth(), async (req, res) => {
     items = data || [];
   }
   res.json((devs || []).map(d => ({ ...d, items: items.filter(i => i.devolucion_id === d.id) })));
+});
+
+/* AVISO: devoluciones en efectivo que no quedaron en ninguna caja (v82).
+   ------------------------------------------------------------
+   Pasa cuando se devuelve plata sin caja abierta. La plata salió del cajón
+   igual, así que el arqueo de ese turno va a dar de menos sin explicación.
+   Este aviso alimenta el botón del header.
+
+   Va ANTES de cualquier ruta /api/devoluciones/:id para que "pendientes-caja"
+   no se lea como un id. */
+app.get('/api/devoluciones/pendientes-caja', auth(), async (req, res) => {
+  const { data, error } = await db.from('devoluciones')
+    .select('id, venta_id, fecha, monto, motivo, observacion')
+    .eq('metodo_devolucion', 'Efectivo')
+    .is('caja_movimiento_id', null)
+    .gt('monto', 0)
+    .order('fecha', { ascending: false })
+    .limit(100);
+  if (error) return enviarErrorBD(res, error);
+
+  const filas = data || [];
+  const ventaIds = [...new Set(filas.map(d => d.venta_id).filter(Boolean))];
+  let ventas = new Map();
+  if (ventaIds.length) {
+    const { data: vs } = await db.from('ventas').select('id, numero_orden, cliente').in('id', ventaIds);
+    ventas = new Map((vs || []).map(v => [v.id, v]));
+  }
+
+  const hoy = fechaHoyChile();
+  const { data: caja } = await db.from('cajas_diarias')
+    .select('id').eq('estado', 'abierta').limit(1).maybeSingle();
+
+  res.json({
+    total: filas.length,
+    monto: filas.reduce((s, d) => s + num(d.monto), 0),
+    hay_caja_abierta: !!caja,
+    devoluciones: filas.map(d => ({
+      ...d,
+      venta: ventas.get(d.venta_id) || null,
+      /* Solo se puede arreglar de un clic si la devolución es de HOY: meter
+         en la caja de hoy una plata que salió del cajón hace tres días
+         descuadraría los dos días en vez de uno. */
+      se_puede_registrar: !!caja && String(d.fecha) === hoy
+    }))
+  });
+});
+
+/* Registra el egreso que faltó, en la caja abierta. */
+app.post('/api/devoluciones/:id/registrar-egreso', auth(), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return enviarError(res, 400, 'Devolución inválida');
+
+  const { data: dev } = await db.from('devoluciones').select('*').eq('id', id).maybeSingle();
+  if (!dev) return enviarError(res, 404, 'Devolución no encontrada');
+  if (dev.caja_movimiento_id) return enviarError(res, 409, 'Esta devolución ya tiene su egreso registrado');
+  if (dev.metodo_devolucion !== 'Efectivo' || num(dev.monto) <= 0) {
+    return enviarError(res, 400, 'Esta devolución no sacó efectivo del cajón');
+  }
+  if (String(dev.fecha) !== fechaHoyChile()) {
+    return enviarError(res, 409,
+      `Esta devolución es del ${dev.fecha}: meterla en la caja de hoy descuadraría los dos días. ` +
+      'Ajústala a mano en la caja de ese día.');
+  }
+
+  const { data: caja } = await db.from('cajas_diarias')
+    .select('id').eq('estado', 'abierta').limit(1).maybeSingle();
+  if (!caja) return enviarError(res, 400, 'No hay una caja abierta donde registrar el egreso');
+
+  const { data: venta } = await db.from('ventas').select('numero_orden').eq('id', dev.venta_id).maybeSingle();
+  const { data: mov, error } = await db.from('caja_movimientos').insert([{
+    caja_id: caja.id,
+    tipo: 'EGRESO',
+    monto: num(dev.monto),
+    concepto: `Devolución venta #${venta?.numero_orden ?? dev.venta_id} — ` +
+              `${String(dev.motivo).toLowerCase().replace(/_/g, ' ')} (registrada después)`
+  }]).select().single();
+  if (error) return enviarErrorBD(res, error);
+
+  await db.from('devoluciones')
+    .update({ caja_id: caja.id, caja_movimiento_id: mov.id }).eq('id', id);
+
+  res.status(201).json({ ok: true, movimiento: mov });
 });
 
 /* Listado de devoluciones por período, con el detalle de cada una.

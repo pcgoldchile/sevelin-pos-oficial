@@ -225,6 +225,12 @@
       <button id="btnEnCamino" class="btn-notificaciones btn-camino admin-only" title="Mercadería comprada que todavía no llega" hidden>
         📦 <span id="textoEnCamino">En camino</span>
       </button>
+      <!-- Plata devuelta en efectivo que no quedó en ninguna caja (sql/61).
+           NO es admin-only: el trabajador también devuelve, y el arqueo de
+           su turno es el que va a dar de menos. -->
+      <button id="btnDevolucionesCaja" class="btn-notificaciones btn-dev-caja" title="Devoluciones en efectivo sin registrar en caja" hidden>
+        💸 <span id="textoDevolucionesCaja">Devoluciones sin caja</span>
+      </button>
       <span id="syncBadge" class="sync-badge sync-pending">⏳ Conectando…</span>
     </div>
   </header>
@@ -4147,6 +4153,21 @@
       <div class="modal-foot">
         <button class="btn btn-ghost" id="btnCancelarDevolucion" type="button">Cancelar</button>
         <button class="btn btn-primary" id="btnConfirmarDevolucion" type="button" disabled>↩️ Confirmar devolución</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Devoluciones en efectivo que quedaron fuera de toda caja (v82) -->
+  <div id="modalDevolucionesCaja" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <h2>💸 Devoluciones sin registrar en caja</h2>
+      <p class="modal-hint">
+        Esta plata salió del cajón, pero no quedó en ninguna caja: al cerrar el turno el arqueo va a
+        dar de menos sin explicación. Las de hoy se pueden arreglar de un clic.
+      </p>
+      <div id="devCajaLista" style="display:flex; flex-direction:column; gap:8px; margin-top:14px;"></div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCerrarDevolucionesCaja" type="button">Cerrar</button>
       </div>
     </div>
   </div>

@@ -90,9 +90,17 @@ async function abrirModalDevolucion(id) {
     }
 
     const selMotivo = document.getElementById('devMotivo');
-    if (selMotivo && !selMotivo.options.length) {
-      selMotivo.innerHTML = MOTIVOS_DEV
-        .map(([v, t]) => `<option value="${v}">${escHtml(t)}</option>`).join('');
+    if (selMotivo) {
+      if (!selMotivo.options.length) {
+        selMotivo.innerHTML = MOTIVOS_DEV
+          .map(([v, t]) => `<option value="${v}">${escHtml(t)}</option>`).join('');
+      }
+      /* Si queda algo en garantía vigente, ese es el motivo más probable.
+         El estado lo calcula el servidor con la misma regla del panel de
+         Garantías, para que las dos pantallas no puedan discrepar. */
+      const hayGarantia = (venta.items || []).some(i =>
+        i.estado_garantia === 'VIGENTE' && num(i.cantidad) - (devYaDevuelto.get(i.id) || 0) > 0);
+      selMotivo.value = hayGarantia ? 'GARANTIA' : 'FALLA';
     }
     const obs = document.getElementById('devObservacion');
     if (obs) obs.value = '';
@@ -122,6 +130,16 @@ function pintarLineasDevolucion() {
     // no el repuesto. El servidor lo fuerza igual.
     const esDeOt = !!i.ot_repuesto_id;
 
+    /* El estado de garantía viene calculado del servidor (v82). Sirve para
+       dos cosas: preseleccionar el motivo y, sobre todo, que el dueño vea
+       si le corresponde cubrirlo antes de decidir. */
+    const enGarantia = i.estado_garantia === 'VIGENTE';
+    const chipGarantia = i.vence_el
+      ? `<span class="dev-chip ${enGarantia ? 'dev-chip-garantia' : 'dev-chip-vencida'}">
+           ${enGarantia ? '🛡️ En garantía hasta' : '⌛ Garantía vencida el'} ${escHtml(i.vence_el)}
+         </span>`
+      : '';
+
     return `
       <div class="dev-linea${agotada ? ' dev-linea-lista' : ''}">
         <div class="dev-linea-info">
@@ -129,6 +147,7 @@ function pintarLineasDevolucion() {
           <span class="dev-linea-meta">
             ${fmtCLP(i.precio_unitario)} c/u · vendidas ${vendidas}${devueltas ? ` · ya devueltas ${devueltas}` : ''}
           </span>
+          ${chipGarantia}
         </div>
         <div class="dev-linea-campos">
           <label class="dev-cantidad">
@@ -242,7 +261,16 @@ async function confirmarDevolucion() {
     }
     if (r.aviso_caja) alert('⚠️ ' + r.aviso_caja);
 
+    /* Lo que no volvió al stock se dio de baja solo, con su costo real.
+       Se avisa porque es plata que se va del mes: el dueño tiene que
+       enterarse, no descubrirlo después en el balance. */
+    if (r.mermas?.length) {
+      const total = r.mermas.reduce((s, m) => s + num(m.costo_total), 0);
+      showToast(`Se dio de baja lo que no volvió al stock · ${fmtCLP(total)} de pérdida`, 'ok');
+    }
+
     if (typeof cargarHistorial === 'function') cargarHistorial();
+    actualizarAvisoDevolucionesCaja();
   } catch (err) {
     console.error('Error al registrar la devolución:', err.message || err);
     showToast(err.message || 'No se pudo registrar la devolución', 'err');
@@ -251,7 +279,96 @@ async function confirmarDevolucion() {
   }
 }
 
+/* ============================================================
+   AVISO DEL HEADER: devoluciones en efectivo fuera de caja (v82)
+   ------------------------------------------------------------
+   Si se devuelve plata en efectivo sin caja abierta, la plata sale del
+   cajón igual: al cerrar el turno el arqueo va a dar de MENOS y sin
+   explicación. Este aviso lo dice antes de que pase.
+
+   Se muestra al trabajador también: es quien puede haber hecho esa
+   devolución, y es un problema de mostrador, no de contabilidad.
+   ============================================================ */
+
+const INTERVALO_DEV_CAJA_MS = 5 * 60 * 1000;
+let intervaloDevCaja = null;
+let devCajaCache = null;
+
+async function actualizarAvisoDevolucionesCaja() {
+  const btn = document.getElementById('btnDevolucionesCaja');
+  const texto = document.getElementById('textoDevolucionesCaja');
+  if (!btn || !texto || !tokenActual()) return;
+
+  try {
+    devCajaCache = await API.devoluciones.pendientesCaja();
+    const total = Number(devCajaCache?.total) || 0;
+    if (!total) { btn.hidden = true; return; }
+
+    texto.textContent = total === 1
+      ? '1 devolución sin caja'
+      : `${total} devoluciones sin caja`;
+    btn.title = `${fmtCLP(devCajaCache.monto)} salieron del cajón sin quedar registrados en ninguna caja. ` +
+                'El arqueo de esos turnos va a dar de menos.';
+    btn.hidden = false;
+  } catch (err) {
+    console.error('No se pudo revisar las devoluciones sin caja:', err.message || err);
+  }
+}
+
+function abrirModalDevolucionesCaja() {
+  const cont = document.getElementById('devCajaLista');
+  if (!cont || !devCajaCache) return;
+
+  cont.innerHTML = (devCajaCache.devoluciones || []).map(d => {
+    const orden = d.venta?.numero_orden ?? d.venta_id;
+    return `
+      <div class="dev-linea">
+        <div class="dev-linea-info">
+          <strong>Venta #${String(orden).padStart(5, '0')} · ${fmtCLP(d.monto)}</strong>
+          <span class="dev-linea-meta">
+            ${escHtml(d.fecha)} · ${escHtml(String(d.motivo).toLowerCase().replace(/_/g, ' '))}
+            ${d.venta?.cliente ? ' · ' + escHtml(d.venta.cliente) : ''}
+          </span>
+          ${d.observacion ? `<span class="dev-linea-meta">${escHtml(d.observacion)}</span>` : ''}
+        </div>
+        <div class="dev-linea-campos">
+          ${d.se_puede_registrar
+            ? `<button class="btn btn-primary btn-sm" data-registrar-egreso="${d.id}">Registrar en la caja de hoy</button>`
+            : `<span class="dev-linea-meta">Es de otro día: ajústalo a mano en la caja del ${escHtml(d.fecha)}.</span>`}
+        </div>
+      </div>`;
+  }).join('') || '<p class="modal-hint">No hay devoluciones pendientes.</p>';
+
+  document.getElementById('modalDevolucionesCaja')?.classList.add('show');
+}
+
+async function registrarEgresoPendiente(id) {
+  try {
+    await API.devoluciones.registrarEgreso(id);
+    showToast('Egreso registrado en la caja', 'ok');
+    await actualizarAvisoDevolucionesCaja();
+    if (devCajaCache?.total) abrirModalDevolucionesCaja();
+    else cerrarModal('modalDevolucionesCaja');
+  } catch (err) {
+    console.error('No se pudo registrar el egreso:', err.message || err);
+    showToast(err.message || 'No se pudo registrar el egreso', 'err');
+  }
+}
+
+document.addEventListener('pos:sesion-iniciada', () => {
+  if (intervaloDevCaja) { clearInterval(intervaloDevCaja); intervaloDevCaja = null; }
+  actualizarAvisoDevolucionesCaja();
+  intervaloDevCaja = setInterval(actualizarAvisoDevolucionesCaja, INTERVALO_DEV_CAJA_MS);
+});
+
 document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btnDevolucionesCaja')?.addEventListener('click', abrirModalDevolucionesCaja);
+  document.getElementById('btnCerrarDevolucionesCaja')?.addEventListener('click', () => cerrarModal('modalDevolucionesCaja'));
+  document.getElementById('devCajaLista')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-registrar-egreso]');
+    if (btn) registrarEgresoPendiente(Number(btn.dataset.registrarEgreso));
+  });
+
   document.getElementById('btnCancelarDevolucion')?.addEventListener('click', cerrarModalDevolucion);
   document.getElementById('btnConfirmarDevolucion')?.addEventListener('click', confirmarDevolucion);
   document.getElementById('btnDevolverTodo')?.addEventListener('click', devolverTodoEnModal);

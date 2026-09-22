@@ -270,7 +270,11 @@ const API = {
       if (soloNotaCredito) q.set('solo_nota_credito', 'true');
       const cadena = q.toString();
       return apiRequest('/devoluciones' + (cadena ? `?${cadena}` : ''));
-    }
+    },
+    /* Devoluciones en efectivo que quedaron fuera de toda caja: la plata
+       salió del cajón igual y el arqueo de ese turno va a dar de menos. */
+    pendientesCaja: () => apiRequest('/devoluciones/pendientes-caja'),
+    registrarEgreso: (id) => apiRequest(`/devoluciones/${id}/registrar-egreso`, { method: 'POST' })
   },
 
   compras: {

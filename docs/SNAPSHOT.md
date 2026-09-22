@@ -7,7 +7,29 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
-**Fecha:** 22-09-2026 · **v81 publicada — devoluciones: la venta ya no se borra, se anula.**
+**Fecha:** 22-09-2026 · **v82 publicada — devoluciones Etapa 2: la pérdida se registra sola.**
+
+- 💸 **Se cerró el hueco de la v81:** la mercadería que NO vuelve al stock ahora genera **merma
+  automática con su costo PEPS real** y su gasto. Antes la venta salía del balance (queda ANULADA)
+  pero el costo no aparecía en ninguna parte: el mes se veía mejor de lo que fue.
+- 🚫 **Tres casos donde a propósito NO se da de baja:** el stock no se vuelve a descontar (esas
+  unidades nunca volvieron, ya estaban descontadas desde la venta); un repuesto usado en una OT no
+  genera merma (su costo ya se cargó a la orden, sería doble gasto); un servicio tampoco (no hay
+  nada físico). Una merma de $0 se registra pero no crea gasto.
+- 🛡️ **Garantía preseleccionada:** `GET /api/ventas/:id` devuelve `vence_el` y `estado_garantia` por
+  línea, calculados con la MISMA `calcularEstadoGarantia` del panel de Garantías. El modal muestra un
+  chip por línea y arranca en motivo "Garantía" si queda algo vigente.
+- 🔴 **Aviso nuevo en el header (`btnDevolucionesCaja`, NO admin-only):** devoluciones en efectivo que
+  quedaron fuera de toda caja. Esa plata salió del cajón y el arqueo de ese turno va a dar de menos.
+  El trabajador también lo ve, porque es su turno el que queda corto.
+- ⚠️ **Solo las de HOY se arreglan de un clic.** Meter en la caja de hoy plata que salió hace tres
+  días descuadraría los dos días en vez de uno; el servidor lo rechaza y lo explica.
+- 🧪 89 comprobaciones de backend + 61 de interfaz + navegador real. Sin migración nueva: usa la
+  columna `devolucion_items.merma_id` que `sql/61` ya había dejado lista.
+- ⏭️ **Falta la Etapa 3:** panel de Devoluciones en Finanzas (el endpoint con filtro de Nota de
+  Crédito ya existe).
+
+**v81 (22-09-2026) — devoluciones: la venta ya no se borra, se anula.**
 
 - 🔴 **El hallazgo que cambió el diseño:** hasta hoy la única forma de revertir una venta era
   **borrarla** (`DELETE /api/ventas/:id`). Y **60 de las 202 ventas tienen BOLETA declarada al SII**:
