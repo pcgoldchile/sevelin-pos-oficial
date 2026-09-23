@@ -11690,10 +11690,16 @@ async function construirFeedCatalogo() {
          Si algún día la tienda sirve las fichas agotadas (mejor para SEO,
          pero es una decisión de negocio), acá basta con dejar pasar la
          fila con `availability: out of stock`. */
-      if (!hayStock) {
-        omitidos.push({ sku: p.sku, nombre: p.nombre, motivo: 'sin stock: su ficha devuelve 404 en la tienda, el link del feed quedaría roto' });
-        continue;
-      }
+      /* 23-09-2026: SE HIZO LO QUE ESTE COMENTARIO ANTICIPABA.
+         La tienda ya sirve la ficha de un producto agotado (con su cartel
+         de Agotado y el formulario "Avísame cuando llegue"), así que el
+         link dejó de estar roto y el producto puede ir al feed declarado
+         como `out of stock` en vez de desaparecer.
+
+         Por qué importa: estos 20 productos salían del feed apenas se
+         agotaban, y esa es la caída que Google alertó el 23-09 (178 → 134).
+         Mantenerlos declarados conserva su lugar en Google mientras vuelve
+         a haber stock, en vez de perder el historial cada vez. */
 
       /* EL `id` NO PUEDE PASAR DE 50 CARACTERES.
          Verificado contra Google el 09-09-2026 en la primera lectura real
