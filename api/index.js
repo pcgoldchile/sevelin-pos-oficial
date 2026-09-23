@@ -11724,7 +11724,14 @@ async function construirFeedCatalogo() {
         availability: hayStock ? 'in stock' : 'out of stock',
         condition: posible && posible.condicion === 'reacondicionado' ? 'refurbished' : 'new',
         price: `${Math.round(num(p.precio_web))} CLP`,
-        link: `${sitio}/productos/${encodeURIComponent(p.sku)}`,
+        /* CADA PRODUCTO A SU RUTA (23-09-2026).
+           Los pedidos por encargo NO viven en /productos: esa ficha los
+           rechaza a propósito (notFound), así que sus 18 filas del feed
+           llevaban a un 404 en Google y en Meta. Es el mismo error que se
+           arregló el 22-09 en el sitemap de la tienda; el feed tenía su
+           propia copia y quedó fuera de aquel arreglo.
+           Los `por_llegar` SÍ van a /productos: la ficha los muestra. */
+        link: `${sitio}${p.es_pedido_encargo ? '/pedidos-por-encargo' : '/productos'}/${encodeURIComponent(p.sku)}`,
         image_link: imagenes[0],
         // Meta acepta hasta 20 adicionales separadas por coma.
         additional_image_link: imagenes.slice(1, 21).join(','),
