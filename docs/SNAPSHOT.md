@@ -7,7 +7,23 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
-**Fecha:** 22-09-2026 · **v84 publicada — seguimiento del producto devuelto, con el balance bajo su control.**
+**Fecha:** 22-09-2026 · **v85 publicada — el buscador del Historial estaba en la pantalla equivocada.**
+
+- 🔍 **No había que construir nada:** el buscador por producto / SKU / N° de serie / código de barras
+  ya existía completo (servidor y JavaScript). Su bloque HTML estaba **dentro de Servicio Técnico →
+  Abonos y Encargos**, no en Finanzas → Historial de Ventas. Invisible donde hace falta, inútil donde
+  estaba. Se movió el bloque; el JavaScript no se tocó.
+- 💳 **Nuevo filtro por medio de pago**, como desplegable junto al de envíos: son 5 valores cerrados y
+  escribir "tarjeta" nunca acertaría entre Débito y Crédito. **Mira `metodo_pago_final` primero**
+  (una venta que nació "Por Pagar" y se cobró en efectivo tiene su medio real ahí), y las mixtas
+  tienen su propia opción porque no son "un" medio.
+- 🧪 21 comprobaciones en jsdom + navegador real.
+- ⚠️ **Trampa repetida:** el navegador cachea los `js/*.js`. Probando a mano el filtro "no
+  funcionaba" porque la página usaba un `historial.js` viejo (ya había pasado con `balance.js` en la
+  v83). Las pruebas definitivas van en **jsdom, que lee del disco**; y conviene Ctrl+F5 al abrir el
+  POS tras una actualización.
+
+**v84 (22-09-2026) — seguimiento del producto devuelto, con el balance bajo su control.**
 
 - 📮 **Qué pasó con el producto DESPUÉS de la devolución** (`sql/63`): al proveedor, a la garantía del
   fabricante, reparado, me lo quedé, o botado. Va **por producto** y no por devolución (decisión del

@@ -821,42 +821,6 @@
           </div>
         </div>
 
-        <!-- ============================================================
-             BUSCADOR POR PRODUCTO
-             ------------------------------------------------------------
-             Responde "¿en qué ventas salió este producto?". Busca por
-             nombre, SKU o número de serie dentro del detalle de las
-             ventas, no en la cabecera, así que lo resuelve el servidor:
-             el navegador solo tiene los totales de cada venta.
-
-             Es independiente del rango de fechas: se combinan. Buscar un
-             producto sin ampliar el período mostraría solo las de hoy,
-             por eso el botón "todo el historial" de al lado.
-             ============================================================ -->
-        <div class="toolbar-row hist-buscador-row">
-          <div class="field hist-buscador-campo">
-            <label for="histBuscarProducto">Buscar ventas
-              <span class="font-normal">(producto · SKU · código de barras · fecha · fecha y hora · total $)</span>
-            </label>
-            <div class="hist-buscador-caja">
-              <input type="text" id="histBuscarProducto" autocomplete="off"
-                     placeholder="Ej: notebook · 7801234567890 · 2026-08-18 · 2026-08-18 19:56 · 100000">
-              <button type="button" id="btnLimpiarBusquedaProducto"
-                      class="hist-buscador-limpiar hidden" title="Quitar la búsqueda">✕</button>
-              <!-- Sugerencias en vivo de las ventas ya cargadas -->
-              <div id="histSugerencias" class="hist-sugerencias hidden"></div>
-            </div>
-          </div>
-          <div class="field" style="flex:0 0 auto;">
-            <label class="field-ghost-label">&nbsp;</label>
-            <button class="btn btn-outline" id="btnBuscarProductoTodo"
-                    title="Buscar un producto en todas las ventas registradas, sin importar la fecha">
-              🗂️ Buscar en todo el historial
-            </button>
-          </div>
-        </div>
-        <p class="hist-buscador-resultado hidden" id="histResultadoBusqueda"></p>
-
         <div class="kpi-grid">
           <div class="kpi-card kpi-blue">
             <div class="kpi-label">📦 Encargos Activos</div>
@@ -1901,6 +1865,48 @@
           </div>
         </div>
 
+        <!-- ============================================================
+             BUSCADOR POR PRODUCTO
+             ------------------------------------------------------------
+             Responde "¿en qué ventas salió este producto?". Busca por
+             nombre, SKU, número de serie o código de barras dentro del
+             DETALLE de las ventas, no en la cabecera, así que lo resuelve
+             el servidor: el navegador solo tiene los totales de cada venta.
+
+             Es independiente del rango de fechas: se combinan. Buscar un
+             producto sin ampliar el período mostraría solo las de hoy,
+             por eso el botón "todo el historial" de al lado.
+
+             ⚠️ ESTE BLOQUE VIVÍA EN Servicio Técnico → Abonos y Encargos
+             (22-09-2026). Todo su código estaba bien y enganchado a
+             js/historial.js, pero se renderizaba en la pantalla equivocada:
+             invisible donde hace falta e inútil donde estaba. Reportado por
+             el dueño como "falta buscar por nombre del producto".
+             ============================================================ -->
+        <div class="toolbar-row hist-buscador-row">
+          <div class="field hist-buscador-campo">
+            <label for="histBuscarProducto">Buscar ventas
+              <span class="font-normal">(producto · SKU · N° de serie · código de barras · fecha · fecha y hora · total $)</span>
+            </label>
+            <div class="hist-buscador-caja">
+              <input type="text" id="histBuscarProducto" autocomplete="off"
+                     placeholder="Ej: notebook · SN12345 · 7801234567890 · 2026-08-18 · 100000">
+              <button type="button" id="btnLimpiarBusquedaProducto"
+                      class="hist-buscador-limpiar hidden" title="Quitar la búsqueda">✕</button>
+              <!-- Sugerencias en vivo de las ventas ya cargadas -->
+              <div id="histSugerencias" class="hist-sugerencias hidden"></div>
+            </div>
+          </div>
+          <div class="field" style="flex:0 0 auto;">
+            <label class="field-ghost-label">&nbsp;</label>
+            <button class="btn btn-outline" id="btnBuscarProductoTodo"
+                    title="Buscar un producto en todas las ventas registradas, sin importar la fecha">
+              🗂️ Buscar en todo el historial
+            </button>
+          </div>
+        </div>
+        <p class="hist-buscador-resultado hidden" id="histResultadoBusqueda"></p>
+
         <div class="kpi-grid">
           <div class="kpi-card kpi-blue">
             <div class="kpi-label">💰 Ventas Totales</div>
@@ -1976,6 +1982,20 @@
               <option value="preparacion">📋 En preparación</option>
               <option value="enviado">🚚 Enviado</option>
               <option value="entregado">✅ Entregado</option>
+            </select>
+            <!-- Medio de pago (22-09-2026, pedido del dueño). Es una lista
+                 cerrada de 5 valores, así que va como desplegable y no como
+                 texto: escribir "tarjeta" nunca acertaría entre "Tarjeta
+                 Débito" y "Tarjeta Crédito". Filtra sobre lo ya cargado,
+                 igual que el de envíos: no vuelve a pedir nada al servidor. -->
+            <select id="histFiltroMedioPago" class="hist-select" title="Filtrar por medio de pago">
+              <option value="">💳 Todos los medios de pago</option>
+              <option value="Efectivo">💵 Efectivo</option>
+              <option value="Transferencia">🏦 Transferencia</option>
+              <option value="Tarjeta Débito">💳 Tarjeta Débito</option>
+              <option value="Tarjeta Crédito">💳 Tarjeta Crédito</option>
+              <option value="__mixto">🔀 Pago mixto</option>
+              <option value="Por Pagar">⏳ Por Pagar</option>
             </select>
             <!-- Punto 5: orden por fecha -->
             <select id="histOrden" class="hist-select" title="Ordenar por fecha">

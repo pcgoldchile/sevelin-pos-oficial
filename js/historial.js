@@ -18,6 +18,8 @@ let ventaEditando = null;   // venta abierta en el modal de edición
 let itemsEditando = [];     // copia editable de sus ítems
 let filtroEstado = null;    // null = todas · 'PENDIENTE' = solo por pagar
 let filtroEnvio = '';       // '' = todos · 'pendiente'|'preparacion'|'enviado'|'entregado'
+// '' = todos · el nombre del medio · '__mixto' para las de pago dividido
+let filtroMedioPago = '';
 let ordenHistorial = 'desc'; // 'desc' = más reciente primero · 'asc' = más antigua
 
 /* Búsqueda por producto: texto que se manda al servidor para filtrar por
@@ -220,6 +222,11 @@ function setupHistorialEventListeners() {
   });
   document.getElementById('histOrden')?.addEventListener('change', (e) => {
     ordenHistorial = e.target.value === 'asc' ? 'asc' : 'desc';
+    renderHistorialTabla(salesHistory);
+  });
+  // Medio de pago: filtra lo ya cargado, sin volver a pedir nada al servidor
+  document.getElementById('histFiltroMedioPago')?.addEventListener('change', (e) => {
+    filtroMedioPago = e.target.value || '';
     renderHistorialTabla(salesHistory);
   });
 
@@ -1370,6 +1377,18 @@ function renderHistorialTabla(ventas) {
     lista = lista.filter(v => (v.estado_envio || '') === filtroEnvio);
   }
 
+  /* Medio de pago (22-09-2026). Se mira `metodo_pago_final` primero: una
+     venta que nació "Por Pagar" y después se cobró en efectivo tiene el
+     medio real ahí, y filtrar por `metodo_pago` la dejaría fuera.
+     Las mixtas tienen su propia opción porque no son "un" medio. */
+  if (filtroMedioPago) {
+    lista = lista.filter(v => {
+      if (filtroMedioPago === '__mixto') return !!v.pago_mixto;
+      if (v.pago_mixto) return false;
+      return (v.metodo_pago_final || v.metodo_pago || '') === filtroMedioPago;
+    });
+  }
+
   // Punto 5: orden por fecha real de la venta (vendida_en, con id de desempate)
   lista = lista.slice().sort((a, b) => {
     const fa = a.vendida_en || `${a.fecha || ''}T${a.hora || '00:00'}`;
@@ -1381,9 +1400,11 @@ function renderHistorialTabla(ventas) {
   if (lista.length === 0) {
     const msg = filtroEstado === 'PENDIENTE'
       ? 'No hay ventas pendientes de pago en este período.'
-      : filtroEnvio
-        ? 'No hay ventas con ese estado de envío en el período.'
-        : 'No hay ventas en este período. Prueba con otro filtro o registra una venta nueva.';
+      : filtroMedioPago
+        ? 'No hay ventas con ese medio de pago en el período.'
+        : filtroEnvio
+          ? 'No hay ventas con ese estado de envío en el período.'
+          : 'No hay ventas en este período. Prueba con otro filtro o registra una venta nueva.';
     elHistorialTableBody.innerHTML = `<tr class="empty-row"><td colspan="11">${msg}</td></tr>`;
     actualizarBarraVentas();
     return;
