@@ -2162,6 +2162,17 @@ function sanearIngreso(body) {
     return { error: 'La fecha de devolución no puede ser anterior a la compra' };
   }
 
+  const esperada = String(body?.factura_esperada_para || '').trim();
+  if (esperada && !fechaValidaISO(esperada)) {
+    return { error: 'La fecha en que esperas la factura debe venir como YYYY-MM-DD' };
+  }
+
+  const referencia = String(body?.referencia || '').trim().slice(0, 80) || null;
+
+  /* sql/65 — La factura no puede estar pendiente si el número YA está
+     escrito: se apaga sola y no hay que acordarse de desmarcarla. */
+  const facturaPendiente = !referencia && body?.factura_pendiente === true;
+
   return {
     datos: {
       fecha_compra: fecha,
@@ -2169,8 +2180,10 @@ function sanearIngreso(body) {
       costo_unitario: Math.round(costo),
       proveedor: String(body?.proveedor || '').trim().slice(0, 80) || null,
       devolucion_hasta: devolucion || null,
-      referencia: String(body?.referencia || '').trim().slice(0, 80) || null,
-      nota: String(body?.nota || '').trim().slice(0, 300) || null
+      referencia,
+      nota: String(body?.nota || '').trim().slice(0, 300) || null,
+      factura_pendiente: facturaPendiente,
+      factura_esperada_para: facturaPendiente ? (esperada || null) : null
     }
   };
 }
@@ -2712,6 +2725,88 @@ app.put('/api/ingresos/:id', auth(true), async (req, res) => {
   const { data, error } = await db.from('ingresos_mercaderia').update(cambios).eq('id', id).select('*');
   if (error) return enviarErrorBD(res, error);
   if (!data || data.length === 0) return enviarError(res, 404, 'Entrada no encontrada');
+  res.json(data[0]);
+});
+
+/* ============================================================
+   FACTURAS QUE EL PROVEEDOR TODAVÍA NO MANDA (sql/65)
+   ------------------------------------------------------------
+   "Para estar alerta y meterle presión al proveedor."
+
+   Solo entran las entradas que él MARCÓ como esperando factura. Una
+   compra sin número de factura no está pendiente por sí sola: puede ser
+   que nunca haya pedido factura. Ver el porqué completo en sql/65.
+
+   `dias_atraso` es contra la fecha que prometió el proveedor, si la dio.
+   Sin fecha prometida no hay atraso posible — solo días esperando, que
+   igual sirven para perseguirlo.
+   ============================================================ */
+app.get('/api/productos/facturas-pendientes', auth(true), async (req, res) => {
+  try {
+    const { data: ingresos, error } = await db.from('ingresos_mercaderia')
+      .select('*').eq('factura_pendiente', true).order('fecha_compra').limit(300);
+    if (error) return enviarErrorBD(res, error);
+
+    const lista = ingresos || [];
+    if (!lista.length) return res.json({ total: 0, atrasadas: 0, monto_total: 0, facturas: [] });
+
+    const ids = [...new Set(lista.map(i => i.producto_id).filter(Boolean))];
+    const { data: productos } = ids.length
+      ? await db.from('productos').select('id, nombre, sku').in('id', ids)
+      : { data: [] };
+    const porId = Object.fromEntries((productos || []).map(p => [p.id, p]));
+
+    const hoy = fechaHoyChile();
+    const facturas = lista.map(i => {
+      const p = porId[i.producto_id] || null;
+      const prometida = i.factura_esperada_para || null;
+      return {
+        id: i.id,
+        producto_id: i.producto_id,
+        producto: p?.nombre || 'Producto eliminado',
+        sku: p?.sku || null,
+        proveedor: i.proveedor || null,
+        fecha_compra: i.fecha_compra,
+        cantidad: num(i.cantidad),
+        costo_unitario: num(i.costo_unitario),
+        // Lo que está en juego: es el monto sobre el que se pierde el IVA crédito.
+        monto: num(i.cantidad) * num(i.costo_unitario),
+        prometida_para: prometida,
+        dias_esperando: diasEntre(i.fecha_compra, hoy),
+        dias_atraso: prometida ? diasEntre(prometida, hoy) : null
+      };
+    });
+
+    // Primero la que lleva más tiempo esperando: es la más difícil de cobrar.
+    facturas.sort((a, b) => b.dias_esperando - a.dias_esperando);
+
+    res.json({
+      total: facturas.length,
+      atrasadas: facturas.filter(f => f.dias_atraso !== null && f.dias_atraso > 0).length,
+      monto_total: facturas.reduce((s, f) => s + f.monto, 0),
+      facturas
+    });
+  } catch (e) {
+    enviarError(res, 500, e.message || 'No se pudieron revisar las facturas pendientes');
+  }
+});
+
+/* La factura llegó (o se deja de esperar).
+   Con `referencia` se guarda el número y se apaga la marca. Sin ella, solo
+   se apaga: no toda factura prometida termina existiendo, y obligarlo a
+   inventar un número para sacarla del aviso haría que no la saque nunca. */
+app.put('/api/ingresos/:id/factura', auth(true), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return enviarError(res, 400, 'Entrada inválida');
+
+  const referencia = String(req.body?.referencia || '').trim().slice(0, 80) || null;
+  const cambios = { factura_pendiente: false, factura_esperada_para: null };
+  if (referencia) cambios.referencia = referencia;
+
+  const { data, error } = await db.from('ingresos_mercaderia')
+    .update(cambios).eq('id', id).select('*');
+  if (error) return enviarErrorBD(res, error);
+  if (!data || !data.length) return enviarError(res, 404, 'Entrada no encontrada');
   res.json(data[0]);
 });
 
@@ -9932,6 +10027,215 @@ app.post('/api/mermas', auth(true), async (req, res) => {
   }
 });
 
+
+/* ============================================================
+   ACTIVOS DE USO INTERNO  (solo admin)
+   ------------------------------------------------------------
+   Unidades que salen del stock vendible para usarse como herramienta o
+   activo del taller. El razonamiento completo está en sql/64.
+
+   ⚠️ NO MUEVE EL BALANCE (regla aprobada por el dueño el 24-09-2026).
+   La compra de esa unidad YA está registrada en `compras`: anotarla otra
+   vez como gasto sería contarla dos veces. Lo único que cambia es la
+   categoría del activo — de mercadería para vender a herramienta.
+
+   ⚠️ NO ES UNA MERMA. La merma además genera un gasto de pérdida, y acá
+   no se perdió nada: la unidad sigue valiendo su costo y puede volver.
+   ============================================================ */
+const ESTADOS_ACTIVO = ['EN_USO', 'DEVUELTO_A_VENTA', 'ARMADO_EN_PC', 'DADO_DE_BAJA'];
+const ESTADOS_ACTIVO_CIERRE = ['DEVUELTO_A_VENTA', 'ARMADO_EN_PC', 'DADO_DE_BAJA'];
+
+app.get('/api/activos', auth(true), async (req, res) => {
+  let q = db.from('activos_uso_interno').select('*').order('id', { ascending: false });
+
+  const estado = String(req.query?.estado || '').trim().toUpperCase();
+  if (estado && ESTADOS_ACTIVO.includes(estado)) q = q.eq('estado', estado);
+  if (req.query?.producto_id) q = q.eq('producto_id', Number(req.query.producto_id));
+
+  const { data, error } = await q;
+  if (error) return enviarErrorBD(res, error);
+
+  const lista = data || [];
+  const enUso = lista.filter(a => a.estado === 'EN_USO');
+
+  res.json({
+    activos: lista,
+    resumen: {
+      en_uso: enUso.length,
+      unidades_en_uso: enUso.reduce((s, a) => s + num(a.cantidad), 0),
+      /* Cuánto valor de inventario está hoy fuera de la venta, a costo.
+         Es el número que explica por qué la valorización bajó. */
+      valor_en_uso: enUso.reduce((s, a) => s + num(a.costo_unitario) * num(a.cantidad), 0)
+    }
+  });
+});
+
+app.post('/api/activos', auth(true), async (req, res) => {
+  const productoId = Number(req.body?.producto_id);
+  const cantidad = num(req.body?.cantidad) || 1;
+  const motivo = String(req.body?.motivo || '').trim();
+  const documentoNumero = String(req.body?.documento_numero || '').trim();
+  const documentoRuta = String(req.body?.documento_ruta || '').trim();
+
+  if (!productoId) return enviarError(res, 400, 'Selecciona el producto que pasa a uso interno');
+  if (cantidad <= 0) return enviarError(res, 400, 'La cantidad debe ser mayor a 0');
+  if (!motivo) return enviarError(res, 400, 'Escribe para qué se va a usar');
+
+  try {
+    const { data: prod, error: errProd } = await db.from('productos')
+      .select('id, nombre, sku, stock, stock_ilimitado, costo_unitario')
+      .eq('id', productoId).maybeSingle();
+    if (errProd) throw new Error(errProd.message);
+    if (!prod) return enviarError(res, 404, 'No se encontró el producto');
+
+    if (prod.stock_ilimitado) {
+      return enviarError(res, 400,
+        `"${prod.nombre}" está marcado como stock ilimitado (es un servicio o similar): no tiene una unidad física que apartar.`);
+    }
+    if (num(prod.stock) < cantidad) {
+      return enviarError(res, 400,
+        `No hay stock suficiente: quedan ${num(prod.stock)} unidad(es) de "${prod.nombre}".`);
+    }
+
+    /* El update compara contra el stock que se acaba de leer: si alguien
+       vendió esa unidad entre la lectura y esta escritura, no afecta
+       ninguna fila y se avisa, en vez de dejar el stock en negativo. */
+    const stockNuevo = num(prod.stock) - cantidad;
+    const { data: tocados, error: errStock } = await db.from('productos')
+      .update({ stock: stockNuevo, stock_actualizado_en: new Date().toISOString() })
+      .eq('id', productoId).eq('stock', prod.stock)
+      .select('id');
+    if (errStock) throw new Error(errStock.message);
+    if (!tocados || !tocados.length) {
+      return enviarError(res, 409, 'El stock cambió mientras se guardaba. Vuelve a intentarlo.');
+    }
+
+    const { data, error } = await db.from('activos_uso_interno').insert([{
+      producto_id: productoId,
+      // Congelados: si mañana cambia el costo o el nombre, este registro no se mueve.
+      nombre: prod.nombre,
+      sku: prod.sku || null,
+      cantidad,
+      costo_unitario: num(prod.costo_unitario),
+      motivo,
+      estado: 'EN_USO',
+      documento_numero: documentoNumero || null,
+      documento_ruta: documentoRuta || null,
+      rol: req.usuario.rol
+    }]).select().single();
+
+    if (error) {
+      // El stock no puede quedar descontado sin su registro: se devuelve.
+      await db.from('productos')
+        .update({ stock: num(prod.stock), stock_actualizado_en: new Date().toISOString() })
+        .eq('id', productoId);
+      throw new Error(error.message);
+    }
+
+    res.status(201).json({ ...data, stock_restante: stockNuevo });
+  } catch (err) {
+    enviarError(res, 500, err.message || 'No se pudo registrar el activo de uso interno');
+  }
+});
+
+/* Solo se editan el motivo y el respaldo documental. La cantidad y el costo
+   NO se tocan: están amarrados a un movimiento de stock que ya ocurrió.
+   El documento se puede agregar después — es normal encontrar la boleta
+   una semana más tarde. */
+app.patch('/api/activos/:id', auth(true), async (req, res) => {
+  const cambios = {};
+
+  if (req.body?.motivo !== undefined) {
+    const motivo = String(req.body.motivo || '').trim();
+    if (!motivo) return enviarError(res, 400, 'El motivo no puede quedar vacío');
+    cambios.motivo = motivo;
+  }
+  if (req.body?.documento_numero !== undefined) {
+    cambios.documento_numero = String(req.body.documento_numero || '').trim() || null;
+  }
+  if (req.body?.documento_ruta !== undefined) {
+    cambios.documento_ruta = String(req.body.documento_ruta || '').trim() || null;
+  }
+  if (!Object.keys(cambios).length) return enviarError(res, 400, 'No hay nada que actualizar');
+
+  cambios.actualizado_en = new Date().toISOString();
+
+  const { data, error } = await db.from('activos_uso_interno')
+    .update(cambios).eq('id', req.params.id).select().maybeSingle();
+  if (error) return enviarErrorBD(res, error);
+  if (!data) return enviarError(res, 404, 'No se encontró ese activo');
+  res.json(data);
+});
+
+app.post('/api/activos/:id/cerrar', auth(true), async (req, res) => {
+  const destino = String(req.body?.destino || '').trim().toUpperCase();
+  const nota = String(req.body?.cierre_nota || '').trim();
+  const productoDestinoId = req.body?.producto_destino_id ? Number(req.body.producto_destino_id) : null;
+
+  if (!ESTADOS_ACTIVO_CIERRE.includes(destino)) {
+    return enviarError(res, 400, 'Indica qué pasó con la unidad: volvió a venta, se armó en un equipo, o se dio de baja');
+  }
+
+  try {
+    const { data: activo, error: errA } = await db.from('activos_uso_interno')
+      .select('*').eq('id', req.params.id).maybeSingle();
+    if (errA) throw new Error(errA.message);
+    if (!activo) return enviarError(res, 404, 'No se encontró ese activo');
+    if (activo.estado !== 'EN_USO') return enviarError(res, 409, 'Este activo ya se cerró');
+
+    /* Solo "volvió a venta" devuelve stock. Armado en un equipo y dado de
+       baja consumen la unidad: ya no existe como unidad suelta. */
+    let stockDevuelto = 0;
+    if (destino === 'DEVUELTO_A_VENTA') {
+      const devueltos = await ajustarStock(
+        [{ producto_id: activo.producto_id, cantidad: num(activo.cantidad) }], +1);
+      stockDevuelto = devueltos.length ? num(activo.cantidad) : 0;
+    }
+
+    const { data, error } = await db.from('activos_uso_interno').update({
+      estado: destino,
+      cierre_nota: nota || null,
+      producto_destino_id: destino === 'ARMADO_EN_PC' ? (productoDestinoId || null) : null,
+      cerrado_en: new Date().toISOString(),
+      actualizado_en: new Date().toISOString()
+    }).eq('id', req.params.id).eq('estado', 'EN_USO').select().maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) return enviarError(res, 409, 'Este activo ya se cerró');
+
+    res.json({
+      ...data,
+      stock_devuelto: stockDevuelto,
+      /* ⚠️ Informativo, NO una merma. El stock de esta unidad ya salió al
+         pasar a uso interno; registrarla en Mermas descontaría una segunda
+         unidad que sí está para vender. Se muestra solo para que el costo
+         que se da por perdido quede a la vista. */
+      costo_dado_de_baja: destino === 'DADO_DE_BAJA'
+        ? num(activo.costo_unitario) * num(activo.cantidad)
+        : 0
+    });
+  } catch (err) {
+    enviarError(res, 500, err.message || 'No se pudo cerrar el activo');
+  }
+});
+
+/* Deshacer un registro recién creado por equivocación: la unidad vuelve al
+   stock como si nunca hubiera salido. Un activo ya cerrado no se borra —
+   su stock siguió otro camino y borrarlo dejaría el inventario mal. */
+app.delete('/api/activos/:id', auth(true), async (req, res) => {
+  const { data: activo, error: errA } = await db.from('activos_uso_interno')
+    .select('*').eq('id', req.params.id).maybeSingle();
+  if (errA) return enviarErrorBD(res, errA);
+  if (!activo) return enviarError(res, 404, 'No se encontró ese activo');
+  if (activo.estado !== 'EN_USO') {
+    return enviarError(res, 409, 'Este activo ya se cerró: borrarlo ahora dejaría el stock descuadrado.');
+  }
+
+  await ajustarStock([{ producto_id: activo.producto_id, cantidad: num(activo.cantidad) }], +1);
+
+  const { error } = await db.from('activos_uso_interno').delete().eq('id', req.params.id);
+  if (error) return enviarErrorBD(res, error);
+  res.json({ ok: true, stock_devuelto: num(activo.cantidad) });
+});
 /* ============================================================
    ABONOS Y ENCARGOS
    Ver y registrar: admin y trabajador · Eliminar: solo admin

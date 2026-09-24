@@ -7,6 +7,123 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
+**Datos de producción corregidos el 24-09-2026** (no es código):
+
+- 🔋 **Pila CR2032 Energizer (id 298):** stock **25 → 23** (usó 2 en mantenimientos), categoría POS
+  nueva **"Pilas"** (también va a tener la AAA y las que vengan), y `categoria_web` = **"Componentes
+  PC"** — es la pila de la placa madre, ahí la busca quien la necesita. NO se creó una categoría web
+  nueva a propósito: la tienda tiene 13 y una decimocuarta con un solo producto queda coja.
+- 🔧 **LAS DOS PRIMERAS OT DEL SISTEMA: OT-000005 y OT-000006.** PC Gamer que entraron ~17-09 por
+  diagnóstico y derivaron a mantenimiento. Creadas con **datos del cliente en blanco a propósito**
+  ("POR COMPLETAR"), para que el dueño las edite. `ordenes_trabajo` ya no está vacía.
+- ⚠️ **Las 2 pilas quedaron en `ot_repuestos` con `stock_descontado = TRUE`.** El stock ya se bajó a
+  mano; sin esa marca, al entregar la OT el backend lo bajaría **otra vez** y dejaría 21. Misma
+  familia de trampa que la merma del activo de uso interno (v88).
+- ✅ **El registro de compras NO tiene ningún bug** (lo pidió revisar el dueño): el ingreso id 8
+  quedó bien guardado — 25 × $418, MercadoLibre, 16-09, devolución 22-09.
+- 🔎 **Sí apareció una inconsistencia menor:** los ingresos con `origen='manual'` (los del formulario
+  del producto) guardan `stock_antes`/`stock_despues` en **null**, mientras que los de
+  `origen='reposicion'` sí los guardan. El historial de compras queda sin ese rastro. **No corregido**,
+  anotado.
+
+---
+
+**Fecha:** 24-09-2026 · **v89 — El aviso de la factura que el proveedor no manda.**
+
+- 🧾 **Casilla nueva en "Compras de este producto"** (`sql/65`): *"La factura todavía no llega"*, con
+  la fecha que el proveedor prometió (opcional). Sale un chip 🧾 en el header, ámbar mientras espera
+  y **rojo solo cuando se pasó de la fecha que él mismo prometió**.
+- ⚖️ **POR QUÉ UNA MARCA Y NO "referencia vacía":** las 8 entradas registradas tienen el campo vacío.
+  Un aviso automático gritaría por las 8 desde el día uno, incluidas compras donde ni pidió factura —
+  y un aviso que suena siempre se ignora en una semana. **Se apaga sola** al escribir el N°.
+- 💸 **Importa porque es crédito fiscal IVA** (Pro Pyme 14D con remanente). **PERO OJO, verificado en
+  el código:** ese formulario **NO crea el gasto** en `compras` (0 de 8 entradas tienen `compra_id`).
+  El gasto y su IVA van aparte en Finanzas → Gastos. El aviso persigue el documento, no lo contabiliza.
+- 🧪 44 comprobaciones, 0 fallas. Detalle en `docs/CHANGELOG-V89.md`.
+
+---
+
+**Fecha:** 24-09-2026 · **v88 — Activos de uso interno (lo que sacas del stock para el taller).**
+
+- 🛠️ **Nueva sub-pestaña Finanzas → Activos** (`sql/64`). Nació de un caso real: se abrió una
+  **Fuente de Poder MSI MAG A650BN** (id 144) para el banco de pruebas y el POS seguía ofreciendo 2
+  unidades cuando quedaba 1 para vender. Ahora apartarla descuenta el stock y deja la ficha.
+- 💰 **REGLA APROBADA POR EL DUEÑO: apartar una unidad NO mueve el balance.** Esa plata ya se gastó
+  al comprarla y ya está en `compras`; anotarla otra vez sería contarla dos veces. Solo cambia la
+  categoría del activo. La valorización de inventario sí baja, y eso es correcto.
+- 🔴 **NO es una merma, y la trampa se encontró escribiendo el código:** mandar el `DADO_DE_BAJA` al
+  módulo de Mermas habría **descontado el stock por segunda vez** (la unidad ya salió al apartarla),
+  dejando el inventario corto en silencio. `DADO_DE_BAJA` solo cierra la ficha y muestra el costo
+  perdido; el modal lo advierte en rojo.
+- ♻️ **Ciclo de vida:** EN_USO → volvió a venta (+stock) · armado en un equipo · dado de baja.
+  **Para venderla no hay estado aparte a propósito:** vuelve a venta y se vende por el POS, así hay
+  un solo camino por donde se mueve la plata.
+- 📎 **Respaldo documental** (pedido del dueño): N° de factura/boleta **y** archivo, los dos
+  opcionales y agregables después. **Sin bucket ni endpoint nuevo** — reutiliza
+  `compras-documentos` y hereda FILE-01 (ruta con UUID, URL firmada que caduca en 1h).
+- 🧪 38 comprobaciones de backend + 71 de interfaz, 0 fallas. Tailwind no necesitó recompilarse (no
+  hay clases nuevas). Detalle en `docs/CHANGELOG-V88.md`.
+- ⚠️ **SIN COMMIT NI DEPLOY todavía.** La tabla sí está creada en producción (es aditiva). La
+  sub-pestaña no existe para el usuario hasta que se despliegue.
+- ⏭️ **Pendiente del dueño:** registrar la fuente MSI real. Hasta entonces `productos.id = 144` sigue
+  con `stock = 2` y sevelin.cl la ofrece como si hubiera dos.
+
+**Lo que viene (acordado con el dueño el 24-09-2026):** protocolos y FASES por servicio en la OT,
+con insumos que descuentan stock (CR2032, pasta térmica, thermal pads). Ojo: `ordenes_trabajo`,
+`ot_repuestos`, `repuestos` y `mermas` tienen **0 filas** — el módulo de OT nunca se ha usado. Y
+**las pilas CR2032 y los thermal pads no existen en el catálogo**: cargarlos es prerrequisito.
+
+---
+
+**Fecha:** 23-09-2026 · **v86 y v87 — la alerta de Google, y los agotados vuelven al catálogo.**
+
+Sesión disparada por una alerta de Merchant Center: los artículos activos cayeron de **178 a 134**
+(-24%) entre el 22-09 18:20 y el 23-09 00:20.
+
+- ✅ **El feed NO se cayó.** Google lo leyó el 23-09 a las 00:00 y Meta el 22-09 a las 20:17, las dos
+  sin errores. La caída era **aritmética**: de 179 publicados, 27 son servicios y **20 estaban sin
+  stock**. Quedaban 132, que es lo que ambas leyeron (131).
+- 🔴 **v86 — el feed mandaba los 18 productos por encargo a `/productos/<sku>`, que da 404.** Era el
+  mismo error del sitemap arreglado el 22-09; el feed tenía su propia copia y quedó fuera. Corregido
+  y **Google lo releyó el mismo día a las 16:18**.
+- 🟢 **v87 + `sevelin-tienda b18ba67` — las fichas de los agotados ya existen** (decisión del dueño).
+  Al hacerlo aparecieron **tres capas del mismo problema**: la ficha daba 404, el endpoint
+  `POST /api/avisos` también rechazaba los agotados, y **el botón "Agregar al carrito" nunca estuvo
+  bloqueado por stock**. La tabla `avisos_producto` tenía 0 filas: no era falta de interés, no había
+  forma de llegar.
+- ⚠️ **La trampa que se evitó:** `obtenerProductoPorSku` la usa el **CHECKOUT** (y envío, carrito,
+  cotizaciones, recordatorios). Relajarla habría permitido **pagar algo que no hay**, en seis lugares
+  de una vez. Se agregó `obtenerProductoPublicado` aparte, solo para mostrar.
+- 📈 Los agotados ahora entran al feed como `out of stock` en vez de desaparecer. Sitemap: 165 → 186
+  URLs. Verificado en producción.
+
+**Hallazgos de cuentas (no código), todos verificados en los paneles del dueño:**
+
+- 🗑️ **Origen zombi "Tiendanube API"** (15 productos, sin fecha de actualización) seguía vivo en
+  Merchant Center pese a haberse eliminado en septiembre. **Lo borró el dueño el 23-09.**
+- 🛡️ **"Protección de productos" activada al 40%.** Ojo: es un seguro contra un feed roto entero,
+  **NO** habría frenado la caída del 24% de esa noche.
+- 🔎 **Google rastrea sevelin.cl por su cuenta** como fuente aparte ("Encontrado por Google", 57→59
+  productos, 11 archivados, cada 24 h), en paralelo al feed. Sin tocar, anotado.
+- 🚫 **LAS TIENDAS DE META NO EXISTEN EN CHILE.** Verificado entrando al flujo con su mercado: *"Las
+  tiendas no están disponibles en tu país"*, botón deshabilitado. **No hay Instagram Shopping ni
+  pestaña Tienda en Facebook, y no es cosa de configuración.** El catálogo (131 productos, sin
+  errores, diario) sirve solo para **anuncios**. No volver a intentarlo.
+- 💬 **WhatsApp tiene su PROPIO catálogo** (`1102236602767558`, "Sin acceso" para el dueño) y estaba
+  **vacío**. Se decidió NO llenarlo a mano: 131 productos cargados uno a uno se desactualizan en
+  semanas, que es la misma trampa de Tiendanube por tercera vez.
+- ✅ **Perfil de WhatsApp Business corregido:** correo `sevelin.contacto@gmail.com`, y horarios
+  alineados con la web (**lunes a domingo 11:00-13:00 y 14:00-20:00**; antes decía domingo cerrado y
+  16:00-19:00 — se contradecía con sevelin.cl).
+- ⚡ **Seis respuestas rápidas nuevas** escritas desde su propia FAQ: `/garantia`, `/horario`,
+  `/envios`, `/pagos`, `/catalogo` (manda a sevelin.cl) y `/encargo`.
+
+**Decisión pendiente del dueño:** qué repone de los 20 agotados. De los 11 que han vendido, el
+**Gabinete ESGAMING HA06** aporta $50.050 de los $127.417 de utilidad del grupo, y el **Control Mando
+PS3/PC** es el mejor margen (48%, cuesta $3.610). Los monitores venden pero dejan 7-8%.
+
+---
+
 **Fecha:** 22-09-2026 · **v85 publicada — el buscador del Historial estaba en la pantalla equivocada.**
 
 - 🔍 **No había que construir nada:** el buscador por producto / SKU / N° de serie / código de barras

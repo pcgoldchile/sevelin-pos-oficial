@@ -145,6 +145,7 @@
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="semanal">Informe Semanal</button>
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="gastos">Gastos</button>
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="fijos">Gastos Fijos</button>
+          <button class="nav-subitem" data-view="view-finanzas" data-subtab="activos">Activos de uso interno</button>
         </div>
       </div>
 
@@ -231,6 +232,11 @@
            su turno es el que va a dar de menos. -->
       <!-- Productos devueltos esperando una decisión, una respuesta del
            proveedor, o el visto bueno de un ajuste de plata (sql/63). -->
+      <!-- Facturas que el proveedor todavía no manda (sql/65). Rojo cuando
+           se pasó la fecha que él mismo prometió. -->
+      <button id="btnFacturasPendientes" class="btn-notificaciones btn-facturas admin-only" title="Facturas que el proveedor todavía no manda" hidden>
+        🧾 <span id="textoFacturasPendientes">Facturas</span>
+      </button>
       <button id="btnSeguimientoDev" class="btn-notificaciones btn-seg-dev admin-only" title="Productos devueltos con seguimiento pendiente" hidden>
         📮 <span id="textoSeguimientoDev">Seguimiento</span>
       </button>
@@ -955,6 +961,7 @@
         <button class="subtab" data-subtab="semanal">📅 Semanal</button>
         <button class="subtab" data-subtab="gastos">📑 Gastos</button>
         <button class="subtab" data-subtab="fijos">🔁 Gastos Fijos</button>
+        <button class="subtab" data-subtab="activos">🛠️ Activos</button>
       </nav>
 
       <!-- ============================================================
@@ -1805,6 +1812,52 @@
       </div>
 
       <!-- ---------- GASTOS FIJOS ---------- -->
+      <!-- ACTIVOS DE USO INTERNO (sql/64) ------------------------------
+           Unidades que salieron del stock vendible para usarse como
+           herramienta del taller. NO es una merma y NO mueve el balance. -->
+      <div class="panel-finanzas" data-panel-finanzas="activos">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Activos de uso interno</h2>
+              <p class="subtitle">Lo que sacaste del stock para usarlo como herramienta, no para venderlo.</p>
+            </div>
+            <button class="btn btn-primary" id="btnNuevoActivo">➕ Pasar producto a uso interno</button>
+          </div>
+
+          <div id="activosResumen"></div>
+
+          <div class="chip-group chip-group-block" id="activosChips" style="margin-top:14px;">
+            <button class="chip active" data-estado="EN_USO">🔧 En uso</button>
+            <button class="chip" data-estado="">📋 Todos</button>
+          </div>
+
+          <p class="modal-hint">
+            Apartar una unidad <strong>descuenta el stock</strong> para que no se venda por
+            error en el POS ni en sevelin.cl, pero <strong>no mueve tu balance</strong>:
+            esa plata ya quedó registrada cuando compraste el producto. Tampoco es una
+            merma — la unidad sigue valiendo lo mismo y puede volver a la venta.
+          </p>
+
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Producto</th>
+                  <th>Cant.</th>
+                  <th>Costo</th>
+                  <th>Motivo</th>
+                  <th>Respaldo</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="activosTablaBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       <div class="panel-finanzas" data-panel-finanzas="fijos">
         <div class="card">
           <div class="card-head">
@@ -2436,6 +2489,29 @@
               La fecha se muestra siempre como <strong>estimada</strong>; déjala vacía si no sabes.</p>
             <p class="subtitle">Cuando llegue, usa <strong>"📦 Ya llegó"</strong> en la lista de
               abajo: suma el stock y <strong>avisa por correo</strong> a todos los que lo esperaban.</p>
+          </div>
+
+          <!-- LA FACTURA TODAVÍA NO LLEGA (sql/65, dueño 24-09-2026).
+               Marca explícita y no "referencia vacía": hoy ninguna entrada
+               tiene número, así que un aviso automático gritaría por todas
+               desde el primer día, incluidas las compras donde ni pidió
+               factura. Esto es él diciendo "esta sí la estoy esperando". -->
+          <label class="check-item" id="itemIngFacturaPendiente" style="margin-top:8px;">
+            <input type="checkbox" id="ingFacturaPendiente">
+            <span>🧾 La factura todavía no llega — avísame para perseguirla</span>
+          </label>
+
+          <div id="bloqueIngFactura" style="display:none; margin-top:10px; padding:10px 12px; border:1px solid var(--border); border-radius:10px;">
+            <div class="field">
+              <label for="ingFacturaEsperada">¿Para cuándo la prometió? (opcional)</label>
+              <input type="date" id="ingFacturaEsperada">
+            </div>
+            <p class="subtitle" style="margin-top:8px;">Sin fecha el aviso igual cuenta los días
+              esperando. Con fecha, se pone <strong>rojo</strong> cuando el proveedor se pasa.
+              <strong>Al escribir el N° de factura la marca se apaga sola.</strong></p>
+            <p class="subtitle">La factura es <strong>crédito fiscal IVA</strong>: sin el documento
+              esa plata se paga de más en el F29. Ojo, este formulario no registra el gasto —
+              eso va aparte en <strong>Finanzas → Gastos</strong>.</p>
           </div>
 
           <p class="modal-hint" id="ingAvisoCosto" style="margin-top:8px;"></p>
@@ -6175,6 +6251,98 @@
   </div>
 
   <!-- MODAL: REGISTRAR MERMA / PÉRDIDA -->
+  <!-- MODAL: PASAR PRODUCTO A USO INTERNO (sql/64) -->
+  <div id="modalActivo" class="modal-overlay">
+    <div class="modal-box" style="max-width: 580px;">
+      <h2>🛠️ Pasar producto a uso interno</h2>
+      <p class="modal-hint">
+        Para cuando sacas una unidad del stock y la usas como herramienta del taller.
+        Deja de ofrecerse en el POS y en sevelin.cl, pero <strong>no se registra ningún
+        gasto</strong>: esa plata ya se contó cuando la compraste.
+      </p>
+
+      <div class="field" style="position:relative; margin-top:16px;">
+        <label>Buscar producto <span class="obligatorio">*</span></label>
+        <input type="text" id="activoBuscar" placeholder="Nombre, SKU o código de barras..." autocomplete="off">
+        <div id="activoSugerencias" class="suggestions-box"></div>
+      </div>
+
+      <div class="confirmar-pin-resumen" id="activoSeleccion" style="display:none;"></div>
+
+      <div class="grid grid-2" style="margin-top:12px;">
+        <div class="field">
+          <label>Cantidad a apartar <span class="obligatorio">*</span></label>
+          <input type="number" id="activoCantidad" min="1" step="1" value="1">
+        </div>
+        <div class="field">
+          <label>Valor que sale del inventario</label>
+          <input type="text" id="activoCostoTotal" value="$0" disabled>
+        </div>
+      </div>
+
+      <div class="field" style="margin-top:12px;">
+        <label>¿Para qué se va a usar? <span class="obligatorio">*</span></label>
+        <textarea id="activoMotivo" rows="2" placeholder="Ej: banco de pruebas del taller, fuente de repuesto para diagnósticos..."></textarea>
+      </div>
+
+      <!-- Respaldo documental: ambos opcionales. El número suelto sirve
+           aunque no tenga el PDF a mano, y el archivo se puede subir después. -->
+      <div class="grid grid-2" style="margin-top:12px;">
+        <div class="field">
+          <label>N° de factura o boleta</label>
+          <input type="text" id="activoDocNumero" placeholder="Ej: 12345" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>Archivo de respaldo</label>
+          <button class="btn btn-ghost" id="btnSubirActivoArchivo" type="button">📎 Adjuntar archivo</button>
+          <input type="file" id="activoArchivo" accept="image/*,application/pdf" style="display:none;">
+          <span class="doc-estado doc-falta" id="activoEstadoArchivo">Sin archivo</span>
+        </div>
+      </div>
+
+      <p class="modal-hint" id="activoAviso">
+        Esto descuenta el stock para que no se venda por error, pero NO mueve tu balance.
+      </p>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarActivo">Cancelar</button>
+        <button class="btn btn-primary" id="btnGuardarActivo">🛠️ Apartar del stock</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: CERRAR UN ACTIVO DE USO INTERNO -->
+  <div id="modalCerrarActivo" class="modal-overlay">
+    <div class="modal-box" style="max-width: 560px;">
+      <h2>✅ ¿Qué pasó con la unidad?</h2>
+      <p class="modal-hint" id="cerrarActivoTitulo"></p>
+
+      <div class="chip-group chip-group-block" id="cerrarActivoChips" style="margin-top:16px;">
+        <button class="chip" data-destino="DEVUELTO_A_VENTA">↩️ Volvió a venta</button>
+        <button class="chip" data-destino="ARMADO_EN_PC">🖥️ Se armó en un equipo</button>
+        <button class="chip" data-destino="DADO_DE_BAJA">🗑️ Se dio de baja</button>
+      </div>
+
+      <div class="field" id="cerrarActivoDestinoBox" style="position:relative; margin-top:14px; display:none;">
+        <label>¿En qué equipo? (opcional)</label>
+        <input type="text" id="cerrarActivoDestinoBuscar" placeholder="Busca el equipo en el catálogo..." autocomplete="off">
+        <div id="cerrarActivoDestinoSug" class="suggestions-box"></div>
+      </div>
+
+      <div class="field" style="margin-top:12px;">
+        <label>Nota (opcional)</label>
+        <textarea id="cerrarActivoNota" rows="2" placeholder="Ej: quedó en el PC Gamer que armé para stock..."></textarea>
+      </div>
+
+      <p class="modal-hint" id="cerrarActivoAviso">Elige qué pasó con la unidad.</p>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarCierreActivo">Cancelar</button>
+        <button class="btn btn-primary" id="btnConfirmarCierreActivo">Guardar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modalMerma" class="modal-overlay">
     <div class="modal-box" style="max-width: 560px;">
       <h2>📉 Registrar Merma / Pérdida</h2>
@@ -6321,6 +6489,22 @@
       <div id="enCaminoLista" style="max-height:52vh; overflow:auto;"></div>
       <div class="modal-foot">
         <button class="btn btn-ghost" id="btnCerrarEnCamino" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- FACTURAS QUE EL PROVEEDOR TODAVÍA NO MANDA (sql/65) -->
+  <div id="modalFacturasPendientes" class="modal-overlay">
+    <div class="modal-box" style="max-width:740px;">
+      <h2>🧾 Facturas que estás esperando</h2>
+      <p class="modal-hint" id="facturasResumen">—</p>
+      <div id="facturasLista" style="max-height:52vh; overflow:auto;"></div>
+      <p class="modal-hint">
+        La factura es <strong>crédito fiscal IVA</strong>: sin el documento esa plata se paga de más
+        en el F29. Marcar "ya llegó" guarda el número y saca la compra de este aviso.
+      </p>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCerrarFacturas" type="button">Cerrar</button>
       </div>
     </div>
   </div>
@@ -6491,6 +6675,7 @@
   <script src="js/compras.js"></script>
   <script src="js/gastos-programados.js"></script>   <!-- gastos pendientes/cuotas: usa clasificacionesList de compras.js -->
   <script src="js/mermas.js"></script>
+  <script src="js/activos.js"></script>
   <script src="js/encargos.js"></script>
   <script src="js/pedidos-web.js"></script>
   <script src="js/pagina-web.js"></script>   <!-- después de pedidos-web.js: envuelve su vista en el subtab "pedidos" -->

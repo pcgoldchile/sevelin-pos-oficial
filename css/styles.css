@@ -4425,6 +4425,21 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
     animation: pulso-notificacion 2s ease-in-out infinite;
 }
 
+/* Facturas que el proveedor todavia no manda (sql/65). Ambar mientras se
+   espera; rojo con pulso solo cuando se paso de la fecha que el proveedor
+   mismo prometio — esperar sin fecha comprometida no es un atraso. */
+.btn-facturas[hidden] { display: none; }
+.btn-facturas {
+    background: var(--tint-gold, rgba(245, 158, 11, .12));
+    color: var(--gold);
+    border-color: rgba(245, 158, 11, .35);
+}
+.btn-facturas.factura-atrasada {
+    background: var(--tint-red); color: var(--red);
+    border-color: rgba(239, 68, 68, .45);
+    animation: pulso-notificacion 2s ease-in-out infinite;
+}
+
 /* Devoluciones en efectivo fuera de caja (v82): siempre en rojo, porque
    siempre significa que un arqueo va a dar de menos. */
 .btn-dev-caja[hidden] { display: none; }

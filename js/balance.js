@@ -89,6 +89,10 @@ function mostrarPanelFinanzas(nombre) {
   if (nombre === 'ventas' && typeof cargarHistorial === 'function') cargarHistorial();
   if (nombre === 'gastos' && typeof cargarCompras === 'function') cargarCompras();
   if (nombre === 'fijos') cargarGastosFijos();
+
+  /* Activos de uso interno (js/activos.js): se abre en "En uso", que es lo
+     único accionable. El histórico completo está detrás del chip "Todos". */
+  if (nombre === 'activos' && typeof cargarActivos === 'function') cargarActivos();
   // Balance no tenía rama acá: nunca se refrescaba al entrar, así que
   // mostraba lo último que quedó cargado (por defecto "Este mes", ver
   // cargarBalance) hasta que el usuario apretaba "Hoy" a mano. Ahora cada

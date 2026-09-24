@@ -3229,6 +3229,15 @@ let ingresosDelProducto = [];
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnAgregarIngreso')?.addEventListener('click', agregarIngresoProducto);
+  // sql/65 — el bloque de la factura solo aparece si la está esperando
+  document.getElementById('ingFacturaPendiente')?.addEventListener('change', alternarIngresoFactura);
+  /* Si escribe el N° de factura, ya no la está esperando: la casilla se
+     apaga en pantalla igual que la apaga el backend al guardar. */
+  document.getElementById('ingReferencia')?.addEventListener('input', (e) => {
+    if (!e.target.value.trim()) return;
+    const chk = document.getElementById('ingFacturaPendiente');
+    if (chk?.checked) { chk.checked = false; alternarIngresoFactura(); }
+  });
   document.getElementById('prodPorLlegar')?.addEventListener('change', alternarIngresoEnCamino);
   document.getElementById('ingCosto')?.addEventListener('input', proponerPrecioDeVenta);
   document.getElementById('ingProveedor')?.addEventListener('input', proponerPlazoDevolucion);
@@ -3425,6 +3434,13 @@ function alternarIngresoEnCamino() {
   if (enCamino && cuantas && !cuantas.value && cantidad) cuantas.value = cantidad;
 }
 
+/* sql/65 — muestra los campos de la factura esperada solo cuando la marcó. */
+function alternarIngresoFactura() {
+  const marcado = !!document.getElementById('ingFacturaPendiente')?.checked;
+  const bloque = document.getElementById('bloqueIngFactura');
+  if (bloque) bloque.style.display = marcado ? 'block' : 'none';
+}
+
 function limpiarFormularioIngreso() {
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
   set('ingFecha', todayISO());
@@ -3433,6 +3449,10 @@ function limpiarFormularioIngreso() {
   set('ingDevolucion', '');
   set('ingProveedor', '');
   set('ingReferencia', '');
+  set('ingFacturaEsperada', '');
+  const factura = document.getElementById('ingFacturaPendiente');
+  if (factura) factura.checked = false;
+  alternarIngresoFactura();
   const sumar = document.getElementById('ingSumarStock');
   if (sumar) sumar.checked = true;
   // Y si el producto está marcado como "todavía no llega", manda eso
@@ -3515,6 +3535,9 @@ async function agregarIngresoProducto() {
       devolucion_hasta: (document.getElementById('ingDevolucion')?.value || '').trim() || null,
       proveedor: (document.getElementById('ingProveedor')?.value || '').trim() || null,
       referencia: (document.getElementById('ingReferencia')?.value || '').trim() || null,
+      // sql/65 — el backend la apaga solo si ya vino el N° de factura
+      factura_pendiente: !!document.getElementById('ingFacturaPendiente')?.checked,
+      factura_esperada_para: (document.getElementById('ingFacturaEsperada')?.value || '').trim() || null,
       sumar_stock: !!document.getElementById('ingSumarStock')?.checked,
       en_camino: !!document.getElementById('prodPorLlegar')?.checked,
       stock_por_llegar: Number(document.getElementById('prodStockPorLlegar')?.value) || 0,

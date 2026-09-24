@@ -811,3 +811,134 @@ async function marcarEntregado(id) {
     fila?.querySelectorAll('button').forEach(b => { b.disabled = false; });
   }
 }
+
+/* ============================================================
+   FACTURAS QUE EL PROVEEDOR TODAVÍA NO MANDA (sql/65)
+   ------------------------------------------------------------
+   Pedido del dueño (24-09-2026): "una opción para que salga en alguna
+   notificación si la factura aún no llega, para estar alerta y meterle
+   presión al proveedor."
+
+   Solo aparecen las compras que él MARCÓ como esperando factura — una
+   compra sin número no está pendiente por sí sola (ver sql/65). El estado
+   cambia de a días, así que se consulta cada 30 minutos, no en el ciclo
+   de 60s de los pedidos web.
+   ============================================================ */
+
+const INTERVALO_FACTURAS_MS = 30 * 60 * 1000;
+let intervaloFacturas = null;
+let facturasPendientesCache = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btnFacturasPendientes')?.addEventListener('click', abrirModalFacturas);
+  document.getElementById('btnCerrarFacturas')?.addEventListener('click', () => cerrarModal('modalFacturasPendientes'));
+
+  document.getElementById('facturasLista')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-factura-llego]');
+    if (btn) marcarFacturaRecibida(Number(btn.dataset.facturaLlego));
+  });
+});
+
+document.addEventListener('pos:sesion-iniciada', () => {
+  if (intervaloFacturas) { clearInterval(intervaloFacturas); intervaloFacturas = null; }
+  const btn = document.getElementById('btnFacturasPendientes');
+  if (!esAdmin()) { if (btn) btn.hidden = true; return; }
+
+  actualizarAvisoFacturas();
+  intervaloFacturas = setInterval(actualizarAvisoFacturas, INTERVALO_FACTURAS_MS);
+});
+
+async function actualizarAvisoFacturas() {
+  const btn = document.getElementById('btnFacturasPendientes');
+  const texto = document.getElementById('textoFacturasPendientes');
+  if (!btn || !texto || !tokenActual() || !esAdmin()) return;
+
+  try {
+    facturasPendientesCache = await API.productos.facturasPendientes();
+    const total = Number(facturasPendientesCache?.total) || 0;
+    if (!total) { btn.hidden = true; return; }
+
+    const atrasadas = Number(facturasPendientesCache?.atrasadas) || 0;
+    texto.textContent = atrasadas ? `${atrasadas} factura(s) atrasada(s)` : `${total} factura(s)`;
+    /* Rojo solo cuando el proveedor se pasó de la fecha que ÉL prometió.
+       Esperar sin fecha comprometida no es un atraso, es esperar. */
+    btn.classList.toggle('factura-atrasada', atrasadas > 0);
+    btn.title = atrasadas
+      ? `${atrasadas} factura(s) que el proveedor prometió y no mandó`
+      : `${total} factura(s) que estás esperando`;
+    btn.hidden = false;
+
+    if (document.getElementById('modalFacturasPendientes')?.classList.contains('show')) pintarFacturas();
+  } catch (err) {
+    // Silencioso: es un sondeo de fondo, se reintenta en el próximo ciclo.
+    console.error('Error al revisar las facturas pendientes:', err.message || err);
+  }
+}
+
+function abrirModalFacturas() {
+  if (!facturasPendientesCache?.total) return;
+  pintarFacturas();
+  document.getElementById('modalFacturasPendientes')?.classList.add('show');
+}
+
+function pintarFacturas() {
+  const cont = document.getElementById('facturasLista');
+  const resumen = document.getElementById('facturasResumen');
+  if (!cont || !facturasPendientesCache) return;
+
+  const lista = facturasPendientesCache.facturas || [];
+
+  if (resumen) {
+    resumen.textContent = lista.length
+      ? `${lista.length} compra(s) esperando factura · ${fmtCLP(facturasPendientesCache.monto_total)} sin respaldo`
+        + (facturasPendientesCache.atrasadas ? ` · ${facturasPendientesCache.atrasadas} ya se pasó de la fecha prometida.` : '.')
+      : 'No estás esperando ninguna factura.';
+  }
+  if (!lista.length) { cont.innerHTML = '<p class="modal-hint">Nada pendiente.</p>'; return; }
+
+  cont.innerHTML = lista.map(f => {
+    const d = f.dias_atraso;
+    const cuando = d === null
+      ? '<span style="color:var(--text-muted);">sin fecha prometida</span>'
+      : d > 0 ? `<span style="color:var(--red);">⚠️ prometida hace ${d} día(s)</span>`
+      : d === 0 ? '<span style="color:var(--gold);">la prometió para hoy</span>'
+      : `la prometió en ${Math.abs(d)} día(s) más`;
+
+    return `
+      <div class="agotado-fila">
+        <div class="agotado-cabecera">
+          <div class="agotado-datos">
+            <strong>${escHtml(f.producto)}</strong>
+            <small>${num(f.cantidad)} unidad(es) · ${fmtCLP(f.monto)}${f.proveedor ? ' · ' + escHtml(f.proveedor) : ''}</small>
+            <small>Comprada hace ${num(f.dias_esperando)} día(s) · ${cuando}</small>
+          </div>
+        </div>
+        <div class="agotado-acciones">
+          <button class="btn btn-green btn-sm" data-factura-llego="${f.id}">🧾 Ya llegó</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+/* El número es opcional a propósito: no toda factura prometida termina
+   existiendo, y obligarlo a inventar uno para sacarla del aviso haría que
+   no la saque nunca y el aviso deje de servir. */
+async function marcarFacturaRecibida(ingresoId) {
+  const f = (facturasPendientesCache?.facturas || []).find(x => Number(x.id) === Number(ingresoId));
+  if (!f) return;
+
+  const numero = prompt(
+    `N° de la factura de "${f.producto}"${f.proveedor ? ' (' + f.proveedor + ')' : ''}:\n\n` +
+    'Déjalo vacío si al final no hubo factura — igual sale del aviso.', '');
+  if (numero === null) return;   // canceló
+
+  try {
+    await API.productos.facturaRecibida(ingresoId, numero.trim());
+    showToast(numero.trim() ? `Factura ${numero.trim()} guardada` : 'Sacada del aviso', 'ok');
+    await actualizarAvisoFacturas();
+    if (!facturasPendientesCache?.total) cerrarModal('modalFacturasPendientes');
+    else pintarFacturas();
+  } catch (err) {
+    showToast(err.message || 'No se pudo guardar la factura', 'err');
+  }
+}

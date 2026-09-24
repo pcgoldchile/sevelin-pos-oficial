@@ -167,6 +167,12 @@ const API = {
     quitarDeUbicacion: (id, ubicacionId) => apiRequest(`/productos/${id}/ubicaciones/${ubicacionId}`, { method: 'DELETE' }),
     margenSugerido: (id) => apiRequest(`/productos/${id}/margen-sugerido`, { silencioso: true }),
     enCamino: () => apiRequest('/productos/en-camino', { silencioso: true }),
+    /* sql/65 — facturas que el proveedor todavía no manda. `silencioso`
+       como el sondeo de en-camino: es un poll de fondo, un fallo puntual no
+       debe interrumpir con un toast. */
+    facturasPendientes: () => apiRequest('/productos/facturas-pendientes', { silencioso: true }),
+    facturaRecibida: (ingresoId, referencia) =>
+      apiRequest(`/ingresos/${ingresoId}/factura`, { method: 'PUT', body: { referencia } }),
 
     // Qué le falta al catálogo para estar completo
     reglasCompletitud: () => apiRequest('/productos/reglas'),
@@ -335,6 +341,23 @@ const API = {
       return apiRequest('/mermas' + (cadena ? `?${cadena}` : ''));
     },
     registrar: (datos) => apiRequest('/mermas', { method: 'POST', body: datos })
+  },
+
+  /* Activos de uso interno (sql/64). Solo admin.
+     Los archivos de respaldo NO tienen endpoint propio: reutilizan
+     API.compras.subirArchivo / firmarArchivo y el bucket privado
+     compras-documentos, que ya trae la protección FILE-01. */
+  activos: {
+    listar: (filtros = {}) => {
+      const q = new URLSearchParams();
+      Object.entries(filtros).forEach(([k, v]) => { if (v) q.set(k, v); });
+      const cadena = q.toString();
+      return apiRequest('/activos' + (cadena ? `?${cadena}` : ''));
+    },
+    crear: (datos) => apiRequest('/activos', { method: 'POST', body: datos }),
+    actualizar: (id, cambios) => apiRequest(`/activos/${id}`, { method: 'PATCH', body: cambios }),
+    cerrar: (id, datos) => apiRequest(`/activos/${id}/cerrar`, { method: 'POST', body: datos }),
+    eliminar: (id) => apiRequest(`/activos/${id}`, { method: 'DELETE' })
   },
 
   repuestos: {
