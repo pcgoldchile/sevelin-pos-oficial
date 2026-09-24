@@ -332,6 +332,18 @@ const API = {
       apiRequest(`/compras/clasificaciones/${id}`, { method: 'DELETE' })
   },
 
+  /* Protocolos y fases de servicio (sql/66).
+     OJO: "servicios en curso" NO cuelga de /ot — `/api/ot/:id` se registra
+     antes en Express y capturaría la palabra como si fuera un id. */
+  protocolos: {
+    listar: () => apiRequest('/protocolos'),
+    aplicarAOt: (otId, protocoloId) =>
+      apiRequest(`/ot/${otId}/protocolo`, { method: 'POST', body: { protocolo_id: protocoloId } }),
+    fasesDeOt: (otId) => apiRequest(`/ot/${otId}/fases`),
+    marcarFase: (faseId, datos) => apiRequest(`/ot/fases/${faseId}`, { method: 'PUT', body: datos }),
+    enCurso: () => apiRequest('/servicios-en-curso', { silencioso: true })
+  },
+
   mermas: {
     listar: (desde, hasta) => {
       const q = new URLSearchParams();

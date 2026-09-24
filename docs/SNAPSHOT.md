@@ -7,6 +7,39 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
+**Fecha:** 24-09-2026 · **v90 — Protocolos y fases de servicio.** (`sql/66`)
+
+- ✅ **Botón "Protocolo" en cada OT** + insignia `4/9` al lado del estado, para que el avance sea
+  visible sin abrir nada. Chip 🔧 **"Servicios en curso"** en el header.
+- 🔴 **REGLA DEL DUEÑO QUE INVIERTE LA ANTERIOR: el insumo sale del stock AL TACHAR LA FASE**, no al
+  entregar. Se le propuso lo contrario y dijo que no: la pasta se gasta el día que se aplica.
+- ⚠️ **Cómo conviven las dos reglas sin descontar dos veces:** lo que consume una fase va a
+  `ot_repuestos` con `stock_descontado = true`, y la entrega solo descuenta las de `false`. Hay una
+  prueba dedicada a eso.
+- 🧴 **Envases por RENDIMIENTO, no por peso.** Se declara cuántas aplicaciones rinde el envase; cada
+  fase suma una; al completarlo se descuenta un envase entero y el contador vuelve a cero. La OT
+  carga el costo **prorrateado**. La vuelta atrás es exacta y no guarda nada extra.
+- 🔴 **Choque de rutas que encontró una prueba:** `GET /api/ot/en-curso` NUNCA se ejecutaba —
+  `/api/ot/:id` se registra antes y capturaba "en-curso" como id. Movido a
+  **`/api/servicios-en-curso`**. Misma trampa ya anotada para las clasificaciones de gastos.
+- 🔒 **Entregar con fases obligatorias pendientes: solo admin, y con el motivo escrito.** El
+  trabajador recibe 403.
+- 👤 El JWT solo lleva el rol, así que se guarda el rol **y** el nombre que la persona escribe; se
+  recuerda en `localStorage` para no preguntarlo en cada fase.
+- 📦 Cargados en `repuestos` (taller, NO catálogo): **UPSIREN Thermal Putty 100g** y **Thermal Paste
+  M12 30g**. Y el protocolo **"Mantenimiento Preventivo PC Gamer"** (9 fases).
+- 🧪 94 comprobaciones, 0 fallas. Detalle en `docs/CHANGELOG-V90.md`.
+
+**⚠️ PENDIENTE DEL DUEÑO, y no es menor:** los dos insumos quedaron con **costo $0** (no los dio), los
+rendimientos (20 y 40) son estimaciones de Claude, y **las 9 fases son un borrador**, no el
+procedimiento real del taller. Con costo 0 el servicio sigue pareciendo 100% de margen — que es justo
+la mentira que este módulo existe para corregir.
+
+**⏭️ Anotado, no hecho:** la pantalla para crear/editar protocolos (acuerdo explícito: primero un
+protocolo real funcionando en una OT, después el editor). Hoy se cargan por SQL.
+
+---
+
 **Datos de producción corregidos el 24-09-2026** (no es código):
 
 - 🔋 **Pila CR2032 Energizer (id 298):** stock **25 → 23** (usó 2 en mantenimientos), categoría POS

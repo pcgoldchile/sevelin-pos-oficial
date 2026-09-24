@@ -9306,6 +9306,29 @@ app.post('/api/ot/:id/entrega', auth(), async (req, res) => {
   const mesesGarantiaCrudo = num(req.body?.meses_garantia);
   const mesesGarantia = mesesGarantiaCrudo >= 0 ? Math.round(mesesGarantiaCrudo) : 6;
 
+  /* FASES OBLIGATORIAS SIN TACHAR (sql/66, regla 4 del dueño).
+     Si el checklist no está completo, la orden NO se entrega — salvo que el
+     ADMIN la fuerce dejando el motivo escrito. El trabajador no puede:
+     "solamente el admin". El motivo queda guardado en la orden, así que
+     forzar una entrega siempre deja rastro. */
+  const { data: fasesPendientes } = await db.from('ot_fases')
+    .select('nombre').eq('ot_id', req.params.id)
+    .eq('obligatoria', true).is('completada_en', null);
+
+  const motivoForzado = String(req.body?.entrega_forzada_motivo || '').trim().slice(0, 300);
+
+  if (fasesPendientes && fasesPendientes.length) {
+    const nombres = fasesPendientes.map(f => f.nombre).join(', ');
+    if (req.usuario.rol !== 'admin') {
+      return enviarError(res, 403,
+        `Faltan ${fasesPendientes.length} fase(s) obligatoria(s) del protocolo: ${nombres}. Solo el administrador puede entregar así.`);
+    }
+    if (!motivoForzado) {
+      return enviarError(res, 400,
+        `Faltan ${fasesPendientes.length} fase(s) obligatoria(s): ${nombres}. Para entregar igual, escribe por qué.`);
+    }
+  }
+
   // .eq('estado', 'PENDIENTE'): dos entregas simultáneas de la misma orden
   // no pueden pasar las dos.
   const ahora = new Date().toISOString();
@@ -9313,6 +9336,7 @@ app.post('/api/ot/:id/entrega', auth(), async (req, res) => {
     .update({
       estado: 'ENTREGADO',
       fecha_entrega: ahora,
+      entrega_forzada_motivo: (fasesPendientes && fasesPendientes.length) ? motivoForzado : null,
       retira_nombre: retiraNombre,
       retira_rut: retiraRut,
       retira_firma_base64: firma || null,
@@ -9923,6 +9947,414 @@ app.delete('/api/ot/:otId/repuestos/:id', auth(), async (req, res) => {
   const { error } = await db.from('ot_repuestos').delete().eq('id', req.params.id).eq('ot_id', req.params.otId);
   if (error) return enviarErrorBD(res, error);
   res.json({ ok: true, stock_devuelto: !!fila.stock_descontado });
+});
+
+/* ============================================================
+   PROTOCOLOS Y FASES DE SERVICIO (sql/66)
+   ------------------------------------------------------------
+   Pedido del dueño: "que cada servicio se armen FASES que el admin o
+   trabajador debe ir chequeando", registrando lo que se consume (CR2032,
+   pasta térmica, thermal pads), "cosa de ir tachando las OT".
+
+   ⚠️ LA REGLA QUE DEFINE EL MÓDULO (decisión del dueño, 24-09-2026):
+   "El insumo debe salir al momento de chequear la fase", NO al entregar.
+   Va contra la regla vieja de ot_repuestos y es a propósito: la pasta se
+   gasta el día que se aplica, no el día que el cliente pasa a buscar.
+
+   CÓMO CONVIVEN LAS DOS REGLAS SIN DESCONTAR DOS VECES
+   Lo que consume una fase se guarda en `ot_repuestos` con
+   `stock_descontado = true`. La entrega solo descuenta las filas con
+   `stock_descontado = false`, así que las de las fases ya no se tocan.
+   ============================================================ */
+
+/* Los envases (frasco de masilla, jeringa de pasta) no descuentan una
+   unidad por uso: suman UNA aplicación. Al llegar al rendimiento declarado
+   se descuenta un envase y el contador vuelve a empezar.
+
+   La vuelta atrás es exacta y no necesita guardar cuántos envases se
+   gastaron: se restan las aplicaciones y, mientras quede negativo, se
+   devuelve un envase y se suma el rendimiento. Da igual el orden en que se
+   destachen las fases. */
+function aplicarRendimiento(usadasActuales, rinde, cantidad) {
+  const total = num(usadasActuales) + num(cantidad);
+  const envases = Math.floor(total / num(rinde));
+  return { usadas: total - envases * num(rinde), envases };
+}
+
+function revertirRendimiento(usadasActuales, rinde, cantidad) {
+  let usadas = num(usadasActuales) - num(cantidad);
+  let envases = 0;
+  while (usadas < 0) { usadas += num(rinde); envases += 1; }
+  return { usadas, envases };   // envases = cuántos hay que DEVOLVER al stock
+}
+
+/* ---------- Plantillas ---------- */
+
+app.get('/api/protocolos', auth(), async (req, res) => {
+  const { data: protocolos, error } = await db.from('protocolos')
+    .select('*').eq('activo', true).order('nombre');
+  if (error) return enviarErrorBD(res, error);
+
+  const lista = protocolos || [];
+  if (!lista.length) return res.json([]);
+
+  const ids = lista.map(p => p.id);
+  const { data: fases } = await db.from('protocolo_fases')
+    .select('*').in('protocolo_id', ids).order('orden');
+
+  const faseIds = (fases || []).map(f => f.id);
+  const { data: insumos } = faseIds.length
+    ? await db.from('protocolo_insumos').select('*').in('protocolo_fase_id', faseIds)
+    : { data: [] };
+
+  res.json(lista.map(p => ({
+    ...p,
+    fases: (fases || []).filter(f => f.protocolo_id === p.id).map(f => ({
+      ...f,
+      insumos: (insumos || []).filter(i => i.protocolo_fase_id === f.id)
+    }))
+  })));
+});
+
+/* ---------- Instanciar un protocolo en una OT ---------- */
+/* Las fases se COPIAN, no se enlazan: si mañana se edita el protocolo, esta
+   OT tiene que seguir mostrando lo que de verdad se hizo. */
+app.post('/api/ot/:id/protocolo', auth(), async (req, res) => {
+  const otId = Number(req.params.id);
+  const protocoloId = Number(req.body?.protocolo_id);
+  if (!Number.isFinite(otId) || otId <= 0) return enviarError(res, 400, 'Orden inválida');
+  if (!Number.isFinite(protocoloId) || protocoloId <= 0) return enviarError(res, 400, 'Selecciona el protocolo');
+
+  try {
+    const { data: ot } = await db.from('ordenes_trabajo')
+      .select('id, estado').eq('id', otId).maybeSingle();
+    if (!ot) return enviarError(res, 404, 'No se encontró la orden');
+    if (ot.estado === 'ENTREGADO') return enviarError(res, 400, 'Esta orden ya fue entregada');
+
+    const { data: protocolo } = await db.from('protocolos')
+      .select('*').eq('id', protocoloId).maybeSingle();
+    if (!protocolo) return enviarError(res, 404, 'No se encontró el protocolo');
+
+    // Aplicar dos veces el mismo protocolo duplicaría el checklist entero.
+    const { data: yaTiene } = await db.from('ot_fases')
+      .select('id').eq('ot_id', otId).eq('protocolo_id', protocoloId).limit(1);
+    if (yaTiene && yaTiene.length) {
+      return enviarError(res, 409, `La orden ya tiene el protocolo "${protocolo.nombre}"`);
+    }
+
+    const { data: fases } = await db.from('protocolo_fases')
+      .select('*').eq('protocolo_id', protocoloId).order('orden');
+    if (!fases || !fases.length) return enviarError(res, 400, 'Ese protocolo no tiene fases cargadas');
+
+    /* Las fases nuevas se agregan DESPUÉS de las que ya tenga la orden: una
+       OT puede llevar dos protocolos (diagnóstico y después mantenimiento,
+       que es justo el caso de las OT-000005 y OT-000006). */
+    const { data: previas } = await db.from('ot_fases')
+      .select('orden').eq('ot_id', otId).order('orden', { ascending: false }).limit(1);
+    const base = previas && previas.length ? num(previas[0].orden) : 0;
+
+    const { data, error } = await db.from('ot_fases').insert(
+      fases.map((f, i) => ({
+        ot_id: otId,
+        protocolo_id: protocoloId,
+        protocolo_fase_id: f.id,
+        protocolo_nombre: protocolo.nombre,
+        nombre: f.nombre,
+        orden: base + i + 1,
+        obligatoria: !!f.obligatoria,
+        pide_nota: !!f.pide_nota
+      }))
+    ).select();
+    if (error) throw new Error(error.message);
+
+    res.status(201).json({ fases: data || [], protocolo: protocolo.nombre });
+  } catch (e) {
+    enviarError(res, 500, e.message || 'No se pudo aplicar el protocolo');
+  }
+});
+
+/* ---------- El checklist de una OT ---------- */
+app.get('/api/ot/:id/fases', auth(), async (req, res) => {
+  const otId = Number(req.params.id);
+  if (!Number.isFinite(otId) || otId <= 0) return enviarError(res, 400, 'Orden inválida');
+
+  const { data: fases, error } = await db.from('ot_fases')
+    .select('*').eq('ot_id', otId).order('orden');
+  if (error) return enviarErrorBD(res, error);
+
+  const lista = fases || [];
+  if (!lista.length) return res.json({ fases: [], total: 0, completadas: 0, obligatorias_pendientes: 0 });
+
+  // Lo planificado (mientras la plantilla exista) y lo realmente consumido.
+  const faseIds = lista.map(f => f.protocolo_fase_id).filter(Boolean);
+  const { data: plan } = faseIds.length
+    ? await db.from('protocolo_insumos').select('*').in('protocolo_fase_id', faseIds)
+    : { data: [] };
+
+  const { data: consumido } = await db.from('ot_repuestos')
+    .select('*').eq('ot_id', otId).not('ot_fase_id', 'is', null);
+
+  const conDatos = lista.map(f => ({
+    ...f,
+    insumos_plan: (plan || []).filter(i => i.protocolo_fase_id === f.protocolo_fase_id),
+    insumos_consumidos: (consumido || []).filter(c => Number(c.ot_fase_id) === Number(f.id))
+  }));
+
+  res.json({
+    fases: conDatos,
+    total: conDatos.length,
+    completadas: conDatos.filter(f => f.completada_en).length,
+    obligatorias_pendientes: conDatos.filter(f => f.obligatoria && !f.completada_en).length
+  });
+});
+
+/* ---------- Tachar / destachar una fase ----------
+   Este es el punto donde se mueve el stock. Admin y trabajador pueden los
+   dos (decisión del dueño), pero todo queda registrado con el rol y con el
+   nombre que la persona escriba — el JWT solo lleva el rol, no identidad. */
+app.put('/api/ot/fases/:id', auth(), async (req, res) => {
+  const faseId = Number(req.params.id);
+  if (!Number.isFinite(faseId) || faseId <= 0) return enviarError(res, 400, 'Fase inválida');
+
+  const completada = req.body?.completada !== false;
+  const nombrePersona = String(req.body?.nombre || '').trim().slice(0, 80) || null;
+  const nota = String(req.body?.nota || '').trim().slice(0, 500) || null;
+
+  try {
+    const { data: fase } = await db.from('ot_fases').select('*').eq('id', faseId).maybeSingle();
+    if (!fase) return enviarError(res, 404, 'No se encontró la fase');
+
+    const { data: ot } = await db.from('ordenes_trabajo')
+      .select('id, estado').eq('id', fase.ot_id).maybeSingle();
+    if (ot?.estado === 'ENTREGADO') {
+      return enviarError(res, 400, 'Esta orden ya fue entregada: su checklist queda como está');
+    }
+
+    const ahora = new Date().toISOString();
+
+    /* ---------------- DESTACHAR ---------------- */
+    if (!completada) {
+      if (!fase.completada_en) return enviarError(res, 409, 'Esa fase no estaba tachada');
+
+      const { data: consumido } = await db.from('ot_repuestos')
+        .select('*').eq('ot_fase_id', faseId);
+
+      for (const fila of (consumido || [])) {
+        if (fila.repuesto_id) {
+          const { data: rep } = await db.from('repuestos')
+            .select('id, stock, stock_ilimitado, rinde_aplicaciones, aplicaciones_usadas')
+            .eq('id', fila.repuesto_id).maybeSingle();
+          if (!rep || rep.stock_ilimitado) continue;
+
+          if (num(rep.rinde_aplicaciones) > 0) {
+            const r = revertirRendimiento(rep.aplicaciones_usadas, rep.rinde_aplicaciones, fila.cantidad);
+            await db.from('repuestos').update({
+              aplicaciones_usadas: r.usadas,
+              stock: num(rep.stock) + r.envases,
+              stock_actualizado_en: ahora
+            }).eq('id', rep.id);
+          } else {
+            await db.from('repuestos').update({
+              stock: num(rep.stock) + num(fila.cantidad),
+              stock_actualizado_en: ahora
+            }).eq('id', rep.id);
+          }
+        } else if (fila.producto_id) {
+          await ajustarStock([{ producto_id: fila.producto_id, cantidad: num(fila.cantidad) }], +1);
+        }
+      }
+
+      if (consumido && consumido.length) {
+        await db.from('ot_repuestos').delete().eq('ot_fase_id', faseId);
+      }
+
+      const { data, error } = await db.from('ot_fases').update({
+        completada_en: null,
+        completada_por_rol: null,
+        completada_por_nombre: null,
+        destachada_en: ahora,
+        destachada_por_rol: req.usuario.rol,
+        destachada_por_nombre: nombrePersona
+      }).eq('id', faseId).select().maybeSingle();
+      if (error) throw new Error(error.message);
+
+      return res.json({ ...data, insumos_devueltos: (consumido || []).length });
+    }
+
+    /* ---------------- TACHAR ---------------- */
+    if (fase.completada_en) return enviarError(res, 409, 'Esa fase ya estaba tachada');
+    if (fase.pide_nota && !nota) {
+      return enviarError(res, 400, 'Esta fase pide una nota: escribe el resultado antes de tacharla');
+    }
+
+    const { data: plan } = fase.protocolo_fase_id
+      ? await db.from('protocolo_insumos').select('*').eq('protocolo_fase_id', fase.protocolo_fase_id)
+      : { data: [] };
+
+    const consumidos = [];
+    const avisos = [];
+
+    for (const ins of (plan || [])) {
+      const cantidad = num(ins.cantidad) || 1;
+
+      if (ins.repuesto_id) {
+        const { data: rep } = await db.from('repuestos')
+          .select('*').eq('id', ins.repuesto_id).maybeSingle();
+        if (!rep) { avisos.push(`"${ins.nombre}" ya no existe en el taller`); continue; }
+
+        if (rep.stock_ilimitado) {
+          consumidos.push({ repuesto_id: rep.id, nombre: ins.nombre, cantidad,
+                            costo_unitario: num(rep.costo_unitario), precio_unitario: num(rep.precio_venta) });
+          continue;
+        }
+
+        if (ins.por_rendimiento && num(rep.rinde_aplicaciones) > 0) {
+          const r = aplicarRendimiento(rep.aplicaciones_usadas, rep.rinde_aplicaciones, cantidad);
+          if (r.envases > num(rep.stock)) {
+            avisos.push(`No queda suficiente "${ins.nombre}": el envase se acabó`);
+            continue;
+          }
+          await db.from('repuestos').update({
+            aplicaciones_usadas: r.usadas,
+            stock: num(rep.stock) - r.envases,
+            stock_actualizado_en: ahora
+          }).eq('id', rep.id);
+
+          // El costo que carga la OT es el PRORRATEADO, no el envase entero.
+          const costoPorAplicacion = num(rep.costo_unitario) / num(rep.rinde_aplicaciones);
+          consumidos.push({
+            repuesto_id: rep.id, nombre: ins.nombre, cantidad,
+            costo_unitario: Math.round(costoPorAplicacion),
+            precio_unitario: 0
+          });
+          if (num(rep.stock) - r.envases <= num(rep.stock_minimo || 0)) {
+            avisos.push(`Queda poco "${ins.nombre}": ${num(rep.stock) - r.envases} envase(s)`);
+          }
+          continue;
+        }
+
+        if (num(rep.stock) < cantidad) {
+          avisos.push(`No hay stock de "${ins.nombre}" (quedan ${num(rep.stock)})`);
+          continue;
+        }
+        await db.from('repuestos').update({
+          stock: num(rep.stock) - cantidad, stock_actualizado_en: ahora
+        }).eq('id', rep.id);
+        consumidos.push({ repuesto_id: rep.id, nombre: ins.nombre, cantidad,
+                          costo_unitario: num(rep.costo_unitario), precio_unitario: num(rep.precio_venta) });
+
+      } else if (ins.producto_id) {
+        const { data: prod } = await db.from('productos')
+          .select('id, nombre, stock, stock_ilimitado, costo_unitario, precio_unitario')
+          .eq('id', ins.producto_id).maybeSingle();
+        if (!prod) { avisos.push(`"${ins.nombre}" ya no existe en el catálogo`); continue; }
+
+        if (!prod.stock_ilimitado) {
+          if (num(prod.stock) < cantidad) {
+            avisos.push(`No hay stock de "${ins.nombre}" (quedan ${num(prod.stock)})`);
+            continue;
+          }
+          await db.from('productos').update({
+            stock: num(prod.stock) - cantidad, stock_actualizado_en: ahora
+          }).eq('id', prod.id);
+        }
+        consumidos.push({ producto_id: prod.id, nombre: ins.nombre, cantidad,
+                          costo_unitario: num(prod.costo_unitario), precio_unitario: num(prod.precio_unitario) });
+      }
+    }
+
+    /* stock_descontado: true — lo acaba de descontar esta fase. Sin esta
+       marca, la entrega de la OT lo descontaría por segunda vez.
+       cobrado: false — por defecto lo absorbe el precio del servicio; si el
+       dueño decide cobrarlo, lo marca desde la OT. */
+    if (consumidos.length) {
+      const { error: errIns } = await db.from('ot_repuestos').insert(
+        consumidos.map(c => ({
+          ot_id: fase.ot_id,
+          ot_fase_id: faseId,
+          repuesto_id: c.repuesto_id || null,
+          producto_id: c.producto_id || null,
+          nombre: c.nombre,
+          cantidad: c.cantidad,
+          costo_unitario: c.costo_unitario,
+          precio_unitario: c.precio_unitario,
+          cobrado: false,
+          stock_descontado: true
+        }))
+      );
+      if (errIns) throw new Error(errIns.message);
+    }
+
+    const { data, error } = await db.from('ot_fases').update({
+      completada_en: ahora,
+      completada_por_rol: req.usuario.rol,
+      completada_por_nombre: nombrePersona,
+      nota,
+      destachada_en: null,
+      destachada_por_rol: null,
+      destachada_por_nombre: null
+    }).eq('id', faseId).select().maybeSingle();
+    if (error) throw new Error(error.message);
+
+    res.json({ ...data, insumos_consumidos: consumidos.length, avisos });
+  } catch (e) {
+    enviarError(res, 500, e.message || 'No se pudo actualizar la fase');
+  }
+});
+
+/* ---------- Servicios en curso (aviso del header) ----------
+   Pedido del dueño: "me gustaría ver en notificaciones los servicios en
+   curso". Solo OT PENDIENTE que tengan checklist: una OT sin protocolo no
+   es un servicio en curso, es una orden sin empezar. */
+/* ⚠️ NO puede llamarse /api/ot/en-curso: `app.get('/api/ot/:id')` se
+   registra antes y capturaría "en-curso" como si fuera un id. Es la misma
+   trampa que ya está anotada en las clasificaciones de gastos. */
+app.get('/api/servicios-en-curso', auth(), async (req, res) => {
+  try {
+    const { data: ots, error } = await db.from('ordenes_trabajo')
+      .select('id, numero_ot, cliente_nombre, dispositivo_categoria, dispositivo_modelo, fecha_ingreso')
+      .eq('estado', 'PENDIENTE').order('fecha_ingreso').limit(200);
+    if (error) return enviarErrorBD(res, error);
+
+    const lista = ots || [];
+    if (!lista.length) return res.json({ total: 0, sin_avanzar: 0, servicios: [] });
+
+    const { data: fases } = await db.from('ot_fases')
+      .select('ot_id, nombre, orden, obligatoria, completada_en')
+      .in('ot_id', lista.map(o => o.id)).order('orden');
+
+    const hoy = fechaHoyChile();
+    const servicios = lista.map(ot => {
+      const suyas = (fases || []).filter(f => Number(f.ot_id) === Number(ot.id));
+      if (!suyas.length) return null;
+
+      const completadas = suyas.filter(f => f.completada_en).length;
+      const siguiente = suyas.find(f => !f.completada_en) || null;
+      return {
+        id: ot.id,
+        numero_ot: ot.numero_ot,
+        cliente: ot.cliente_nombre,
+        equipo: [ot.dispositivo_categoria, ot.dispositivo_modelo].filter(Boolean).join(' · '),
+        total_fases: suyas.length,
+        completadas,
+        siguiente_fase: siguiente ? siguiente.nombre : null,
+        obligatorias_pendientes: suyas.filter(f => f.obligatoria && !f.completada_en).length,
+        dias_en_taller: ot.fecha_ingreso ? diasEntre(String(ot.fecha_ingreso).slice(0, 10), hoy) : null
+      };
+    }).filter(Boolean);
+
+    // El que lleva más días primero: es el que tiene al cliente esperando.
+    servicios.sort((a, b) => (b.dias_en_taller || 0) - (a.dias_en_taller || 0));
+
+    res.json({
+      total: servicios.length,
+      // Con protocolo aplicado pero sin una sola fase tachada: no se ha empezado.
+      sin_avanzar: servicios.filter(s => s.completadas === 0).length,
+      servicios
+    });
+  } catch (e) {
+    enviarError(res, 500, e.message || 'No se pudieron revisar los servicios en curso');
+  }
 });
 
 /* ============================================================

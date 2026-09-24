@@ -514,10 +514,12 @@ function renderOrdenesTabla(lista) {
       <td>${escHtml(o.cliente_nombre || '—')}${o.cliente_telefono ? `<br><small style="color:var(--text-muted);">${escHtml(o.cliente_telefono)}</small>` : ''}</td>
       <td>${escHtml(o.dispositivo_categoria || '')} ${escHtml(o.dispositivo_modelo || '')}${o.dispositivo_sn ? `<br><small style="color:var(--text-muted);">S/N: ${escHtml(o.dispositivo_sn)}</small>` : ''}</td>
       <td>${escHtml((o.falla_reportada || '').slice(0, 70))}${(o.falla_reportada || '').length > 70 ? '…' : ''}</td>
-      <td><span class="badge ${pendiente ? 'badge-gold' : 'badge-green'}">${o.estado}</span></td>
+      <td><span class="badge ${pendiente ? 'badge-gold' : 'badge-green'}">${o.estado}</span>
+          ${typeof insigniaAvanceOT === 'function' ? insigniaAvanceOT(o.id) : ''}</td>
       <td>
         <div class="cell-actions">
           ${pendiente ? `<button class="btn btn-green btn-sm" data-entregar="${o.id}" title="Check-Out / Entregar equipo">📦 Entregar</button>` : ''}
+          <button class="btn btn-outline btn-sm" data-protocolo="${o.id}" title="Fases del protocolo de servicio">✅ Protocolo</button>
           <button class="btn btn-outline btn-sm" data-repuestos="${o.id}" title="Repuestos y mano de obra">🔩 Repuestos</button>
           <button class="btn btn-outline btn-sm" data-notas="${o.id}" title="Notas del taller (privadas)">🔒 Notas</button>
           <button class="btn btn-icon btn-icon-view" data-ver="${o.id}" title="Ver e imprimir la orden">${ICO_VER_OT}</button>
@@ -535,6 +537,9 @@ function renderOrdenesTabla(lista) {
   });
   elOtTableBody.querySelectorAll('button[data-entregar]').forEach(btn => {
     btn.addEventListener('click', () => abrirModalEntrega(btn.dataset.entregar));
+  });
+  elOtTableBody.querySelectorAll('button[data-protocolo]').forEach(btn => {
+    btn.addEventListener('click', () => abrirModalProtocoloOT(btn.dataset.protocolo));
   });
   elOtTableBody.querySelectorAll('button[data-repuestos]').forEach(btn => {
     btn.addEventListener('click', () => abrirModalOtRepuestos(btn.dataset.repuestos));

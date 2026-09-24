@@ -232,6 +232,12 @@
            su turno es el que va a dar de menos. -->
       <!-- Productos devueltos esperando una decisión, una respuesta del
            proveedor, o el visto bueno de un ajuste de plata (sql/63). -->
+      <!-- Servicios en el taller con protocolo abierto (sql/66). Ámbar
+           cuando hay alguno con el protocolo aplicado y ninguna fase tachada.
+           NO es admin-only: el trabajador es quien tacha las fases. -->
+      <button id="btnServiciosEnCurso" class="btn-notificaciones btn-servicios" title="Servicios en curso en el taller" hidden>
+        🔧 <span id="textoServiciosEnCurso">En curso</span>
+      </button>
       <!-- Facturas que el proveedor todavía no manda (sql/65). Rojo cuando
            se pasó la fecha que él mismo prometió. -->
       <button id="btnFacturasPendientes" class="btn-notificaciones btn-facturas admin-only" title="Facturas que el proveedor todavía no manda" hidden>
@@ -6493,6 +6499,55 @@
     </div>
   </div>
 
+  <!-- CHECKLIST DE FASES DE UNA OT (sql/66) -->
+  <div id="modalProtocoloOT" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <h2>✅ Protocolo del servicio</h2>
+      <p class="modal-hint" id="protocoloOtTitulo">—</p>
+
+      <div class="grid grid-2" style="margin-top:14px;">
+        <div class="field">
+          <label for="protocoloSelector">Aplicar un protocolo</label>
+          <select id="protocoloSelector"></select>
+        </div>
+        <div class="field" style="align-self:end;">
+          <button class="btn btn-primary" id="btnAplicarProtocolo" type="button">➕ Aplicar a esta orden</button>
+        </div>
+      </div>
+
+      <p class="modal-hint" style="display:flex; align-items:center; gap:10px;">
+        <span id="nombreTecnicoActual">—</span>
+        <button class="btn btn-ghost btn-sm" id="btnCambiarNombreTecnico" type="button">Cambiar</button>
+      </p>
+
+      <p class="modal-hint" id="protocoloOtResumen">—</p>
+
+      <div id="protocoloFasesLista" style="max-height:46vh; overflow:auto; margin-top:10px;"></div>
+
+      <p class="modal-hint">
+        ⚠️ Al tachar una fase, <strong>sus insumos salen del stock en ese momento</strong> — no al
+        entregar. Destacharla los devuelve. Las fases con <span class="obligatorio">*</span> son
+        obligatorias: sin ellas solo el administrador puede entregar, y dejando el motivo escrito.
+      </p>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCerrarProtocoloOT" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SERVICIOS EN CURSO (sql/66) -->
+  <div id="modalServiciosEnCurso" class="modal-overlay">
+    <div class="modal-box" style="max-width:740px;">
+      <h2>🔧 Servicios en curso</h2>
+      <p class="modal-hint" id="serviciosResumen">—</p>
+      <div id="servicioslista" style="max-height:52vh; overflow:auto;"></div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCerrarServicios" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- FACTURAS QUE EL PROVEEDOR TODAVÍA NO MANDA (sql/65) -->
   <div id="modalFacturasPendientes" class="modal-overlay">
     <div class="modal-box" style="max-width:740px;">
@@ -6685,6 +6740,7 @@
   <script src="js/garantias.js"></script>
   <script src="js/repuestos.js"></script>
   <script src="js/ot.js"></script>
+  <script src="js/protocolos.js"></script>
   <script src="js/pos.js"></script>
   <script src="js/pos-layout.js"></script>   <!-- después de pos.js: solo toca la maquetación -->
   <script src="js/caja.js"></script>   <!-- apertura/arqueo de caja en el POS (punto 4) -->
