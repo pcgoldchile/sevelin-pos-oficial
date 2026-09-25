@@ -6143,6 +6143,29 @@
         </div>
       </div>
 
+      <!-- ENVASES QUE SE GASTAN DE A POCO (sql/66).
+           Masilla térmica, pasta, alcohol: no se descuenta una unidad por uso,
+           se suma UNA aplicación. Al llegar al rendimiento se descuenta un
+           envase entero y el contador vuelve a cero. Así no quedan decimales
+           falsos en el stock ni hace falta pesar nada. -->
+      <div class="grid grid-2" style="margin-top:12px;">
+        <div class="field">
+          <label for="repuestoRinde">¿Cuántas aplicaciones rinde un envase?</label>
+          <input type="number" id="repuestoRinde" min="0" step="1" placeholder="Déjalo vacío si se descuenta de a uno">
+        </div>
+        <div class="field">
+          <label for="repuestoAplicacionesUsadas">Aplicaciones ya gastadas del envase abierto</label>
+          <input type="number" id="repuestoAplicacionesUsadas" min="0" step="1" placeholder="0">
+        </div>
+      </div>
+      <p class="modal-hint">
+        Vacío = insumo normal, se descuenta una unidad por uso (una pila, un cable).
+        Con número = envase: cada aplicación suma al contador y <strong>al llegar al rendimiento se
+        descuenta un envase del stock</strong>. El costo que carga la OT es el prorrateado
+        (costo del envase ÷ rendimiento), no el envase entero. Si el envase que tienes ya está a
+        medio usar, anota cuántas aplicaciones lleva.
+      </p>
+
       <label class="check-item" id="itemRepuestoStockIlimitado" style="margin-top:12px;">
         <input type="checkbox" id="repuestoStockIlimitado">
         <span>♾️ Stock ilimitado (mano de obra u otro ítem sin inventario físico — no se descuenta ni se reserva)</span>

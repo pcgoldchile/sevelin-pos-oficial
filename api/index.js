@@ -9710,7 +9710,9 @@ app.post('/api/garantias/:tipo/:id/aviso', auth(), async (req, res) => {
    ============================================================ */
 const CAMPOS_REPUESTO = [
   'area', 'categoria', 'modelo', 'descripcion', 'costo_unitario',
-  'precio_venta', 'stock', 'stock_minimo', 'alerta_stock', 'ubicacion', 'stock_ilimitado'
+  'precio_venta', 'stock', 'stock_minimo', 'alerta_stock', 'ubicacion', 'stock_ilimitado',
+  // sql/66 — envases que se gastan de a poco (masilla, pasta térmica)
+  'rinde_aplicaciones', 'aplicaciones_usadas'
 ];
 
 function sanearRepuesto(body = {}) {
@@ -9722,10 +9724,24 @@ function sanearRepuesto(body = {}) {
   if (!r.categoria) return { error: 'Indica la categoría base (Batería, Pantalla, BIOS, etc.)' };
   if (!r.modelo) return { error: 'Indica el modelo exacto del repuesto' };
 
-  ['costo_unitario', 'precio_venta', 'stock', 'stock_minimo'].forEach(k => {
+  ['costo_unitario', 'precio_venta', 'stock', 'stock_minimo', 'aplicaciones_usadas'].forEach(k => {
     if (r[k] !== undefined) r[k] = num(r[k]);
   });
-  if (!(num(r.precio_venta) > 0)) return { error: 'El precio de venta (con mano de obra) debe ser mayor a 0' };
+
+  /* rinde_aplicaciones vacío = insumo de unidad discreta (se descuenta de a
+     uno). Solo tiene sentido positivo: un envase no rinde 0 aplicaciones. */
+  if (r.rinde_aplicaciones !== undefined) {
+    const rinde = num(r.rinde_aplicaciones);
+    r.rinde_aplicaciones = rinde > 0 ? rinde : null;
+  }
+
+  /* ⚠️ El precio de venta puede ser 0, y es a propósito (25-09-2026).
+     Antes se exigía > 0 porque un repuesto era siempre algo que se le cobra
+     al cliente. Desde sql/66 esta tabla también guarda INSUMOS de taller
+     —un frasco de masilla térmica, una jeringa de pasta— que se consumen y
+     NUNCA se venden sueltos. Con la regla vieja esos insumos no se podían
+     ni guardar desde el POS. Negativo sigue sin tener sentido. */
+  if (num(r.precio_venta) < 0) return { error: 'El precio de venta no puede ser negativo' };
 
   if (body.alerta_stock !== undefined) r.alerta_stock = !!body.alerta_stock;
   if (body.stock_ilimitado !== undefined) r.stock_ilimitado = !!body.stock_ilimitado;

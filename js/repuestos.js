@@ -35,6 +35,9 @@ const elRepuestoCategoria = document.getElementById('repuestoCategoria');
 const elRepuestoModelo = document.getElementById('repuestoModelo');
 const elRepuestoDescripcion = document.getElementById('repuestoDescripcion');
 const elRepuestoCosto = document.getElementById('repuestoCosto');
+// sql/66 — envases que se gastan de a poco (masilla, pasta térmica)
+const elRepuestoRinde = document.getElementById('repuestoRinde');
+const elRepuestoAplicacionesUsadas = document.getElementById('repuestoAplicacionesUsadas');
 const elRepuestoPrecio = document.getElementById('repuestoPrecio');
 const elRepuestoStock = document.getElementById('repuestoStock');
 const elRepuestoStockMinimo = document.getElementById('repuestoStockMinimo');
@@ -364,6 +367,8 @@ function abrirModalRepuesto(repuesto = null) {
     if (elRepuestoUbicacion) elRepuestoUbicacion.value = repuesto.ubicacion || '';
     if (elRepuestoSinAlerta) elRepuestoSinAlerta.checked = repuesto.alerta_stock === false;
     if (elRepuestoStockIlimitado) elRepuestoStockIlimitado.checked = !!repuesto.stock_ilimitado;
+    if (elRepuestoRinde) elRepuestoRinde.value = repuesto.rinde_aplicaciones || '';
+    if (elRepuestoAplicacionesUsadas) elRepuestoAplicacionesUsadas.value = repuesto.aplicaciones_usadas || 0;
   } else {
     editandoRepuestoId = null;
     if (elRepuestoFormTitle) elRepuestoFormTitle.textContent = 'Nuevo Repuesto de Taller';
@@ -374,6 +379,8 @@ function abrirModalRepuesto(repuesto = null) {
     if (elRepuestoStockMinimo) elRepuestoStockMinimo.value = STOCK_MINIMO_REPUESTO;
     if (elRepuestoSinAlerta) elRepuestoSinAlerta.checked = false;
     if (elRepuestoStockIlimitado) elRepuestoStockIlimitado.checked = false;
+    if (elRepuestoRinde) elRepuestoRinde.value = '';
+    if (elRepuestoAplicacionesUsadas) elRepuestoAplicacionesUsadas.value = '';
   }
 
   aplicarStockIlimitadoRepuestoUI();
@@ -410,13 +417,19 @@ async function guardarRepuesto() {
     stock_minimo: Number(elRepuestoStockMinimo?.value) || 0,
     ubicacion: elRepuestoUbicacion?.value.trim() || null,
     alerta_stock: !(elRepuestoSinAlerta && elRepuestoSinAlerta.checked),
-    stock_ilimitado: !!(elRepuestoStockIlimitado && elRepuestoStockIlimitado.checked)
+    stock_ilimitado: !!(elRepuestoStockIlimitado && elRepuestoStockIlimitado.checked),
+    /* Vacío = insumo de unidad discreta. El backend lo deja en null. */
+    rinde_aplicaciones: elRepuestoRinde?.value.trim() ? Number(elRepuestoRinde.value) : null,
+    aplicaciones_usadas: Number(elRepuestoAplicacionesUsadas?.value) || 0
   };
 
   if (!payload.area) { showToast('Indica el área o tipo', 'err'); elRepuestoArea?.focus(); return; }
   if (!payload.categoria) { showToast('Indica la categoría base', 'err'); elRepuestoCategoria?.focus(); return; }
   if (!payload.modelo) { showToast('Indica el modelo exacto', 'err'); elRepuestoModelo?.focus(); return; }
-  if (payload.precio_venta <= 0) { showToast('El precio de venta debe ser mayor a 0', 'err'); elRepuestoPrecio?.focus(); return; }
+  /* ⚠️ El precio puede ser 0 (25-09-2026): esta tabla también guarda INSUMOS
+     de taller —masilla, pasta térmica— que se consumen y nunca se venden
+     sueltos. Con la regla vieja no se podían ni guardar. */
+  if (payload.precio_venta < 0) { showToast('El precio de venta no puede ser negativo', 'err'); elRepuestoPrecio?.focus(); return; }
 
   if (elBtnGuardarRepuesto) elBtnGuardarRepuesto.disabled = true;
 

@@ -53,7 +53,10 @@ const LADO = 800;
 
 // Datos fijos del negocio (ver memoria reference-sevelin-datos-fijos)
 const WHATSAPP  = '+56 9 3575 0828';
-const INSTAGRAM = '@sevelin.cl';
+/* ⚠️ HANDLE ACTUAL, no el definitivo. El dueño todavía no puede tomar
+   @sevelin.cl (25-09-2026): está en @sevelin_cl y espera unos días. Cuando
+   lo consiga, se cambia esta línea y se regeneran todas las imágenes. */
+const INSTAGRAM = '@sevelin_cl';
 const SITIO     = 'www.sevelin.cl';
 
 /* ============================================================
@@ -213,7 +216,7 @@ function svgServicio({ nombre, precio, aConsultar }) {
   <text x="400" y="748" text-anchor="middle" font-family="Arial, sans-serif"
         font-size="17" fill="${C.acento}">${INSTAGRAM}  ·  ${SITIO}</text>
   <text x="400" y="773" text-anchor="middle" font-family="Arial, sans-serif"
-        font-size="13" fill="${C.apagado}">Arica · 6 meses de garantía</text>
+        font-size="13" fill="${C.apagado}">Arica, Chile</text>
 </svg>`;
 }
 

@@ -7,6 +7,36 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
+**25-09-2026 (tarde) · Imágenes de servicios, PTM7950 y el rendimiento configurable.**
+
+- 🎨 **Las 40 fichas de Servicios Técnicos ya tienen imagen**, todas del mismo molde
+  (`scripts/generar-imagenes-servicios.js`): SVG + sharp → 800×800 WebP (~20 KB contra ~85 KB de las
+  antiguas). Sin IA, por eso son uniformes. Cambiar un color en la constante `C` las cambia todas.
+- 📸 **Dos correcciones vistas en la primera muestra:** Arial Black mide ~0.72 del tamaño por
+  carácter (no 0.62) y los títulos largos se salían del marco; y la última línea del pie quedaba
+  cortada. Hay `textLength` como red de seguridad.
+- 🚫 **Sin la línea "6 meses de garantía"** (pedido del dueño: la gente lo malentiende, y hay
+  servicios que explícitamente NO tienen garantía).
+- 📷 **INSTAGRAM HOY ES `@sevelin_cl`**, no `@sevelin.cl` — todavía no le liberan el nombre. Las
+  imágenes salen con el handle actual; cuando lo cambie, se edita la constante `INSTAGRAM` y se
+  regeneran las 40 de una pasada. Ver [[reference-sevelin-datos-fijos]].
+- 🧊 **Nuevo servicio: "Mantenimiento Premium de Notebook con PTM7950" $55.000** (id 312). **SOLO
+  notebook** por decisión del dueño (la lámina que se aplica es más chica y le rinde más). Todavía no
+  ha probado la lámina: la aplicará cuando alguien pida el servicio. La ficha explica que el material
+  necesita ciclos de calor para activarse, o el cliente va a creer que no funcionó.
+- 🔴 **DOS AGUJEROS DE AYER, CERRADOS:** los campos `rinde_aplicaciones` y `aplicaciones_usadas` de
+  `sql/66` **no estaban en el formulario de Repuestos**, así que el rendimiento no se podía
+  configurar desde el POS. Y peor: `precio_venta` exigía ser **> 0**, y un insumo de taller que nunca
+  se vende suelto (masilla, pasta) quedaba **imposible de guardar**. Ahora se acepta 0.
+- ✅ **Verificado en Chrome, en las cuentas reales del dueño:** `@sevelin_cl` **ES cuenta profesional**
+  (categoría "Tienda de informática"), está en el portafolio "Sevelin Arica - Tienda de Tecnología",
+  tiene **ID de cuenta business `17841423397901970`** y está **conectada a la Página de Facebook**
+  y a la cuenta publicitaria. **Se cumplen todos los requisitos de la API de publicación de
+  Instagram.** Falta solo crear la app de Meta en modo desarrollo.
+- 🧪 13 comprobaciones nuevas, 0 fallas. Total de la sesión: 299.
+
+---
+
 **25-09-2026 · Servicio a domicilio creado** (id 311, "Visita Técnica a Domicilio en Arica").
 
 - 🚗 **Opción (A), elegida por el dueño:** UN solo servicio que se suma al trabajo, no versiones "a
