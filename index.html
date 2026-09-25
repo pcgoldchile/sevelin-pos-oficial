@@ -232,6 +232,11 @@
            su turno es el que va a dar de menos. -->
       <!-- Productos devueltos esperando una decisión, una respuesta del
            proveedor, o el visto bueno de un ajuste de plata (sql/63). -->
+      <!-- Productos publicados en el POS que NO llegaron a sevelin.cl.
+           Normalmente invisible: si aparece, algo se cayó en silencio. -->
+      <button id="btnCatalogoDescuadrado" class="btn-notificaciones btn-catalogo-web admin-only" title="Productos que no llegaron a la tienda" hidden>
+        🌐 <span id="textoCatalogoDescuadrado">Catálogo</span>
+      </button>
       <!-- Servicios en el taller con protocolo abierto (sql/66). Ámbar
            cuando hay alguno con el protocolo aplicado y ninguna fase tachada.
            NO es admin-only: el trabajador es quien tacha las fases. -->
@@ -3255,6 +3260,24 @@
               </tbody>
             </table>
           </div>
+        </div>
+
+        <!-- ¿Llegó todo el catálogo a sevelin.cl? (25-09-2026)
+             El trigger de sincronización es "dispara y olvida" con 5 s de
+             tope: si la tienda responde lenta, el producto se queda fuera
+             en silencio. Esto lo compara y lo nombra. -->
+        <div class="card" style="margin-top:16px;">
+          <div class="card-head">
+            <div>
+              <h2>Catálogo publicado vs. sevelin.cl</h2>
+              <p class="subtitle" id="saludCatalogoResumen">Comparando…</p>
+            </div>
+            <div class="row-actions" style="gap:8px;">
+              <button class="btn btn-outline btn-sm" id="btnRevisarCatalogoWeb">🔄 Revisar</button>
+              <button class="btn btn-primary btn-sm" id="btnReenviarCatalogoWeb" hidden>📤 Reenviar los que faltan</button>
+            </div>
+          </div>
+          <div id="saludCatalogoDetalle" style="margin-top:8px;"></div>
         </div>
 
         <!-- Errores reales del POS y de la tienda (sql/48 + tienda supabase/33) -->

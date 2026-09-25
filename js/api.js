@@ -471,6 +471,11 @@ const API = {
     obtener: () => apiRequest('/salud-sistema'),
     // Errores recientes del POS y de la tienda, agrupados (sql/48).
     errores: (dias) => apiRequest(`/salud-sistema/errores?dias=${encodeURIComponent(dias || 7)}`),
+    /* ¿Llegó todo el catálogo a la tienda? (25-09-2026)
+       `silencioso`: es un sondeo de fondo, no debe interrumpir con toasts. */
+    catalogoWeb: () => apiRequest('/salud-sistema/catalogo-web', { silencioso: true }),
+    reenviarCatalogoWeb: (ids) =>
+      apiRequest('/salud-sistema/catalogo-web/reenviar', { method: 'POST', body: { ids } }),
     limpiarErrores: () => apiRequest('/salud-sistema/errores', { method: 'DELETE' }),
   },
 

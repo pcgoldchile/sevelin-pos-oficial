@@ -4425,6 +4425,21 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
     animation: pulso-notificacion 2s ease-in-out infinite;
 }
 
+/* Productos que no llegaron a sevelin.cl (25-09-2026). Ambar cuando falta
+   algo en la web; ROJO cuando SOBRA, porque un producto visible que el POS
+   ya despublico se puede vender. */
+.btn-catalogo-web[hidden] { display: none; }
+.btn-catalogo-web {
+    background: var(--tint-gold, rgba(245, 158, 11, .12));
+    color: var(--gold);
+    border-color: rgba(245, 158, 11, .35);
+}
+.btn-catalogo-web.catalogo-sobrante {
+    background: var(--tint-red); color: var(--red);
+    border-color: rgba(239, 68, 68, .45);
+    animation: pulso-notificacion 2s ease-in-out infinite;
+}
+
 /* Servicios en curso en el taller (sql/66). Ambar cuando hay alguno con el
    protocolo aplicado y ninguna fase tachada: eso es un equipo parado. */
 .btn-servicios[hidden] { display: none; }

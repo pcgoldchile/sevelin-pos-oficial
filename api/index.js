@@ -11524,6 +11524,125 @@ function claveAgrupacionError(e) {
   return [e.origen, e.ruta || '', normal].join('|');
 }
 
+
+/* ============================================================
+   ¿LLEGÓ TODO EL CATÁLOGO A LA TIENDA?  (solo admin)
+   ------------------------------------------------------------
+   Nació de una falla real (25-09-2026): al crear 12 servicios nuevos, uno
+   NO llegó a sevelin.cl. El trigger `trg_sync_tienda` usa net.http_post,
+   que es "dispara y olvida" con **5 segundos de tope**: si la tienda
+   responde lenta, la llamada muere, nadie reintenta y nadie se entera.
+   El producto simplemente no existe en la web.
+
+   Es la misma familia de problema que el feed que mandaba a 404: algo se
+   rompe en silencio y se descubre semanas después, por casualidad.
+
+   Este chequeo compara el POS contra la tienda y nombra a los que faltan.
+   Compara por `producto_pos_id`, que es el enlace real entre las dos
+   bases — no por nombre ni por SKU, que pueden cambiar.
+   ============================================================ */
+app.get('/api/salud-sistema/catalogo-web', auth(true), async (req, res) => {
+  if (!SUPABASE_WEB_URL || !SUPABASE_WEB_SERVICE_ROLE_KEY) {
+    return res.json({
+      configurado: false,
+      motivo: 'Faltan SUPABASE_WEB_URL / SUPABASE_WEB_SERVICE_ROLE_KEY: sin eso no se puede leer la tienda.',
+      faltantes: [], sobrantes: [], total_pos: 0, total_web: 0
+    });
+  }
+
+  try {
+    const [respPos, respWeb] = await Promise.all([
+      db.from('productos')
+        .select('id, nombre, sku, precio_unitario, publicado_web, archivado, es_borrador, stock_actualizado_en'),
+      dbWeb.from('productos_web').select('producto_pos_id, publicado_web')
+    ]);
+    if (respPos.error) throw new Error(respPos.error.message);
+    if (respWeb.error) throw new Error(respWeb.error.message);
+
+    /* Lo que el POS dice que TIENE que estar en la web. Un archivado o un
+       borrador no cuenta: no debería estar publicado. */
+    const debenEstar = (respPos.data || []).filter(p =>
+      p.publicado_web && !p.archivado && !p.es_borrador);
+
+    const enWeb = new Map((respWeb.data || []).map(w => [Number(w.producto_pos_id), w]));
+
+    // No llegaron nunca, o llegaron y quedaron apagados en la tienda.
+    const faltantes = debenEstar
+      .filter(p => !enWeb.has(Number(p.id)) || enWeb.get(Number(p.id)).publicado_web !== true)
+      .map(p => ({
+        id: p.id,
+        nombre: p.nombre,
+        sku: p.sku || null,
+        precio: num(p.precio_unitario),
+        motivo: enWeb.has(Number(p.id))
+          ? 'Llegó a la tienda pero quedó despublicado'
+          : 'Nunca llegó a la tienda',
+        actualizado_en: p.stock_actualizado_en
+      }));
+
+    /* El caso inverso: sigue visible en sevelin.cl algo que el POS ya
+       despublicó o archivó. Es peor que lo anterior — se puede vender. */
+    const porIdPos = new Map((respPos.data || []).map(p => [Number(p.id), p]));
+    const sobrantes = (respWeb.data || [])
+      .filter(w => w.publicado_web === true)
+      .filter(w => {
+        const p = porIdPos.get(Number(w.producto_pos_id));
+        return !p || !p.publicado_web || p.archivado || p.es_borrador;
+      })
+      .map(w => {
+        const p = porIdPos.get(Number(w.producto_pos_id));
+        return {
+          id: w.producto_pos_id,
+          nombre: p ? p.nombre : '(ya no existe en el POS)',
+          motivo: p ? 'El POS lo despublicó pero sigue visible en la web' : 'Ya no existe en el POS'
+        };
+      });
+
+    res.json({
+      configurado: true,
+      total_pos: debenEstar.length,
+      total_web: (respWeb.data || []).filter(w => w.publicado_web === true).length,
+      faltantes,
+      sobrantes
+    });
+  } catch (e) {
+    enviarError(res, 500, e.message || 'No se pudo comparar el catálogo con la tienda');
+  }
+});
+
+/* Reintentar los que no llegaron.
+   No se reimplementa la sincronización: se hace un update no-op sobre
+   `productos`, que vuelve a disparar `trg_sync_tienda`. Así hay un solo
+   camino de sincronización y este botón no puede quedar desalineado con
+   el de verdad. */
+app.post('/api/salud-sistema/catalogo-web/reenviar', auth(true), async (req, res) => {
+  const ids = Array.isArray(req.body?.ids)
+    ? req.body.ids.map(Number).filter(n => Number.isFinite(n) && n > 0)
+    : [];
+  if (!ids.length) return enviarError(res, 400, 'Indica qué productos reenviar');
+  if (ids.length > 100) return enviarError(res, 400, 'Máximo 100 productos por vez');
+
+  try {
+    /* De a uno y en serie a propósito: el timeout que originó todo este
+       chequeo aparece justamente cuando se disparan muchas llamadas
+       juntas contra la tienda. */
+    const reenviados = [];
+    for (const id of ids) {
+      const { data, error } = await db.from('productos')
+        .update({ stock_actualizado_en: new Date().toISOString() })
+        .eq('id', id).select('id, nombre').maybeSingle();
+      if (!error && data) reenviados.push(data);
+    }
+    res.json({
+      reenviados: reenviados.length,
+      productos: reenviados,
+      aviso: 'La sincronización es asíncrona: vuelve a revisar en unos segundos para confirmar que llegaron.'
+    });
+  } catch (e) {
+    enviarError(res, 500, e.message || 'No se pudieron reenviar los productos');
+  }
+});
+
 app.get('/api/salud-sistema/errores', auth(true), async (req, res) => {
   const dias = Math.min(30, Math.max(1, Math.round(num(req.query.dias) || 7)));
   const desde = new Date(Date.now() - dias * 86400000).toISOString();

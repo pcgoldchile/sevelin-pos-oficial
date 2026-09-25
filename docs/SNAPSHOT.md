@@ -7,6 +7,31 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
+**Fecha:** 25-09-2026 · **v91 — 12 servicios nuevos y el chequeo de sincronización con la tienda.**
+
+- 🧰 **12 servicios técnicos nuevos publicados** (ids 299-310), con ficha completa en formato v3.
+  Pasó de 27 a **39 servicios**. Diagnóstico Avanzado subió a $15.000.
+- 💰 Precios decididos por el dueño; Claude calibró dos: **socket LGA $25.000** (era $20.000; es el
+  trabajo más riesgoso y nadie en Arica lo hace) y **recuperación de datos por escala** 25/35/45/55 mil
+  según tamaño del medio (el piso nacional es $44.990).
+- 📍 **CORRECCIÓN DE UN CONSEJO ANTERIOR:** el mercado del NORTE es más barato que Santiago. Formateo
+  informal en Antofagasta $9.000-$14.000 vs $25.000-$29.990 en Santiago; tarifa base de técnico
+  **$20.000 taller / $25.000 domicilio**. El consejo de subir el formateo a $22.000 estaba basado en
+  precios de Santiago y **no aplicaba**. El dueño hizo bien en dejarlo en $15.000.
+- 🏪 **Competencia real en Arica:** PC-Solutions (Bello Horizonte 3702, 25 años). Hace recuperación de
+  datos y diagnóstico, **NO hace microsoldadura ni placa madre**.
+- 🔴 **FALLA SILENCIOSA ENCONTRADA Y CERRADA:** de 13 sincronizaciones a sevelin.cl, **una murió por el
+  timeout de 5 s** de `net.http_post` en `trg_sync_tienda`. Es "dispara y olvida": no reintenta y no
+  avisa. El producto quedó fuera de la web sin que nadie se enterara.
+- 🩺 **Nuevo chequeo en Página Web → Salud:** compara `productos` del POS contra `productos_web` de la
+  tienda por `producto_pos_id`, y separa **faltantes** (no se ven) de **sobrantes** (⚠️ siguen
+  vendibles en la web aunque el POS los despublicó — eso es lo grave). Botón para reenviar, que
+  reutiliza el trigger en vez de duplicar la lógica. Chip 🌐 en el header que **solo aparece si hay
+  descuadre**.
+- 🧪 39 comprobaciones nuevas, 0 fallas. Total de la sesión: 286.
+
+---
+
 **Fecha:** 24-09-2026 · **v90 — Protocolos y fases de servicio.** (`sql/66`)
 
 - ✅ **Botón "Protocolo" en cada OT** + insignia `4/9` al lado del estado, para que el avance sea

@@ -76,6 +76,7 @@ function mostrarPanelPaginaWeb(nombre) {
   if (nombre === 'metricas') { cargarMetricasWeb(); iniciarRefrescoVisitantesActivos(); }
   else { detenerRefrescoVisitantesActivos(); }
   if (nombre === 'salud') cargarSaludSistema();
+  if (nombre === 'salud') revisarCatalogoWeb(false);
   /* El feed NO se genera solo al entrar: recorre el catálogo
      completo y el dueño lo pide cuando de verdad va a subirlo. */
 }
@@ -1059,5 +1060,146 @@ async function gestionarCotizacion(id, gestionada) {
     await cargarCotizacionesWeb();
   } catch (err) {
     showToast(err.message || 'No se pudo actualizar', 'err');
+  }
+}
+
+/* ============================================================
+   ¿LLEGÓ TODO EL CATÁLOGO A sevelin.cl? (25-09-2026)
+   ------------------------------------------------------------
+   Nació de una falla real: de 13 sincronizaciones, una murió por el
+   timeout de 5 s del trigger y el producto quedó fuera de la web sin que
+   nadie se enterara. El chip del header solo aparece si hay descuadre —
+   un aviso que suena siempre se aprende a ignorar.
+   ============================================================ */
+
+const INTERVALO_CATALOGO_WEB_MS = 30 * 60 * 1000;
+let catalogoWebCache = null;
+let intervaloCatalogoWeb = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btnRevisarCatalogoWeb')?.addEventListener('click', () => revisarCatalogoWeb(true));
+  document.getElementById('btnReenviarCatalogoWeb')?.addEventListener('click', reenviarCatalogoFaltante);
+  document.getElementById('btnCatalogoDescuadrado')?.addEventListener('click', () => {
+    // El chip lleva directo al panel donde está el detalle y el botón de arreglo
+    document.querySelector('.nav-subitem[data-view="view-pagina-web"][data-subtab="salud"]')?.click();
+  });
+});
+
+document.addEventListener('pos:sesion-iniciada', () => {
+  if (intervaloCatalogoWeb) { clearInterval(intervaloCatalogoWeb); intervaloCatalogoWeb = null; }
+  if (!esAdmin()) return;
+  revisarCatalogoWeb(false);
+  intervaloCatalogoWeb = setInterval(() => revisarCatalogoWeb(false), INTERVALO_CATALOGO_WEB_MS);
+});
+
+async function revisarCatalogoWeb(mostrarToast) {
+  if (!tokenActual() || !esAdmin()) return;
+  try {
+    catalogoWebCache = await API.saludSistema.catalogoWeb();
+    pintarSaludCatalogoWeb();
+    actualizarChipCatalogoWeb();
+    if (mostrarToast) {
+      const n = (catalogoWebCache.faltantes || []).length + (catalogoWebCache.sobrantes || []).length;
+      showToast(n ? `${n} diferencia(s) entre el POS y la tienda` : 'El catálogo está cuadrado', n ? 'err' : 'ok');
+    }
+  } catch (err) {
+    console.error('Error al comparar el catálogo con la tienda:', err.message || err);
+    if (mostrarToast) showToast(err.message || 'No se pudo comparar con la tienda', 'err');
+  }
+}
+
+function actualizarChipCatalogoWeb() {
+  const btn = document.getElementById('btnCatalogoDescuadrado');
+  const texto = document.getElementById('textoCatalogoDescuadrado');
+  if (!btn || !texto || !catalogoWebCache) return;
+
+  const faltan = (catalogoWebCache.faltantes || []).length;
+  const sobran = (catalogoWebCache.sobrantes || []).length;
+  if (!faltan && !sobran) { btn.hidden = true; return; }
+
+  /* Rojo cuando sobra algo: un producto visible en la web que el POS ya
+     despublicó se puede VENDER, y eso es peor que uno que falta. */
+  texto.textContent = sobran
+    ? `${sobran} de más en la web`
+    : `${faltan} sin llegar a la web`;
+  btn.classList.toggle('catalogo-sobrante', sobran > 0);
+  btn.title = sobran
+    ? `${sobran} producto(s) siguen visibles en sevelin.cl aunque el POS los despublicó`
+    : `${faltan} producto(s) publicados en el POS que no llegaron a la tienda`;
+  btn.hidden = false;
+}
+
+function pintarSaludCatalogoWeb() {
+  const resumen = document.getElementById('saludCatalogoResumen');
+  const cont = document.getElementById('saludCatalogoDetalle');
+  const btnReenviar = document.getElementById('btnReenviarCatalogoWeb');
+  if (!cont || !catalogoWebCache) return;
+
+  if (catalogoWebCache.configurado === false) {
+    if (resumen) resumen.textContent = catalogoWebCache.motivo || 'No configurado.';
+    cont.innerHTML = '';
+    if (btnReenviar) btnReenviar.hidden = true;
+    return;
+  }
+
+  const faltantes = catalogoWebCache.faltantes || [];
+  const sobrantes = catalogoWebCache.sobrantes || [];
+
+  if (resumen) {
+    resumen.textContent =
+      `${num(catalogoWebCache.total_pos)} publicados en el POS · ${num(catalogoWebCache.total_web)} visibles en sevelin.cl` +
+      (faltantes.length || sobrantes.length ? ' — hay diferencias.' : ' — todo cuadrado.');
+  }
+  if (btnReenviar) btnReenviar.hidden = faltantes.length === 0;
+
+  if (!faltantes.length && !sobrantes.length) {
+    cont.innerHTML = '<p class="modal-hint">✅ Todos los productos publicados en el POS están en la tienda.</p>';
+    return;
+  }
+
+  let html = '';
+
+  if (faltantes.length) {
+    html += `<p class="modal-hint"><strong>No llegaron a sevelin.cl (${faltantes.length}):</strong> el cliente no puede verlos ni comprarlos.</p>
+      <div class="table-wrapper"><table class="data-table">
+        <thead><tr><th>Producto</th><th>Precio</th><th>Qué pasó</th></tr></thead><tbody>` +
+      faltantes.map(f => `<tr>
+        <td><strong>${escHtml(f.nombre)}</strong></td>
+        <td>${fmtCLP(f.precio)}</td>
+        <td>${escHtml(f.motivo)}</td>
+      </tr>`).join('') + '</tbody></table></div>';
+  }
+
+  if (sobrantes.length) {
+    html += `<p class="modal-hint" style="color:var(--red); margin-top:14px;">
+        <strong>⚠️ Siguen visibles en la web pero no deberían (${sobrantes.length}):</strong>
+        esto es lo grave — se pueden vender.</p>
+      <div class="table-wrapper"><table class="data-table">
+        <thead><tr><th>Producto</th><th>Qué pasó</th></tr></thead><tbody>` +
+      sobrantes.map(x => `<tr>
+        <td><strong>${escHtml(x.nombre)}</strong></td>
+        <td>${escHtml(x.motivo)}</td>
+      </tr>`).join('') + '</tbody></table></div>';
+  }
+
+  cont.innerHTML = html;
+}
+
+async function reenviarCatalogoFaltante() {
+  const faltantes = catalogoWebCache?.faltantes || [];
+  if (!faltantes.length) return;
+
+  if (!confirm(`¿Reenviar ${faltantes.length} producto(s) a sevelin.cl?\n\nSe vuelve a disparar la sincronización de cada uno.`)) return;
+
+  const btn = document.getElementById('btnReenviarCatalogoWeb');
+  if (btn) btn.disabled = true;
+  try {
+    const r = await API.saludSistema.reenviarCatalogoWeb(faltantes.map(f => f.id));
+    showToast(`${r.reenviados} reenviado(s)`, 'ok');
+    if (r.aviso) setTimeout(() => showToast(r.aviso, ''), 1600);
+  } catch (err) {
+    showToast(err.message || 'No se pudieron reenviar', 'err');
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
