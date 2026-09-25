@@ -7,6 +7,24 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
+**25-09-2026 · Servicio a domicilio creado** (id 311, "Visita Técnica a Domicilio en Arica").
+
+- 🚗 **Opción (A), elegida por el dueño:** UN solo servicio que se suma al trabajo, no versiones "a
+  domicilio" de cada ficha — con 8 servicios habrían sido 16 fichas desincronizándose.
+- 💵 **$10.000 urbano · $18.000 fuera del radio** (Azapa, Lluta, playas, Chacalluta) · **mínimo de
+  visita $25.000**. El mínimo es lo que evita perder hora y cuarto por un trabajo de $10.000.
+- 💳 **PAGO 100% ANTICIPADO por transferencia** (decisión del dueño: *"es más serio así"*). Claude
+  había propuesto cobrar solo el recargo por adelantado; el dueño prefirió todo. Si al llegar la
+  falla resulta ser otra, ese trabajo extra se cotiza aparte y lo aprueba el cliente.
+- 🧰 **Sirven a domicilio:** formateo, SSD/HDD, RAM, tarjeta gráfica, fuente de poder, optimización
+  gamer, red/WiFi y diagnóstico. **NO sirven** los de banco o de horas de máquina: pasta térmica,
+  pines/socket, recuperación de datos, chequeos de disco y RAM, derrame, pantalla y batería.
+- 👨‍👩‍👦 **SUPUESTO CORREGIDO POR EL DUEÑO:** NO trabaja solo. Su hermano **Alejandro** y sus padres
+  cubren la tienda, así que **no hace falta** el bloque horario fijo que Claude había recomendado: se
+  agenda a demanda. Ver [[user-perfil-dueno-sevelin]].
+
+---
+
 **Fecha:** 25-09-2026 · **v91 — 12 servicios nuevos y el chequeo de sincronización con la tienda.**
 
 - 🧰 **12 servicios técnicos nuevos publicados** (ids 299-310), con ficha completa en formato v3.
