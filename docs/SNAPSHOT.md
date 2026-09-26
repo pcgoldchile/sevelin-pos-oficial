@@ -7,177 +7,111 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
-**25-09-2026 (tarde) · Imágenes de servicios, PTM7950 y el rendimiento configurable.**
+## 🔴 PENDIENTES ABIERTOS (al 25-09-2026) — leer esto primero
 
-- 🎨 **Las 40 fichas de Servicios Técnicos ya tienen imagen**, todas del mismo molde
-  (`scripts/generar-imagenes-servicios.js`): SVG + sharp → 800×800 WebP (~20 KB contra ~85 KB de las
-  antiguas). Sin IA, por eso son uniformes. Cambiar un color en la constante `C` las cambia todas.
-- 📸 **Dos correcciones vistas en la primera muestra:** Arial Black mide ~0.72 del tamaño por
-  carácter (no 0.62) y los títulos largos se salían del marco; y la última línea del pie quedaba
-  cortada. Hay `textLength` como red de seguridad.
-- 🚫 **Sin la línea "6 meses de garantía"** (pedido del dueño: la gente lo malentiende, y hay
-  servicios que explícitamente NO tienen garantía).
-- 📷 **INSTAGRAM HOY ES `@sevelin_cl`**, no `@sevelin.cl` — todavía no le liberan el nombre. Las
-  imágenes salen con el handle actual; cuando lo cambie, se edita la constante `INSTAGRAM` y se
-  regeneran las 40 de una pasada. Ver [[reference-sevelin-datos-fijos]].
-- 🧊 **Nuevo servicio: "Mantenimiento Premium de Notebook con PTM7950" $55.000** (id 312). **SOLO
-  notebook** por decisión del dueño (la lámina que se aplica es más chica y le rinde más). Todavía no
-  ha probado la lámina: la aplicará cuando alguien pida el servicio. La ficha explica que el material
-  necesita ciclos de calor para activarse, o el cliente va a creer que no funcionó.
-- 🔴 **DOS AGUJEROS DE AYER, CERRADOS:** los campos `rinde_aplicaciones` y `aplicaciones_usadas` de
-  `sql/66` **no estaban en el formulario de Repuestos**, así que el rendimiento no se podía
-  configurar desde el POS. Y peor: `precio_venta` exigía ser **> 0**, y un insumo de taller que nunca
-  se vende suelto (masilla, pasta) quedaba **imposible de guardar**. Ahora se acepta 0.
-- ✅ **Verificado en Chrome, en las cuentas reales del dueño:** `@sevelin_cl` **ES cuenta profesional**
-  (categoría "Tienda de informática"), está en el portafolio "Sevelin Arica - Tienda de Tecnología",
-  tiene **ID de cuenta business `17841423397901970`** y está **conectada a la Página de Facebook**
-  y a la cuenta publicitaria. **Se cumplen todos los requisitos de la API de publicación de
-  Instagram.** Falta solo crear la app de Meta en modo desarrollo.
-- 🧪 13 comprobaciones nuevas, 0 fallas. Total de la sesión: 299.
+**Del dueño (Carlos), bloquean cosas ya construidas:**
 
----
+1. **Cargar el costo de los dos insumos de taller.** `UPSIREN Thermal Putty 100g` y
+   `Thermal Paste M12 30g` están en **costo $0**. Mientras sigan así, los mantenimientos aparentan
+   100% de margen — justo la mentira que el módulo de protocolos existe para corregir. Se hace en
+   POS → Servicio Técnico → Repuestos Taller. El putty está **a 1/4** (≈15 aplicaciones gastadas de
+   20). Los rendimientos (20 y 40) son estimaciones de Claude, no medidas.
+2. **Crear la app de Meta en modo desarrollo** y agregarse como Instagram Tester. Es el ÚNICO paso
+   que falta para publicar en Instagram desde el POS — todo lo demás ya está verificado.
+3. **Terminar de registrar las ventas de septiembre.** Dijo que le faltan. Hasta entonces el mes
+   marca −$650.000 y no se sabe si es real.
+4. **Revisar las 9 fases** del protocolo "Mantenimiento Preventivo PC Gamer": son un borrador
+   escrito por Claude, no el procedimiento real del taller.
+5. **Probar la lámina PTM7950.** La aplicará cuando alguien pida el servicio, que ya está publicado.
 
-**25-09-2026 · Servicio a domicilio creado** (id 311, "Visita Técnica a Domicilio en Arica").
+**Anotado, no hecho (decidido, sin construir):**
 
-- 🚗 **Opción (A), elegida por el dueño:** UN solo servicio que se suma al trabajo, no versiones "a
-  domicilio" de cada ficha — con 8 servicios habrían sido 16 fichas desincronizándose.
-- 💵 **$10.000 urbano · $18.000 fuera del radio** (Azapa, Lluta, playas, Chacalluta) · **mínimo de
-  visita $25.000**. El mínimo es lo que evita perder hora y cuarto por un trabajo de $10.000.
-- 💳 **PAGO 100% ANTICIPADO por transferencia** (decisión del dueño: *"es más serio así"*). Claude
-  había propuesto cobrar solo el recargo por adelantado; el dueño prefirió todo. Si al llegar la
-  falla resulta ser otra, ese trabajo extra se cotiza aparte y lo aprueba el cliente.
-- 🧰 **Sirven a domicilio:** formateo, SSD/HDD, RAM, tarjeta gráfica, fuente de poder, optimización
-  gamer, red/WiFi y diagnóstico. **NO sirven** los de banco o de horas de máquina: pasta térmica,
-  pines/socket, recuperación de datos, chequeos de disco y RAM, derrame, pantalla y batería.
-- 👨‍👩‍👦 **SUPUESTO CORREGIDO POR EL DUEÑO:** NO trabaja solo. Su hermano **Alejandro** y sus padres
-  cubren la tienda, así que **no hace falta** el bloque horario fijo que Claude había recomendado: se
-  agenda a demanda. Ver [[user-perfil-dueno-sevelin]].
+- **La pantalla para crear y editar protocolos.** Acuerdo explícito: primero un protocolo real
+  funcionando en una OT, después el editor. Hoy se cargan por SQL.
+- **`repuestos` no tiene `archivado`:** al cambiar de marca de pasta, la vieja queda para siempre.
+- **Vincular la entrada de mercadería con su gasto en `compras`** — hoy son dos mundos separados
+  (0 de 8 entradas tienen `compra_id`), y por ahí se pierde IVA crédito.
+
+**⚠️ Trampas vivas que NO hay que re-descubrir:**
+
+- **Las 2 pilas CR2032 de OT-000005 y OT-000006 ya están registradas a mano.** Si se aplica el
+  protocolo y se tacha la fase "Cambio de pila CR2032", se descuenta una SEGUNDA. No es obligatoria,
+  así que no bloquea la entrega.
+- **Instagram HOY es `@sevelin_cl`**, no `@sevelin.cl` — todavía no le liberan el nombre. Cuando lo
+  consiga: cambiar `INSTAGRAM` en `scripts/generar-imagenes-servicios.js` y regenerar las 40.
+- **El norte de Chile es MÁS BARATO que Santiago** en servicios básicos (formateo informal
+  $9.000-$14.000 en Antofagasta contra $25.000-$29.990 en Santiago; tarifa base de técnico $20.000).
+  No recomendar precios usando referencias de Santiago.
+- **`trg_sync_tienda` es "dispara y olvida" con 5 s de tope.** Ya se comió un producto. El chequeo de
+  Página Web → Salud lo detecta, pero hay que mirarlo.
 
 ---
 
-**Fecha:** 25-09-2026 · **v91 — 12 servicios nuevos y el chequeo de sincronización con la tienda.**
+## 📷 Instagram: verificado en las cuentas reales (25-09-2026, vía Chrome)
 
-- 🧰 **12 servicios técnicos nuevos publicados** (ids 299-310), con ficha completa en formato v3.
-  Pasó de 27 a **39 servicios**. Diagnóstico Avanzado subió a $15.000.
-- 💰 Precios decididos por el dueño; Claude calibró dos: **socket LGA $25.000** (era $20.000; es el
-  trabajo más riesgoso y nadie en Arica lo hace) y **recuperación de datos por escala** 25/35/45/55 mil
-  según tamaño del medio (el piso nacional es $44.990).
-- 📍 **CORRECCIÓN DE UN CONSEJO ANTERIOR:** el mercado del NORTE es más barato que Santiago. Formateo
-  informal en Antofagasta $9.000-$14.000 vs $25.000-$29.990 en Santiago; tarifa base de técnico
-  **$20.000 taller / $25.000 domicilio**. El consejo de subir el formateo a $22.000 estaba basado en
-  precios de Santiago y **no aplicaba**. El dueño hizo bien en dejarlo en $15.000.
-- 🏪 **Competencia real en Arica:** PC-Solutions (Bello Horizonte 3702, 25 años). Hace recuperación de
-  datos y diagnóstico, **NO hace microsoldadura ni placa madre**.
-- 🔴 **FALLA SILENCIOSA ENCONTRADA Y CERRADA:** de 13 sincronizaciones a sevelin.cl, **una murió por el
-  timeout de 5 s** de `net.http_post` en `trg_sync_tienda`. Es "dispara y olvida": no reintenta y no
-  avisa. El producto quedó fuera de la web sin que nadie se enterara.
-- 🩺 **Nuevo chequeo en Página Web → Salud:** compara `productos` del POS contra `productos_web` de la
-  tienda por `producto_pos_id`, y separa **faltantes** (no se ven) de **sobrantes** (⚠️ siguen
-  vendibles en la web aunque el POS los despublicó — eso es lo grave). Botón para reenviar, que
-  reutiliza el trigger en vez de duplicar la lógica. Chip 🌐 en el header que **solo aparece si hay
-  descuadre**.
-- 🧪 39 comprobaciones nuevas, 0 fallas. Total de la sesión: 286.
+Se cumplen **todos** los requisitos de la API de publicación:
+
+| | |
+|---|---|
+| Cuenta profesional | ✅ `@sevelin_cl`, categoría "Tienda de informática" |
+| Página de Facebook conectada | ✅ "Sevelin Arica - Tienda de Tecnología" |
+| Portafolio de Meta Business | ✅ |
+| **ID de cuenta business** | **`17841423397901970`** |
+| Cuenta publicitaria conectada | ✅ |
+
+**No hace falta Metricool pagado** (su API pide el plan Advanced, ~US$53/mes) **ni la revisión de app
+de Meta**: publicar en la cuenta propia se hace con la app en modo desarrollo. El token de larga
+duración vive 60 días y **no se renueva solo** — construir el aviso de vencimiento junto al
+publicador, o se apaga en silencio.
 
 ---
 
-**Fecha:** 24-09-2026 · **v90 — Protocolos y fases de servicio.** (`sql/66`)
+## 24 y 25-09-2026 · v88 a v91, servicios, imágenes y chequeos
 
-- ✅ **Botón "Protocolo" en cada OT** + insignia `4/9` al lado del estado, para que el avance sea
-  visible sin abrir nada. Chip 🔧 **"Servicios en curso"** en el header.
-- 🔴 **REGLA DEL DUEÑO QUE INVIERTE LA ANTERIOR: el insumo sale del stock AL TACHAR LA FASE**, no al
-  entregar. Se le propuso lo contrario y dijo que no: la pasta se gasta el día que se aplica.
-- ⚠️ **Cómo conviven las dos reglas sin descontar dos veces:** lo que consume una fase va a
-  `ot_repuestos` con `stock_descontado = true`, y la entrega solo descuenta las de `false`. Hay una
-  prueba dedicada a eso.
-- 🧴 **Envases por RENDIMIENTO, no por peso.** Se declara cuántas aplicaciones rinde el envase; cada
-  fase suma una; al completarlo se descuenta un envase entero y el contador vuelve a cero. La OT
-  carga el costo **prorrateado**. La vuelta atrás es exacta y no guarda nada extra.
-- 🔴 **Choque de rutas que encontró una prueba:** `GET /api/ot/en-curso` NUNCA se ejecutaba —
-  `/api/ot/:id` se registra antes y capturaba "en-curso" como id. Movido a
-  **`/api/servicios-en-curso`**. Misma trampa ya anotada para las clasificaciones de gastos.
-- 🔒 **Entregar con fases obligatorias pendientes: solo admin, y con el motivo escrito.** El
-  trabajador recibe 403.
-- 👤 El JWT solo lleva el rol, así que se guarda el rol **y** el nombre que la persona escribe; se
-  recuerda en `localStorage` para no preguntarlo en cada fase.
-- 📦 Cargados en `repuestos` (taller, NO catálogo): **UPSIREN Thermal Putty 100g** y **Thermal Paste
-  M12 30g**. Y el protocolo **"Mantenimiento Preventivo PC Gamer"** (9 fases).
-- 🧪 94 comprobaciones, 0 fallas. Detalle en `docs/CHANGELOG-V90.md`.
+**Módulos nuevos, todos en producción:**
 
-**⚠️ PENDIENTE DEL DUEÑO, y no es menor:** los dos insumos quedaron con **costo $0** (no los dio), los
-rendimientos (20 y 40) son estimaciones de Claude, y **las 9 fases son un borrador**, no el
-procedimiento real del taller. Con costo 0 el servicio sigue pareciendo 100% de margen — que es justo
-la mentira que este módulo existe para corregir.
+- **v88 — Activos de uso interno** (`sql/64`, Finanzas → 🛠️ Activos). Unidades que salen del stock
+  para usarse como herramienta. **Regla aprobada: NO mueve el balance** (la compra ya está en
+  `compras`; anotarla otra vez sería contarla dos veces). 🔴 Trampa evitada: mandar el "dado de baja"
+  a Mermas habría descontado el stock por SEGUNDA vez.
+- **v89 — Aviso de factura pendiente** (`sql/65`). Casilla en "Compras de este producto" + chip 🧾.
+  **Marca explícita, no "referencia vacía"**: las 8 entradas registradas tienen ese campo vacío y un
+  aviso automático habría gritado por todas desde el día uno.
+- **v90 — Protocolos y fases de servicio** (`sql/66`). 🔴 **Regla del dueño que invierte la anterior:
+  el insumo sale del stock AL TACHAR LA FASE**, no al entregar. Conviven porque lo que consume una
+  fase se guarda con `stock_descontado = true`. Envases **por rendimiento, no por peso**. Entregar
+  con fases obligatorias pendientes: **solo admin y con motivo escrito**.
+- **v91 — Chequeo de sincronización con la tienda** (Página Web → Salud). Nació de una falla real: de
+  13 sincronizaciones, **una murió por el timeout** y el producto quedó fuera de la web sin que nadie
+  se enterara. Separa **faltantes** (no se ven) de **sobrantes** (⚠️ siguen vendibles aunque el POS
+  los despublicó). Chip 🌐 que solo aparece si hay descuadre.
+- **Rendimiento configurable** (25-09): los campos de `sql/66` no estaban en el formulario de
+  Repuestos, y `precio_venta` exigía ser > 0 — un insumo de taller que nunca se vende suelto era
+  **imposible de guardar**. Ambas cosas corregidas.
 
-**⏭️ Anotado, no hecho:** la pantalla para crear/editar protocolos (acuerdo explícito: primero un
-protocolo real funcionando en una OT, después el editor). Hoy se cargan por SQL.
+**Catálogo de servicios: de 27 a 41.** 13 nuevos + Visita a Domicilio + Premium con PTM7950 (solo
+notebook). Los de precio variable usan `precio_a_consultar`, que bloquea el carrito y deriva a
+WhatsApp. **Las 40 fichas ya tienen imagen**, todas de la misma plantilla
+(`scripts/generar-imagenes-servicios.js`: SVG + sharp → 800×800 WebP, sin IA, por eso son uniformes).
 
----
+**Servicio a domicilio:** $10.000 **solo dentro de Arica** (no va a Azapa, Lluta, playas ni
+Chacalluta), **mínimo de visita $25.000**, y **pago 100% anticipado** por decisión del dueño.
 
-**Datos de producción corregidos el 24-09-2026** (no es código):
+**Datos de producción corregidos:** pila CR2032 (id 298) de stock 25 → **23**, con categoría nueva
+"Pilas"; **las dos primeras OT del sistema** (OT-000005 y OT-000006, PC Gamer del 17-09, con datos de
+cliente **por completar**); Diagnóstico Avanzado subió a $15.000.
 
-- 🔋 **Pila CR2032 Energizer (id 298):** stock **25 → 23** (usó 2 en mantenimientos), categoría POS
-  nueva **"Pilas"** (también va a tener la AAA y las que vengan), y `categoria_web` = **"Componentes
-  PC"** — es la pila de la placa madre, ahí la busca quien la necesita. NO se creó una categoría web
-  nueva a propósito: la tienda tiene 13 y una decimocuarta con un solo producto queda coja.
-- 🔧 **LAS DOS PRIMERAS OT DEL SISTEMA: OT-000005 y OT-000006.** PC Gamer que entraron ~17-09 por
-  diagnóstico y derivaron a mantenimiento. Creadas con **datos del cliente en blanco a propósito**
-  ("POR COMPLETAR"), para que el dueño las edite. `ordenes_trabajo` ya no está vacía.
-- ⚠️ **Las 2 pilas quedaron en `ot_repuestos` con `stock_descontado = TRUE`.** El stock ya se bajó a
-  mano; sin esa marca, al entregar la OT el backend lo bajaría **otra vez** y dejaría 21. Misma
-  familia de trampa que la merma del activo de uso interno (v88).
-- ✅ **El registro de compras NO tiene ningún bug** (lo pidió revisar el dueño): el ingreso id 8
-  quedó bien guardado — 25 × $418, MercadoLibre, 16-09, devolución 22-09.
-- 🔎 **Sí apareció una inconsistencia menor:** los ingresos con `origen='manual'` (los del formulario
-  del producto) guardan `stock_antes`/`stock_despues` en **null**, mientras que los de
-  `origen='reposicion'` sí los guardan. El historial de compras queda sin ese rastro. **No corregido**,
-  anotado.
+**Ventas de septiembre — medido, NO es error de datos:** 70 ventas / $1.826.000 contra 113 /
+$4.123.000 en el mismo tramo de agosto. **Toda la brecha son las ventas grandes**: de 25 sobre
+$100.000 ($2.960.000) a 6 ($688.000). Margen 31,4% → 25,1%. Con $1.109.873 de gastos fijos, el mes va
+en **pérdida**. Falta que el dueño termine de registrar.
+
+**Pruebas de la sesión: 299 comprobaciones, 0 fallas**, en 7 suites (dobles de Supabase + jsdom).
 
 ---
 
-**Fecha:** 24-09-2026 · **v89 — El aviso de la factura que el proveedor no manda.**
-
-- 🧾 **Casilla nueva en "Compras de este producto"** (`sql/65`): *"La factura todavía no llega"*, con
-  la fecha que el proveedor prometió (opcional). Sale un chip 🧾 en el header, ámbar mientras espera
-  y **rojo solo cuando se pasó de la fecha que él mismo prometió**.
-- ⚖️ **POR QUÉ UNA MARCA Y NO "referencia vacía":** las 8 entradas registradas tienen el campo vacío.
-  Un aviso automático gritaría por las 8 desde el día uno, incluidas compras donde ni pidió factura —
-  y un aviso que suena siempre se ignora en una semana. **Se apaga sola** al escribir el N°.
-- 💸 **Importa porque es crédito fiscal IVA** (Pro Pyme 14D con remanente). **PERO OJO, verificado en
-  el código:** ese formulario **NO crea el gasto** en `compras` (0 de 8 entradas tienen `compra_id`).
-  El gasto y su IVA van aparte en Finanzas → Gastos. El aviso persigue el documento, no lo contabiliza.
-- 🧪 44 comprobaciones, 0 fallas. Detalle en `docs/CHANGELOG-V89.md`.
-
----
-
-**Fecha:** 24-09-2026 · **v88 — Activos de uso interno (lo que sacas del stock para el taller).**
-
-- 🛠️ **Nueva sub-pestaña Finanzas → Activos** (`sql/64`). Nació de un caso real: se abrió una
-  **Fuente de Poder MSI MAG A650BN** (id 144) para el banco de pruebas y el POS seguía ofreciendo 2
-  unidades cuando quedaba 1 para vender. Ahora apartarla descuenta el stock y deja la ficha.
-- 💰 **REGLA APROBADA POR EL DUEÑO: apartar una unidad NO mueve el balance.** Esa plata ya se gastó
-  al comprarla y ya está en `compras`; anotarla otra vez sería contarla dos veces. Solo cambia la
-  categoría del activo. La valorización de inventario sí baja, y eso es correcto.
-- 🔴 **NO es una merma, y la trampa se encontró escribiendo el código:** mandar el `DADO_DE_BAJA` al
-  módulo de Mermas habría **descontado el stock por segunda vez** (la unidad ya salió al apartarla),
-  dejando el inventario corto en silencio. `DADO_DE_BAJA` solo cierra la ficha y muestra el costo
-  perdido; el modal lo advierte en rojo.
-- ♻️ **Ciclo de vida:** EN_USO → volvió a venta (+stock) · armado en un equipo · dado de baja.
-  **Para venderla no hay estado aparte a propósito:** vuelve a venta y se vende por el POS, así hay
-  un solo camino por donde se mueve la plata.
-- 📎 **Respaldo documental** (pedido del dueño): N° de factura/boleta **y** archivo, los dos
-  opcionales y agregables después. **Sin bucket ni endpoint nuevo** — reutiliza
-  `compras-documentos` y hereda FILE-01 (ruta con UUID, URL firmada que caduca en 1h).
-- 🧪 38 comprobaciones de backend + 71 de interfaz, 0 fallas. Tailwind no necesitó recompilarse (no
-  hay clases nuevas). Detalle en `docs/CHANGELOG-V88.md`.
-- ⚠️ **SIN COMMIT NI DEPLOY todavía.** La tabla sí está creada en producción (es aditiva). La
-  sub-pestaña no existe para el usuario hasta que se despliegue.
-- ⏭️ **Pendiente del dueño:** registrar la fuente MSI real. Hasta entonces `productos.id = 144` sigue
-  con `stock = 2` y sevelin.cl la ofrece como si hubiera dos.
-
-**Lo que viene (acordado con el dueño el 24-09-2026):** protocolos y FASES por servicio en la OT,
-con insumos que descuentan stock (CR2032, pasta térmica, thermal pads). Ojo: `ordenes_trabajo`,
-`ot_repuestos`, `repuestos` y `mermas` tienen **0 filas** — el módulo de OT nunca se ha usado. Y
-**las pilas CR2032 y los thermal pads no existen en el catálogo**: cargarlos es prerrequisito.
+> **v88, v89 y v90 (24-09-2026)** están resumidas arriba. El detalle completo de cada una, con
+> el porqué de cada decisión, está en `docs/CHANGELOG-V88.md`, `V89.md` y `V90.md`.
 
 ---
 
@@ -780,7 +714,11 @@ ampliado con carrusel al hacer clic en la foto), y un badge de contraste corregi
   movidos al **día 15** (el día 1 se comía toda la utilidad de los días 21-31) y el checkbox quedó
   construido en **v62**.
 
-## ⏭️ Pendientes al 16-09-2026 (retomar por acá)
+## ⏭️ Pendientes al 16-09-2026 (histórico — los vigentes están ARRIBA)
+
+> ⚠️ Esta lista es del 16-09. **La lista viva es la de "PENDIENTES ABIERTOS" al principio del
+> archivo.** Lo de abajo se conserva porque varios siguen sin cerrarse (sobre todo lo tributario),
+> pero hay que contrastarlo con el estado de hoy antes de actuar.
 
 **Del dueño:**
 1. **F29 de agosto — PRESENTADO el 21-09-2026**, folio 9317313976, $3.625 de PPM por ESTADO PEL.
