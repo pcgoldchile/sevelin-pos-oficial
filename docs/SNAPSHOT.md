@@ -7,7 +7,7 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
-## 🔴 PENDIENTES ABIERTOS (al 25-09-2026) — leer esto primero
+## 🔴 PENDIENTES ABIERTOS (al 26-09-2026) — leer esto primero
 
 **Del dueño (Carlos), bloquean cosas ya construidas:**
 
@@ -23,6 +23,11 @@
 4. **Revisar las 9 fases** del protocolo "Mantenimiento Preventivo PC Gamer": son un borrador
    escrito por Claude, no el procedimiento real del taller.
 5. **Probar la lámina PTM7950.** La aplicará cuando alguien pida el servicio, que ya está publicado.
+6. **Decir si se corrige la venta 201** (v92): su línea `venta_items.id = 280` quedó con
+   `condicion = NULL` por una lectura fallida el 12-09. El producto era `nuevo`. Es un UPDATE de una
+   fila, pero en producción: no se hace sin su OK.
+7. **Redis (Upstash) en el Vercel del POS.** Salud lo marca "⚠️ Falta" y es real: el freno de
+   intentos de login solo vive en memoria de cada instancia.
 
 **Anotado, no hecho (decidido, sin construir):**
 
@@ -44,6 +49,31 @@
   No recomendar precios usando referencias de Santiago.
 - **`trg_sync_tienda` es "dispara y olvida" con 5 s de tope.** Ya se comió un producto. El chequeo de
   Página Web → Salud lo detecta, pero hay que mirarlo.
+- **"JWT issued at future" es de Supabase, no nuestro** (v92). La llave `sb_secret_` no es un JWT: el
+  gateway acuña uno por petición y, si el reloj de la base va atrás, PostgREST lo rechaza. Pasa en
+  ~0,1 % de las consultas. `fetchSupabase` lo reintenta en todo `db`. No rotar la llave por esto.
+- **supabase-js 2.112 ya reintenta sola los GET con 503/520** (1 + 2 + 4 s). No envolver lecturas
+  nuevas del camino de venta en `consultarConReintento`: las esperas se multiplican (~22 s).
+- **~160 lecturas ignoran `error` y leen vacío en silencio** ante una caída real de Supabase. Las de
+  plata (crear, editar y borrar venta) fallan en voz alta desde v92; el resto no se tocó.
+- **Salud de la tienda solo registra producción** desde v92: si un error aparece ahí, lo vio un
+  cliente. `next dev` usa la base real y antes llenaba Salud de avisos de desarrollo.
+
+---
+
+## 26-09-2026 · v92, auditoría de los errores de Salud
+
+Detalle en `docs/CHANGELOG-V92.md`. De los 20 errores de la semana:
+- **8 "JWT issued at future"** → desfase de reloj dentro de Supabase (ver trampas). Ahora se reintentan.
+- **10 de Gemini** → Google saturado el 22-09. Nada que arreglar.
+- **7 de la tienda** → 5 salieron de `next dev` en el PC del dueño (probado con su log local) y los 2
+  `useCarrito` casi seguro también. La tienda ya no registra fuera de producción.
+- **Lo grave no estaba en la lista:** lecturas que fallaban en silencio. Dejaron la venta 201 sin
+  garantía, y con el código viejo una venta de trabajador podía guardarse con el costo que mandara el
+  navegador, o una venta borrarse sin devolver el stock. Arreglado en crear, editar y borrar venta.
+- **Home de la tienda:** con Supabase caído mostraba nombres de variables y cacheaba esa versión 60 s.
+  Ahora sigue la última Home buena.
+- **Salud:** se quitó la falsa alarma de `TIENDA_SYNC_URL` (el trigger real está sano, 12/12 en 200).
 
 ---
 

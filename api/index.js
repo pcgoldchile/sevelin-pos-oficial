@@ -135,7 +135,8 @@ if (!SUPABASE_WEB_URL || !SUPABASE_WEB_SERVICE_ROLE_KEY) {
 
 // El cliente service_role omite RLS, por eso solo puede existir en el servidor.
 const db = createClient(SUPABASE_URL || 'http://localhost', SUPABASE_SERVICE_ROLE_KEY || 'sin-key', {
-  auth: { persistSession: false, autoRefreshToken: false }
+  auth: { persistSession: false, autoRefreshToken: false },
+  global: { fetch: fetchSupabase }
 });
 
 // Segundo cliente Supabase — el proyecto Supabase WEB de sevelin-tienda, NO
@@ -284,14 +285,8 @@ function patronIlike(texto) {
   return `%${String(texto).replace(/[%_,]/g, m => '\\' + m)}%`;
 }
 
-/* PostgREST (la API REST de Supabase) puede rechazar la llave service_role
-   con un error del tipo "JWT issued at future" — se vio justo después de
-   rotarla en Supabase → Settings → API → Reset: al nuevo token le toma
-   unos segundos propagarse a todos los nodos que lo validan, así que
-   durante esa ventana algunos rechazan un token que en realidad es válido.
-   Es transitorio y ajeno a nuestro JWT propio (auth() más abajo, que ya
-   tiene su propio clockTolerance): reintentar la misma consulta un par de
-   veces con una pausa corta alcanza para que se resuelva solo. */
+/* "JWT issued at future": la llave sb_secret_ no es un JWT; el gateway de Supabase acuña uno por
+   petición y, si el reloj de la base va atrás, PostgREST lo rechaza (401) sin ejecutar nada. */
 const esperar = (ms) => new Promise(r => setTimeout(r, ms));
 function esErrorJwtTransitorio(mensaje) {
   return /jwt/i.test(mensaje || '') && /(future|iat|clock)/i.test(mensaje || '');
@@ -314,6 +309,21 @@ async function consultarConReintento(construirQuery, intentos = 3, esperaMs = 40
     await esperar(esperaMs);
   }
   return { data: null, error: ultimoError };
+}
+
+// Cubre todas las consultas de `db`, también las que ignoran `error` y leían vacío en silencio.
+async function fetchSupabase(url, opciones) {
+  const reenviable = opciones?.body == null || typeof opciones.body === 'string';
+  for (let intento = 1; ; intento++) {
+    const respuesta = await fetch(url, opciones);
+    if (respuesta.status !== 401 || !reenviable || intento === 3) return respuesta;
+    const cuerpo = await respuesta.text();
+    if (!esErrorJwtTransitorio(cuerpo)) {
+      return new Response(cuerpo, { status: respuesta.status, statusText: respuesta.statusText, headers: respuesta.headers });
+    }
+    console.warn(`[Supabase] JWT rechazado por reloj (intento ${intento} de 3), se repite la consulta`);
+    await esperar(250 * intento);
+  }
 }
 
 const TIPOS_DTE = ['BOLETA', 'FACTURA', 'SIN DTE'];
@@ -3765,7 +3775,9 @@ async function normalizarItems(items, rolSolicitante) {
   let garantiaCatalogo = {};
   const ids = [...new Set(lista.map(i => i.producto_id).filter(Boolean))];
   if (ids.length) {
-    const { data } = await db.from('productos').select('id, costo_unitario, condicion, meses_garantia').in('id', ids);
+    // Sin catálogo no se valida el costo del trabajador ni la garantía: mejor fallar que guardar a ciegas.
+    const { data, error } = await db.from('productos').select('id, costo_unitario, condicion, meses_garantia').in('id', ids);
+    if (error) throw new Error(error.message);
     (data || []).forEach(p => {
       costosCatalogo[p.id] = num(p.costo_unitario);
       garantiaCatalogo[p.id] = { condicion: p.condicion || null, meses_garantia: p.meses_garantia ?? 6 };
@@ -3775,7 +3787,8 @@ async function normalizarItems(items, rolSolicitante) {
   const idsRepuesto = [...new Set(lista.map(i => i.repuesto_id).filter(Boolean))];
   const costosRepuesto = {};
   if (idsRepuesto.length) {
-    const { data } = await db.from('repuestos').select('id, costo_unitario').in('id', idsRepuesto);
+    const { data, error } = await db.from('repuestos').select('id, costo_unitario').in('id', idsRepuesto);
+    if (error) throw new Error(error.message);
     (data || []).forEach(r => { costosRepuesto[r.id] = num(r.costo_unitario); });
   }
 
@@ -3939,7 +3952,8 @@ async function devolverConsumoLotes(ventaIds) {
   const ids = (ventaIds || []).filter(Boolean);
   if (ids.length === 0) return { devueltos: 0, productos: new Set() };
 
-  const { data: consumos } = await db.from('venta_item_lotes').select('*').in('venta_id', ids);
+  const { data: consumos, error } = await db.from('venta_item_lotes').select('*').in('venta_id', ids);
+  if (error) throw new Error(`No se pudo leer el consumo de lotes de la venta: ${error.message}`);
   const lista = consumos || [];
   if (lista.length === 0) return { devueltos: 0, productos: new Set() };
 
@@ -4083,7 +4097,9 @@ async function revertirEfectosDeVentas(ventaIds) {
   const ids = (ventaIds || []).filter(Boolean);
   if (ids.length === 0) return { stock_repuesto: 0, items_borrados: 0 };
 
-  const { data: items } = await db.from('venta_items').select('*').in('venta_id', ids);
+  // Leído en vacío, la venta se borraba igual y su stock no volvía nunca.
+  const { data: items, error } = await db.from('venta_items').select('*').in('venta_id', ids);
+  if (error) throw new Error(`No se pudieron leer los productos de la venta: ${error.message}`);
   const lista = items || [];
 
   /* Primero se devuelven las unidades a sus capas de costo (PEPS). Devuelve
@@ -4962,7 +4978,11 @@ app.delete('/api/ventas', auth(true), exigirPinAdmin, async (req, res) => {
   const ids = (filas || []).map(f => f.id);
   if (ids.length === 0) return res.json({ ok: true, eliminadas: 0 });
 
-  await revertirEfectosDeVentas(ids);
+  try {
+    await revertirEfectosDeVentas(ids);
+  } catch (err) {
+    return enviarError(res, 500, `${err.message}. No se borró nada: intenta de nuevo.`);
+  }
 
   const { error } = await db.from('ventas').delete().in('id', ids);
   if (error) return enviarErrorBD(res, error);
@@ -4993,7 +5013,11 @@ app.delete('/api/ventas/:id', auth(true), async (req, res) => {
       'que la conserva en el historial.');
   }
 
-  await revertirEfectosDeVentas([Number(req.params.id)]);
+  try {
+    await revertirEfectosDeVentas([Number(req.params.id)]);
+  } catch (err) {
+    return enviarError(res, 500, `${err.message}. La venta no se borró: intenta de nuevo.`);
+  }
 
   const { error } = await db.from('ventas').delete().eq('id', req.params.id);
   if (error) return enviarErrorBD(res, error);
@@ -11503,11 +11527,7 @@ app.get('/api/salud-sistema', auth(true), (req, res) => {
       configurada: configurada(SYNC_SECRET),
       impacto: 'Vender/comprar no descuenta el stock de sevelin.cl en tiempo real.',
     },
-    {
-      nombre: 'Sincronización de catálogo a la tienda',
-      configurada: configurada(process.env.TIENDA_SYNC_URL),
-      impacto: 'El script de carga masiva del catálogo web no tiene a dónde mandar los productos.',
-    },
+    // TIENDA_SYNC_URL no va: solo la usa un script local; la sincronización real es el trigger trg_sync_tienda.
     {
       nombre: 'Correo de cancelación de pedido',
       configurada: configurada(TIENDA_NOTIFICAR_CANCELACION_URL),
