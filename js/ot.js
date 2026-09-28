@@ -97,6 +97,15 @@ const elOtEntregaFasesBloque = document.getElementById('otEntregaFasesBloque');
 const elOtEntregaFasesAviso = document.getElementById('otEntregaFasesAviso');
 const elOtEntregaFasesMotivoCampo = document.getElementById('otEntregaFasesMotivoCampo');
 const elOtEntregaFasesMotivo = document.getElementById('otEntregaFasesMotivo');
+// Sellos de garantía con S/N (sql/69): en el Check-Out y en el detalle de la orden.
+const elOtEntregaSelloInput = document.getElementById('otEntregaSelloInput');
+const elBtnOtEntregaSelloAgregar = document.getElementById('btnOtEntregaSelloAgregar');
+const elOtEntregaSellosLista = document.getElementById('otEntregaSellosLista');
+const elOtSellosBloque = document.getElementById('otSellosBloque');
+const elOtSellosLista = document.getElementById('otSellosLista');
+const elOtSelloInput = document.getElementById('otSelloInput');
+const elBtnOtSelloAgregar = document.getElementById('btnOtSelloAgregar');
+let otEntregaSellos = [];
 // Fases obligatorias sin tachar de la OT que se está entregando (se leen al abrir el modal).
 let otEntregaFasesPendientes = [];
 
@@ -161,6 +170,27 @@ function setupOtEventListeners() {
     if (e.detail?.inputId === 'otQrRetiroLeido') retirarOtConQr(e.detail.codigo);
   });
   if (elBtnLimpiarFirma) elBtnLimpiarFirma.addEventListener('click', limpiarFirma);
+
+  // Sellos de garantía (sql/69). La pistola lectora termina con Enter: cada
+  // Enter agrega el sello escaneado y deja el campo listo para el siguiente.
+  elOtEntregaSelloInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); agregarSelloEntrega(); }
+  });
+  elBtnOtEntregaSelloAgregar?.addEventListener('click', agregarSelloEntrega);
+  elOtEntregaSellosLista?.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-quitar-sello]');
+    if (!b) return;
+    otEntregaSellos = otEntregaSellos.filter(sn => sn !== b.dataset.quitarSello);
+    renderSellosEntrega();
+  });
+  elOtSelloInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); agregarSelloOT(); }
+  });
+  elBtnOtSelloAgregar?.addEventListener('click', agregarSelloOT);
+  elOtSellosLista?.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-quitar-sello-id]');
+    if (b) quitarSelloOT(b.dataset.quitarSelloId);
+  });
 
   if (elBtnCerrarOtRepuestos) elBtnCerrarOtRepuestos.addEventListener('click', () => elModalOtRepuestos?.classList.remove('show'));
   if (elBtnAgregarOtRepuesto) elBtnAgregarOtRepuesto.addEventListener('click', agregarRepuestoAOT);
@@ -299,6 +329,7 @@ function mostrarPreviewOT(ot) {
   if (elOtPreviewTitulo) elOtPreviewTitulo.textContent = `Orden de Trabajo ${ot.numero_ot}`;
   if (elOtPreviewContenido) elOtPreviewContenido.innerHTML = construirComprobanteOT(ot, 'VISTA PREVIA');
   renderQrRetiroOT(ot);
+  renderSellosOT(ot);
   if (elModalOtPreview) elModalOtPreview.classList.add('show');
 }
 
@@ -800,6 +831,9 @@ function abrirModalEntrega(id, codigoQr) {
   if (elOtEntregaPinAdmin) elOtEntregaPinAdmin.value = '';
   if (elOtEntregaMotivoAdmin) elOtEntregaMotivoAdmin.value = '';
   if (elOtEntregaFasesMotivo) elOtEntregaFasesMotivo.value = '';
+  otEntregaSellos = [];
+  if (elOtEntregaSelloInput) elOtEntregaSelloInput.value = '';
+  renderSellosEntrega();
   mostrarFasesPendientesEntrega(ot.id);
   actualizarVerificacionEntrega(true);
   // La garantía del servicio siempre parte en 6 meses (pedido explícito
@@ -847,6 +881,110 @@ async function mostrarFasesPendientesEntrega(otId) {
   }
 }
 
+/* ============================================================
+   SELLOS DE GARANTÍA CON S/N (sql/69, v97)
+   Mismo criterio que el servidor (normalizarSelloSN): sin espacios, en
+   mayúsculas, 1-40 de A-Z 0-9 . _ / -. El servidor vuelve a validar y es
+   el que rechaza un S/N que ya está en otra orden.
+   ============================================================ */
+function normalizarSelloOT(valor) {
+  const limpio = String(valor || '').replace(/\s+/g, '').toUpperCase();
+  return /^[A-Z0-9][A-Z0-9._/-]{0,39}$/.test(limpio) ? limpio : null;
+}
+
+function chipSelloHtml(sn, atributoQuitar) {
+  return `<span class="sello-chip">🏷️ ${escHtml(sn)}${atributoQuitar
+    ? ` <button type="button" class="sello-chip-quitar" ${atributoQuitar} title="Quitar" aria-label="Quitar sello ${escHtml(sn)}">✕</button>`
+    : ''}</span>`;
+}
+
+// Devuelve true si agregó (o no había nada que agregar), false si el S/N no sirve.
+function agregarSelloEntrega() {
+  const crudo = elOtEntregaSelloInput?.value.trim() || '';
+  if (!crudo) return true;
+  const sn = normalizarSelloOT(crudo);
+  if (!sn) {
+    showToast('Ese S/N no es válido: solo letras, números y . _ / - (hasta 40)', 'err');
+    elOtEntregaSelloInput?.focus();
+    return false;
+  }
+  if (otEntregaSellos.includes(sn)) {
+    showToast(`El sello ${sn} ya está en la lista`, 'err');
+  } else if (otEntregaSellos.length >= 10) {
+    showToast('Máximo 10 sellos por orden', 'err');
+    return false;
+  } else {
+    otEntregaSellos.push(sn);
+  }
+  if (elOtEntregaSelloInput) elOtEntregaSelloInput.value = '';
+  renderSellosEntrega();
+  elOtEntregaSelloInput?.focus();
+  return true;
+}
+
+function renderSellosEntrega() {
+  if (!elOtEntregaSellosLista) return;
+  elOtEntregaSellosLista.innerHTML = otEntregaSellos
+    .map(sn => chipSelloHtml(sn, `data-quitar-sello="${escHtml(sn)}"`)).join('');
+}
+
+// Detalle de la orden: la lista viene embebida en GET /api/ot (ot.sellos).
+function renderSellosOT(ot) {
+  if (!elOtSellosBloque) return;
+  if (!ot?.id) { elOtSellosBloque.style.display = 'none'; return; }
+  elOtSellosBloque.style.display = 'block';
+  const sellos = ot.sellos || [];
+  if (elOtSellosLista) {
+    elOtSellosLista.innerHTML = sellos.length
+      ? sellos.map(s => chipSelloHtml(s.numero_serie, esAdmin() ? `data-quitar-sello-id="${escHtml(String(s.id))}"` : '')).join('')
+      : '<span class="modal-hint" style="margin:0;">Sin sellos registrados.</span>';
+  }
+  if (elOtSelloInput) elOtSelloInput.value = '';
+}
+
+// Tras agregar o quitar: el comprobante de la vista previa también los muestra.
+function refrescarPreviewSellos(ot) {
+  if (elOtPreviewContenido) elOtPreviewContenido.innerHTML = construirComprobanteOT(ot, 'VISTA PREVIA');
+  renderSellosOT(ot);
+}
+
+async function agregarSelloOT() {
+  const ot = ultimaOTCreada;
+  if (!ot?.id) return;
+  const sn = normalizarSelloOT(elOtSelloInput?.value);
+  if (!sn) {
+    showToast('Escribe o escanea el S/N del sello (letras, números y . _ / -, hasta 40)', 'err');
+    return;
+  }
+  if (elBtnOtSelloAgregar) elBtnOtSelloAgregar.disabled = true;
+  try {
+    const sello = await API.ot.agregarSello(ot.id, sn);
+    ot.sellos = [...(ot.sellos || []), sello];
+    refrescarPreviewSellos(ot);
+    showToast(`Sello ${sello.numero_serie} registrado`, 'ok');
+    elOtSelloInput?.focus();
+  } catch (err) {
+    showToast(err.message || 'No se pudo registrar el sello', 'err');
+  } finally {
+    if (elBtnOtSelloAgregar) elBtnOtSelloAgregar.disabled = false;
+  }
+}
+
+async function quitarSelloOT(selloId) {
+  const ot = ultimaOTCreada;
+  const sello = (ot?.sellos || []).find(s => String(s.id) === String(selloId));
+  if (!ot || !sello) return;
+  if (!confirm(`¿Quitar el sello ${sello.numero_serie} de ${ot.numero_ot}?`)) return;
+  try {
+    await API.ot.quitarSello(ot.id, sello.id);
+    ot.sellos = ot.sellos.filter(s => s.id !== sello.id);
+    refrescarPreviewSellos(ot);
+    showToast('Sello quitado', 'ok');
+  } catch (err) {
+    showToast(err.message || 'No se pudo quitar el sello', 'err');
+  }
+}
+
 function verificacionElegidaOT() {
   return document.querySelector('input[name="otVerificacion"]:checked')?.value || 'QR';
 }
@@ -887,6 +1025,8 @@ async function confirmarEntrega() {
     showToast('Escanea el QR de quien retira, o elige verificar con carnet', 'err');
     return;
   }
+  // Un S/N escrito sin presionar Enter también cuenta: no se pierde en silencio.
+  if (elOtEntregaSelloInput?.value.trim() && !agregarSelloEntrega()) return;
   const motivoFases = elOtEntregaFasesMotivo?.value.trim() || '';
   if (otEntregaFasesPendientes.length && esAdmin() && !motivoFases) {
     showToast('Faltan fases obligatorias: escribe por qué se entrega igual', 'err');
@@ -918,6 +1058,7 @@ async function confirmarEntrega() {
       pin_admin: verificacion === 'ADMIN' ? elOtEntregaPinAdmin?.value.trim() : undefined,
       verificacion_motivo: verificacion === 'ADMIN' ? motivoAdmin : undefined,
       entrega_forzada_motivo: motivoFases || undefined,
+      sellos: otEntregaSellos,
       meses_garantia: elOtEntregaMesesGarantia?.value.trim() ? Number(elOtEntregaMesesGarantia.value) : 6,
       retira_firma_base64: obtenerFirmaBase64()
     });

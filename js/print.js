@@ -236,6 +236,7 @@ function construirComprobanteOT(ot, etiquetaCopia) {
           ${filaOT('Categoría', ot.dispositivo_categoria)}
           ${filaOT('Modelo', ot.dispositivo_modelo)}
           ${filaOT('N° de serie', ot.dispositivo_sn)}
+          ${filaOT('Sellos de garantía', (ot.sellos || []).map(s => s.numero_serie).join(', '))}
           ${filaOT('Encendido', ot.dispositivo_enciende)}
           ${filaOT('PIN / Clave', ot.dispositivo_pin)}
           ${filaOT('Cargador', cargador)}

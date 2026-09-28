@@ -65,6 +65,17 @@
 
 ---
 
+## 28-09-2026 · v97, sellos de garantía con S/N en las OT
+
+- Tabla `ot_sellos_garantia` (sql/69, aplicada, RLS activo): **un S/N solo puede estar en una orden**.
+  Se registran al entregar (la pistola manda Enter por sello) o después desde el detalle de la orden;
+  quitar uno es solo del admin. Salen en el comprobante y Garantías → Servicios busca por S/N (ignora
+  espacios y guiones). Detalle en `docs/CHANGELOG-V97.md`.
+- **Tienda:** enlace "Registrarse" junto a "Iniciar sesión" en el encabezado (antes solo se veía
+  "Iniciar sesión"), en escritorio y en el menú del celular.
+
+---
+
 ## 28-09-2026 · v96, entregar una OT con la clave de admin (y Pixel de Meta en la tienda)
 
 - **OT sin QR ni carnet:** tercera verificación "🔑 Forzar con clave de admin" en el Check-Out. El

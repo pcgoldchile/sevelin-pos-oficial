@@ -3390,7 +3390,7 @@
           </div>
 
           <div class="field" style="max-width:420px;">
-            <input type="text" id="garantiasServiciosBuscar" placeholder="Buscar por N° de OT, cliente o equipo…">
+            <input type="text" id="garantiasServiciosBuscar" placeholder="Buscar por N° de OT, cliente, equipo o S/N de sello…">
           </div>
 
           <div class="table-wrapper" style="margin-top:14px;">
@@ -5706,6 +5706,17 @@
         </div>
       </div>
 
+      <!-- Sellos de garantía (sql/69): agregar aunque la orden ya esté entregada; quitar, solo admin -->
+      <div id="otSellosBloque" class="card" style="display:none; margin-top:14px; padding:14px;">
+        <span class="section-label">🏷️ Sellos de garantía</span>
+        <div id="otSellosLista" class="sellos-lista"></div>
+        <div class="row-actions" style="gap:8px; margin-top:8px;">
+          <input type="text" id="otSelloInput" placeholder="S/N del sello" autocomplete="off" style="flex:1; min-width:0;">
+          <button class="btn btn-outline btn-sm" type="button" id="btnOtSelloAgregar">+ Agregar sello</button>
+        </div>
+        <p class="modal-hint" style="margin-top:6px;">Cada S/N va en una sola orden. Quitar un sello solo lo puede hacer el administrador.</p>
+      </div>
+
       <div class="modal-foot">
         <button class="btn btn-ghost" id="btnCerrarOtPreview">Cerrar</button>
         <button class="btn btn-primary" id="btnImprimirOt">🖨️ Imprimir (Cliente + Taller)</button>
@@ -5772,6 +5783,14 @@
           <input type="number" id="otEntregaMesesGarantia" min="0" step="1" value="6">
         </div>
       </div>
+
+      <!-- Sellos de garantía Sevelin con S/N (sql/69): uno o varios, la pistola manda Enter y se agrega -->
+      <span class="section-label" style="margin-top:14px;">🏷️ Sellos de garantía puestos (opcional)</span>
+      <div class="row-actions" style="gap:8px;">
+        <input type="text" id="otEntregaSelloInput" placeholder="Escanea o escribe el S/N del sello y presiona Enter" autocomplete="off" style="flex:1; min-width:0;">
+        <button class="btn btn-outline btn-sm" type="button" id="btnOtEntregaSelloAgregar">+ Agregar</button>
+      </div>
+      <div id="otEntregaSellosLista" class="sellos-lista"></div>
 
       <span class="section-label" style="margin-top:18px;">Firma de conformidad (opcional)</span>
       <div class="firma-wrap">

@@ -9128,7 +9128,9 @@ app.get('/api/ot', auth(), async (req, res) => {
   const { estado, buscar } = req.query;
 
   const { data, error } = await consultarConReintento(() => {
-    let q = db.from('ordenes_trabajo').select('*').order('id', { ascending: false });
+    // sellos: los S/N de sellos de garantía de cada orden (sql/69), para el
+    // detalle y el comprobante sin otra consulta por orden.
+    let q = db.from('ordenes_trabajo').select('*, sellos:ot_sellos_garantia(id, numero_serie)').order('id', { ascending: false });
     if (estado) q = q.eq('estado', estado);
     return q;
   });
@@ -9182,6 +9184,42 @@ function extraerTokenRetiro(texto) {
 // "12.345.678-9" y "123456789" son el mismo RUT.
 function normalizarRut(rut) {
   return String(rut || '').replace(/[^0-9kK]/g, '').toUpperCase().replace(/^0+/, '');
+}
+
+/* SELLOS DE GARANTÍA (sql/69, v97). El S/N se guarda sin espacios y en
+   mayúsculas, así "sv 00123" y "SV00123" son el mismo sello. Mismo formato
+   que el CHECK de la tabla: 1 a 40 de A-Z 0-9 . _ / -, empezando por letra
+   o número. Devuelve null si no es válido. */
+function normalizarSelloSN(sn) {
+  const limpio = String(sn || '').replace(/\s+/g, '').toUpperCase();
+  return /^[A-Z0-9][A-Z0-9._/-]{0,39}$/.test(limpio) ? limpio : null;
+}
+
+/* Lista de sellos del body → { lista } normalizada y sin repetidos, o
+   { error }. Máximo 10 por orden y por envío. */
+function leerSellosDelBody(crudos) {
+  if (crudos === undefined || crudos === null) return { lista: [] };
+  if (!Array.isArray(crudos)) return { error: 'Los sellos deben venir como una lista' };
+  const lista = [];
+  for (const c of crudos) {
+    if (!String(c || '').trim()) continue;
+    const sn = normalizarSelloSN(c);
+    if (!sn) return { error: `"${String(c).slice(0, 40)}" no parece un S/N de sello (solo letras, números y . _ / -, hasta 40)` };
+    if (!lista.includes(sn)) lista.push(sn);
+  }
+  if (lista.length > 10) return { error: 'Máximo 10 sellos por orden' };
+  return { lista };
+}
+
+/* ¿Alguno de estos S/N ya está en otra orden? Devuelve el mensaje de error
+   o null. Un sello físico va en un solo equipo. */
+async function selloYaRegistrado(lista) {
+  if (!lista.length) return null;
+  const { data } = await db.from('ot_sellos_garantia')
+    .select('numero_serie, ordenes_trabajo(numero_ot)').in('numero_serie', lista);
+  if (!data || !data.length) return null;
+  return data.map(d => `el sello ${d.numero_serie} ya está en ${d.ordenes_trabajo?.numero_ot || 'otra orden'}`).join('; ')
+    .replace(/^./, c => c.toUpperCase());
 }
 
 /* Pide a la tienda que mande el correo con el QR (el POS no tiene Resend ni
@@ -9359,6 +9397,10 @@ app.post('/api/ot/:id/entrega', auth(), async (req, res) => {
   const firma = String(req.body?.retira_firma_base64 || '');
   if (firma.length > 400000) return enviarError(res, 413, 'La firma es demasiado pesada');
 
+  // Sellos de garantía puestos al entregar (sql/69, opcionales).
+  const { lista: sellosEntrega, error: errSellos } = leerSellosDelBody(req.body?.sellos);
+  if (errSellos) return enviarError(res, 400, errSellos);
+
   // Módulo Garantías (ver sql/31-garantias.sql): se fija recién acá, al
   // entregar, porque es el punto de partida real de la garantía del
   // servicio. Default 6 e inválido/negativo también caen a 6.
@@ -9385,6 +9427,21 @@ app.post('/api/ot/:id/entrega', auth(), async (req, res) => {
     if (!motivoForzado) {
       return enviarError(res, 400,
         `Faltan ${fasesPendientes.length} fase(s) obligatoria(s): ${nombres}. Para entregar igual, escribe por qué.`);
+    }
+  }
+
+  /* Los sellos se guardan ANTES de marcar la entrega: si uno ya está en
+     otra orden, la entrega no pasa y se puede corregir el S/N. (Si después
+     la entrega fallara por una entrega simultánea, los sellos quedan en
+     esta misma orden, que es donde van.) */
+  if (sellosEntrega.length) {
+    const repetido = await selloYaRegistrado(sellosEntrega);
+    if (repetido) return enviarError(res, 409, repetido);
+    const { error: errInsSellos } = await db.from('ot_sellos_garantia')
+      .insert(sellosEntrega.map(numero_serie => ({ ot_id: ot.id, numero_serie })));
+    if (errInsSellos) {
+      if (errInsSellos.code === '23505') return enviarError(res, 409, 'Uno de los sellos ya está registrado en otra orden');
+      return enviarErrorBD(res, errInsSellos);
     }
   }
 
@@ -9436,6 +9493,46 @@ app.post('/api/ot/:id/entrega', auth(), async (req, res) => {
   }
 
   res.json({ ...data, stock_descontado_en: descontados.length });
+});
+
+/* SELLOS DE GARANTÍA de una orden (sql/69). Agregar: admin y trabajador,
+   con la orden pendiente o ya entregada (si se olvidó al entregar). Quitar:
+   solo el admin — el sello es la prueba anti-fraude de la garantía, así que
+   borrarlo no puede quedar al alcance de cualquiera. */
+app.get('/api/ot/:id/sellos', auth(), async (req, res) => {
+  const { data, error } = await db.from('ot_sellos_garantia')
+    .select('id, numero_serie, creado_en').eq('ot_id', req.params.id).order('id');
+  if (error) return enviarErrorBD(res, error);
+  res.json(data || []);
+});
+
+app.post('/api/ot/:id/sellos', auth(), async (req, res) => {
+  const sn = normalizarSelloSN(req.body?.numero_serie);
+  if (!sn) return enviarError(res, 400, 'Escribe o escanea el S/N del sello (letras, números y . _ / -, hasta 40)');
+  const { data: ot, error: errOT } = await db.from('ordenes_trabajo').select('id').eq('id', req.params.id).maybeSingle();
+  if (errOT) return enviarErrorBD(res, errOT);
+  if (!ot) return enviarError(res, 404, 'Orden de trabajo no encontrada');
+
+  const { count } = await db.from('ot_sellos_garantia').select('id', { count: 'exact', head: true }).eq('ot_id', ot.id);
+  if ((count || 0) >= 10) return enviarError(res, 400, 'Máximo 10 sellos por orden');
+
+  const repetido = await selloYaRegistrado([sn]);
+  if (repetido) return enviarError(res, 409, repetido);
+  const { data, error } = await db.from('ot_sellos_garantia')
+    .insert([{ ot_id: ot.id, numero_serie: sn }]).select('id, numero_serie, creado_en').single();
+  if (error) {
+    if (error.code === '23505') return enviarError(res, 409, `El sello ${sn} ya está registrado en otra orden`);
+    return enviarErrorBD(res, error);
+  }
+  res.status(201).json(data);
+});
+
+app.delete('/api/ot/:id/sellos/:selloId', auth(true), async (req, res) => {
+  const { data, error } = await db.from('ot_sellos_garantia')
+    .delete().eq('id', req.params.selloId).eq('ot_id', req.params.id).select('id');
+  if (error) return enviarErrorBD(res, error);
+  if (!data || !data.length) return enviarError(res, 404, 'Ese sello no está en esta orden');
+  res.json({ ok: true });
 });
 
 app.delete('/api/ot/:id', auth(true), async (req, res) => {
@@ -9562,7 +9659,7 @@ app.get('/api/garantias/servicios', auth(), async (req, res) => {
   // Solo las OT ENTREGADAS tienen garantía (la fecha de inicio es
   // fecha_entrega) — una orden pendiente no tiene nada que mostrar acá.
   const { data, error } = await db.from('ordenes_trabajo')
-    .select('id, numero_ot, cliente_nombre, dispositivo_categoria, dispositivo_modelo, dispositivo_sn, fecha_entrega, meses_garantia')
+    .select('id, numero_ot, cliente_nombre, dispositivo_categoria, dispositivo_modelo, dispositivo_sn, fecha_entrega, meses_garantia, sellos:ot_sellos_garantia(numero_serie)')
     .eq('estado', 'ENTREGADO')
     .order('fecha_entrega', { ascending: false })
     .limit(500);
@@ -9570,11 +9667,17 @@ app.get('/api/garantias/servicios', auth(), async (req, res) => {
 
   let filas = (data || []).map(o => {
     const { vence_el, estado_garantia } = calcularEstadoGarantia(o.fecha_entrega, o.meses_garantia);
-    return { ...o, vence_el, estado_garantia };
+    const sellos = (o.sellos || []).map(s => s.numero_serie);
+    return { ...o, sellos, vence_el, estado_garantia };
   });
 
   if (q) {
+    // Un S/N de sello se compara solo por letras y números: "sv 0002",
+    // "SV0002" y "SV-0002" encuentran el mismo sello (sql/69).
+    const claveSello = t => String(t).replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+    const qSello = claveSello(q);
     filas = filas.filter(o =>
+      (qSello && o.sellos.some(sn => claveSello(sn).includes(qSello))) ||
       (o.numero_ot || '').toLowerCase().includes(q) ||
       (o.cliente_nombre || '').toLowerCase().includes(q) ||
       (o.dispositivo_modelo || '').toLowerCase().includes(q) ||

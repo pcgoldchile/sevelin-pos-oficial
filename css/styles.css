@@ -4661,3 +4661,17 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
 .sync-bad { color: var(--red) !important; }
 .sync-bad::before { background: var(--red); }
 .sync-pending::before { background: var(--gold); }
+
+/* Sellos de garantía con S/N (sql/69, v97): chips en el Check-Out y en el detalle de la OT. */
+.sellos-lista { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.sellos-lista:empty { display: none; }
+.sello-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px;
+  font-size: 13px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.sello-chip-quitar {
+  background: none; border: 0; padding: 0 2px; cursor: pointer;
+  color: var(--text-muted); font-size: 12px; line-height: 1;
+}
+.sello-chip-quitar:hover { color: var(--red); }

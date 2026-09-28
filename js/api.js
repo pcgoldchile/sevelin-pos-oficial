@@ -551,6 +551,9 @@ const API = {
     porQr: (codigo) => apiRequest(`/ot/por-qr/${encodeURIComponent(codigo)}`),
     qrNuevo: (id) => apiRequest(`/ot/${id}/qr-retiro`, { method: 'POST', body: {} }),
     enviarQr: (id) => apiRequest(`/ot/${id}/enviar-qr`, { method: 'POST', body: {} }),
+    // Sellos de garantía con S/N (sql/69)
+    agregarSello: (id, numeroSerie) => apiRequest(`/ot/${id}/sellos`, { method: 'POST', body: { numero_serie: numeroSerie } }),
+    quitarSello: (id, selloId) => apiRequest(`/ot/${id}/sellos/${selloId}`, { method: 'DELETE' }),
     // Repuestos y mano de obra asignados a la orden
     listarRepuestos: (id) => apiRequest(`/ot/${id}/repuestos`),
     agregarRepuesto: (id, item) => apiRequest(`/ot/${id}/repuestos`, { method: 'POST', body: item }),

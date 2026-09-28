@@ -174,10 +174,14 @@ function renderGarantiasServiciosTabla(lista) {
 
   elGarantiasServiciosTableBody.innerHTML = lista.map(o => {
     const equipo = [o.dispositivo_categoria, o.dispositivo_modelo].filter(Boolean).map(escHtml).join(' · ') || '—';
+    // Sellos de garantía con S/N (sql/69): se buscan desde este mismo buscador.
+    const sellos = (o.sellos || []).length
+      ? `<br><small style="color:var(--text-muted);">🏷️ ${o.sellos.map(escHtml).join(', ')}</small>`
+      : '';
     return `<tr>
       <td>${escHtml(o.numero_ot)}</td>
       <td>${escHtml(o.cliente_nombre || '—')}</td>
-      <td>${equipo}</td>
+      <td>${equipo}${sellos}</td>
       <td>${o.fecha_entrega ? tsAChile(o.fecha_entrega) : '—'}</td>
       <td>${o.meses_garantia} mes(es)</td>
       <td>${o.vence_el || '—'}</td>

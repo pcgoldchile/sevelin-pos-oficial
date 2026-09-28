@@ -60,9 +60,28 @@ app.post('/api/ot/:id/entrega', (req, res) => {
   }
   if (!String(b.entrega_forzada_motivo || '').trim()) return res.status(400).json({ error: 'Faltan fases obligatorias: escribe por qué' });
   Object.assign(ot, { estado: 'ENTREGADO', entrega_forzada_motivo: b.entrega_forzada_motivo, fecha_entrega: new Date().toISOString(), retira_nombre: b.retira_nombre, retira_rut: b.retira_rut,
-    retiro_verificacion: b.verificacion, retiro_verificacion_motivo: b.verificacion === 'ADMIN' ? b.verificacion_motivo.trim() : null });
+    retiro_verificacion: b.verificacion, retiro_verificacion_motivo: b.verificacion === 'ADMIN' ? b.verificacion_motivo.trim() : null,
+    meses_garantia: 6, sellos: (b.sellos || []).map(sn => ({ id: sigSello++, numero_serie: sn })) });
   res.json(ot);
 });
+// Sellos de garantía (sql/69, v97): el S/N "USADO" simula uno que ya está en otra orden.
+let sigSello = 1;
+app.post('/api/ot/:id/sellos', (req, res) => {
+  const ot = ordenes.find(o => String(o.id) === req.params.id);
+  const sn = String(req.body?.numero_serie || '').replace(/\s+/g, '').toUpperCase();
+  if (sn === 'USADO') return res.status(409).json({ error: 'El sello USADO ya está en OT-000003' });
+  const sello = { id: sigSello++, numero_serie: sn };
+  ot.sellos = [...(ot.sellos || []), sello];
+  res.status(201).json(sello);
+});
+app.delete('/api/ot/:id/sellos/:selloId', (req, res) => {
+  const ot = ordenes.find(o => String(o.id) === req.params.id);
+  ot.sellos = (ot.sellos || []).filter(s => String(s.id) !== req.params.selloId);
+  res.json({ ok: true });
+});
+app.get('/api/garantias/servicios', (_req, res) => res.json(ordenes.filter(o => o.estado === 'ENTREGADO').map(o => ({
+  ...o, sellos: (o.sellos || []).map(s => s.numero_serie), vence_el: '2027-03-28', estado_garantia: 'VIGENTE',
+}))));
 
 app.use('/api', (req, res) => {
   const clave = `${req.method} ${req.path}`;
