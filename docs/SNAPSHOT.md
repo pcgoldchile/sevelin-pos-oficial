@@ -41,8 +41,13 @@
 - **Las 2 pilas CR2032 de OT-000005 y OT-000006 ya están registradas a mano.** Si se aplica el
   protocolo y se tacha la fase "Cambio de pila CR2032", se descuenta una SEGUNDA. No es obligatoria,
   así que no bloquea la entrega.
-- **Instagram HOY es `@sevelin_cl`**, no `@sevelin.cl` — todavía no le liberan el nombre. Cuando lo
-  consiga: cambiar `INSTAGRAM` en `scripts/generar-imagenes-servicios.js` y regenerar las 40.
+- **Instagram volvió a ser `@sevelin.cl` (28-09-2026).** Revisado: footer de sevelin.cl
+  (`NEXT_PUBLIC_INSTAGRAM_URL` = instagram.com/sevelin.cl), FAQ y pie de publicaciones de Facebook
+  ya decían `@sevelin.cl`. Lo único con `@sevelin_cl` eran **17 imágenes de servicios** hechas con la
+  plantilla: se rehicieron con `node scripts/generar-imagenes-servicios.js --regenerar --aplicar`, que
+  solo toca una imagen si es byte a byte la que el script genera con el handle anterior. Las otras 24
+  fichas de servicios son diseños aparte (1000×1000) y ya decían `@sevelin.cl` o solo "Instagram".
+  Las URLs viejas siguen en el bucket (impresas en la salida), por si hubiera que volver atrás.
 - **El norte de Chile es MÁS BARATO que Santiago** en servicios básicos (formateo informal
   $9.000-$14.000 en Antofagasta contra $25.000-$29.990 en Santiago; tarifa base de técnico $20.000).
   No recomendar precios usando referencias de Santiago.

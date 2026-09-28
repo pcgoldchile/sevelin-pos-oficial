@@ -13,6 +13,8 @@
    Uso:
      node scripts/generar-imagenes-servicios.js --muestra    (3 ejemplos en /tmp)
      node scripts/generar-imagenes-servicios.js              (los que falten, y los sube)
+     node scripts/generar-imagenes-servicios.js --regenerar  (revisa cuáles cambiarían, no escribe)
+     node scripts/generar-imagenes-servicios.js --regenerar --aplicar   (las rehace y las sube)
 
    Requiere en .env: SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY (los del POS).
    Lee el .env a mano, mismo patrón que scripts/sincronizar-catalogo-web.js. */
@@ -53,10 +55,13 @@ const LADO = 800;
 
 // Datos fijos del negocio (ver memoria reference-sevelin-datos-fijos)
 const WHATSAPP  = '+56 9 3575 0828';
-/* ⚠️ HANDLE ACTUAL, no el definitivo. El dueño todavía no puede tomar
-   @sevelin.cl (25-09-2026): está en @sevelin_cl y espera unos días. Cuando
-   lo consiga, se cambia esta línea y se regeneran todas las imágenes. */
-const INSTAGRAM = '@sevelin_cl';
+/* El dueño recuperó @sevelin.cl el 28-09-2026 (antes, desde el 11-09, la
+   cuenta era @sevelin_cl). INSTAGRAM_ANTERIOR solo sirve para que
+   --regenerar reconozca las imágenes viejas hechas por este script. Si el
+   handle vuelve a cambiar: mover el actual a INSTAGRAM_ANTERIOR, poner el
+   nuevo en INSTAGRAM y correr --regenerar. */
+const INSTAGRAM = '@sevelin.cl';
+const INSTAGRAM_ANTERIOR = '@sevelin_cl';
 const SITIO     = 'www.sevelin.cl';
 
 /* ============================================================
@@ -139,7 +144,7 @@ const fmtCLP = (n) => '$' + Math.round(Number(n) || 0).toLocaleString('es-CL');
 /* ============================================================
    LA PLANTILLA
    ============================================================ */
-function svgServicio({ nombre, precio, aConsultar }) {
+function svgServicio({ nombre, precio, aConsultar, instagram = INSTAGRAM }) {
   const titulo = nombreParaAfiche(nombre);
   const ANCHO_TITULO = 620;   // ancho útil dentro del marco, con aire a los lados
   const { lineas, tam } = acomodarTitulo(titulo, ANCHO_TITULO, 58, 28, 4);
@@ -214,18 +219,22 @@ function svgServicio({ nombre, precio, aConsultar }) {
   <text x="400" y="720" text-anchor="middle" font-family="Arial, sans-serif"
         font-size="20" font-weight="bold" fill="${C.texto}">${WHATSAPP}</text>
   <text x="400" y="748" text-anchor="middle" font-family="Arial, sans-serif"
-        font-size="17" fill="${C.acento}">${INSTAGRAM}  ·  ${SITIO}</text>
+        font-size="17" fill="${C.acento}">${instagram}  ·  ${SITIO}</text>
   <text x="400" y="773" text-anchor="middle" font-family="Arial, sans-serif"
         font-size="13" fill="${C.apagado}">Arica, Chile</text>
 </svg>`;
 }
 
-async function render(servicio, destino) {
+async function renderBuffer(servicio) {
   const svg = svgServicio(servicio);
-  await sharp(Buffer.from(svg))
+  return sharp(Buffer.from(svg))
     .resize(LADO, LADO)
     .webp({ quality: 82 })          // mismo perfil que el resto del catálogo
-    .toFile(destino);
+    .toBuffer();
+}
+
+async function render(servicio, destino) {
+  fs.writeFileSync(destino, await renderBuffer(servicio));
   return destino;
 }
 
@@ -288,7 +297,63 @@ async function generarYSubir() {
   console.log('Listo. El trigger trg_sync_tienda empuja las imágenes a sevelin.cl solo.');
 }
 
+/* ============================================================
+   MODO REGENERAR: cambia el pie de las imágenes que YA hizo este script
+   (28-09-2026, cambio de @sevelin_cl a @sevelin.cl).
+   Solo toca una ficha si su imagen publicada es BYTE A BYTE la que este
+   script genera con el handle anterior y los datos actuales (nombre,
+   precio, a consultar). Así nunca pisa una foto real ni una imagen
+   hecha a mano. Las que no coinciden se listan para revisarlas.
+   La imagen vieja NO se borra del bucket (ruta nueva con UUID): para
+   volver atrás basta reponer la URL anterior, que se imprime.
+   ============================================================ */
+async function regenerar(aplicar) {
+  const { createClient } = require('@supabase/supabase-js');
+  const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY,
+    { auth: { persistSession: false } });
+
+  const { data, error } = await db.from('productos')
+    .select('id, nombre, precio_unitario, precio_a_consultar, imagen_urls, publicado_web')
+    .eq('categoria_web', 'Servicios Técnicos')
+    .order('id');
+  if (error) throw new Error(error.message);
+
+  const cambiar = [], distintas = [], sinImagen = [], yaNuevas = [];
+  for (const p of data || []) {
+    const urls = p.imagen_urls || [];
+    if (urls.length !== 1) { (urls.length ? distintas : sinImagen).push(p); continue; }
+    const r = await fetch(urls[0]);
+    if (!r.ok) { distintas.push({ ...p, motivo: `HTTP ${r.status}` }); continue; }
+    const publicada = Buffer.from(await r.arrayBuffer());
+    const datos = { nombre: p.nombre, precio: p.precio_unitario, aConsultar: !!p.precio_a_consultar };
+    const vieja = await renderBuffer({ ...datos, instagram: INSTAGRAM_ANTERIOR });
+    const nueva = await renderBuffer(datos);
+    if (publicada.equals(nueva)) yaNuevas.push(p);
+    else if (publicada.equals(vieja)) cambiar.push({ p, nueva });
+    else distintas.push(p);
+  }
+
+  console.log(`${cambiar.length} con ${INSTAGRAM_ANTERIOR} (se cambian) · ${yaNuevas.length} ya con ${INSTAGRAM} · ` +
+    `${distintas.length} no coinciden (no se tocan) · ${sinImagen.length} sin imagen`);
+  distintas.forEach(p => console.log(`  ≠ #${p.id} ${p.nombre}${p.motivo ? ' (' + p.motivo + ')' : ''}  ${(p.imagen_urls || []).join(' ')}`));
+  if (!aplicar) { console.log('Solo revisión. Para subirlas: --regenerar --aplicar'); return; }
+
+  for (const { p, nueva } of cambiar) {
+    const ruta = `${p.id}/${require('crypto').randomUUID()}.webp`;
+    const { error: errSubida } = await db.storage.from('productos-imagenes')
+      .upload(ruta, nueva, { contentType: 'image/webp', upsert: false });
+    if (errSubida) { console.error(`✗ #${p.id} ${p.nombre}: ${errSubida.message}`); continue; }
+    const { data: pub } = db.storage.from('productos-imagenes').getPublicUrl(ruta);
+    const { error: errUpd } = await db.from('productos')
+      .update({ imagen_urls: [pub.publicUrl] }).eq('id', p.id);
+    if (errUpd) { console.error(`✗ #${p.id} ${p.nombre}: ${errUpd.message}`); continue; }
+    console.log(`✓ #${p.id} ${p.nombre}  (antes: ${p.imagen_urls[0]})`);
+  }
+  console.log('Listo. El trigger trg_sync_tienda empuja las imágenes a sevelin.cl solo.');
+}
+
 (async () => {
   if (process.argv.includes('--muestra')) await muestras();
+  else if (process.argv.includes('--regenerar')) await regenerar(process.argv.includes('--aplicar'));
   else await generarYSubir();
 })().catch(e => { console.error('ERROR:', e.message); process.exit(1); });
