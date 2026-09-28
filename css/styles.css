@@ -1071,7 +1071,8 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
 /* align-items del padre es flex-start (no center) para que un texto largo
    que ocupe 2+ líneas no empuje el checkbox al medio del párrafo — este
    margin-top lo alinea de nuevo con la primera línea del texto. */
-.check-item input[type="checkbox"] { width: 18px; height: 18px; margin-top: 2px; flex: none; accent-color: var(--blue); }
+.check-item input[type="checkbox"],
+.check-item input[type="radio"] { width: 18px; height: 18px; margin-top: 2px; flex: none; accent-color: var(--blue); }
 .check-item span { flex: 1; line-height: 1.35; }
 .check-item.disabled { opacity: .5; cursor: not-allowed; }
 

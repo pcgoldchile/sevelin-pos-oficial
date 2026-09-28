@@ -184,6 +184,17 @@ function filaOT(etiqueta, valor) {
   return `<div class="ot-dato"><span>${etiqueta}</span><b>${escHtml(valor)}</b></div>`;
 }
 
+/* Cómo se verificó a quien retiró (sql/47 + sql/68). Lo usan el
+   comprobante y el detalle de la orden. Devuelve HTML ya escapado. */
+function textoVerificacionRetiro(ot) {
+  if (ot.retiro_verificacion === 'QR') return 'verificado con el QR de retiro';
+  if (ot.retiro_verificacion === 'CARNET') return 'verificado con el carnet del titular';
+  if (ot.retiro_verificacion === 'ADMIN') {
+    return `sin QR ni carnet, <b>autorizado con clave de administrador</b>. Motivo: ${escHtml(ot.retiro_verificacion_motivo || '—')}`;
+  }
+  return 'sin verificación registrada';
+}
+
 function construirComprobanteOT(ot, etiquetaCopia) {
   const entregado = ot.estado === 'ENTREGADO';
   const cargador = ot.cargador_deja
@@ -237,6 +248,9 @@ function construirComprobanteOT(ot, etiquetaCopia) {
         <p>${escHtml(ot.falla_reportada || '—')}</p>
         ${ot.obs_cliente ? `<h4>Observaciones del cliente</h4><p>${escHtml(ot.obs_cliente)}</p>` : ''}
         ${ot.obs_tecnico ? `<h4>Observaciones del técnico</h4><p>${escHtml(ot.obs_tecnico)}</p>` : ''}
+        ${entregado && ot.retiro_verificacion
+          ? `<h4>Retiro</h4><p>Retiró ${escHtml(ot.retira_nombre || '—')}${ot.retira_rut ? ' (RUT ' + escHtml(ot.retira_rut) + ')' : ''}, ${textoVerificacionRetiro(ot)}.</p>`
+          : ''}
       </section>
 
       <p class="ot-doc-legal">

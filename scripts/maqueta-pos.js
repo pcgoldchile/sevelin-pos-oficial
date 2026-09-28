@@ -38,6 +38,26 @@ app.get('/api/productos/buscar', (req, res) => {
 app.get('/api/caja/activa', (_req, res) => res.json({
   activa: { id: 10, estado: 'abierta', fondo_inicial: 10000, fecha_apertura: '2026-09-13T17:26:00Z' }, movimientos: [],
 }));
+// Una OT pendiente para probar el Check-Out (v96: tercera verificación con clave de admin).
+// La entrega simula al servidor: el PIN "mal" se rechaza; cualquier otro entra.
+const ordenes = [
+  { id: 7, numero_ot: 'OT-000007', estado: 'PENDIENTE', fecha_ingreso: '2026-09-25T15:00:00Z', cliente_nombre: 'Cliente de Prueba',
+    cliente_rut: null, cliente_telefono: '+56900000000', dispositivo_categoria: 'Notebook', dispositivo_modelo: 'Lenovo IdeaPad 3',
+    falla_reportada: 'No enciende', token_retiro: 'a'.repeat(32), acepta_responsabilidad: true },
+];
+app.get('/api/ot', (_req, res) => res.json(ordenes));
+app.post('/api/ot/:id/entrega', (req, res) => {
+  const ot = ordenes.find(o => String(o.id) === req.params.id);
+  const b = req.body || {};
+  if (b.verificacion === 'ADMIN') {
+    if (String(b.verificacion_motivo || '').trim().length < 10) return res.status(400).json({ error: 'Escribe el motivo (mínimo 10 letras)' });
+    if (b.pin_admin === 'mal') return res.status(403).json({ error: 'PIN de administrador incorrecto' });
+  }
+  Object.assign(ot, { estado: 'ENTREGADO', fecha_entrega: new Date().toISOString(), retira_nombre: b.retira_nombre, retira_rut: b.retira_rut,
+    retiro_verificacion: b.verificacion, retiro_verificacion_motivo: b.verificacion === 'ADMIN' ? b.verificacion_motivo.trim() : null });
+  res.json(ot);
+});
+
 app.use('/api', (req, res) => {
   const clave = `${req.method} ${req.path}`;
   if (!sinManejar.has(clave)) { sinManejar.add(clave); console.log('[maqueta] sin datos:', clave); }

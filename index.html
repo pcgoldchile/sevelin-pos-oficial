@@ -5725,6 +5725,7 @@
       <div class="row-actions" style="gap:14px; flex-wrap:wrap;">
         <label class="check-item" style="margin:0;"><input type="radio" name="otVerificacion" id="otVerificacionQr" value="QR" checked> <span>📷 Trae el QR</span></label>
         <label class="check-item" style="margin:0;"><input type="radio" name="otVerificacion" id="otVerificacionCarnet" value="CARNET"> <span>🪪 Es el titular con su carnet</span></label>
+        <label class="check-item" style="margin:0;"><input type="radio" name="otVerificacion" id="otVerificacionAdmin" value="ADMIN"> <span>🔑 Forzar con clave de admin</span></label>
       </div>
       <div id="otVerificacionQrCampos" class="grid grid-2" style="margin-top:10px;">
         <div class="field">
@@ -5733,6 +5734,17 @@
         </div>
         <div class="field" style="align-self:end;">
           <button class="btn btn-outline btn-sm" id="btnOtEntregaEscanear" type="button">📷 Escanear QR</button>
+        </div>
+      </div>
+      <!-- v96 (sql/68): sin QR ni carnet. El PIN se valida en el servidor, con el freno de intentos. -->
+      <div id="otVerificacionAdminCampos" class="grid grid-2" style="margin-top:10px; display:none;">
+        <div class="field">
+          <label>PIN de administrador *</label>
+          <input type="password" id="otEntregaPinAdmin" inputmode="numeric" autocomplete="off" placeholder="••••">
+        </div>
+        <div class="field" style="grid-column: 1 / -1;">
+          <label>Motivo (queda en la orden y en el comprobante) *</label>
+          <textarea id="otEntregaMotivoAdmin" rows="2" maxlength="300" placeholder="Ej: perdió el QR y la orden no tiene RUT; retira su hermano con autorización por WhatsApp"></textarea>
         </div>
       </div>
       <p class="modal-hint" id="otVerificacionAviso" style="margin-top:6px;"></p>

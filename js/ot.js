@@ -90,6 +90,9 @@ const elOtEntregaCodigo = document.getElementById('otEntregaCodigo');
 const elBtnOtEntregaEscanear = document.getElementById('btnOtEntregaEscanear');
 const elOtVerificacionQrCampos = document.getElementById('otVerificacionQrCampos');
 const elOtVerificacionAviso = document.getElementById('otVerificacionAviso');
+const elOtVerificacionAdminCampos = document.getElementById('otVerificacionAdminCampos');
+const elOtEntregaPinAdmin = document.getElementById('otEntregaPinAdmin');
+const elOtEntregaMotivoAdmin = document.getElementById('otEntregaMotivoAdmin');
 
 document.addEventListener('DOMContentLoaded', () => {
   setupOtEventListeners();
@@ -308,7 +311,7 @@ function renderQrRetiroOT(ot) {
     if (verificado) {
       if (elOtQrRetiroImagen) elOtQrRetiroImagen.innerHTML = '';
       if (elOtQrRetiroEstado) {
-        elOtQrRetiroEstado.innerHTML = `Entregado a <b>${escHtml(ot.retira_nombre || '—')}</b> (RUT ${escHtml(ot.retira_rut || '—')}), verificado con ${ot.retiro_verificacion === 'QR' ? 'QR' : 'carnet del titular'}.`;
+        elOtQrRetiroEstado.innerHTML = `Entregado a <b>${escHtml(ot.retira_nombre || '—')}</b> (RUT ${escHtml(ot.retira_rut || '—')}), ${textoVerificacionRetiro(ot)}.`;
       }
       botones.forEach(b => { if (b) b.style.display = 'none'; });
     }
@@ -788,6 +791,8 @@ function abrirModalEntrega(id, codigoQr) {
   const radioQr = document.getElementById('otVerificacionQr');
   if (radioQr) radioQr.checked = true;
   if (elOtEntregaCodigo) elOtEntregaCodigo.value = codigoQr || '';
+  if (elOtEntregaPinAdmin) elOtEntregaPinAdmin.value = '';
+  if (elOtEntregaMotivoAdmin) elOtEntregaMotivoAdmin.value = '';
   actualizarVerificacionEntrega(true);
   // La garantía del servicio siempre parte en 6 meses (pedido explícito
   // del dueño), editable acá mismo antes de confirmar la entrega.
@@ -799,6 +804,8 @@ function abrirModalEntrega(id, codigoQr) {
 
 function cerrarModalEntrega() {
   if (elModalOtEntrega) elModalOtEntrega.classList.remove('show');
+  // El PIN no queda escrito en el formulario después de cerrar.
+  if (elOtEntregaPinAdmin) elOtEntregaPinAdmin.value = '';
   otSeleccionadaEntrega = null;
 }
 
@@ -807,17 +814,22 @@ function verificacionElegidaOT() {
 }
 
 /* QR: quien retira puede ser cualquiera; se anota su nombre y RUT.
-   CARNET: es el titular; se precargan sus datos para compararlos con el carnet. */
+   CARNET: es el titular; se precargan sus datos para compararlos con el carnet.
+   ADMIN (v96): no hay ninguna de las dos; el admin autoriza con su PIN
+   (validado en el servidor) y deja el motivo escrito. */
 function actualizarVerificacionEntrega(rellenar) {
   const ot = otSeleccionadaEntrega;
   const modo = verificacionElegidaOT();
   if (elOtVerificacionQrCampos) elOtVerificacionQrCampos.style.display = modo === 'QR' ? '' : 'none';
+  if (elOtVerificacionAdminCampos) elOtVerificacionAdminCampos.style.display = modo === 'ADMIN' ? '' : 'none';
   if (elOtVerificacionAviso) {
     elOtVerificacionAviso.innerHTML = modo === 'CARNET'
       ? (ot?.cliente_rut
         ? `Revisa que el carnet diga <b>${escHtml(ot.cliente_rut)}</b> (${escHtml(ot.cliente_nombre || '')}).`
-        : '<b>Esta orden no tiene RUT del titular:</b> solo se puede entregar con el QR. Si se perdió, genera uno nuevo desde la orden.')
-      : 'Escanea el QR que muestra quien retira y anota su nombre y RUT.';
+        : '<b>Esta orden no tiene RUT del titular:</b> entrégala con el QR (si se perdió, genera uno nuevo desde la orden) o fuérzala con la clave de admin.')
+      : modo === 'ADMIN'
+        ? 'Úsalo solo si no hay QR ni carnet del titular. Anota igual el nombre y RUT de quien retira: todo queda registrado en la orden y en el comprobante.'
+        : 'Escanea el QR que muestra quien retira y anota su nombre y RUT.';
   }
   if (!rellenar || !ot) return;
   if (elOtRetiraNombre) elOtRetiraNombre.value = modo === 'CARNET' ? (ot.cliente_nombre || '') : '';
@@ -837,6 +849,19 @@ async function confirmarEntrega() {
     showToast('Escanea el QR de quien retira, o elige verificar con carnet', 'err');
     return;
   }
+  const motivoAdmin = elOtEntregaMotivoAdmin?.value.trim() || '';
+  if (verificacion === 'ADMIN') {
+    if (!elOtEntregaPinAdmin?.value.trim()) {
+      showToast('Escribe el PIN de administrador', 'err');
+      elOtEntregaPinAdmin?.focus();
+      return;
+    }
+    if (motivoAdmin.length < 10) {
+      showToast('Escribe el motivo (mínimo 10 letras): queda en la orden y en el comprobante', 'err');
+      elOtEntregaMotivoAdmin?.focus();
+      return;
+    }
+  }
 
   if (elBtnConfirmarOtEntrega) elBtnConfirmarOtEntrega.disabled = true;
 
@@ -846,6 +871,8 @@ async function confirmarEntrega() {
       retira_rut: elOtRetiraRut?.value.trim() || null,
       verificacion,
       codigo_retiro: verificacion === 'QR' ? elOtEntregaCodigo?.value.trim() : null,
+      pin_admin: verificacion === 'ADMIN' ? elOtEntregaPinAdmin?.value.trim() : undefined,
+      verificacion_motivo: verificacion === 'ADMIN' ? motivoAdmin : undefined,
       meses_garantia: elOtEntregaMesesGarantia?.value.trim() ? Number(elOtEntregaMesesGarantia.value) : 6,
       retira_firma_base64: obtenerFirmaBase64()
     });
@@ -856,6 +883,8 @@ async function confirmarEntrega() {
   } catch (err) {
     console.error('Error al registrar la entrega:', err.message || err);
     showToast(err.message || 'No se pudo registrar la entrega', 'err');
+    // Un PIN rechazado no se deja escrito para el siguiente intento.
+    if (verificacion === 'ADMIN' && elOtEntregaPinAdmin) elOtEntregaPinAdmin.value = '';
   } finally {
     if (elBtnConfirmarOtEntrega) elBtnConfirmarOtEntrega.disabled = false;
   }

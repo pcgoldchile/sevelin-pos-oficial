@@ -737,31 +737,40 @@ async function frenoLogin(req, res, next) {
    llame la API directamente, sin el PIN correcto la operación se rechaza.
    Reutiliza el mismo freno por IP que el login para evitar fuerza bruta. */
 async function exigirPinAdmin(req, res, next) {
-  /* Se responde 403 (no 401) a propósito: un 401 hace que el frontend
-     asuma "sesión expirada" y cierre la sesión del administrador. Aquí la
-     sesión es válida; lo que falta es autorizar esta operación puntual. */
+  const pin = String(req.body?.pin || req.headers['x-admin-pin'] || '').trim();
+  const rechazo = await validarPinAdmin(req, pin);
+  if (rechazo) return enviarError(res, rechazo.status, rechazo.mensaje);
+  next();
+}
+
+/* La validación en sí, para las rutas que piden el PIN de admin solo en
+   un caso (ej. entregar una OT sin QR ni carnet, v96). Devuelve null si el
+   PIN es correcto, o { status, mensaje } para responder. Mismo freno por
+   IP que el login (5 fallos → 1 minuto), compartido entre instancias.
+   Se responde 403 (no 401) a propósito: un 401 hace que el frontend
+   asuma "sesión expirada" y cierre la sesión. Aquí la sesión es válida;
+   lo que falta es autorizar esta operación puntual. */
+async function validarPinAdmin(req, pin) {
   const ip = ipReal(req);
   const ahora = Date.now();
   const reg = await obtenerRegistroIntentos(ip);
 
   if (reg.hasta > ahora) {
-    return enviarError(res, 429, 'Demasiados intentos fallidos. Espera un minuto antes de reintentar.');
+    return { status: 429, mensaje: 'Demasiados intentos fallidos. Espera un minuto antes de reintentar.' };
   }
-
-  const pin = String(req.body?.pin || req.headers['x-admin-pin'] || '').trim();
-  if (!pin) return enviarError(res, 403, 'Esta acción requiere confirmar el PIN de administrador');
+  if (!pin) return { status: 403, mensaje: 'Esta acción requiere confirmar el PIN de administrador' };
 
   if (pin !== String(ADMIN_PIN)) {
     reg.n = (reg.n || 0) + 1;
     reg.ts = ahora;
     if (reg.n >= 5) { reg.hasta = ahora + 60 * 1000; reg.n = 0; }
     await guardarRegistroIntentos(ip, reg);
-    return enviarError(res, 403, 'PIN de administrador incorrecto');
+    return { status: 403, mensaje: 'PIN de administrador incorrecto' };
   }
 
   reg.n = 0;
   await guardarRegistroIntentos(ip, reg);
-  next();
+  return null;
 }
 
 /* ============================================================
@@ -9310,11 +9319,27 @@ app.post('/api/ot/:id/entrega', auth(), async (req, res) => {
     return enviarError(res, 400, 'Registra el nombre y el RUT de quien retira el equipo');
   }
 
-  /* Dos pruebas posibles, decididas por el dueño: el QR vigente de ESTA
-     orden, o el carnet del titular con el mismo RUT registrado. Sin RUT
-     registrado no hay contra qué comparar el carnet: solo el QR. */
+  /* Tres pruebas posibles, decididas por el dueño: el QR vigente de ESTA
+     orden, el carnet del titular con el mismo RUT registrado, o (v96,
+     28-09-2026) la clave de administrador cuando no hay ninguna de las
+     dos. Esa tercera exige el PIN de admin validado acá —aunque la sesión
+     sea de trabajador, y también si es de admin: es una reconfirmación— y
+     un motivo escrito que queda en la orden y sale en el comprobante. */
   const verificacion = String(req.body?.verificacion || '').toUpperCase();
-  if (verificacion === 'QR') {
+  let motivoVerificacion = null;
+  if (verificacion === 'ADMIN') {
+    motivoVerificacion = String(req.body?.verificacion_motivo || '').trim().replace(/\s+/g, ' ');
+    // Array.from: cuenta caracteres como la base (char_length), no unidades UTF-16 (un emoji = 2).
+    if (Array.from(motivoVerificacion).length < 10) {
+      return enviarError(res, 400, 'Escribe el motivo de la entrega sin QR ni carnet (mínimo 10 letras): queda en la orden y en el comprobante');
+    }
+    if (motivoVerificacion.length > 300) {
+      return enviarError(res, 400, 'El motivo es demasiado largo (máximo 300 letras)');
+    }
+    // El motivo va antes que el PIN: un formulario incompleto no gasta intentos del freno.
+    const rechazo = await validarPinAdmin(req, String(req.body?.pin_admin || '').trim());
+    if (rechazo) return enviarError(res, rechazo.status, rechazo.mensaje);
+  } else if (verificacion === 'QR') {
     const token = extraerTokenRetiro(req.body?.codigo_retiro);
     if (!token || !ot.token_retiro || token !== ot.token_retiro) {
       return enviarError(res, 400, 'El QR no corresponde a esta orden, o fue reemplazado por uno nuevo');
@@ -9328,7 +9353,7 @@ app.post('/api/ot/:id/entrega', auth(), async (req, res) => {
       return enviarError(res, 400, 'El RUT del carnet no coincide con el del titular registrado en la orden');
     }
   } else {
-    return enviarError(res, 400, 'Verifica a quien retira: escanea su QR o revisa el carnet del titular');
+    return enviarError(res, 400, 'Verifica a quien retira: escanea su QR, revisa el carnet del titular o autoriza con la clave de administrador');
   }
 
   const firma = String(req.body?.retira_firma_base64 || '');
@@ -9376,6 +9401,7 @@ app.post('/api/ot/:id/entrega', auth(), async (req, res) => {
       retira_firma_base64: firma || null,
       meses_garantia: mesesGarantia,
       retiro_verificacion: verificacion,
+      retiro_verificacion_motivo: motivoVerificacion,
       token_retiro_usado_en: ahora
     })
     .eq('id', req.params.id)
