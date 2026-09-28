@@ -11779,7 +11779,7 @@ app.get('/api/pos/metricas', auth(true), async (req, res) => {
       contar('eventos_web', q => q.eq('tipo', 'visita')),
       contar('eventos_web', q => q.eq('tipo', 'visita').gte('creado_en', hace30Dias)),
       contar('carritos_web', q => q.eq('origen', 'compartido')),
-      contar('carritos_web', q => q.eq('origen', 'checkout').is('numero_pedido', null)),
+      contar('carritos_web', q => q.eq('origen', 'checkout').is('numero_pedido', null).or('correo.is.null,correo.not.ilike.*joonix.net')),
       contar('carritos_web', q => q.eq('origen', 'checkout').not('numero_pedido', 'is', null)),
       contar('perfiles_clientes'),
       contar('visitas_activas', q => q.gte('ultima_actividad', hace90Segundos)),
@@ -11787,7 +11787,7 @@ app.get('/api/pos/metricas', auth(true), async (req, res) => {
         contar('eventos_web', q => q.eq('tipo', 'visita').gte('creado_en', desdeUTC).lte('creado_en', hastaUTC)),
         contar('perfiles_clientes', q => q.gte('creado_en', desdeUTC).lte('creado_en', hastaUTC)),
         contar('carritos_web', q => q.eq('origen', 'compartido').gte('creado_en', desdeUTC).lte('creado_en', hastaUTC)),
-        contar('carritos_web', q => q.eq('origen', 'checkout').is('numero_pedido', null).gte('creado_en', desdeUTC).lte('creado_en', hastaUTC)),
+        contar('carritos_web', q => q.eq('origen', 'checkout').is('numero_pedido', null).or('correo.is.null,correo.not.ilike.*joonix.net').gte('creado_en', desdeUTC).lte('creado_en', hastaUTC)),
         contar('carritos_web', q => q.eq('origen', 'checkout').not('numero_pedido', 'is', null).gte('creado_en', desdeUTC).lte('creado_en', hastaUTC)),
       ] : []),
     ]);
@@ -11884,16 +11884,16 @@ app.get('/api/pos/metricas/carritos-compartidos', auth(true), async (req, res) =
 });
 
 /* Detalle de "Carritos abandonados" — origen='checkout' sin numero_pedido
-   (dejó su correo pero no completó el pago). Trae también si ese correo
-   coincide con una cuenta registrada, para ofrecer su teléfono guardado en
-   el botón de WhatsApp del frontend (si no hay cuenta, el botón sale
-   igual pero con el número vacío para completarlo a mano — pedido
-   explícito del dueño). */
+   (dejó su correo pero no completó el pago). Desde la tienda sql/36 trae
+   también nombre y teléfono si alcanzó a escribirlos, y el link que le
+   devuelve su carrito: el botón de WhatsApp sale listo para mandar. */
 app.get('/api/pos/metricas/carritos-abandonados', auth(true), async (req, res) => {
   const { data, error } = await dbWeb.from('carritos_web')
-    .select('id, items, correo, creado_en, actualizado_en, recordatorio_enviado_en, expira_en')
+    .select('id, token, items, correo, nombre, telefono, creado_en, actualizado_en, recordatorio_enviado_en')
     .eq('origen', 'checkout')
     .is('numero_pedido', null)
+    .not('correo', 'is', null)
+    .not('correo', 'ilike', '%joonix.net')   // el robot de Google Merchant prueba el checkout
     .order('actualizado_en', { ascending: false })
     .limit(200);
   if (error) return enviarErrorBD(res, error);
@@ -11901,10 +11901,12 @@ app.get('/api/pos/metricas/carritos-abandonados', auth(true), async (req, res) =
   const conItems = await Promise.all((data || []).map(async (c) => ({
     id: c.id,
     correo: c.correo,
+    nombre: c.nombre || null,
+    telefono: c.telefono || null,
+    link: c.token ? `${URL_TIENDA_PUBLICA}/carrito-compartido?t=${c.token}` : null,
     creado_en: c.creado_en,
     actualizado_en: c.actualizado_en,
     recordatorio_enviado_en: c.recordatorio_enviado_en,
-    expirado: c.expira_en ? new Date(c.expira_en) < new Date() : false,
     items: await resolverItemsCarrito(c.items),
   })));
   res.json(conItems);

@@ -802,7 +802,7 @@ function renderDetalleCompartidos(datos, titulo, thead, tbody) {
 
 function renderDetalleAbandonados(datos, titulo, thead, tbody) {
   titulo.textContent = `🛒 Carritos abandonados (${datos.length})`;
-  thead.innerHTML = '<tr><th>Correo</th><th>Dejado</th><th>Contenido</th><th>Estado</th><th style="text-align:right;">Acciones</th></tr>';
+  thead.innerHTML = '<tr><th>Cliente</th><th>Dejado</th><th>Contenido</th><th>Estado</th><th style="text-align:right;">Acciones</th></tr>';
 
   if (datos.length === 0) {
     tbody.innerHTML = '<tr class="empty-row"><td colspan="5">No hay carritos abandonados pendientes.</td></tr>';
@@ -810,21 +810,25 @@ function renderDetalleAbandonados(datos, titulo, thead, tbody) {
   }
 
   tbody.innerHTML = datos.map(c => {
-    const estado = c.expirado
-      ? '<span class="badge badge-red">Expirado</span>'
-      : c.recordatorio_enviado_en
-        ? `<span class="badge badge-blue">Recordatorio enviado</span>`
-        : '<span class="badge badge-gold">Sin recordatorio</span>';
+    const estado = c.recordatorio_enviado_en
+      ? `<span class="badge badge-blue">Recordatorio enviado</span>`
+      : '<span class="badge badge-gold">Sin recordatorio aún</span>';
+    const cliente = [
+      c.nombre ? `<strong>${escHtml(c.nombre)}</strong>` : '',
+      escHtml(c.correo || '(sin correo)'),
+      c.telefono ? escHtml(c.telefono) : '<span style="color:var(--text-muted);">sin teléfono</span>'
+    ].filter(Boolean).join('<br>');
+    const whatsapp = JSON.stringify({ telefono: c.telefono || '', items: c.items, link: c.link || null }).replace(/'/g, '&#39;');
     return `
     <tr data-fila-carrito="${c.id}">
-      <td>${escHtml(c.correo || '(sin correo)')}</td>
+      <td>${cliente}</td>
       <td>${tsAChile(c.actualizado_en || c.creado_en)}</td>
       <td>${resumenItemsCarrito(c.items)}</td>
       <td>${estado}</td>
       <td style="text-align:right;">
         <div class="cell-actions" style="justify-content:flex-end;">
           ${c.correo ? `<button class="btn btn-outline btn-sm" data-reenviar-correo="${c.id}">✉️ Reenviar correo</button>` : ''}
-          ${c.items?.length ? `<button class="btn btn-outline btn-sm" data-wa-carrito='${JSON.stringify({ telefono: '', items: c.items, link: null }).replace(/'/g, '&#39;')}'>📲 WhatsApp</button>` : ''}
+          ${c.items?.length ? `<button class="btn btn-outline btn-sm" data-wa-carrito='${whatsapp}'>📲 WhatsApp</button>` : ''}
         </div>
       </td>
     </tr>`;

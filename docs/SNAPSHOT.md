@@ -61,6 +61,16 @@
 
 ---
 
+## 27-09-2026 · v94, carritos abandonados que se pueden recuperar
+
+El grueso está en sevelin-tienda (ver su `docs/SNAPSHOT.md`, 27-09-2026): el checkout guarda nombre y
+teléfono además del correo, el recordatorio lleva al cliente a SU carrito, hay baja de recordatorios y
+3 pasadas al día. En el POS (Página Web → Métricas → Carritos abandonados): la tabla muestra nombre,
+correo y teléfono, y el botón de WhatsApp sale con el número y el link al carrito. El robot de Google
+Merchant (`@…joonix.net`) ya no cuenta como abandono.
+
+---
+
 ## 27-09-2026 · v93, POS sobrio y carrito con + / −
 
 Detalle en `docs/CHANGELOG-V93.md`. Solo frontend, sin migración.

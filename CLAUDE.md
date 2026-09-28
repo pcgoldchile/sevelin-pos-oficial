@@ -56,15 +56,21 @@ inserte en el DOM pasa por `escHtml`** (regla de seguridad).
 
 ---
 
-## Cómo probar (NO hay navegador real en este entorno)
+## Cómo probar
 
-- **Backend:** doble en memoria de Supabase — se mockea `createClient` vía `require.cache` y se
-  levanta el `app` de Express con `app.listen(0)`.
-- **Frontend:** **jsdom** — se concatenan los `js/*.js` en orden y se evalúan en un `window`.
+- **Diseño y pantallas (app de escritorio de Claude):** sí hay navegador real, el panel integrado.
+  Se abre la **maqueta** con la config `pos-maqueta` de `.claude/launch.json`
+  (`scripts/maqueta-pos.js`, puerto 4180): el frontend real con una API simulada y 10 productos
+  reales. No toca Supabase ni producción, y cualquier PIN entra (como admin; `trabajador` entra
+  como trabajador). Nunca se prueba con el PIN real ni contra la base real.
+- **Backend:** supabase-js real con un `fetch` falso que imita a PostgREST, o doble en memoria de
+  Supabase (mock de `createClient` vía `require.cache`), y el `app` de Express con `app.listen(0)`.
+- **Frontend sin navegador:** **jsdom** — se concatenan los `js/*.js` en orden y se evalúan en un
+  `window`. jsdom se borra al instalar playwright; reinstalar con `npm install jsdom --no-save`.
 - **Validar SQL:** `python3 -c "import pglast; pglast.parse_sql(open('sql/NN.sql').read())"`.
 - **Sintaxis:** `node --check` en cada `.js` tocado.
-- No hay Chromium (sin red para descargarlo), así que lo visual (CSS, capas, cámara) se razona, no se
-  renderiza. jsdom se borra al instalar playwright; reinstalar con `npm install jsdom --no-save`.
+- **Lo que igual no se puede probar aquí:** la cámara real, la pistola lectora USB real y el
+  celular: se razonan y se dicen como no probados.
 
 ---
 
