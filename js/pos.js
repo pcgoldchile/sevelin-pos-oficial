@@ -117,6 +117,8 @@ function setupPosEventListeners() {
   if (elBuscarProducto) {
     elBuscarProducto.addEventListener('input', handleBuscarProducto);
     document.addEventListener('click', (e) => {
+      // Cerrar el visor de una foto de la lista no debe cerrar la lista
+      if (e.target.closest('#visorImagen')) return;
       if (elSugerencias && e.target !== elBuscarProducto && !elSugerencias.contains(e.target)) {
         elSugerencias.classList.remove('show');
       }
@@ -137,6 +139,15 @@ function setupPosEventListeners() {
 
   if (elBtnAgregarItem) elBtnAgregarItem.addEventListener('click', agregarItemAlCarrito);
   if (elBtnFinalizarVenta) elBtnFinalizarVenta.addEventListener('click', abrirModalPago);
+
+  // Botones de cada línea del carrito: delegados, porque renderCart repinta todo
+  if (elCartTableBody) elCartTableBody.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b || b.disabled) return;
+    if (b.dataset.quitar !== undefined) { cart.splice(Number(b.dataset.quitar), 1); renderCart(); }
+    else if (b.dataset.cantMas !== undefined) cambiarCantidadCarrito(Number(b.dataset.cantMas), +1);
+    else if (b.dataset.cantMenos !== undefined) cambiarCantidadCarrito(Number(b.dataset.cantMenos), -1);
+  });
 
   if (elBtnDescuentoMonto) elBtnDescuentoMonto.addEventListener('click', () => elegirTipoDescuento('MONTO'));
   if (elBtnDescuentoPorcentaje) elBtnDescuentoPorcentaje.addEventListener('click', () => elegirTipoDescuento('PORCENTAJE'));
@@ -207,25 +218,78 @@ function handleBuscarProducto() {
     return;
   }
 
-  elSugerencias.innerHTML = encontrados.map((p, i) => `
+  elSugerencias.innerHTML = encontrados.map((p, i) => {
+    const sinStock = !p.stock_ilimitado && !p.es_servicio && Number(p.stock) <= 0;
+    const stock = p.stock_ilimitado || p.es_servicio ? '' : `Stock: ${p.stock ?? 0}`;
+    return `
     <div class="suggestion-item" data-id="${p.id}" data-atajo="Alt+${i + 1}">
-      <span>${escHtml(p.nombre)}</span>
-      <span>${fmtCLP(p.precio_unitario)} · Stock: ${p.stock ?? 0}</span>
-    </div>
-  `).join('');
+      ${miniaturaProducto(p, 40, { ampliable: true })}
+      <span class="sug-nombre">${escHtml(p.nombre)}${p.requiere_sn ? ' <small class="sug-sn">S/N</small>' : ''}</span>
+      <span class="sug-meta">${fmtCLP(p.precio_unitario)}${stock ? `<small class="${sinStock ? 'sug-sin-stock' : ''}">${stock}</small>` : ''}</span>
+    </div>`;
+  }).join('');
   elSugerencias.classList.add('show');
 
   // Reinicia la marca de navegación con ↑ / ↓ (js/atajos.js)
   if (typeof sugerenciaActiva !== 'undefined') sugerenciaActiva = -1;
 
   elSugerencias.querySelectorAll('.suggestion-item').forEach(item => {
-    item.addEventListener('click', () => {
+    item.addEventListener('click', (e) => {
+      // La foto abre el visor (clic delegado en config.js), no elige el producto
+      if (e.target.closest('[data-ampliar]')) return;
       const producto = productsList.find(p => String(p.id) === item.dataset.id);
       if (producto) seleccionarProductoCatalogo(producto);
       elSugerencias.classList.remove('show');
       elBuscarProducto.value = '';
     });
+    item.addEventListener('mouseenter', () => previsualizarSugerencia(item));
   });
+}
+
+/* ------------------------------------------------------------
+   VISTA PREVIA: la foto grande de lo que vas a agregar (la sugerencia
+   marcada) o de lo último que entró al carrito. Clic en la foto = visor.
+   ------------------------------------------------------------ */
+const elVistaPrevia = document.getElementById('posVistaPrevia');
+let vistaPrevia = null;        // { producto, modo: 'sugerencia' | 'agregado' }
+let ultimoAgregado = null;
+
+function mostrarVistaPrevia(producto, modo) {
+  if (!elVistaPrevia) return;
+  vistaPrevia = producto ? { producto, modo } : null;
+  elVistaPrevia.classList.toggle('con-producto', !!producto);
+  if (!producto) {
+    elVistaPrevia.innerHTML = '<p class="vp-vacia">Escanea o busca un producto y su foto aparece aquí.</p>';
+    return;
+  }
+  const enCarrito = cart.filter(i => i.producto_id === producto.id).reduce((a, i) => a + i.cantidad, 0);
+  const etiqueta = modo === 'agregado'
+    ? `Agregado · ${enCarrito} en el carrito`
+    : (enCarrito ? `Vista previa · ya llevas ${enCarrito}` : 'Vista previa');
+  const stock = producto.stock_ilimitado || producto.es_servicio ? '' : `Stock: ${producto.stock ?? 0}`;
+  const fotos = (producto.imagen_urls || []).filter(Boolean).length;
+  elVistaPrevia.innerHTML = `
+    ${miniaturaProducto(producto, 128, { ampliable: true })}
+    <div class="vp-info">
+      <span class="vp-etiqueta${modo === 'agregado' ? ' vp-agregado' : ''}">${escHtml(etiqueta)}</span>
+      <strong class="vp-nombre">${escHtml(producto.nombre)}</strong>
+      <span class="vp-precio">${fmtCLP(producto.precio_unitario)}</span>
+      <span class="vp-detalle">${[stock, fotos > 1 ? `${fotos} fotos` : '', producto.requiere_sn ? 'Pide S/N' : ''].filter(Boolean).join(' · ')}</span>
+    </div>`;
+}
+
+function previsualizarSugerencia(item) {
+  const producto = item && productsList.find(p => String(p.id) === item.dataset.id);
+  if (producto) mostrarVistaPrevia(producto, 'sugerencia');
+}
+
+// Al cerrarse la lista, la vista previa vuelve a lo último agregado
+if (elSugerencias) {
+  new MutationObserver(() => {
+    if (!elSugerencias.classList.contains('show') && vistaPrevia?.modo === 'sugerencia') {
+      mostrarVistaPrevia(ultimoAgregado, 'agregado');
+    }
+  }).observe(elSugerencias, { attributes: true, attributeFilter: ['class'] });
 }
 
 /* ============================================================
@@ -301,13 +365,12 @@ function seleccionarProductoCatalogo(producto, opciones = {}) {
 
   actualizarUtilidadPreview();
 
-  /* Alta directa al carrito en modo rápido.
-     Excepciones que NO se agregan solas:
-       · productos con requiere_sn → falta la serie
-       · llamadas marcadas con `sinAutoAgregar` (el escáner ya maneja
-         su propio flujo y agregaría dos veces) */
-  if (!modoEdicion && !opciones.sinAutoAgregar && !producto.requiere_sn) {
-    agregarItemAlCarrito();
+  /* Alta directa al carrito en modo rápido. Un producto con S/N primero
+     pregunta la serie (opcional). `sinAutoAgregar`: el escáner maneja su
+     propio flujo y agregaría dos veces. */
+  if (!modoEdicion && !opciones.sinAutoAgregar) {
+    if (producto.requiere_sn) agregarConSerie(producto);
+    else agregarItemAlCarrito();
     return;
   }
 
@@ -351,30 +414,155 @@ function agregarItemAlCarrito() {
   if (!nombre) { showToast('Ingresa el nombre del producto', 'err'); return; }
   if (cantidad <= 0) { showToast('La cantidad debe ser mayor a 0', 'err'); return; }
   if (precio <= 0) { showToast('Ingresa el precio de venta', 'err'); return; }
-  if (tieneSN && !numeroSerie) { showToast('Ingresa el S/N del producto', 'err'); return; }
+  // El S/N es opcional (dueño, 27-09-2026), pero la misma serie no puede salir dos veces
+  if (numeroSerie && cart.some(i => i.serial_number === numeroSerie)) {
+    showToast(`El S/N ${numeroSerie} ya está en el carrito`, 'err');
+    return;
+  }
 
-  cart.push({
-    producto_id: productoSeleccionado ? productoSeleccionado.id : null,
-    sku: productoSeleccionado ? (productoSeleccionado.sku || null) : null,
-    nombre,
-    cantidad,
-    costo_unitario: costo,
-    precio_unitario: precio,
-    subtotal: precio * cantidad,
-    serial_number: numeroSerie || null,
-    // Independiente de si el ítem viene del catálogo (productoSeleccionado)
-    // o se escribió a mano — el backend lo guarda tal cual (normalizarItems).
-    es_servicio: esServicio,
-    // Solo para pintar la miniatura en el carrito (ver renderCart) — el
-    // backend no tiene ni necesita esta columna; normalizarItems() arma su
-    // propio objeto explícito y la descarta sola, no hace falta excluirla
-    // a mano como _fifo/_stockAtomico.
-    imagen_url: productoSeleccionado ? (productoSeleccionado.imagen_urls?.[0] || null) : null
-  });
+  const producto = productoSeleccionado;
+  // El mismo producto sin S/N y al mismo precio suma a su línea en vez de repetirla
+  const igual = producto && !numeroSerie && cart.find(i =>
+    i.producto_id === producto.id && !i.serial_number && i.precio_unitario === precio &&
+    i.costo_unitario === costo && i.es_servicio === esServicio);
 
+  if (igual) {
+    igual.cantidad += cantidad;
+    igual.subtotal = igual.precio_unitario * igual.cantidad;
+    showToast(`${igual.nombre} x${igual.cantidad}`, 'ok');
+  } else {
+    cart.push({
+      producto_id: producto ? producto.id : null,
+      sku: producto ? (producto.sku || null) : null,
+      nombre,
+      cantidad,
+      costo_unitario: costo,
+      precio_unitario: precio,
+      subtotal: precio * cantidad,
+      serial_number: numeroSerie || null,
+      // Independiente de si el ítem viene del catálogo o se escribió a mano
+      es_servicio: esServicio,
+      // Solo para el carrito (fotos y el "+" que pide S/N); normalizarItems() los descarta
+      requiere_sn: !!producto?.requiere_sn,
+      imagen_urls: producto ? (producto.imagen_urls || []).filter(Boolean) : []
+    });
+  }
+
+  if (producto) ultimoAgregado = producto;
   renderCart();
   limpiarFormularioItem();
+  if (producto) {
+    mostrarVistaPrevia(producto, 'agregado');
+    avisoStockCarrito(producto.id);
+  }
   enfocarBuscador();   // listo para el siguiente escaneo
+}
+
+/* Producto con S/N en modo rápido o escaneado: pregunta la serie (opcional)
+   y lo agrega. Cancelar deja el carrito como estaba. */
+async function agregarConSerie(producto) {
+  const serie = await pedirNumeroSerie(producto);
+  if (serie === null) { limpiarFormularioItem(); enfocarBuscador(); return; }
+  if (elCheckSN) elCheckSN.checked = !!serie;
+  if (elItemSN) elItemSN.value = serie;
+  agregarItemAlCarrito();
+}
+
+/* Ventana del número de serie. Devuelve la serie, '' si se agrega sin S/N,
+   o null si se cancela. Se arma al abrirla y se destruye al cerrar, igual
+   que el visor de fotos: no deja ids fijos en index.html. */
+function pedirNumeroSerie(producto) {
+  return new Promise((resolve) => {
+    document.getElementById('modalNumeroSerie')?.remove();
+    const cont = document.createElement('div');
+    cont.id = 'modalNumeroSerie';
+    cont.className = 'modal-overlay show';
+    cont.innerHTML = `
+      <div class="modal-box modal-sn" role="dialog" aria-modal="true" aria-labelledby="snTitulo">
+        <div class="modal-sn-cabecera">
+          ${miniaturaProducto(producto, 56)}
+          <div>
+            <h2 id="snTitulo">Número de serie</h2>
+            <p class="modal-hint">${escHtml(producto.nombre || '')}</p>
+          </div>
+        </div>
+        <label for="snPromptInput" class="etiqueta-pos">S/N (opcional) · escanéalo o escríbelo y pulsa Enter</label>
+        <div class="relative">
+          <input type="text" id="snPromptInput" class="campo-pos pr-12" autocomplete="off" spellcheck="false"
+                 placeholder="Déjalo vacío si no lo tienes a mano">
+          <button type="button" class="sn-camara" data-sn-camara title="Escanear el S/N con la cámara">📷</button>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn btn-ghost" data-cerrar-modal>Cancelar</button>
+          <button type="button" class="btn btn-outline" data-sn-sin>Agregar sin S/N</button>
+          <button type="button" class="btn btn-primary" data-sn-ok>Agregar</button>
+        </div>
+      </div>`;
+    document.body.appendChild(cont);
+
+    const input = cont.querySelector('#snPromptInput');
+    const porCamara = (e) => { if (e.detail?.inputId === 'snPromptInput') cerrar(input.value.trim()); };
+    function cerrar(valor) {
+      document.removeEventListener('escaner:codigo', porCamara);
+      cont.remove();
+      resolve(valor);
+    }
+    document.addEventListener('escaner:codigo', porCamara);
+
+    // Esc lo resuelve atajos.js pulsando el botón data-cerrar-modal
+    cont.addEventListener('click', (e) => {
+      if (e.target === cont || e.target.closest('[data-cerrar-modal]')) cerrar(null);
+      else if (e.target.closest('[data-sn-sin]')) cerrar('');
+      else if (e.target.closest('[data-sn-ok]')) cerrar(input.value.trim());
+      else if (e.target.closest('[data-sn-camara]') && typeof abrirEscaner === 'function') abrirEscaner('snPromptInput');
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      cerrar(input.value.trim());
+    });
+    setTimeout(() => input.focus(), 50);
+  });
+}
+
+/* + / − de cada línea (y Alt + / Alt − para la última, ver atajos.js).
+   En un producto con S/N, cada unidad nueva pregunta su serie: con serie va
+   en su propia línea; sin serie suma a la línea sin S/N de ese producto. */
+async function cambiarCantidadCarrito(idx, delta) {
+  const linea = cart[idx];
+  if (!linea) return;
+
+  if (delta < 0) {
+    if (linea.cantidad <= 1) { showToast('Para quitarlo usa el basurero (o Alt+Supr)', ''); return; }
+    linea.cantidad -= 1;
+  } else if (linea.requiere_sn) {
+    const serie = await pedirNumeroSerie(linea);
+    if (serie === null) { enfocarBuscador(); return; }
+    if (serie && cart.some(i => i.serial_number === serie)) {
+      showToast(`El S/N ${serie} ya está en el carrito`, 'err');
+      return;
+    }
+    const sinSerie = !serie && cart.find(i => i.producto_id === linea.producto_id && !i.serial_number);
+    if (sinSerie) sinSerie.cantidad += 1;
+    else cart.push({ ...linea, cantidad: 1, serial_number: serie || null });
+  } else {
+    linea.cantidad += 1;
+  }
+
+  cart.forEach(i => { i.subtotal = i.precio_unitario * i.cantidad; });
+  renderCart();
+  if (delta > 0) avisoStockCarrito(linea.producto_id);
+  enfocarBuscador();
+}
+
+/* Solo avisa: el servidor es quien valida el stock al cobrar. */
+function avisoStockCarrito(productoId) {
+  if (!productoId || !Array.isArray(productsList)) return;
+  const p = productsList.find(x => x.id === productoId);
+  if (!p || p.stock_ilimitado || p.es_servicio) return;
+  const stock = Number(p.stock) || 0;
+  const llevas = cart.filter(i => i.producto_id === productoId).reduce((a, i) => a + i.cantidad, 0);
+  if (llevas > stock) showToast(`Ojo: ${p.nombre} tiene ${stock} en stock y llevas ${llevas}`, 'err');
 }
 
 // ============================================================
@@ -445,30 +633,10 @@ async function agregarPorCodigoEscaneado(codigo) {
     if (elBuscarProducto) elBuscarProducto.value = '';
     if (elSugerencias) elSugerencias.classList.remove('show');
 
-    // Producto con S/N: se pide la serie antes de agregarlo
-    if (producto.requiere_sn) {
-      alternarCampoSN(true);
-      if (elItemSN) { elItemSN.value = ''; setTimeout(() => elItemSN.focus(), 60); }
-      showToast(`${producto.nombre}: ingresa el S/N para agregarlo`, '');
-      return;
-    }
-
-    /* Si el mismo producto ya está en el carrito, se le suma 1 en vez de
-       repetir la línea: escanear tres veces el mismo artículo debe dar
-       "x3", no tres filas iguales. */
-    const yaEnCarrito = cart.find(i =>
-      i.producto_id && producto.id && i.producto_id === producto.id && !i.serial_number
-    );
-
-    if (yaEnCarrito) {
-      yaEnCarrito.cantidad += 1;
-      yaEnCarrito.subtotal = yaEnCarrito.precio_unitario * yaEnCarrito.cantidad;
-      renderCart();
-      limpiarFormularioItem();
-      showToast(`${producto.nombre} x${yaEnCarrito.cantidad}`, 'ok');
-    } else {
-      agregarItemAlCarrito();
-    }
+    /* Con S/N se pregunta la serie (opcional). Sin S/N, escanear tres veces
+       el mismo artículo da "x3": agregarItemAlCarrito suma a su línea. */
+    if (producto.requiere_sn) await agregarConSerie(producto);
+    else agregarItemAlCarrito();
   } finally {
     buscandoPorCodigo = false;
     enfocarBuscador();
@@ -721,32 +889,47 @@ function renderCart() {
   if (!elCartTableBody) return;
 
   if (cart.length === 0) {
-    elCartTableBody.innerHTML = '<tr class="empty-row"><td colspan="6">El carrito está vacío. Busca un producto o escribe uno manualmente.</td></tr>';
+    elCartTableBody.innerHTML = '<tr class="empty-row"><td colspan="4">El carrito está vacío. Busca un producto o escribe uno manualmente.</td></tr>';
   } else {
-    elCartTableBody.innerHTML = cart.map((item, idx) => `
+    elCartTableBody.innerHTML = cart.map((item, idx) => {
+      const detalle = [
+        `${fmtCLP(item.precio_unitario)} c/u`,
+        item.serial_number ? `S/N ${escHtml(item.serial_number)}` : (item.requiere_sn ? 'sin S/N' : ''),
+        item.es_servicio ? 'Servicio' : ''
+      ].filter(Boolean).join(' · ');
+      return `
       <tr class="row-in">
-        <td>${miniaturaProducto({ imagen_urls: item.imagen_url ? [item.imagen_url] : [], nombre: item.nombre }, 48, { ampliable: true })}</td>
-        <td>${item.cantidad}</td>
-        <td>${escHtml(item.nombre)}
-          ${item.es_servicio ? '<br><small style="color:var(--valor);">🔧 Servicio</small>' : ''}
-          ${item.serial_number ? '<br><small style="color:var(--text-muted);">S/N: ' + escHtml(item.serial_number) + '</small>' : ''}</td>
-        <td>${fmtCLP(item.precio_unitario)}</td>
-        <td>${fmtCLP(item.subtotal)}</td>
-        <td>
-          <div class="cell-actions">
-            <button class="btn btn-icon btn-icon-del" data-idx="${idx}" title="Quitar del carrito">${ICO_QUITAR}</button>
+        <td class="cart-prod">
+          <div class="cart-prod-fila">
+            ${miniaturaProducto({ imagen_urls: item.imagen_urls || [], nombre: item.nombre }, 42, { ampliable: true })}
+            <div class="cart-prod-texto">
+              <span class="cart-prod-nombre">${escHtml(item.nombre)}</span>
+              <span class="cart-prod-sub">${detalle}</span>
+            </div>
           </div>
         </td>
-      </tr>
-    `).join('');
-
-    elCartTableBody.querySelectorAll('button[data-idx]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        cart.splice(Number(btn.dataset.idx), 1);
-        renderCart();
-      });
-    });
+        <td class="cart-cant">
+          <div class="stepper">
+            <button type="button" class="stepper-btn" data-cant-menos="${idx}" ${item.cantidad <= 1 ? 'disabled' : ''}
+                    aria-label="Una unidad menos de ${escHtml(item.nombre)}">−</button>
+            <span class="stepper-num">${item.cantidad}</span>
+            <button type="button" class="stepper-btn" data-cant-mas="${idx}"
+                    aria-label="Una unidad más de ${escHtml(item.nombre)}">+</button>
+          </div>
+        </td>
+        <td class="cart-subtotal">${fmtCLP(item.subtotal)}</td>
+        <td class="cart-quitar">
+          <button type="button" class="btn btn-icon btn-icon-del" data-quitar="${idx}" title="Quitar del carrito">${ICO_QUITAR}</button>
+        </td>
+      </tr>`;
+    }).join('');
   }
+
+  const unidades = cart.reduce((a, it) => a + it.cantidad, 0);
+  const elConteo = document.getElementById('posCartConteo');
+  if (elConteo) elConteo.textContent = unidades ? `${unidades} ${unidades === 1 ? 'unidad' : 'unidades'}` : '';
+  // La cantidad "en el carrito" de la vista previa se mantiene al día
+  if (vistaPrevia) mostrarVistaPrevia(vistaPrevia.producto, vistaPrevia.modo);
 
   const subtotal = cart.reduce((acc, it) => acc + it.subtotal, 0);
   const { tipo: tipoActivo, valor: descuentoValor } = obtenerDescuentoActual();
@@ -862,6 +1045,8 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
   if (venta.envio_aviso) setTimeout(() => showToast(venta.envio_aviso, 'err'), 1500);
 
   cart = [];
+  ultimoAgregado = null;
+  mostrarVistaPrevia(null);
   if (elPosDescuentoValor) elPosDescuentoValor.value = '';
   descuentoTipo = 'MONTO';
   actualizarBotonesDescuentoTipo();

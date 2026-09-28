@@ -408,9 +408,9 @@ async function verificarBackend() {
   try {
     const res = await fetch(API.base + '/health');
     if (!res.ok) throw new Error();
-    setSyncBadge('ok', '🟢 Servidor conectado');
+    setSyncBadge('ok', 'Servidor conectado');
   } catch (_) {
-    setSyncBadge('bad', '🔴 Sin conexión al servidor');
+    setSyncBadge('bad', 'Sin conexión al servidor');
   }
 }
 

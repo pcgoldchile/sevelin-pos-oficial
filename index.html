@@ -23,10 +23,10 @@
        Si no, esas clases NO existirán en el archivo y no se verán.
        ============================================================ -->
 
-  <!-- Plus Jakarta Sans: geométrica y redondeada, muy legible en cifras -->
+  <!-- IBM Plex Sans: la tipografía de sevelin-tienda -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 
   <!-- Va DESPUÉS de styles.css, igual que el CDN inyectaba su <style>
        al final. Mantener este orden es lo que hace que el resultado se
@@ -112,17 +112,17 @@
            Es el orden real de uso en el mostrador (se vende, se revisa stock,
            se cuadra caja, y el taller se atiende aparte). Solo cambia el orden
            visual: los data-view y los ids de las secciones no se tocan. -->
-      <button class="nav-btn active" data-view="view-pos">🛒 POS</button>
+      <button class="nav-btn active" data-view="view-pos"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2.5 3.5h2.6l2.4 11.2a1.8 1.8 0 0 0 1.8 1.4h8.4a1.8 1.8 0 0 0 1.8-1.4L21 7.5H6"/></svg>POS</button>
 
       <!-- "Archivados" como sub-ítem de Productos (mismo patrón que
            Finanzas/Servicio Técnico abajo) — antes esa vista solo se podía
            llegar a mano desde el filtro "Ver: Archivados" del listado,
            pedido explícito de que tenga su propio acceso en el menú. -->
       <div class="nav-group">
-        <button class="nav-btn admin-only" data-view="view-productos">📦 Productos</button>
+        <button class="nav-btn admin-only" data-view="view-productos"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8 12 3 3 8v8l9 5 9-5Z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/></svg>Productos</button>
         <div class="nav-subitems admin-only">
-          <button class="nav-subitem" data-view="view-productos" data-subtab="archivados">📥 Archivados</button>
-          <button class="nav-subitem" data-view="view-productos" data-subtab="borradores">📝 Borradores</button>
+          <button class="nav-subitem" data-view="view-productos" data-subtab="archivados">Archivados</button>
+          <button class="nav-subitem" data-view="view-productos" data-subtab="borradores">Borradores</button>
         </div>
       </div>
 
@@ -135,7 +135,7 @@
            js/ot.js) — un solo lugar de verdad para el nombre de cada
            sub-pestaña, no uno nuevo acá. -->
       <div class="nav-group">
-        <button class="nav-btn admin-only" data-view="view-finanzas">📊 Finanzas</button>
+        <button class="nav-btn admin-only" data-view="view-finanzas"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M8 16v-5"/><path d="M13 16V7"/><path d="M18 16v-3"/></svg>Finanzas</button>
         <div class="nav-subitems admin-only">
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="ventas">Historial de Ventas</button>
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="balance">Balance</button>
@@ -150,7 +150,7 @@
       </div>
 
       <div class="nav-group">
-        <button class="nav-btn" data-view="view-taller">🔧 Servicio Técnico</button>
+        <button class="nav-btn" data-view="view-taller"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.3 5.3L3.5 17.5a2 2 0 0 0 2.8 2.8l5.9-5.9a4 4 0 0 0 5.3-5.3l-2.6 2.6-2.4-.4-.4-2.4Z"/></svg>Servicio Técnico</button>
         <div class="nav-subitems">
           <button class="nav-subitem" data-view="view-taller" data-subtab="ot">Órdenes de Trabajo</button>
           <button class="nav-subitem" data-view="view-taller" data-subtab="encargos">Abonos y Encargos</button>
@@ -159,7 +159,7 @@
       </div>
 
       <div class="nav-group">
-        <button class="nav-btn admin-only" data-view="view-pagina-web">🌐 Página Web</button>
+        <button class="nav-btn admin-only" data-view="view-pagina-web"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a13.5 13.5 0 0 1 0 18 13.5 13.5 0 0 1 0-18Z"/></svg>Página Web</button>
         <div class="nav-subitems admin-only">
           <button class="nav-subitem" data-view="view-pagina-web" data-subtab="pedidos">Pedidos Web</button>
           <button class="nav-subitem" data-view="view-pagina-web" data-subtab="cotizaciones">Cotizaciones</button>
@@ -168,7 +168,7 @@
       </div>
 
       <div class="nav-group">
-        <button class="nav-btn" data-view="view-garantias">🛡️ Garantías</button>
+        <button class="nav-btn" data-view="view-garantias"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4.5 6v5.5c0 4.4 3.2 8.3 7.5 9.5 4.3-1.2 7.5-5.1 7.5-9.5V6Z"/><path d="m9 12 2 2 4-4"/></svg>Garantías</button>
         <div class="nav-subitems">
           <button class="nav-subitem" data-view="view-garantias" data-subtab="productos">Productos</button>
           <button class="nav-subitem" data-view="view-garantias" data-subtab="servicios">Servicios</button>
@@ -193,39 +193,39 @@
            ERROR_STOCK_SIN_DESPACHO (pagado sin stock). admin-only: el
            panel "Pedidos Web" que abre ya es solo para admin. -->
       <button id="btnNotificaciones" class="btn-notificaciones admin-only" title="Pedidos web pendientes">
-        🔔 Notificaciones <span id="badgeNotificaciones" class="badge-notificaciones">(0)</span>
+        <span class="chip-punto" aria-hidden="true"></span>Notificaciones <span id="badgeNotificaciones" class="badge-notificaciones">(0)</span>
       </button>
       <!-- Recordatorio del F29 (sql/49): solo aparece si hay un período sin
            marcar como presentado. Lo pinta js/notificaciones.js. -->
       <button id="btnF29" class="btn-notificaciones btn-f29 admin-only" title="F29 pendiente" hidden>
-        🧾 <span id="textoF29">F29</span>
+        <span class="chip-punto" aria-hidden="true"></span><span id="textoF29">F29</span>
       </button>
       <!-- Productos agotados esperando decisión (sql/55): solo aparece si
            hay alguno sin decidir. Lo pinta js/notificaciones.js. -->
       <button id="btnAgotados" class="btn-notificaciones btn-agotados admin-only" title="Productos agotados sin decidir" hidden>
-        📦 <span id="textoAgotados">Agotados</span>
+        <span class="chip-punto" aria-hidden="true"></span><span id="textoAgotados">Agotados</span>
       </button>
       <!-- Compras que el POS detectó solo al subir el stock (sql/57) y
            esperan que el dueño confirme costo y plazo de devolución. -->
       <button id="btnBorradores" class="btn-notificaciones btn-borradores admin-only" title="Compras detectadas sin confirmar" hidden>
-        📥 <span id="textoBorradores">Compras</span>
+        <span class="chip-punto" aria-hidden="true"></span><span id="textoBorradores">Compras</span>
       </button>
       <!-- Despachos sin entregar. NO es admin-only: entregar un pedido lo
            hace quien atiende, y el punto es que se marque en el momento. -->
       <button id="btnEnviosPendientes" class="btn-notificaciones btn-envios" title="Pedidos despachados sin marcar como entregados" hidden>
-        🚚 <span id="textoEnviosPendientes">Por entregar</span>
+        <span class="chip-punto" aria-hidden="true"></span><span id="textoEnviosPendientes">Por entregar</span>
       </button>
       <!-- Fichas de producto incompletas (dueño, 21-09-2026): "que se activen
            las notificaciones de la pestaña principal para que yo corrija eso
            apenas entre al POS". Rojo solo cuando hay algo CRÍTICO (sin costo
            con stock, sin precio, publicado sin foto); lo demás es ámbar. -->
       <button id="btnFichasIncompletas" class="btn-notificaciones btn-fichas admin-only" title="Productos a los que les falta algo" hidden>
-        📋 <span id="textoFichasIncompletas">Por completar</span>
+        <span class="chip-punto" aria-hidden="true"></span><span id="textoFichasIncompletas">Por completar</span>
       </button>
       <!-- Mercadería comprada que todavía no llega (sql/59). Rojo cuando la
            fecha estimada ya pasó: eso hay que confirmarlo o corregirlo. -->
       <button id="btnEnCamino" class="btn-notificaciones btn-camino admin-only" title="Mercadería comprada que todavía no llega" hidden>
-        📦 <span id="textoEnCamino">En camino</span>
+        <span class="chip-punto" aria-hidden="true"></span><span id="textoEnCamino">En camino</span>
       </button>
       <!-- Plata devuelta en efectivo que no quedó en ninguna caja (sql/61).
            NO es admin-only: el trabajador también devuelve, y el arqueo de
@@ -235,26 +235,26 @@
       <!-- Productos publicados en el POS que NO llegaron a sevelin.cl.
            Normalmente invisible: si aparece, algo se cayó en silencio. -->
       <button id="btnCatalogoDescuadrado" class="btn-notificaciones btn-catalogo-web admin-only" title="Productos que no llegaron a la tienda" hidden>
-        🌐 <span id="textoCatalogoDescuadrado">Catálogo</span>
+        <span class="chip-punto" aria-hidden="true"></span><span id="textoCatalogoDescuadrado">Catálogo</span>
       </button>
       <!-- Servicios en el taller con protocolo abierto (sql/66). Ámbar
            cuando hay alguno con el protocolo aplicado y ninguna fase tachada.
            NO es admin-only: el trabajador es quien tacha las fases. -->
       <button id="btnServiciosEnCurso" class="btn-notificaciones btn-servicios" title="Servicios en curso en el taller" hidden>
-        🔧 <span id="textoServiciosEnCurso">En curso</span>
+        <span class="chip-punto" aria-hidden="true"></span><span id="textoServiciosEnCurso">En curso</span>
       </button>
       <!-- Facturas que el proveedor todavía no manda (sql/65). Rojo cuando
            se pasó la fecha que él mismo prometió. -->
       <button id="btnFacturasPendientes" class="btn-notificaciones btn-facturas admin-only" title="Facturas que el proveedor todavía no manda" hidden>
-        🧾 <span id="textoFacturasPendientes">Facturas</span>
+        <span class="chip-punto" aria-hidden="true"></span><span id="textoFacturasPendientes">Facturas</span>
       </button>
       <button id="btnSeguimientoDev" class="btn-notificaciones btn-seg-dev admin-only" title="Productos devueltos con seguimiento pendiente" hidden>
-        📮 <span id="textoSeguimientoDev">Seguimiento</span>
+        <span class="chip-punto" aria-hidden="true"></span><span id="textoSeguimientoDev">Seguimiento</span>
       </button>
       <button id="btnDevolucionesCaja" class="btn-notificaciones btn-dev-caja" title="Devoluciones en efectivo sin registrar en caja" hidden>
-        💸 <span id="textoDevolucionesCaja">Devoluciones sin caja</span>
+        <span class="chip-punto" aria-hidden="true"></span><span id="textoDevolucionesCaja">Devoluciones sin caja</span>
       </button>
-      <span id="syncBadge" class="sync-badge sync-pending">⏳ Conectando…</span>
+      <span id="syncBadge" class="sync-badge sync-pending">Conectando…</span>
     </div>
   </header>
 
@@ -293,9 +293,9 @@
           </div>
           <div class="caja-barra-acciones" id="cajaBarraAcciones">
             <!-- Los botones se muestran/ocultan según haya o no caja abierta -->
-            <button class="btn btn-green btn-sm" id="btnAbrirCajaPos" type="button" style="display:none;">🔓 Abrir caja</button>
+            <button class="btn btn-green btn-sm" id="btnAbrirCajaPos" type="button" style="display:none;">Abrir caja</button>
             <button class="btn btn-outline btn-sm" id="btnMovimientoCaja" type="button" style="display:none;">± Movimiento</button>
-            <button class="btn btn-outline btn-sm" id="btnCerrarCajaPos" type="button" style="display:none;">🔒 Cerrar caja</button>
+            <button class="btn btn-outline btn-sm" id="btnCerrarCajaPos" type="button" style="display:none;">Cerrar caja</button>
           </div>
         </div>
 
@@ -304,11 +304,9 @@
           <!-- ========== IZQUIERDA: ingresar ========== -->
           <div class="pos-col pos-col-izq">
             <div class="tarjeta-pos flex flex-col w-full">
-              <div class="h-1 bg-gradient-to-r from-[#00f0ff] to-violet-500 rounded-t-2xl"></div>
-
               <div class="p-4 lg:p-5 flex flex-col flex-1">
                 <div class="flex items-center justify-between gap-3 flex-wrap mb-4">
-                  <h2 class="text-base font-bold text-slate-800 dark:text-slate-100">Ingresar producto</h2>
+                  <h2 class="titulo-pos"><span aria-hidden="true">/</span> Ingresar producto</h2>
                   <div class="acciones-ingresar">
                     <!-- Modo edición: apagado = el producto entra directo al
                          carrito; encendido = se ajusta antes de agregarlo. -->
@@ -322,23 +320,24 @@
                   <button id="btnVerAtajos" type="button"
                           class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[11px] font-semibold
                                  text-slate-600 dark:text-slate-300 bg-slate-100 hover:bg-slate-200
-                                 dark:bg-slate-700/60 dark:hover:bg-slate-700 transition-colors">
-                    ⌨️ Atajos
+                                 dark:bg-transparent dark:hover:bg-slate-800 border border-transparent dark:border-slate-700 transition-colors">
+                    Atajos
                     <span class="px-1 py-px rounded border border-slate-300 dark:border-slate-600 text-[9px]">F1</span>
                   </button>
                   </div>
                 </div>
 
                 <!-- Buscador con la cámara dentro del campo -->
-                <div class="relative max-w-lg">
+                <div class="relative">
                   <label for="posBuscarProducto" class="etiqueta-pos">Buscar producto <span class="font-normal">(nombre / SKU / código)</span></label>
                   <div class="relative">
                     <input type="text" id="posBuscarProducto" autocomplete="off" placeholder="Escribe o escanea…"
-                           class="campo-pos h-11 pl-9 pr-11 text-[15px]">
-                    <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none select-none text-sm">🔍</span>
+                           class="campo-pos campo-buscador h-12 pl-10 pr-12 text-[15px]">
+                    <svg class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" viewBox="0 0 24 24"
+                         fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
                     <button type="button" data-scan="posBuscarProducto" title="Escanear con la cámara"
-                            class="absolute right-1.5 top-1/2 -translate-y-1/2 h-8 w-8 rounded-lg
-                                   bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600
+                            class="absolute right-1.5 top-1/2 -translate-y-1/2 h-9 w-9 rounded-lg
+                                   bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700
                                    text-slate-600 dark:text-slate-200 transition-colors text-sm">📷</button>
                   </div>
                   <div id="posSugerencias" class="suggestions-box"></div>
@@ -404,20 +403,24 @@
                     <button id="btnLimpiarSeleccion" type="button" title="Vacía solo los campos de arriba; el carrito no se toca"
                             class="h-10 px-3.5 rounded-xl text-[13px] font-semibold transition-colors
                                    bg-slate-100 hover:bg-slate-200 text-slate-700
-                                   dark:bg-slate-700/60 dark:hover:bg-slate-700 dark:text-slate-200">🧹 Limpiar</button>
+                                   dark:bg-transparent dark:hover:bg-slate-800 dark:text-slate-300 border border-transparent dark:border-slate-700">Limpiar</button>
                     <button id="btnAgregarItem" type="button"
-                            class="h-10 px-5 rounded-xl text-[13px] font-semibold text-[#050509] transition-colors
-                                   bg-[#00f0ff] hover:bg-[#7df9ff] active:bg-[#00a8c2] shadow-sm">➕ Agregar</button>
+                            class="h-10 px-5 rounded-xl text-[13px] font-semibold text-white transition-colors
+                                   bg-blue-600 hover:bg-blue-700 active:bg-blue-800">+ Agregar</button>
                   </div>
                 </div>
 
-                <!-- Ocupa el espacio sobrante para igualar la altura con el
-                     carrito, y de paso enseña los atajos más usados. -->
-                <div class="mt-auto pt-4">
+                <!-- Foto de lo que vas a agregar o de lo último que entró (pos.js, mostrarVistaPrevia) -->
+                <div id="posVistaPrevia" class="pos-vista-previa">
+                  <p class="vp-vacia">Escanea o busca un producto y su foto aparece aquí.</p>
+                </div>
+
+                <div class="pt-4">
                   <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-slate-400 dark:text-slate-500">
                     <span><kbd class="kbd-mini">F2</kbd> buscar</span>
                     <span><kbd class="kbd-mini">↑</kbd><kbd class="kbd-mini">↓</kbd> elegir</span>
                     <span><kbd class="kbd-mini">Alt</kbd>+<kbd class="kbd-mini">A</kbd> agregar</span>
+                    <span><kbd class="kbd-mini">Alt</kbd>+<kbd class="kbd-mini">+</kbd><kbd class="kbd-mini">−</kbd> cantidad</span>
                     <span><kbd class="kbd-mini">F9</kbd> cobrar</span>
                     <span><kbd class="kbd-mini">F1</kbd> ver todos</span>
                   </div>
@@ -429,10 +432,11 @@
           <!-- ========== DERECHA: cobrar ========== -->
           <div class="pos-col pos-col-der">
             <div class="tarjeta-pos flex flex-col w-full">
-              <div class="h-1 bg-gradient-to-r from-emerald-500 to-[#00f0ff] rounded-t-2xl"></div>
-
               <div class="p-4 lg:p-5 flex flex-col flex-1">
-                <h2 class="text-base font-bold text-slate-800 dark:text-slate-100 mb-3">Carrito de venta</h2>
+                <div class="flex items-baseline justify-between gap-3 mb-3">
+                  <h2 class="titulo-pos"><span aria-hidden="true">/</span> Carrito de venta</h2>
+                  <span id="posCartConteo" class="text-[12px] font-medium text-slate-500 dark:text-slate-400 tabular-nums"></span>
+                </div>
 
                 <div class="pos-cart-controles grid grid-cols-2 gap-2.5 mb-3">
                   <div>
@@ -468,20 +472,24 @@
                      terminen a la misma altura. -->
                 <div class="pos-cart-zona rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col">
                   <div class="overflow-y-auto flex-1">
-                    <table class="data-table tabla-grande w-full">
+                    <table class="data-table tabla-carrito w-full">
+                      <colgroup>
+                        <col>
+                        <col class="col-cant">
+                        <col class="col-subtotal">
+                        <col class="col-quitar">
+                      </colgroup>
                       <thead>
-                        <tr class="bg-slate-50 dark:bg-slate-900/60">
-                          <th class="cabecera-pos text-left"></th>
-                          <th class="cabecera-pos text-left">Cant</th>
-                          <th class="cabecera-pos text-left">Producto / S/N</th>
-                          <th class="cabecera-pos text-right">P. Unit</th>
+                        <tr>
+                          <th class="cabecera-pos text-left">Producto</th>
+                          <th class="cabecera-pos text-center">Cant.</th>
                           <th class="cabecera-pos text-right">Subtotal</th>
-                          <th class="cabecera-pos text-right"></th>
+                          <th class="cabecera-pos"><span class="sr-only">Quitar</span></th>
                         </tr>
                       </thead>
                       <tbody id="cartTableBody">
                         <tr class="empty-row">
-                          <td colspan="6" class="px-4 py-10 text-center text-[13px] text-slate-400 dark:text-slate-500">
+                          <td colspan="4" class="px-4 py-10 text-center text-[13px] text-slate-400 dark:text-slate-500">
                             El carrito está vacío
                           </td>
                         </tr>
@@ -544,18 +552,17 @@
                   <p id="avisoDivision" class="aviso-division" style="display:none;"></p>
 
                   <button id="btnFinalizarVenta" type="button"
-                          class="w-full h-12 rounded-xl text-[15px] font-bold text-white transition-all
-                                 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800
-                                 shadow-lg shadow-emerald-600/25 hover:-translate-y-0.5">
-                    💳 Finalizar venta
+                          class="w-full h-12 rounded-xl text-[15px] font-semibold text-white transition-colors
+                                 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800">
+                    Finalizar venta
                   </button>
 
                   <button id="btnDividirVenta" type="button"
                           title="Cobrar el carrito en dos ventas separadas, cada una con su documento"
                           class="w-full h-10 mt-2 rounded-xl text-sm font-semibold transition-colors
                                  bg-slate-100 hover:bg-slate-200 text-slate-700
-                                 dark:bg-slate-700/60 dark:hover:bg-slate-700 dark:text-slate-200">
-                    ✂️ Dividir venta
+                                 dark:bg-transparent dark:hover:bg-slate-800 dark:text-slate-300 border border-transparent dark:border-slate-700">
+                    Dividir venta
                   </button>
                 </div>
               </div>

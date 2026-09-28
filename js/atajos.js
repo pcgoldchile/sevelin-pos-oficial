@@ -35,7 +35,7 @@ const ATAJOS = [
   ]},
 
   { grupo: 'Carrito', items: [
-    { teclas: ['Alt', '+'],      desc: 'Sumar 1 al último producto del carrito', accion: () => ajustarUltimo(+1) },
+    { teclas: ['Alt', '+'],      desc: 'Sumar 1 al último producto (si lleva S/N, lo pregunta)', accion: () => ajustarUltimo(+1) },
     { teclas: ['Alt', '-'],      desc: 'Restar 1 al último producto',            accion: () => ajustarUltimo(-1) },
     { teclas: ['Alt', 'Supr'],   desc: 'Quitar el último producto',              accion: () => quitarUltimo() },
     { teclas: ['Alt', 'C'],      desc: 'Ir al campo Cliente',                    accion: () => enfocar('posCliente', true) },
@@ -439,6 +439,7 @@ function marcarSugerencia(items) {
   items.forEach((el, i) => el.classList.toggle('activa', i === sugerenciaActiva));
   const activo = items[sugerenciaActiva];
   if (activo && activo.scrollIntoView) activo.scrollIntoView({ block: 'nearest' });
+  if (activo && typeof previsualizarSugerencia === 'function') previsualizarSugerencia(activo);
 }
 
 /* Alt+N: sugerencia N, o medio de pago N si el modal de pago está abierto */
@@ -462,6 +463,9 @@ function elegirPorNumero(n) {
    Cancelar con el mouse. Ahora hay un único manejador para todo el
    sistema. */
 function manejarEscape() {
+  // 0) El visor de fotos se cierra solo (config.js) y lo de atrás queda como estaba
+  if (document.getElementById('visorImagen')) return;
+
   // 1) Sugerencias desplegadas: se cierran sin tocar el modal de atrás
   const caja = document.querySelector('.suggestions-box.show');
   if (caja) {
@@ -523,16 +527,8 @@ function irAModulo(nombre) {
    viven en pos.js (ámbito global compartido). */
 function ajustarUltimo(delta) {
   if (typeof cart === 'undefined' || !cart.length) { showToast('El carrito está vacío', 'err'); return; }
-
-  const item = cart[cart.length - 1];
-  const nueva = Number(item.cantidad) + delta;
-
-  if (nueva < 1) { showToast('Usa Alt+Supr para quitarlo del carrito', ''); return; }
-
-  item.cantidad = nueva;
-  item.subtotal = Number(item.precio_unitario) * nueva;
-  if (typeof renderCart === 'function') renderCart();
-  showToast(`${item.nombre}: ${nueva} un.`, 'ok');
+  // Misma regla que los botones + / − del carrito (pos.js), incluido el S/N
+  cambiarCantidadCarrito(cart.length - 1, delta);
 }
 
 function quitarUltimo() {

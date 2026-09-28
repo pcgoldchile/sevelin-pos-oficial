@@ -14,6 +14,12 @@
       "port": 3100
     },
     {
+      "name": "pos-maqueta",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/maqueta-pos.js"],
+      "port": 4180
+    },
+    {
       "name": "sevelin-tienda-dev",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "C:\\Users\\Usuario\\Desktop\\sevelin-tienda", "run", "dev"],

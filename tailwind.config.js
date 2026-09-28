@@ -28,7 +28,15 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif']
+        sans: ['"IBM Plex Sans"', 'system-ui', 'sans-serif']
+      },
+      /* slate con los valores de zinc: el gris neutro de sevelin-tienda, en
+         todas las pantallas a la vez sin tocar cada clase. */
+      colors: {
+        slate: {
+          50: '#fafafa', 100: '#f4f4f5', 200: '#e4e4e7', 300: '#d4d4d8', 400: '#a1a1aa',
+          500: '#71717a', 600: '#52525b', 700: '#3f3f46', 800: '#27272a', 900: '#18181b', 950: '#09090b'
+        }
       }
     }
   },

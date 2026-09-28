@@ -61,6 +61,21 @@
 
 ---
 
+## 27-09-2026 · v93, POS sobrio y carrito con + / −
+
+Detalle en `docs/CHANGELOG-V93.md`. Solo frontend, sin migración.
+- **Carrito:** + / − por línea, foto entera (estaba aplastada a 14 px), mismo producto suma a su línea.
+- **S/N opcional:** los productos con S/N preguntan la serie en una ventana, con "Agregar sin S/N".
+- **Fotos:** en las sugerencias (clic = visor) y una vista previa grande en la tarjeta izquierda.
+- **Diseño:** la paleta de la tienda (negro, zinc, un azul), IBM Plex Sans, menú con íconos de línea y
+  chips neutros. `--gold` volvió a ser ámbar. `slate` de Tailwind = zinc.
+- **Para probar diseño sin tocar producción:** `scripts/maqueta-pos.js` (config `pos-maqueta`).
+
+> ⚠️ Las reglas del carrito ya no van por posición (`td:nth-child`): cada celda tiene su clase. Si se
+> agrega una columna, no se corre la alineación.
+
+---
+
 ## 26-09-2026 · v92, auditoría de los errores de Salud
 
 Detalle en `docs/CHANGELOG-V92.md`. De los 20 errores de la semana:

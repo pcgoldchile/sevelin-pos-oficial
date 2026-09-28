@@ -16,35 +16,31 @@
 
 /* ========== 1. TOKENS ========== */
 :root {
-    /* Superficies — pasada "más oscuro y gamer" (04-09-2026): el navy
-       claro de antes se sentía más "corporativo" que "gamer" comparado
-       con sevelin-tienda (fondo #080811 casi negro + rejilla hexagonal).
-       Se oscurece toda la escala manteniendo la MISMA jerarquía relativa
-       (página < tarjeta < input hundido) para no perder legibilidad. */
-    --bg-900: #060a14;   /* fondo de inputs / zonas hundidas */
-    --bg-800: #0d1526;   /* fondo de tarjetas */
-    --bg-700: #1f2c45;   /* bordes suaves */
-    --bg-600: #34455f;   /* bordes marcados */
+    /* Paleta sobria de sevelin-tienda (27-09-2026): negro, grises zinc y un solo azul.
+       Los canales -rgb existen para que ningún color de acento quede escrito a mano. */
+    --bg-900: #000000;   /* fondo de inputs / zonas hundidas */
+    --bg-800: #0d0d10;   /* fondo de tarjetas */
+    --bg-700: #27272a;   /* bordes suaves */
+    --bg-600: #3f3f46;   /* bordes marcados */
 
-    --app-bg-1: #0a1428;
-    --app-bg-2: #04060d;
-    /* Franja "vidrio esmerilado" para barras sticky (ej. editor-topbar):
-       una versión translúcida de app-bg-2 + blur, en vez de un color
-       plano que corta feo contra el degradé del fondo. */
-    --topbar-bg: rgba(4, 6, 13, .72);
-    --surface-soft: rgba(148, 163, 184, .10);
-    --border: rgba(148, 163, 184, .30);
-    --border-strong: rgba(148, 163, 184, .55);
+    --app-bg-1: #050506;
+    --app-bg-2: #000000;
+    --topbar-bg: rgba(0, 0, 0, .72);
+    --surface-soft: rgba(255, 255, 255, .045);
+    --border: #27272a;
+    --border-strong: #3f3f46;
 
-    --text-100: #f8fafc;
-    --text-300: #dbe3f0;
-    --text-muted: #9fb0c9;
+    --text-100: #f5f5f7;
+    --text-300: #d4d4d8;
+    --text-muted: #a1a1aa;
 
-    --blue: #00f0ff;
-    --blue-dark: #00a8c2;
-    --blue-light: #7df9ff;
-    --gold: #ff2ec4;
-    --gold-dark: #d4109c;
+    --blue-rgb: 59, 130, 246;
+    --blue: #3b82f6;
+    --blue-dark: #2563eb;
+    --blue-light: #93c5fd;
+    --gold-rgb: 245, 158, 11;
+    --gold: #f59e0b;
+    --gold-dark: #d97706;
     /* Ámbar claro, solo para Valorización de Inventario (.btn-gold) — antes
        compartía el magenta de --gold con los íconos de editar, y quedaba
        confuso qué botón hacía qué. Un tercer tono (ni cian ni magenta) le
@@ -59,8 +55,8 @@
     --violet: #a78bfa;
 
     /* Tintes suaves para íconos y KPIs (arreglan el contraste del lápiz) */
-    --tint-blue: rgba(0, 240, 255, .16);
-    --tint-gold: rgba(255, 46, 196, .16);
+    --tint-blue: rgba(var(--blue-rgb), .14);
+    --tint-gold: rgba(var(--gold-rgb), .14);
     --tint-green: rgba(34, 197, 94, .16);
     --tint-red: rgba(239, 68, 68, .16);
     --tint-violet: rgba(167, 139, 250, .16);
@@ -68,14 +64,12 @@
     --radius: 16px;
     --radius-sm: 10px;
     --radius-pill: 999px;
-    --shadow: 0 18px 45px rgba(3, 8, 20, .45);
-    --shadow-sm: 0 6px 18px rgba(3, 8, 20, .28);
-    --ring: 0 0 0 3px rgba(0, 240, 255, .28);
-    /* Glow real (no solo un ring): borde iluminado + halo difuso, para CTAs
-       primarios, el nav-btn activo y tarjetas/dropzones en foco — el acento
-       "gamer/tech" que separa un elemento realmente activo de uno solo con hover. */
-    --glow: 0 0 0 1px rgba(0, 240, 255, .5), 0 0 24px rgba(0, 240, 255, .28);
-    --glow-strong: 0 0 0 1px rgba(0, 240, 255, .6), 0 0 40px rgba(0, 240, 255, .38);
+    --shadow: 0 2px 6px rgba(0, 0, 0, .55), 0 10px 24px rgba(0, 0, 0, .6);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, .6);
+    --ring: 0 0 0 3px rgba(var(--blue-rgb), .3);
+    /* Sin halo difuso: un borde nítido, igual que el foco de la tienda. */
+    --glow: 0 0 0 1px rgba(var(--blue-rgb), .55), 0 8px 24px -8px rgba(0, 0, 0, .8);
+    --glow-strong: 0 0 0 1px rgba(var(--blue-rgb), .7), 0 8px 24px -8px rgba(0, 0, 0, .8);
 
     /* Alturas unificadas: todos los botones y campos calzan en la misma línea */
     --control-h: 44px;
@@ -95,29 +89,27 @@
 body.theme-light {
     --bg-900: #ffffff;
     --bg-800: #ffffff;
-    --bg-700: #d8e1ee;
-    --bg-600: #b9c7db;
+    --bg-700: #e4e4e7;
+    --bg-600: #d4d4d8;
 
-    --app-bg-1: #f2f6fc;
-    --app-bg-2: #e6edf7;
-    --topbar-bg: rgba(230, 237, 247, .72);
-    --surface-soft: rgba(15, 23, 42, .04);
-    --border: rgba(15, 23, 42, .14);
-    --border-strong: rgba(15, 23, 42, .28);
+    --app-bg-1: #fafafa;
+    --app-bg-2: #f4f4f5;
+    --topbar-bg: rgba(244, 244, 245, .72);
+    --surface-soft: rgba(24, 24, 27, .04);
+    --border: rgba(24, 24, 27, .14);
+    --border-strong: rgba(24, 24, 27, .28);
 
-    --text-100: #0f172a;
-    --text-300: #334155;
-    --text-muted: #64748b;
+    --text-100: #18181b;
+    --text-300: #3f3f46;
+    --text-muted: #71717a;
 
-    /* Cian y magenta puros se lavan sobre blanco — acá se oscurecen para
-       mantener contraste legible, mismo criterio que ya usaba el tema claro
-       con el azul/dorado original. */
-    --gold: #a80f78;
-    --gold-dark: #7c0d63;
-    --blue-light: #0e7490;
+    /* Sobre blanco el azul y el ámbar se oscurecen para seguir legibles. */
+    --gold: #b45309;
+    --gold-dark: #92400e;
+    --blue-light: #1d4ed8;
 
-    --shadow: 0 18px 45px rgba(15, 23, 42, .14);
-    --shadow-sm: 0 4px 14px rgba(15, 23, 42, .08);
+    --shadow: 0 18px 45px rgba(24, 24, 27, .14);
+    --shadow-sm: 0 4px 14px rgba(24, 24, 27, .08);
 }
 
 /* ========== 2. BASE ========== */
@@ -126,24 +118,8 @@ body.theme-light {
 html { font-size: 17px; }
 
 body {
-    /* Plus Jakarta Sans ya se cargaba (index.html, Google Fonts) pero solo se
-       usaba en un par de paneles sueltos — la fuente del sistema (Segoe UI) es
-       el patrón #1 que marca "hecho genérico" (ver .agents/skills/redesign-
-       existing-projects). Se promueve acá a fuente base de toda la app. */
-    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    /* Rejilla hexagonal muy sutil (mismo criterio "panel HUD" que ya usa
-       sevelin-tienda, FondoCinematico.tsx) — el trazo cian ya lleva el alfa
-       bajo horneado adentro del SVG (no se puede poner opacity por capa
-       en un solo background), así que se ve como una textura de fondo,
-       no como líneas. Puramente decorativo: aria-hidden no aplica acá
-       porque no es un elemento, es parte del fondo de la página. */
-    --hex-grid: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='111' viewBox='0 0 64 111'%3E%3Cpath d='M32 0 64 18.5 64 55.5 32 74 0 55.5 0 18.5Z' fill='none' stroke='rgba(0,240,255,0.05)' stroke-width='1'/%3E%3Cpath d='M32 37 64 55.5 64 92.5 32 111 0 92.5 0 55.5Z' fill='none' stroke='rgba(0,240,255,0.05)' stroke-width='1'/%3E%3C/svg%3E");
-    background:
-        radial-gradient(1100px 600px at 15% -10%, rgba(0, 240, 255, .14), transparent 60%),
-        radial-gradient(900px 500px at 100% 0%, rgba(255, 46, 196, .10), transparent 55%),
-        var(--hex-grid),
-        linear-gradient(180deg, var(--app-bg-1) 0%, var(--app-bg-2) 55%);
-    background-size: auto, auto, 64px 111px, auto;
+    font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(180deg, var(--app-bg-1) 0%, var(--app-bg-2) 40%);
     background-attachment: fixed;
     color: var(--text-300);
     min-height: 100vh;
@@ -154,7 +130,7 @@ body {
 
 h2 { color: var(--text-100); font-weight: 700; letter-spacing: -.01em; }
 
-::selection { background: rgba(0, 240, 255, .35); color: #fff; }
+::selection { background: rgba(var(--blue-rgb), .35); color: #fff; }
 
 :focus-visible { outline: 2px solid var(--blue-light); outline-offset: 2px; }
 
@@ -193,8 +169,8 @@ h2 { color: var(--text-100); font-weight: 700; letter-spacing: -.01em; }
 }
 .nav-links .nav-btn:active { transform: scale(.97); }
 .nav-links .nav-btn.active {
-    background: linear-gradient(135deg, var(--blue) 0%, var(--blue-dark) 100%);
-    color: #fff; border-color: rgba(255, 255, 255, .25); box-shadow: var(--shadow-sm), var(--glow);
+    background: var(--tint-blue); color: var(--text-100);
+    border-color: rgba(var(--blue-rgb), .35); box-shadow: inset 3px 0 0 var(--blue);
 }
 
 /* Sub-ítems del sidebar: SIEMPRE visibles debajo de su padre (Finanzas,
@@ -236,7 +212,7 @@ h2 { color: var(--text-100); font-weight: 700; letter-spacing: -.01em; }
 }
 .sync-ok { background: var(--tint-green); color: var(--green); border: 1px solid rgba(34, 197, 94, .45); }
 .sync-bad { background: var(--tint-red); color: var(--red); border: 1px solid rgba(239, 68, 68, .45); }
-.sync-pending { background: var(--tint-gold); color: var(--gold); border: 1px solid rgba(255, 46, 196, .45); }
+.sync-pending { background: var(--tint-gold); color: var(--gold); border: 1px solid rgba(var(--gold-rgb), .45); }
 
 /* Campana de notificaciones (pedidos web pendientes) — ver
    js/notificaciones.js. Gris cuando no hay nada pendiente, rojo y con un
@@ -417,15 +393,16 @@ input[type="checkbox"] { width: auto; height: auto; accent-color: var(--blue); c
     transition: transform .12s ease, box-shadow var(--speed) ease, filter var(--speed) ease,
                 background-color var(--speed) ease, border-color var(--speed) ease, color var(--speed) ease;
 }
-.btn:hover { transform: translateY(-1px); filter: brightness(1.06); box-shadow: var(--shadow-sm); }
-.btn:active { transform: translateY(0) scale(.97); box-shadow: none; }
+.btn:hover { filter: brightness(1.08); }
+.btn:active { transform: scale(.97); }
 .btn:disabled { opacity: .55; cursor: not-allowed; transform: none; filter: none; }
 
-.btn-primary { background: linear-gradient(135deg, var(--blue) 0%, var(--blue-dark) 100%); color: #fff; }
-.btn-primary:hover:not(:disabled) { box-shadow: var(--glow); }
-.btn-green   { background: linear-gradient(135deg, var(--green) 0%, var(--green-dark) 100%); color: #fff; }
-.btn-red     { background: linear-gradient(135deg, var(--red) 0%, var(--red-dark) 100%); color: #fff; }
-.btn-gold    { background: linear-gradient(135deg, var(--valor) 0%, var(--valor-dark) 100%); color: #2b1c00; }
+.btn-primary { background: var(--blue-dark); color: #fff; }
+.btn-primary:hover:not(:disabled) { background: #1d4ed8; filter: none; }
+.btn-green   { background: var(--green-dark); color: #fff; }
+.btn-red     { background: var(--red-dark); color: #fff; }
+.btn-gold    { background: transparent; color: var(--valor); border-color: rgba(255, 209, 102, .45); }
+.btn-gold:hover:not(:disabled) { background: rgba(255, 209, 102, .1); filter: none; }
 .btn-ghost   { background: var(--surface-soft); color: var(--text-300); border-color: var(--border); }
 .btn-ghost:hover { color: var(--text-100); border-color: var(--border-strong); }
 .btn-outline { background: transparent; color: var(--text-300); border-color: var(--border-strong); }
@@ -442,16 +419,16 @@ input[type="checkbox"] { width: auto; height: auto; accent-color: var(--blue); c
 }
 .btn-icon svg { width: 17px; height: 17px; display: block; }
 .btn-icon:hover { background: var(--surface-soft); }
-.btn-icon-edit { color: var(--gold); border-color: rgba(255, 46, 196, .45); background: var(--tint-gold); }
-.btn-icon-edit:hover { background: rgba(255, 46, 196, .26); border-color: var(--gold); color: var(--gold); }
+.btn-icon-edit { color: var(--text-300); border-color: var(--border-strong); background: transparent; }
+.btn-icon-edit:hover { color: var(--text-100); border-color: var(--blue); background: var(--tint-blue); }
 .btn-icon-del { color: var(--red); border-color: rgba(239, 68, 68, .45); background: var(--tint-red); }
 .btn-icon-del:hover { background: rgba(239, 68, 68, .26); border-color: var(--red); }
-.btn-icon-view { color: var(--blue-light); border-color: rgba(0, 240, 255, .45); background: var(--tint-blue); }
-.btn-icon-view:hover { background: rgba(0, 240, 255, .26); border-color: var(--blue); }
+.btn-icon-view { color: var(--blue-light); border-color: rgba(var(--blue-rgb), .45); background: var(--tint-blue); }
+.btn-icon-view:hover { background: rgba(var(--blue-rgb), .26); border-color: var(--blue); }
 /* Devolver / anular (v81): ámbar, entre "ver" (neutro) y "borrar" (rojo).
    Revierte una venta pero NO la destruye, y el color lo dice. */
-.btn-icon-devolver { color: var(--gold); border-color: rgba(255, 46, 196, .35); background: var(--tint-gold); font-size: 14px; }
-.btn-icon-devolver:hover { background: rgba(255, 46, 196, .26); border-color: var(--gold); }
+.btn-icon-devolver { color: var(--gold); border-color: rgba(var(--gold-rgb), .35); background: var(--tint-gold); font-size: 14px; }
+.btn-icon-devolver:hover { background: rgba(var(--gold-rgb), .26); border-color: var(--gold); }
 
 /* Barra de acciones: grupo izquierdo (neutro) y grupo derecho (destructivo) */
 .toolbar-bar {
@@ -477,11 +454,8 @@ input[type="checkbox"] { width: auto; height: auto; accent-color: var(--blue); c
     display: inline-flex; align-items: center; gap: 6px;
     transition: background-color var(--speed), color var(--speed), transform .12s, border-color var(--speed);
 }
-.chip:hover { color: var(--text-100); background: var(--surface-soft); transform: translateY(-1px); }
-.chip.active {
-    background: linear-gradient(135deg, var(--blue) 0%, var(--blue-dark) 100%);
-    color: #fff; border-color: rgba(255, 255, 255, .22); box-shadow: var(--shadow-sm);
-}
+.chip:hover { color: var(--text-100); background: var(--surface-soft); }
+.chip.active { background: var(--blue-dark); color: #fff; border-color: transparent; }
 
 /* Variante en bloque: usada en el modal de exportación para que los
    botones de período queden parejos y con el borde bien encuadrado. */
@@ -606,7 +580,7 @@ input[type="checkbox"] { width: auto; height: auto; accent-color: var(--blue); c
 
 /* ========== 8. MODALES / TOAST / SUGERENCIAS ========== */
 .modal-overlay {
-    position: fixed; inset: 0; background: rgba(6, 11, 22, .68); backdrop-filter: blur(3px);
+    position: fixed; inset: 0; background: rgba(0, 0, 0, .68); backdrop-filter: blur(3px);
     z-index: 200; display: flex; align-items: center; justify-content: center; padding: 16px;
     opacity: 0; visibility: hidden; pointer-events: none;
     transition: opacity var(--speed) ease, visibility var(--speed);
@@ -744,15 +718,12 @@ body:not(.role-admin):not(.role-trabajador) .app-content {
 }
 
 .modal-login-overlay {
-    background:
-        radial-gradient(900px 520px at 50% -10%, rgba(0, 240, 255, .22), transparent 60%),
-        radial-gradient(700px 420px at 100% 100%, rgba(255, 46, 196, .14), transparent 55%),
-        linear-gradient(180deg, #16233d 0%, #0b1220 100%);
+    background: radial-gradient(900px 520px at 50% -10%, rgba(var(--blue-rgb), .08), transparent 60%), #000;
     backdrop-filter: none;
 }
 body.theme-light .modal-login-overlay {
     background:
-        radial-gradient(900px 520px at 50% -10%, rgba(0, 240, 255, .16), transparent 60%),
+        radial-gradient(900px 520px at 50% -10%, rgba(var(--blue-rgb), .16), transparent 60%),
         linear-gradient(180deg, #eef3fb 0%, #dfe8f5 100%);
 }
 /* Pantalla de acceso: la única pantalla que ve TODO el mundo, incluso
@@ -781,7 +752,7 @@ body.theme-light .modal-login-overlay {
 .modal-box {
     border-width: 2px;
     padding: 30px;
-    box-shadow: 0 30px 70px rgba(3, 8, 20, .55), 0 0 0 1px rgba(148, 163, 184, .12);
+    box-shadow: 0 30px 70px rgba(0, 0, 0, .55), 0 0 0 1px rgba(161, 161, 170, .12);
 }
 .modal-box.modal-lg { max-width: 860px; }
 .modal-box { overflow-x: hidden; }
@@ -840,7 +811,7 @@ body.theme-light .modal-login-overlay {
     border-color: var(--blue); background: var(--tint-blue); color: var(--text-100);
     box-shadow: var(--ring);
 }
-.metodo-pago.metodo-pendiente.active { border-color: var(--gold); background: var(--tint-gold); box-shadow: 0 0 0 3px rgba(255, 46, 196,.25); }
+.metodo-pago.metodo-pendiente.active { border-color: var(--gold); background: var(--tint-gold); box-shadow: 0 0 0 3px rgba(var(--gold-rgb), .25); }
 .metodo-icono { font-size: 20px; }
 
 .pago-efectivo { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); }
@@ -862,8 +833,8 @@ body.theme-light .modal-login-overlay {
 .kpi-clickable:focus-visible { outline: 2px solid var(--blue-light); outline-offset: 2px; }
 .kpi-card.activo { border-color: var(--red); box-shadow: 0 0 0 3px rgba(239, 68, 68, .22); }
 .kpi-card.sin-datos { opacity: .72; }
-.data-table tbody tr.fila-pendiente { background: rgba(255, 46, 196, .07); }
-.data-table tbody tr.fila-pendiente:hover { background: rgba(255, 46, 196, .13); }
+.data-table tbody tr.fila-pendiente { background: rgba(var(--gold-rgb), .07); }
+.data-table tbody tr.fila-pendiente:hover { background: rgba(var(--gold-rgb), .13); }
 
 /* Venta anulada (v81 · sql/61): se queda en el historial, apagada y tachada
    en el número de orden. Nunca se borra, para que el POS siga coincidiendo
@@ -875,7 +846,7 @@ body.theme-light .modal-login-overlay {
 /* ---- Modal de devolución (v81) ---- */
 .dev-aviso {
     margin: 12px 0 0; padding: 10px 12px; border-radius: 10px;
-    background: var(--tint-gold); border: 1px solid rgba(255, 46, 196, .45);
+    background: var(--tint-gold); border: 1px solid rgba(var(--gold-rgb), .45);
     color: var(--text-200); font-size: 13px; line-height: 1.5;
 }
 .dev-aviso-sii { background: var(--tint-red); border-color: rgba(239, 68, 68, .45); }
@@ -897,7 +868,7 @@ body.theme-light .modal-login-overlay {
 
 .dev-resumen {
     margin: 14px 0 0; padding: 10px 12px; border-radius: 10px;
-    background: var(--tint-blue); border: 1px solid rgba(0, 240, 255, .35);
+    background: var(--tint-blue); border: 1px solid rgba(var(--blue-rgb), .35);
     font-size: 14px; text-align: center;
 }
 .dev-resumen-vacio { color: var(--text-300); }
@@ -920,19 +891,19 @@ body.theme-light .modal-login-overlay {
 /* El ajuste es lo único que espera una decisión de plata: se ve distinto */
 .dev-chip-ajuste {
     background: var(--tint-gold); color: var(--gold);
-    border: 1px solid rgba(255, 46, 196, .45);
+    border: 1px solid rgba(var(--gold-rgb), .45);
 }
 
 .btn-seg-dev[hidden] { display: none; }
 .btn-seg-dev {
-    background: var(--tint-blue, rgba(0, 240, 255, .12));
+    background: var(--tint-blue, rgba(var(--blue-rgb), .12));
     color: var(--blue);
-    border-color: rgba(0, 240, 255, .35);
+    border-color: rgba(var(--blue-rgb), .35);
 }
 /* Con plata esperando su visto bueno pasa a magenta y pulsa */
 .btn-seg-dev.seg-con-plata {
     background: var(--tint-gold); color: var(--gold);
-    border-color: rgba(255, 46, 196, .45);
+    border-color: rgba(var(--gold-rgb), .45);
     animation: pulso-notificacion 2s ease-in-out infinite;
 }
 
@@ -1034,8 +1005,8 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
 .col-check { width: 42px; text-align: center; }
 .data-table td.col-check { text-align: center; }
 .data-table input[type="checkbox"] { width: 17px; height: 17px; cursor: pointer; }
-.data-table tbody tr.fila-marcada { background: rgba(0, 240, 255, .12); }
-.data-table tbody tr.fila-marcada:hover { background: rgba(0, 240, 255, .18); }
+.data-table tbody tr.fila-marcada { background: rgba(var(--blue-rgb), .12); }
+.data-table tbody tr.fila-marcada:hover { background: rgba(var(--blue-rgb), .18); }
 
 .barra-seleccion {
     position: fixed; left: 50%; bottom: 24px; z-index: 250;
@@ -1043,7 +1014,7 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
     display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
     padding: 14px 20px; border-radius: var(--radius);
     background: var(--bg-800); border: 2px solid var(--border-strong);
-    box-shadow: 0 24px 60px rgba(3, 8, 20, .5);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, .5);
     opacity: 0; visibility: hidden; pointer-events: none;
     transition: opacity var(--speed) ease, transform var(--speed) ease, visibility var(--speed);
 }
@@ -1116,7 +1087,7 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
 }
 .dte-btn:hover { transform: translateY(-1px); color: var(--text-100); border-color: var(--border-strong); }
 .dte-btn.active { color: var(--text-100); }
-.dte-btn[data-dte="SIN DTE"].active { border-color: var(--text-muted); background: var(--surface-soft); box-shadow: 0 0 0 3px rgba(148,163,184,.2); }
+.dte-btn[data-dte="SIN DTE"].active { border-color: var(--text-muted); background: var(--surface-soft); box-shadow: 0 0 0 3px rgba(161, 161, 170,.2); }
 .dte-btn[data-dte="BOLETA"].active  { border-color: var(--blue); background: var(--tint-blue); box-shadow: var(--ring); }
 .dte-btn[data-dte="FACTURA"].active { border-color: var(--violet); background: var(--tint-violet); box-shadow: 0 0 0 3px rgba(167,139,250,.28); }
 
@@ -1133,7 +1104,7 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
     width: auto; min-width: 108px;
 }
 .dte-select:hover { border-color: var(--blue-light); }
-.dte-select.dte-boleta  { border-color: rgba(0, 240, 255,.5); color: var(--blue-light); }
+.dte-select.dte-boleta  { border-color: rgba(var(--blue-rgb), .5); color: var(--blue-light); }
 .dte-select.dte-factura { border-color: rgba(167,139,250,.5); color: var(--violet); }
 .dte-select.dte-sin     { border-color: var(--border); color: var(--text-muted); }
 
@@ -1253,7 +1224,7 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
 .escaner-marco::before {
     content: '';
     width: 78%; height: 42%;
-    border: 3px solid rgba(0, 240, 255,.9);
+    border: 3px solid rgba(var(--blue-rgb), .9);
     border-radius: 12px;
     box-shadow: 0 0 0 100vmax rgba(0,0,0,.35);
 }
@@ -1277,7 +1248,7 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
     cursor: pointer; text-align: center;
     transition: border-color .15s, background .15s;
 }
-.escaner-dropzone:hover { border-color: var(--blue); background: rgba(0, 240, 255,.06); }
+.escaner-dropzone:hover { border-color: var(--blue); background: rgba(var(--blue-rgb), .06); }
 .escaner-dropzone-ico { font-size: 34px; }
 
 .escaner-manual-campo { margin-top: 16px; }
@@ -1474,19 +1445,19 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
         font-family: 'Segoe UI', Arial, sans-serif;
     }
     body.print-ot #otPrintArea .ot-doc {
-        background: #fff; border: 1px solid #94a3b8; color: #0f172a;
+        background: #fff; border: 1px solid #a1a1aa; color: #18181b;
         border-radius: 6px; padding: 8mm; page-break-inside: avoid;
     }
     body.print-ot #otPrintArea .ot-doc-head h3,
-    body.print-ot #otPrintArea .ot-dato b { color: #0f172a; }
+    body.print-ot #otPrintArea .ot-dato b { color: #18181b; }
     body.print-ot #otPrintArea .ot-doc-num strong { color: #b45309; }
     body.print-ot #otPrintArea .ot-doc-grid h4,
     body.print-ot #otPrintArea .ot-doc-bloque h4 { color: #b45309; }
     body.print-ot #otPrintArea .ot-dato span,
     body.print-ot #otPrintArea .ot-doc-legal,
-    body.print-ot #otPrintArea .ot-firma-box small { color: #475569; }
-    body.print-ot #otPrintArea .ot-firma-linea { border-top: 1px solid #0f172a; }
-    body.print-ot #otPrintArea .ot-corte { color: #64748b; margin: 6mm 0; }
+    body.print-ot #otPrintArea .ot-firma-box small { color: #52525b; }
+    body.print-ot #otPrintArea .ot-firma-linea { border-top: 1px solid #18181b; }
+    body.print-ot #otPrintArea .ot-corte { color: #71717a; margin: 6mm 0; }
 
     /* Etiquetas de código de barras */
     body.print-etiqueta #etiquetaPrintArea {
@@ -1509,18 +1480,18 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
         font-family: 'Segoe UI', Arial, sans-serif;
     }
     body.print-ficha .ficha-doc {
-        border: 1px solid #94a3b8; border-radius: 4px;
+        border: 1px solid #a1a1aa; border-radius: 4px;
         padding: 7mm; margin-bottom: 4mm; page-break-inside: avoid;
     }
     body.print-ficha .ficha-head { text-align: center; margin-bottom: 6mm; }
     body.print-ficha .ficha-head h3 { font-size: 17px; font-weight: 800; }
-    body.print-ficha .ficha-head p { font-size: 11px; color: #475569; }
+    body.print-ficha .ficha-head p { font-size: 11px; color: #52525b; }
     body.print-ficha .ficha-campo { display: flex; align-items: flex-end; gap: 3mm; margin-bottom: 6mm; font-size: 11px; }
-    body.print-ficha .ficha-campo > span:first-child { min-width: 38mm; color: #334155; }
-    body.print-ficha .ficha-linea { flex: 1; border-bottom: 1px solid #0f172a; height: 5mm; }
-    body.print-ficha .ficha-nota { font-size: 9.5px; color: #64748b; margin: 4mm 0 6mm; }
-    body.print-ficha .ficha-fecha { font-size: 9.5px; color: #64748b; text-align: right; }
-    body.print-ficha .ficha-corte { text-align: center; font-size: 9px; color: #94a3b8; margin: 3mm 0; }
+    body.print-ficha .ficha-campo > span:first-child { min-width: 38mm; color: #3f3f46; }
+    body.print-ficha .ficha-linea { flex: 1; border-bottom: 1px solid #18181b; height: 5mm; }
+    body.print-ficha .ficha-nota { font-size: 9.5px; color: #71717a; margin: 4mm 0 6mm; }
+    body.print-ficha .ficha-fecha { font-size: 9.5px; color: #71717a; text-align: right; }
+    body.print-ficha .ficha-corte { text-align: center; font-size: 9px; color: #a1a1aa; margin: 3mm 0; }
 }
 
 /* QR de reseñas al pie del ticket térmico (SVG vectorial) */
@@ -1538,7 +1509,7 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
    no es el que manda en las ventas. */
 .campo-atenuado {
   opacity: .55;
-  background: rgba(148, 163, 184, .12);
+  background: rgba(161, 161, 170, .12);
 }
 
 .lotes-lista { margin-top: 14px; }
@@ -1546,20 +1517,20 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
 .tabla-lotes { font-size: .82rem; }
 .tabla-lotes th, .tabla-lotes td { padding: 6px 8px; }
 .tabla-lotes tfoot td {
-  border-top: 2px solid var(--border, #cbd5e1);
-  background: rgba(148, 163, 184, .10);
+  border-top: 2px solid var(--border, #d4d4d8);
+  background: rgba(161, 161, 170, .10);
 }
 
 /* La capa más antigua es la próxima en consumirse: se destaca */
 .tabla-lotes tr.lote-siguiente { background: rgba(34, 197, 94, .10); }
 
 .celda-lotes { display: flex; flex-direction: column; gap: 2px; font-size: .78rem; line-height: 1.35; }
-.celda-lotes small { color: var(--text-muted, #64748b); font-size: .72rem; }
+.celda-lotes small { color: var(--text-muted, #71717a); font-size: .72rem; }
 
 .capa-lote { white-space: nowrap; }
 .capa-lote.capa-actual { font-weight: 600; color: var(--green, #16a34a); }
-.capa-mas { color: var(--text-muted, #64748b); font-style: italic; }
-.lotes-off { color: var(--text-muted, #94a3b8); }
+.capa-mas { color: var(--text-muted, #71717a); font-style: italic; }
+.lotes-off { color: var(--text-muted, #a1a1aa); }
 
 /* ============================================================
    MODALES DE EXPORTACIÓN INDIVIDUAL E IMPORTACIÓN MASIVA
@@ -1669,25 +1640,25 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
     padding: 0 0.75rem;
     border-radius: 0.75rem;
     font-size: 0.9rem;
-    background: #f8fafc;
-    border: 1px solid #cbd5e1;
-    color: #1e293b;
+    background: #fafafa;
+    border: 1px solid #d4d4d8;
+    color: #27272a;
     transition: border-color .15s ease, box-shadow .15s ease;
 }
-.campo-pos::placeholder { color: #94a3b8; }
+.campo-pos::placeholder { color: #a1a1aa; }
 .campo-pos:focus {
     outline: none;
-    border-color: #00f0ff;
-    box-shadow: 0 0 0 4px rgba(0, 240, 255,.22);
+    border-color: var(--blue);
+    box-shadow: 0 0 0 4px rgba(var(--blue-rgb), .22);
 }
 .campo-pos:disabled { opacity: .5; cursor: not-allowed; }
 
 .dark .campo-pos {
-    background: rgba(15, 23, 42, .6);
-    border-color: #475569;
-    color: #f1f5f9;
+    background: rgba(24, 24, 27, .6);
+    border-color: #52525b;
+    color: #f4f4f5;
 }
-.dark .campo-pos::placeholder { color: #64748b; }
+.dark .campo-pos::placeholder { color: #71717a; }
 
 /* Etiquetas: la MISMA altura para las normales y las que llevan
    checkbox. Ese era el origen del desalineamiento de "Editar hora". */
@@ -1700,14 +1671,14 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
     font-size: 0.72rem;
     font-weight: 600;
     line-height: 1.25rem;
-    color: #64748b;
+    color: #71717a;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.dark .etiqueta-pos { color: #94a3b8; }
+.dark .etiqueta-pos { color: #a1a1aa; }
 .etiqueta-check { cursor: pointer; }
-.etiqueta-check:hover { color: #00f0ff; }
+.etiqueta-check:hover { color: var(--blue); }
 
 .cabecera-pos {
     padding: 0.6rem 0.75rem;
@@ -1715,22 +1686,22 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: #64748b;
-    border-bottom: 1px solid #e2e8f0;
+    color: #71717a;
+    border-bottom: 1px solid #e4e4e7;
 }
-.dark .cabecera-pos { color: #94a3b8; border-bottom-color: #334155; }
+.dark .cabecera-pos { color: #a1a1aa; border-bottom-color: #3f3f46; }
 
 /* Las filas del carrito las genera pos.js sin clases, así que se
    estilizan por posición dentro de #cartTableBody. */
 #cartTableBody td {
     padding: 0.6rem 0.75rem;
-    border-bottom: 1px solid #f1f5f9;
-    color: #334155;
+    border-bottom: 1px solid #f4f4f5;
+    color: #3f3f46;
     font-variant-numeric: tabular-nums;
 }
-.dark #cartTableBody td { border-bottom-color: rgba(51,65,85,.6); color: #e2e8f0; }
+.dark #cartTableBody td { border-bottom-color: rgba(63, 63, 70,.6); color: #e4e4e7; }
 #cartTableBody tr:last-child td { border-bottom: none; }
-#cartTableBody tr:hover { background: rgba(0, 240, 255,.05); }
+#cartTableBody tr:hover { background: rgba(var(--blue-rgb), .05); }
 #cartTableBody td:nth-child(3),
 #cartTableBody td:nth-child(4) { text-align: right; }
 #cartTableBody td:last-child { text-align: right; }
@@ -1745,11 +1716,11 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
     max-height: 320px;
     overflow-y: auto;
     background: #fff;
-    border: 1px solid #e2e8f0;
+    border: 1px solid #e4e4e7;
     border-radius: 0.85rem;
-    box-shadow: 0 18px 45px -18px rgba(15,23,42,.45);
+    box-shadow: 0 18px 45px -18px rgba(24, 24, 27,.45);
 }
-.dark .suggestions-box { background: #1e293b; border-color: #334155; }
+.dark .suggestions-box { background: #27272a; border-color: #3f3f46; }
 .suggestions-box.show { display: block; }
 
 .suggestion-item {
@@ -1760,30 +1731,30 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
     padding: 0.6rem 0.9rem;
     cursor: pointer;
     font-size: 0.85rem;
-    color: #1e293b;
+    color: #27272a;
     border-left: 3px solid transparent;
     transition: background .12s ease;
 }
-.dark .suggestion-item { color: #e2e8f0; }
-.suggestion-item:hover { background: rgba(0, 240, 255,.10); }
-.suggestion-item span:last-of-type { font-size: .75rem; color: #64748b; white-space: nowrap; }
-.dark .suggestion-item span:last-of-type { color: #94a3b8; }
+.dark .suggestion-item { color: #e4e4e7; }
+.suggestion-item:hover { background: rgba(var(--blue-rgb), .10); }
+.suggestion-item span:last-of-type { font-size: .75rem; color: #71717a; white-space: nowrap; }
+.dark .suggestion-item span:last-of-type { color: #a1a1aa; }
 
 /* Marca de la sugerencia elegida con ↑ / ↓ (js/atajos.js) */
 .suggestion-item.activa {
-    background: rgba(0, 240, 255,.16);
-    border-left-color: #00f0ff;
+    background: rgba(var(--blue-rgb), .16);
+    border-left-color: var(--blue);
 }
 .suggestion-item::after {
     content: attr(data-atajo);
     font-size: .62rem;
-    color: #94a3b8;
-    border: 1px solid #cbd5e1;
+    color: #a1a1aa;
+    border: 1px solid #d4d4d8;
     border-radius: 5px;
     padding: 1px 5px;
     white-space: nowrap;
 }
-.dark .suggestion-item::after { border-color: #475569; }
+.dark .suggestion-item::after { border-color: #52525b; }
 
 /* ---------- Campo del PIN (v6) ----------
    Reemplaza al teclado numérico en pantalla y a la fila de puntos.
@@ -1809,7 +1780,7 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
     padding: 0 3.2rem 0 1rem;
     border-radius: 1rem;
     border: 1.5px solid var(--border-strong);
-    background: var(--bg-900, #0f172a);
+    background: var(--bg-900, #18181b);
     color: var(--text-100);
     font-size: 1.15rem;
     font-weight: 600;
@@ -1821,9 +1792,9 @@ a.doc-check.doc-ok:hover { transform: scale(1.1); }
 .pin-input:focus {
     outline: none;
     border-color: var(--blue);
-    box-shadow: 0 0 0 3px rgba(0, 240, 255, .22);
+    box-shadow: 0 0 0 3px rgba(var(--blue-rgb), .22);
 }
-body.theme-light .pin-input { background: #fff; color: #0f172a; }
+body.theme-light .pin-input { background: #fff; color: #18181b; }
 
 /* Edge (::-ms-reveal) y algunos Chromium con autocompletado de
    contraseñas inyectan su PROPIO ícono de "mostrar/ocultar" encima de
@@ -1849,7 +1820,7 @@ input[type="password"]::-ms-clear { display: none; }
     opacity: .65;
     transition: opacity .15s ease, background .15s ease;
 }
-.pin-ojo:hover { opacity: 1; background: rgba(148, 163, 184, .16); }
+.pin-ojo:hover { opacity: 1; background: rgba(161, 161, 170, .16); }
 .pin-ojo.activo { opacity: 1; }
 
 .pin-nota { margin-top: 8px; font-size: 13px; color: var(--text-muted); }
@@ -1864,11 +1835,11 @@ input[type="password"]::-ms-clear { display: none; }
    tamaño con el que se publica en la tienda web es independiente, lo
    define el CSS de sevelin.cl, no esto. */
 .editor-descripcion .ql-toolbar.ql-snow {
-    background: var(--bg-900, #0f172a); border: 1.5px solid var(--border-strong);
+    background: var(--bg-900, #18181b); border: 1.5px solid var(--border-strong);
     border-bottom: none; border-radius: 1rem 1rem 0 0; padding: 6px 8px;
 }
 .editor-descripcion .ql-container.ql-snow {
-    background: var(--bg-900, #0f172a); border: 1.5px solid var(--border-strong);
+    background: var(--bg-900, #18181b); border: 1.5px solid var(--border-strong);
     border-radius: 0 0 1rem 1rem; font-family: inherit;
 }
 .editor-descripcion .ql-editor {
@@ -1890,9 +1861,9 @@ input[type="password"]::-ms-clear { display: none; }
 .editor-descripcion .ql-snow.ql-toolbar button:hover .ql-fill,
 .editor-descripcion .ql-snow.ql-toolbar button.ql-active .ql-fill { fill: var(--blue); }
 .editor-descripcion .ql-snow .ql-picker-options {
-    background: var(--bg-800, #1b2740); border-color: var(--border-strong) !important;
+    background: var(--bg-800, #0d0d10); border-color: var(--border-strong) !important;
 }
-body.theme-light .editor-descripcion .ql-editor { color: #0f172a; }
+body.theme-light .editor-descripcion .ql-editor { color: #18181b; }
 
 /* Oculta el input real del PIN sin sacarlo del formulario:
    auth.js lo sigue leyendo y el teclado físico sigue escribiendo. */
@@ -1910,7 +1881,7 @@ body.theme-light .editor-descripcion .ql-editor { color: #0f172a; }
 .atajos-lista { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px,1fr)); gap: 16px; margin-top: 16px; }
 .atajos-grupo { background: var(--bg-900); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
 .atajos-grupo h4 { margin: 0 0 10px; font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--gold); }
-.atajo-fila { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid rgba(148,163,184,.10); }
+.atajo-fila { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid rgba(161, 161, 170,.10); }
 .atajo-fila:last-child { border-bottom: none; }
 .atajo-teclas { display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0; min-width: 108px; }
 .atajo-teclas i { font-style: normal; color: var(--text-muted); font-size: .7rem; }
@@ -1935,7 +1906,7 @@ kbd {
 }
 .pago-mixto-fila input { text-align: right; font-variant-numeric: tabular-nums; }
 .pago-mixto-fila select:focus, .pago-mixto-fila input:focus {
-    border-color: var(--blue); box-shadow: 0 0 0 3px rgba(0, 240, 255,.3); outline: none;
+    border-color: var(--blue); box-shadow: 0 0 0 3px rgba(var(--blue-rgb), .3); outline: none;
 }
 .pago-mixto-fila .btn-sm { height: 42px; white-space: nowrap; }
 .pago-mixto-acciones { margin-top: 10px; }
@@ -1951,12 +1922,9 @@ kbd {
    12. TIPOGRAFÍA Y ESCALA DEL POS
    ============================================================ */
 
-/* Plus Jakarta Sans: geométrica y de formas redondeadas, con cifras muy
-   legibles —que en un POS se miran todo el día— y buen soporte de
-   tildes y ñ. Se aplica a todo el sistema para que no queden dos
-   tipografías conviviendo. */
+/* IBM Plex Sans, la misma de sevelin-tienda. Se aplica a todo para que no convivan dos tipografías. */
 body, .modal-box, .btn, input, select, textarea, button, table {
-    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-family: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 body { letter-spacing: -0.005em; }
 h1, h2, h3, h4 { letter-spacing: -0.02em; }
@@ -1993,14 +1961,14 @@ h1, h2, h3, h4 { letter-spacing: -0.02em; }
 /* Tarjetas del POS */
 .tarjeta-pos {
     background: #fff;
-    border: 1px solid rgba(226, 232, 240, .9);
+    border: 1px solid rgba(228, 228, 231, .9);
     border-radius: 1rem;
-    box-shadow: 0 1px 2px rgba(15,23,42,.04), 0 8px 24px -16px rgba(15,23,42,.25);
+    box-shadow: 0 1px 2px rgba(24, 24, 27,.04), 0 8px 24px -16px rgba(24, 24, 27,.25);
     overflow: hidden;
 }
 .dark .tarjeta-pos {
-    background: rgba(30, 41, 59, .72);
-    border-color: #334155;
+    background: rgba(39, 39, 42, .72);
+    border-color: #3f3f46;
     box-shadow: 0 1px 2px rgba(0,0,0,.2), 0 10px 30px -18px rgba(0,0,0,.7);
 }
 
@@ -2016,12 +1984,12 @@ h1, h2, h3, h4 { letter-spacing: -0.02em; }
     font-size: 0.7rem;
     font-weight: 600;
     line-height: 1.1rem;
-    color: #64748b;
+    color: #71717a;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.dark .etiqueta-pos { color: #94a3b8; }
+.dark .etiqueta-pos { color: #a1a1aa; }
 
 /* Casilla con marco: se toca fácil y alinea con los campos vecinos */
 .caja-check {
@@ -2034,14 +2002,14 @@ h1, h2, h3, h4 { letter-spacing: -0.02em; }
     border-radius: 0.75rem;
     cursor: pointer;
     font-size: 0.82rem;
-    color: #334155;
-    background: #f8fafc;
-    border: 1px solid #cbd5e1;
+    color: #3f3f46;
+    background: #fafafa;
+    border: 1px solid #d4d4d8;
     transition: border-color .15s ease, background .15s ease;
     user-select: none;
 }
-.caja-check:hover { border-color: #00f0ff; }
-.dark .caja-check { background: rgba(15,23,42,.6); border-color: #475569; color: #e2e8f0; }
+.caja-check:hover { border-color: var(--blue); }
+.dark .caja-check { background: rgba(24, 24, 27,.6); border-color: #52525b; color: #e4e4e7; }
 
 .cabecera-pos { padding: 0.5rem 0.65rem; font-size: 0.62rem; }
 #cartTableBody td { padding: 0.5rem 0.65rem; font-size: 0.8rem; }
@@ -2055,11 +2023,11 @@ h1, h2, h3, h4 { letter-spacing: -0.02em; }
     border-radius: 4px;
     font-size: 9px;
     font-family: ui-monospace, Menlo, Consolas, monospace;
-    background: #f1f5f9;
-    border: 1px solid #e2e8f0;
-    color: #64748b;
+    background: #f4f4f5;
+    border: 1px solid #e4e4e7;
+    color: #71717a;
 }
-.dark .kbd-mini { background: rgba(51,65,85,.6); border-color: #475569; color: #94a3b8; }
+.dark .kbd-mini { background: rgba(63, 63, 70,.6); border-color: #52525b; color: #a1a1aa; }
 
 /* La cabecera general también se compacta, para que la barra de módulos
    no se coma la altura útil de la pantalla. */
@@ -2183,8 +2151,8 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
    porque se navega sin mirar el mouse. */
 .dte-opcion.activa {
     border-color: var(--blue);
-    background: rgba(0, 240, 255,.14);
-    box-shadow: 0 0 0 3px rgba(0, 240, 255,.20);
+    background: rgba(var(--blue-rgb), .14);
+    box-shadow: 0 0 0 3px rgba(var(--blue-rgb), .20);
 }
 .dte-opcion-icono { font-size: 1.4rem; flex-shrink: 0; }
 .dte-opcion-texto { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
@@ -2342,7 +2310,7 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
 .barra-pista {
     height: 8px;
     border-radius: 20px;
-    background: rgba(148,163,184,.18);
+    background: rgba(161, 161, 170,.18);
     overflow: hidden;
 }
 .barra-alta { height: 16px; margin: 14px 0 10px; }
@@ -2366,7 +2334,7 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
     gap: 12px;
     padding: 8px 0;
     font-size: .84rem;
-    border-bottom: 1px solid rgba(148,163,184,.12);
+    border-bottom: 1px solid rgba(161, 161, 170,.12);
 }
 .detalle-fila:last-child { border-bottom: none; }
 .detalle-fila b { font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -2518,7 +2486,7 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
     width: 34px;
     height: 18px;
     border-radius: 20px;
-    background: rgba(148,163,184,.35);
+    background: rgba(161, 161, 170,.35);
     position: relative;
     flex-shrink: 0;
     transition: background .2s ease;
@@ -2572,8 +2540,8 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
     align-items: center;
     padding: 13px 16px;
     border-radius: 11px;
-    background: rgba(0, 240, 255,.10);
-    border: 1px solid rgba(0, 240, 255,.32);
+    background: rgba(var(--blue-rgb), .10);
+    border: 1px solid rgba(var(--blue-rgb), .32);
     margin-top: 14px;
 }
 .arqueo-esperado span { font-size: .8rem; color: var(--text-muted); }
@@ -2630,12 +2598,12 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
 }
 .data-table tbody td {
     padding: 11px 14px;
-    border-bottom: 1px solid rgba(148,163,184,.10);
+    border-bottom: 1px solid rgba(161, 161, 170,.10);
     font-size: .86rem;
     vertical-align: middle;
 }
 .data-table tbody tr { transition: background .12s ease; }
-.data-table tbody tr:hover { background: rgba(0, 240, 255,.06); }
+.data-table tbody tr:hover { background: rgba(var(--blue-rgb), .06); }
 .data-table tbody tr:last-child td { border-bottom: none; }
 
 /* Los montos alineados por el punto decimal: sin esto las columnas de
@@ -2770,7 +2738,7 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
 }
 .field input:focus, .field select:focus, .field textarea:focus {
     border-color: var(--blue);
-    box-shadow: 0 0 0 3px rgba(0, 240, 255,.25);
+    box-shadow: 0 0 0 3px rgba(var(--blue-rgb), .25);
     outline: none;
 }
 
@@ -2781,12 +2749,12 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
 .lista::-webkit-scrollbar-thumb,
 .table-wrap::-webkit-scrollbar-thumb,
 .tabla-scroll::-webkit-scrollbar-thumb {
-    background: rgba(148,163,184,.28);
+    background: rgba(161, 161, 170,.28);
     border-radius: 20px;
 }
 .lista::-webkit-scrollbar-thumb:hover,
 .table-wrap::-webkit-scrollbar-thumb:hover,
-.tabla-scroll::-webkit-scrollbar-thumb:hover { background: rgba(148,163,184,.45); }
+.tabla-scroll::-webkit-scrollbar-thumb:hover { background: rgba(161, 161, 170,.45); }
 
 /* ============================================================
    19. REPORTES, ARQUEO CIEGO Y VALIDACIÓN DE DUPLICADOS
@@ -2819,7 +2787,7 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
 }
 /* Los tres primeros destacan: es donde se mira primero */
 .rank-fila:nth-child(1) .rank-pos { background: rgba(245,179,1,.22); color: var(--gold); border-color: var(--gold); }
-.rank-fila:nth-child(2) .rank-pos { background: rgba(148,163,184,.22); color: var(--text-100); }
+.rank-fila:nth-child(2) .rank-pos { background: rgba(161, 161, 170,.22); color: var(--text-100); }
 .rank-fila:nth-child(3) .rank-pos { background: rgba(180,120,60,.22); color: #d4915d; }
 
 .rank-cuerpo { flex: 1; min-width: 0; }
@@ -2877,7 +2845,7 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
     background: var(--bg-900); border: 1px solid var(--border);
     color: var(--text-100); text-align: right; font-size: .85rem; width: 100%;
 }
-.denom-cant:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(0, 240, 255,.25); outline: none; }
+.denom-cant:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(var(--blue-rgb), .25); outline: none; }
 .denom-sub { font-size: .8rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-muted); }
 
 /* ---------- Reposición ---------- */
@@ -2920,7 +2888,7 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
     flex-shrink: 0;
     transition: opacity .12s ease, border-color .12s ease, background .12s ease;
 }
-.btn-editar-atajo:hover { opacity: 1; border-color: var(--blue); background: rgba(0, 240, 255,.15); }
+.btn-editar-atajo:hover { opacity: 1; border-color: var(--blue); background: rgba(var(--blue-rgb), .15); }
 
 /* Los atajos fijos llevan un candado, para que se vea de una que no son
    editables sin tener que probarlos. */
@@ -2996,7 +2964,7 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
 #modalRanking { z-index: 10025; }
 
 .rank-clicable { cursor: pointer; border-radius: 8px; padding: 4px; margin: -4px; transition: background .12s ease; }
-.rank-clicable:hover { background: rgba(0, 240, 255,.10); }
+.rank-clicable:hover { background: rgba(var(--blue-rgb), .10); }
 .rank-nombre { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Metadatos bajo el nombre en la tabla de productos: reemplazan a las
@@ -3078,9 +3046,9 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
 }
 .periodo-btn:hover { border-color: var(--blue); }
 .periodo-btn.activo {
-    background: rgba(0, 240, 255,.16);
+    background: rgba(var(--blue-rgb), .16);
     border-color: var(--blue);
-    box-shadow: 0 0 0 3px rgba(0, 240, 255,.18);
+    box-shadow: 0 0 0 3px rgba(var(--blue-rgb), .18);
 }
 .periodo-ancho { grid-column: 1 / -1; }
 
@@ -3190,8 +3158,8 @@ input[type="number"], input[type="time"], input[type="date"] { text-align: left;
 }
 .pos-redim svg { width: 14px; height: 14px; }
 .pos-redim:hover,
-.pos-redim:focus-visible { opacity: 1; color: var(--blue); background: rgba(0, 240, 255,.14); outline: none; }
-.pos-redim.arrastrando { opacity: 1; color: var(--blue); background: rgba(0, 240, 255,.2); }
+.pos-redim:focus-visible { opacity: 1; color: var(--blue); background: rgba(var(--blue-rgb), .14); outline: none; }
+.pos-redim.arrastrando { opacity: 1; color: var(--blue); background: rgba(var(--blue-rgb), .2); }
 
 @media (min-width: 1024px) {
     .pos-redim { display: flex; }
@@ -3223,7 +3191,7 @@ body.pos-redimensionando { user-select: none; cursor: nwse-resize; }
     cursor: pointer;
     transition: color .15s ease, border-color .15s ease, background .15s ease;
 }
-.pos-redim-btn:hover { color: var(--blue); border-color: var(--blue); background: rgba(0, 240, 255,.1); }
+.pos-redim-btn:hover { color: var(--blue); border-color: var(--blue); background: rgba(var(--blue-rgb), .1); }
 
 /* ---------- Aprovechamiento del espacio dentro de las tarjetas ----------
    El detalle del carrito era el que más sufría: con min-height fijo de
@@ -3239,7 +3207,7 @@ body.pos-redimensionando { user-select: none; cursor: nwse-resize; }
     z-index: 2;
     background: var(--bg-800);
 }
-body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
+body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
 
 /* BUG — la casilla "Editar hora de la venta" se bloqueaba tras agregar un
    producto al carrito.
@@ -3309,8 +3277,8 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
     margin: 4px 0 14px;
     padding: 9px 13px;
     border-radius: var(--radius-sm);
-    background: rgba(0, 240, 255, .1);
-    border: 1px solid rgba(0, 240, 255, .3);
+    background: rgba(var(--blue-rgb), .1);
+    border: 1px solid rgba(var(--blue-rgb), .3);
     font-size: 12.5px;
     color: var(--text-100);
 }
@@ -3324,8 +3292,8 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
     max-width: 260px;
     padding: 2px 7px;
     border-radius: var(--radius-pill);
-    background: rgba(0, 240, 255, .14);
-    border: 1px solid rgba(0, 240, 255, .3);
+    background: rgba(var(--blue-rgb), .14);
+    border: 1px solid rgba(var(--blue-rgb), .3);
     font-size: 10.5px;
     font-weight: 600;
     color: var(--text-100);
@@ -3365,7 +3333,7 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
     margin: 0 0 22px;
     padding: 16px 18px;
     border-radius: var(--radius);
-    background: linear-gradient(135deg, rgba(0, 240, 255,.08), rgba(34,197,94,.05));
+    background: linear-gradient(135deg, rgba(var(--blue-rgb), .08), rgba(34,197,94,.05));
     border: 1px solid var(--border);
 }
 
@@ -3442,8 +3410,8 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
     color: var(--green);
 }
 .cobertura-warn {
-    background: rgba(255, 46, 196,.12);
-    border-color: rgba(255, 46, 196,.4);
+    background: rgba(var(--gold-rgb), .12);
+    border-color: rgba(var(--gold-rgb), .4);
     color: var(--gold);
 }
 .cobertura-crit {
@@ -3476,7 +3444,7 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
 
 .saldo-monto-sm { font-size: 1.2rem; }
 
-.saldo-resguardo { background: linear-gradient(135deg, rgba(255, 46, 196,.10), rgba(255, 46, 196,.03)); border-color: rgba(255, 46, 196,.30); }
+.saldo-resguardo { background: linear-gradient(135deg, rgba(var(--gold-rgb), .10), rgba(var(--gold-rgb), .03)); border-color: rgba(var(--gold-rgb), .30); }
 
 .saldo-mini-btn {
     margin-top: 8px;
@@ -3615,10 +3583,10 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
     padding: 10px 12px;
     margin: 2px 0;
     border-radius: var(--radius-sm);
-    background: rgba(0, 240, 255, .08);
-    border: 1px solid rgba(0, 240, 255, .28);
+    background: rgba(var(--blue-rgb), .08);
+    border: 1px solid rgba(var(--blue-rgb), .28);
 }
-.barra-fila-destacada .barra-cabecera b { color: var(--blue-light, #7df9ff); }
+.barra-fila-destacada .barra-cabecera b { color: var(--blue-light); }
 
 /* ============================================================
    28. BARRA Y MODALES DE CAJA (punto 4)
@@ -3644,7 +3612,7 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
     width: 12px; height: 12px; border-radius: 999px;
     flex-shrink: 0;
     background: var(--text-muted);
-    box-shadow: 0 0 0 4px rgba(148,163,184,.15);
+    box-shadow: 0 0 0 4px rgba(161, 161, 170,.15);
 }
 .caja-estado-punto.abierta { background: var(--green); box-shadow: 0 0 0 4px rgba(34,197,94,.18); }
 .caja-estado-punto.cerrada { background: var(--red);   box-shadow: 0 0 0 4px rgba(239,68,68,.18); }
@@ -3664,7 +3632,7 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
 }
 .mov-tipo-btn.activo {
     border-color: var(--blue);
-    background: rgba(0, 240, 255,.12);
+    background: rgba(var(--blue-rgb), .12);
     color: var(--text-100);
 }
 
@@ -3681,7 +3649,7 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
 }
 .arqueo-diferencia.hidden { display: none; }
 .arqueo-diferencia.cuadre-ok    { background: rgba(34,197,94,.12);  border-color: rgba(34,197,94,.35);  color: var(--green); }
-.arqueo-diferencia.cuadre-sobra { background: rgba(0, 240, 255,.12); border-color: rgba(0, 240, 255,.35); color: var(--blue-light,#7df9ff); }
+.arqueo-diferencia.cuadre-sobra { background: rgba(var(--blue-rgb), .12); border-color: rgba(var(--blue-rgb), .35); color: var(--blue-light); }
 .arqueo-diferencia.cuadre-falta { background: rgba(239,68,68,.12);  border-color: rgba(239,68,68,.35);  color: var(--red); }
 
 /* Botón de cobrar bloqueado cuando no hay caja abierta (punto 4) */
@@ -3799,7 +3767,7 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
 }
 .hist-sug-item:last-child { border-bottom: none; }
 .hist-sug-item:hover { background: var(--surface-soft); }
-.hist-sug-orden { font-weight: 700; color: var(--blue-light, #7df9ff); min-width: 56px; }
+.hist-sug-orden { font-weight: 700; color: var(--blue-light); min-width: 56px; }
 .hist-sug-fh { flex: 1; color: var(--text-muted); font-size: 13px; }
 .hist-sug-total { font-weight: 700; font-variant-numeric: tabular-nums; }
 
@@ -4074,7 +4042,7 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
 .visor-imagen {
     position: fixed; inset: 0; z-index: 10100;
     display: flex; align-items: center; justify-content: center; gap: 10px;
-    background: rgba(2, 6, 23, .88);
+    background: rgba(0, 0, 0, .88);
     backdrop-filter: blur(3px);
     padding: 24px;
     animation: visorEntra .16s var(--ease-out);
@@ -4093,24 +4061,24 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
     box-shadow: 0 18px 50px rgba(0, 0, 0, .55);
 }
 .visor-pie {
-    color: #e2e8f0; font-size: .9rem; text-align: center;
+    color: #e4e4e7; font-size: .9rem; text-align: center;
     max-width: 92vw; text-shadow: 0 1px 3px rgba(0, 0, 0, .8);
 }
 
 .visor-cerrar {
     position: absolute; top: 14px; right: 16px;
     width: 42px; height: 42px; border-radius: 999px;
-    background: rgba(15, 23, 42, .9); color: #e2e8f0;
+    background: rgba(24, 24, 27, .9); color: #e4e4e7;
     border: 1px solid var(--border-strong); cursor: pointer;
     font-size: 1.1rem; line-height: 1;
 }
 .visor-flecha {
     width: 46px; height: 46px; border-radius: 999px; flex-shrink: 0;
-    background: rgba(15, 23, 42, .9); color: #e2e8f0;
+    background: rgba(24, 24, 27, .9); color: #e4e4e7;
     border: 1px solid var(--border-strong); cursor: pointer;
     font-size: 1.8rem; line-height: 1; padding: 0 0 4px;
 }
-.visor-cerrar:hover, .visor-flecha:hover { background: var(--blue); color: #04060d; }
+.visor-cerrar:hover, .visor-flecha:hover { background: var(--blue); color: #000000; }
 
 /* La miniatura avisa que se puede ampliar: sin esto nadie descubre el clic */
 .miniatura-ampliable { cursor: zoom-in; transition: transform .12s var(--ease-out), border-color .12s; }
@@ -4132,9 +4100,9 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
    ============================================================ */
 .btn-agotados[hidden] { display: none; }
 .btn-agotados {
-    background: var(--tint-blue, rgba(0, 240, 255, .12));
+    background: var(--tint-blue, rgba(var(--blue-rgb), .12));
     color: var(--blue);
-    border-color: rgba(0, 240, 255, .40);
+    border-color: rgba(var(--blue-rgb), .40);
 }
 
 .agotados-lista {
@@ -4302,7 +4270,7 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
     border-radius: 999px;
 }
 .estado-seccion.estado-ok { color: var(--green); background: var(--tint-green, rgba(34, 197, 94, .12)); }
-.estado-seccion.estado-pendiente { color: var(--gold); background: rgba(255, 46, 196, .12); }
+.estado-seccion.estado-pendiente { color: var(--gold); background: rgba(var(--gold-rgb), .12); }
 .estado-seccion.estado-critico { color: var(--red); background: var(--tint-red); }
 
 /* El resumen de arriba del editor */
@@ -4354,7 +4322,7 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
     padding: 1px 7px;
     border-radius: 999px;
     margin-right: 4px;
-    background: rgba(255, 46, 196, .12);
+    background: rgba(var(--gold-rgb), .12);
     color: var(--gold);
 }
 .falta-chip-critica { background: var(--tint-red); color: var(--red); }
@@ -4364,9 +4332,9 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
    stock, sin precio, o publicado sin ninguna foto. */
 .btn-fichas[hidden] { display: none; }
 .btn-fichas {
-    background: rgba(255, 46, 196, .12);
+    background: rgba(var(--gold-rgb), .12);
     color: var(--gold);
-    border-color: rgba(255, 46, 196, .40);
+    border-color: rgba(var(--gold-rgb), .40);
 }
 .btn-fichas.fichas-criticas {
     background: var(--tint-red); color: var(--red);
@@ -4415,9 +4383,9 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
    porque la tienda le está prometiendo esa fecha a un cliente. */
 .btn-camino[hidden] { display: none; }
 .btn-camino {
-    background: var(--tint-blue, rgba(0, 240, 255, .12));
+    background: var(--tint-blue, rgba(var(--blue-rgb), .12));
     color: var(--blue);
-    border-color: rgba(0, 240, 255, .35);
+    border-color: rgba(var(--blue-rgb), .35);
 }
 .btn-camino.camino-vencido {
     background: var(--tint-red); color: var(--red);
@@ -4444,9 +4412,9 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
    protocolo aplicado y ninguna fase tachada: eso es un equipo parado. */
 .btn-servicios[hidden] { display: none; }
 .btn-servicios {
-    background: var(--tint-blue, rgba(0, 240, 255, .12));
+    background: var(--tint-blue, rgba(var(--blue-rgb), .12));
     color: var(--blue);
-    border-color: rgba(0, 240, 255, .35);
+    border-color: rgba(var(--blue-rgb), .35);
 }
 .btn-servicios.servicio-sin-avanzar {
     background: var(--tint-gold); color: var(--gold);
@@ -4538,7 +4506,7 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
     border-radius: 10px;
 }
 /* El camino a mano es el recomendado: se destaca con el borde de acento */
-.ia-camino-manual { border-color: rgba(0, 240, 255, .35); background: var(--surface-soft); }
+.ia-camino-manual { border-color: rgba(var(--blue-rgb), .35); background: var(--surface-soft); }
 .ia-camino-titulo {
     font-size: 11px;
     font-weight: 700;
@@ -4552,3 +4520,143 @@ body.theme-light .pos-col-der .data-table thead th { background: #f8fafc; }
 @media (max-width: 760px) {
     .ia-dos-caminos { grid-template-columns: 1fr; }
 }
+
+/* ============================================================
+   13. POS SOBRIO (27-09-2026) — el mismo lenguaje de sevelin-tienda
+   ============================================================ */
+/* Tailwind (preflight) limita las <img> a max-width:100%: en una celda
+   angosta eso aplastaba la foto del carrito hasta dejarla en una tira. */
+.miniatura-producto { max-width: none; }
+
+.dark .tarjeta-pos { background: var(--bg-800); border-color: var(--border); box-shadow: var(--shadow-sm); }
+.titulo-pos {
+    font-size: .92rem; font-weight: 700; text-transform: uppercase; letter-spacing: .02em;
+    color: #18181b;
+}
+.dark .titulo-pos { color: var(--text-100); }
+.titulo-pos span { color: var(--blue); margin-right: .15em; }
+
+.dark .campo-pos { background: var(--bg-900); border-color: var(--border-strong); color: var(--text-100); }
+.dark .campo-pos::placeholder { color: #71717a; }
+.campo-pos:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(var(--blue-rgb), .25); }
+.dark .caja-check { background: var(--bg-900); border-color: var(--border-strong); color: var(--text-300); }
+.caja-check:hover { border-color: var(--blue); }
+
+/* Sugerencias del POS con foto. Solo #posSugerencias: .suggestion-item
+   también lo usan OT, mermas, encargos y activos con otro formato. */
+#posSugerencias { max-height: 380px; }
+.dark #posSugerencias { background: var(--bg-800); border-color: var(--border-strong); }
+#posSugerencias .suggestion-item {
+    display: grid; grid-template-columns: 40px minmax(0, 1fr) auto auto;
+    align-items: center; gap: 12px; padding: .5rem .8rem;
+}
+#posSugerencias .suggestion-item + .suggestion-item { border-top: 1px solid var(--border); }
+#posSugerencias .suggestion-item:hover { background: var(--surface-soft); }
+#posSugerencias .suggestion-item.activa { background: var(--tint-blue); border-left-color: var(--blue); }
+#posSugerencias .miniatura-producto { background: #fff; }
+.sug-nombre {
+    font-size: .86rem; line-height: 1.3;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.sug-sn {
+    font-size: .6rem; font-weight: 700; color: var(--gold); vertical-align: middle;
+    border: 1px solid rgba(var(--gold-rgb), .45); border-radius: 4px; padding: 0 4px; margin-left: 4px;
+}
+#posSugerencias .suggestion-item span.sug-meta {
+    display: flex; flex-direction: column; align-items: flex-end; gap: 1px;
+    font-size: .86rem; font-weight: 600; color: var(--text-100); font-variant-numeric: tabular-nums;
+}
+.sug-meta small { font-size: .7rem; font-weight: 500; color: var(--text-muted); }
+.sug-meta small.sug-sin-stock { color: var(--red); }
+
+/* Vista previa: la foto de lo que vas a agregar o de lo último que entró */
+.pos-vista-previa {
+    flex: 1 1 auto; min-height: 9.5rem; margin-top: 1rem; padding: 1rem;
+    display: flex; align-items: center; justify-content: center; gap: 1.1rem;
+    border: 1px dashed var(--border-strong); border-radius: 1rem;
+}
+.pos-vista-previa.con-producto { justify-content: flex-start; border-style: solid; border-color: var(--border); background: var(--bg-900); }
+.pos-vista-previa .miniatura-producto { border-radius: .85rem; background: #fff; }
+.vp-vacia { font-size: .82rem; color: var(--text-muted); text-align: center; max-width: 17rem; line-height: 1.5; }
+.vp-info { display: flex; flex-direction: column; gap: .3rem; min-width: 0; }
+.vp-etiqueta { font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--text-muted); }
+.vp-etiqueta.vp-agregado { color: var(--green); }
+.vp-nombre {
+    font-size: .98rem; font-weight: 600; line-height: 1.3; color: var(--text-100);
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.vp-precio { font-size: 1.2rem; font-weight: 700; color: var(--text-100); font-variant-numeric: tabular-nums; }
+.vp-detalle { font-size: .74rem; color: var(--text-muted); }
+
+/* Carrito: producto (foto + nombre + detalle) · cantidad con + / − · subtotal */
+.tabla-carrito { table-layout: fixed; }
+.tabla-carrito .col-cant { width: 6.6rem; }
+.tabla-carrito .col-subtotal { width: 6rem; }
+.tabla-carrito .col-quitar { width: 2.75rem; }
+.tabla-carrito thead th.text-right { text-align: right; }
+.tabla-carrito thead th.text-center { text-align: center; }
+#cartTableBody td.cart-prod { padding-right: .4rem; }
+#cartTableBody td.cart-cant { padding-left: .2rem; padding-right: .2rem; }
+#cartTableBody td { vertical-align: middle; }
+#cartTableBody tr:hover { background: var(--surface-soft); }
+.cart-prod-fila { display: flex; align-items: center; gap: .75rem; min-width: 0; }
+.cart-prod-fila .miniatura-producto { background: #fff; }
+.cart-prod-texto { display: flex; flex-direction: column; min-width: 0; text-align: left; }
+.cart-prod-nombre {
+    font-size: .84rem; font-weight: 600; line-height: 1.3; color: var(--text-100);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.cart-prod-sub { font-size: .72rem; color: var(--text-muted); margin-top: 2px; }
+#cartTableBody td.cart-cant { text-align: center; }
+#cartTableBody td.cart-subtotal { text-align: right; font-weight: 600; color: var(--text-100); }
+#cartTableBody td.cart-quitar { text-align: right; padding-left: 0; }
+.cart-quitar .btn-icon { width: 2rem; height: 2rem; }
+.stepper {
+    display: inline-flex; align-items: center;
+    border: 1px solid var(--border-strong); border-radius: 999px; overflow: hidden;
+}
+.stepper-btn {
+    width: 1.85rem; height: 1.85rem; display: inline-flex; align-items: center; justify-content: center;
+    font-size: 1rem; font-weight: 600; color: var(--text-300); background: transparent; border: 0;
+    cursor: pointer; transition: background-color .12s ease, color .12s ease;
+}
+.stepper-btn:hover:not(:disabled) { background: var(--tint-blue); color: var(--text-100); }
+.stepper-btn:active:not(:disabled) { background: rgba(var(--blue-rgb), .28); }
+.stepper-btn:disabled { opacity: .35; cursor: default; }
+.stepper-num { min-width: 1.9rem; text-align: center; font-weight: 700; color: var(--text-100); font-variant-numeric: tabular-nums; }
+
+/* Ventana del número de serie (pos.js, pedirNumeroSerie) */
+.modal-sn { max-width: 470px; }
+.modal-sn-cabecera { display: flex; align-items: center; gap: .9rem; margin-bottom: 1.1rem; }
+.modal-sn-cabecera h2 { font-size: 1.1rem; }
+.modal-sn-cabecera .miniatura-producto { background: #fff; }
+.sn-camara {
+    position: absolute; right: .35rem; top: 50%; transform: translateY(-50%);
+    width: 2rem; height: 2rem; border-radius: .5rem; cursor: pointer;
+    background: var(--surface-soft); border: 1px solid var(--border);
+}
+/* La cámara se abre desde otras ventanas (como la del S/N): siempre va encima */
+#modalEscaner { z-index: 260; }
+
+/* Menú lateral con íconos de línea en vez de emojis */
+.nav-ico { width: 18px; height: 18px; flex-shrink: 0; opacity: .8; }
+.nav-links .nav-btn.active .nav-ico { color: var(--blue); opacity: 1; }
+
+/* Chips del encabezado: píldora neutra; el color de cada aviso vive solo en
+   el punto, y el texto se tiñe recién cuando el aviso es urgente. */
+.header-right .btn-notificaciones {
+    background: transparent; border-color: var(--border-strong); animation: none;
+}
+.header-right .btn-notificaciones:hover { background: var(--surface-soft); }
+.header-right .btn-notificaciones > span:not(.chip-punto) { color: var(--text-300); }
+.chip-punto { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.header-right .btn-notificaciones:is(.tiene-pendientes, .f29-pronto, .f29-atrasado, .seg-con-plata,
+    .envios-atrasado, .fichas-criticas, .camino-vencido, .catalogo-sobrante,
+    .servicio-sin-avanzar, .factura-atrasada) > span:not(.chip-punto) { color: inherit; font-weight: 700; }
+.btn-notificaciones.tiene-pendientes .chip-punto { animation: pulso-notificacion 2s ease-in-out infinite; }
+
+.sync-badge { background: transparent !important; border: 1px solid var(--border-strong) !important; color: var(--text-300) !important; }
+.sync-badge::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+.sync-bad { color: var(--red) !important; }
+.sync-bad::before { background: var(--red); }
+.sync-pending::before { background: var(--gold); }
