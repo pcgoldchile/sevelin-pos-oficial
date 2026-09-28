@@ -8,8 +8,8 @@
      SUPABASE_URL              https://xxxx.supabase.co
      SUPABASE_SERVICE_ROLE_KEY eyJhbGciOi...   (¡secreta! nunca al frontend)
      JWT_SECRET                cadena larga y aleatoria
-     ADMIN_PIN                 9067
-     WORKER_PIN                0495
+     ADMIN_PIN                 (largo y privado; nunca en el código)
+     WORKER_PIN                (largo y privado; nunca en el código)
      CORS_ORIGINS              https://tu-pos.vercel.app,http://localhost:5500
      NEGOCIO_NOMBRE            Sevelin            (opcional)
      SYNC_SECRET               cadena larga y aleatoria (compartida con sevelin-tienda)
@@ -646,8 +646,8 @@ function ipReal(req) {
   return req.socket?.remoteAddress || req.ip || 'anon';
 }
 
-/* Intentos de PIN fallidos por IP — respaldado por Upstash Redis cuando está
-   configurado.
+/* Intentos de PIN fallidos por IP — en Upstash Redis si está configurado; si no, en la
+   tabla intentos_pin del POS (sql/67), que también es compartida.
    ------------------------------------------------------------
    ANTES vivía solo en un Map en memoria del proceso: en Vercel serverless
    cada instancia fría parte de cero, así que un atacante con varias IPs
@@ -658,25 +658,20 @@ function ipReal(req) {
    instancias, así que el conteo es el mismo sin importar cuál atienda la
    petición.
 
-   Sin UPSTASH_REDIS_REST_URL/TOKEN configuradas, degrada al Map en memoria
-   de antes — mismo criterio de "degradar, no romper" que el resto del
-   proyecto: nunca debe bloquearse el login de un cajero real por un
-   servicio externo caído o sin configurar. Mismo motivo si Redis responde
-   con error en un momento puntual: se permite el intento en vez de dejar a
-   todo el mundo afuera. */
+   Sin UPSTASH_REDIS_REST_URL/TOKEN, usa la tabla intentos_pin (27-09-2026,
+   opción elegida por el dueño en vez de abrir una cuenta de Upstash). Si
+   Redis o la base fallan en un momento puntual, cae al Map en memoria —
+   "degradar, no romper": nunca se bloquea el login de un cajero real. */
 const redisIntentos = (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
   ? Redis.fromEnv()
   : null;
 
-if (!redisIntentos) {
-  console.warn('[POS] Falta UPSTASH_REDIS_REST_URL/UPSTASH_REDIS_REST_TOKEN: el freno de intentos ' +
-    'de PIN queda en memoria del proceso (más débil en serverless — cada instancia fría parte de ' +
-    'cero). Configúralas para un freno compartido de verdad entre instancias.');
-}
-
 const intentosMemoria = new Map();
 const CLAVE_INTENTOS = ip => `sevelin-pos:intentos-pin:${ip}`;
+const REGISTRO_VACIO = () => ({ n: 0, hasta: 0, ts: 0 });
 
+/* Sin Redis, el conteo vive en la tabla intentos_pin (sql/67), compartida por todas las
+   instancias. Si la base falla, cae a la memoria del proceso: nunca se deja afuera a un cajero. */
 async function obtenerRegistroIntentos(ip) {
   if (redisIntentos) {
     try {
@@ -685,22 +680,37 @@ async function obtenerRegistroIntentos(ip) {
     } catch (err) {
       console.error('[POS] Redis (freno de intentos) no respondió al leer, se permite el intento:', err.message);
     }
-    return { n: 0, hasta: 0, ts: 0 };
+    return REGISTRO_VACIO();
   }
-  return intentosMemoria.get(ip) || { n: 0, hasta: 0, ts: 0 };
+  const { data, error } = await db.from('intentos_pin').select('n, hasta, ts').eq('ip', ip).maybeSingle();
+  if (!error) {
+    return data ? { n: Number(data.n) || 0, hasta: Number(data.hasta) || 0, ts: Number(data.ts) || 0 } : REGISTRO_VACIO();
+  }
+  console.error('[POS] intentos_pin no respondió al leer, se usa la memoria del proceso:', error.message);
+  return intentosMemoria.get(ip) || REGISTRO_VACIO();
 }
 
 async function guardarRegistroIntentos(ip, reg) {
   if (redisIntentos) {
     try {
-      // 15 min: cubre la ventana de reseteo de 10 min (ver frenoLogin) más
-      // margen — evita que la llave quede para siempre en Redis por un
-      // intento aislado que nunca se repite.
+      // 15 min: cubre la ventana de reseteo de 10 min (ver frenoLogin) más margen
       await redisIntentos.set(CLAVE_INTENTOS(ip), reg, { ex: 15 * 60 });
       return;
     } catch (err) {
       console.error('[POS] Redis (freno de intentos) no respondió al guardar:', err.message);
     }
+  } else {
+    const { error } = await db.from('intentos_pin').upsert({
+      ip, n: reg.n || 0, hasta: reg.hasta || 0, ts: reg.ts || 0, actualizado_en: new Date().toISOString()
+    }, { onConflict: 'ip' });
+    if (!error) {
+      if (Math.random() < 0.02) {
+        const ayer = new Date(Date.now() - 86400000).toISOString();
+        db.from('intentos_pin').delete().lt('actualizado_en', ayer).then(() => {}, () => {});
+      }
+      return;
+    }
+    console.error('[POS] intentos_pin no respondió al guardar, se usa la memoria del proceso:', error.message);
   }
   intentosMemoria.set(ip, reg);
 }
@@ -11503,14 +11513,16 @@ app.get('/api/pos/mas-buscados', auth(true), async (req, res) => {
    estas rompe el resto del POS si falta — cada una degrada su propia
    función nada más (ver los console.warn al inicio de este archivo, son
    la misma lista). */
-app.get('/api/salud-sistema', auth(true), (req, res) => {
+app.get('/api/salud-sistema', auth(true), async (req, res) => {
   const configurada = (...vars) => vars.every((v) => !!v);
+  // El freno es compartido si hay Redis o si la tabla intentos_pin (sql/67) responde
+  const frenoCompartido = !!redisIntentos || !(await db.from('intentos_pin').select('ip').limit(1)).error;
 
   const items = [
     {
-      nombre: 'Redis (freno de intentos de login)',
-      configurada: configurada(process.env.UPSTASH_REDIS_REST_URL, process.env.UPSTASH_REDIS_REST_TOKEN),
-      impacto: 'El freno sigue funcionando pero solo en memoria del proceso — más débil en serverless (cada instancia fría parte de cero).',
+      nombre: 'Freno de intentos de PIN (compartido)',
+      configurada: frenoCompartido,
+      impacto: 'El freno sigue funcionando pero solo en memoria de cada instancia — más débil en serverless. Falta aplicar sql/67.',
     },
     {
       nombre: 'Gemini (botón "Generar con IA" del SEO)',

@@ -23,11 +23,10 @@
 4. **Revisar las 9 fases** del protocolo "Mantenimiento Preventivo PC Gamer": son un borrador
    escrito por Claude, no el procedimiento real del taller.
 5. **Probar la lámina PTM7950.** La aplicará cuando alguien pida el servicio, que ya está publicado.
-6. **Decir si se corrige la venta 201** (v92): su línea `venta_items.id = 280` quedó con
-   `condicion = NULL` por una lectura fallida el 12-09. El producto era `nuevo`. Es un UPDATE de una
-   fila, pero en producción: no se hace sin su OK.
-7. **Redis (Upstash) en el Vercel del POS.** Salud lo marca "⚠️ Falta" y es real: el freno de
-   intentos de login solo vive en memoria de cada instancia.
+6. ~~Venta 201~~ — **corregida el 27-09-2026** con su OK: `venta_items.id = 280` quedó en `nuevo`.
+7. ~~Redis~~ — **resuelto el 27-09-2026 sin Upstash** (opción elegida por el dueño): el freno de
+   PIN cuenta en la tabla `intentos_pin` (sql/67, RLS activo). Salud lo muestra como
+   "Freno de intentos de PIN (compartido)".
 
 **Anotado, no hecho (decidido, sin construir):**
 
