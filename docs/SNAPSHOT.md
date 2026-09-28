@@ -65,6 +65,15 @@
 
 ---
 
+## 28-09-2026 · v98, preguntas de diagnóstico para copiar y editar
+
+- Check-In → "🩺 Copiar preguntas de diagnóstico": las 10 preguntas del dueño numeradas, con una línea
+  arriba para que el cliente responda por número. **El admin las edita con ✏️** (vista previa idéntica a
+  lo copiado); se guardan como lista en `textos_editables` (sql/70, aplicada, RLS activo) y el POS
+  numera al copiar. Detalle en `docs/CHANGELOG-V98.md`.
+
+---
+
 ## 28-09-2026 · v97, sellos de garantía con S/N en las OT
 
 - Tabla `ot_sellos_garantia` (sql/69, aplicada, RLS activo): **un S/N solo puede estar en una orden**.

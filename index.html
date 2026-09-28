@@ -668,6 +668,9 @@
           <!-- Atajos para completar los datos del cliente sin trabarse en el mesón -->
           <div class="row-actions" style="margin-top:16px;">
             <button class="btn btn-outline btn-sm" id="btnCopiarWhatsApp">💬 Copiar datos para WhatsApp</button>
+            <!-- v98 (sql/70): preguntas numeradas para que el cliente responda por número; el admin las edita con ✏️ -->
+            <button class="btn btn-outline btn-sm" id="btnCopiarPreguntasDiag">🩺 Copiar preguntas de diagnóstico</button>
+            <button class="btn btn-ghost btn-sm admin-only" id="btnEditarPreguntasDiag" type="button" title="Editar las preguntas de diagnóstico">✏️</button>
             <button class="btn btn-outline btn-sm" id="btnImprimirFicha">🖨️ Imprimir Ficha Manual</button>
           </div>
         </div>
@@ -6345,6 +6348,36 @@
       <div class="modal-foot">
         <button class="btn btn-ghost" id="btnCancelarOtNotas">Cancelar</button>
         <button class="btn btn-primary" id="btnGuardarOtNotas">Guardar Notas</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: EDITAR PREGUNTAS DE DIAGNÓSTICO (sql/70, solo admin) -->
+  <div id="modalPreguntasDiag" class="modal-overlay">
+    <div class="modal-box" style="max-width: 640px;">
+      <h2>🩺 Preguntas de diagnóstico</h2>
+      <p class="modal-hint">Es lo que copia el botón del Check-In. Los números se ponen solos: escribe una pregunta por línea.</p>
+
+      <div class="field" style="margin-top:14px;">
+        <label>Texto de arriba <span class="opcional">(opcional)</span></label>
+        <input type="text" id="preguntasDiagEncabezado" maxlength="500">
+      </div>
+      <div class="field" style="margin-top:12px;">
+        <label>Preguntas (una por línea) *</label>
+        <textarea id="preguntasDiagLista" rows="10"></textarea>
+      </div>
+      <div class="field" style="margin-top:12px;">
+        <label>Texto de abajo <span class="opcional">(opcional)</span></label>
+        <input type="text" id="preguntasDiagCierre" maxlength="500">
+      </div>
+
+      <span class="section-label" style="margin-top:14px;">Así se va a copiar</span>
+      <pre id="preguntasDiagVista" class="preguntas-diag-vista"></pre>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnRestaurarPreguntasDiag" type="button" title="Vuelve a las preguntas originales (no guarda hasta que presiones Guardar)">↺ Originales</button>
+        <button class="btn btn-ghost" id="btnCancelarPreguntasDiag" type="button">Cancelar</button>
+        <button class="btn btn-primary" id="btnGuardarPreguntasDiag" type="button">Guardar</button>
       </div>
     </div>
   </div>

@@ -4675,3 +4675,11 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
   color: var(--text-muted); font-size: 12px; line-height: 1;
 }
 .sello-chip-quitar:hover { color: var(--red); }
+
+/* Vista previa de las preguntas de diagnóstico (sql/70, v98): el texto tal cual se copia. */
+.preguntas-diag-vista {
+  white-space: pre-wrap; word-break: break-word; margin: 6px 0 0;
+  max-height: 220px; overflow: auto; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: 10px;
+  font-family: inherit; font-size: 13px; line-height: 1.45;
+}

@@ -23,6 +23,15 @@ const elBtnOtSiguiente = document.getElementById('btnOtSiguiente');
 const elBtnOtGuardar = document.getElementById('btnOtGuardar');
 const elBtnOtLimpiar = document.getElementById('btnOtLimpiar');
 const elBtnCopiarWhatsApp = document.getElementById('btnCopiarWhatsApp');
+// Preguntas de diagnóstico (sql/70, v98)
+const elBtnCopiarPreguntasDiag = document.getElementById('btnCopiarPreguntasDiag');
+const elBtnEditarPreguntasDiag = document.getElementById('btnEditarPreguntasDiag');
+const elModalPreguntasDiag = document.getElementById('modalPreguntasDiag');
+const elPreguntasDiagEncabezado = document.getElementById('preguntasDiagEncabezado');
+const elPreguntasDiagLista = document.getElementById('preguntasDiagLista');
+const elPreguntasDiagCierre = document.getElementById('preguntasDiagCierre');
+const elPreguntasDiagVista = document.getElementById('preguntasDiagVista');
+const elBtnGuardarPreguntasDiag = document.getElementById('btnGuardarPreguntasDiag');
 const elBtnImprimirFicha = document.getElementById('btnImprimirFicha');
 const elOtCargadorDeja = document.getElementById('otCargadorDeja');
 const elOtCargadorDatos = document.getElementById('otCargadorDatos');
@@ -121,6 +130,14 @@ function setupOtEventListeners() {
   if (elBtnOtGuardar) elBtnOtGuardar.addEventListener('click', guardarCheckIn);
   if (elBtnOtLimpiar) elBtnOtLimpiar.addEventListener('click', () => { limpiarFormularioOT(); irAPasoOT(1); });
   if (elBtnCopiarWhatsApp) elBtnCopiarWhatsApp.addEventListener('click', copiarPlantillaWhatsApp);
+  // Preguntas de diagnóstico (sql/70)
+  elBtnCopiarPreguntasDiag?.addEventListener('click', copiarPreguntasDiag);
+  elBtnEditarPreguntasDiag?.addEventListener('click', abrirModalPreguntasDiag);
+  [elPreguntasDiagEncabezado, elPreguntasDiagLista, elPreguntasDiagCierre]
+    .forEach(el => el?.addEventListener('input', actualizarVistaPreguntasDiag));
+  elBtnGuardarPreguntasDiag?.addEventListener('click', guardarPreguntasDiag);
+  document.getElementById('btnCancelarPreguntasDiag')?.addEventListener('click', () => elModalPreguntasDiag?.classList.remove('show'));
+  document.getElementById('btnRestaurarPreguntasDiag')?.addEventListener('click', () => llenarModalPreguntasDiag(PREGUNTAS_DIAG_ORIGINALES));
   if (elBtnImprimirFicha) elBtnImprimirFicha.addEventListener('click', () => {
     if (typeof imprimirFichaManual === 'function') imprimirFichaManual();
   });
@@ -479,13 +496,17 @@ function plantillaWhatsApp() {
 }
 
 async function copiarPlantillaWhatsApp() {
-  const texto = plantillaWhatsApp();
+  await copiarTextoParaWhatsApp(plantillaWhatsApp(), 'Plantilla copiada: pégala en WhatsApp');
+}
 
+/* Copia con los tres respaldos de siempre. Lo usan la plantilla de datos
+   y las preguntas de diagnóstico. */
+async function copiarTextoParaWhatsApp(texto, mensajeOk) {
   // 1) API moderna del portapapeles (requiere HTTPS)
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       await navigator.clipboard.writeText(texto);
-      showToast('Plantilla copiada: pégala en WhatsApp', 'ok');
+      showToast(mensajeOk, 'ok');
       return;
     }
   } catch (_) { /* se intenta el respaldo */ }
@@ -501,11 +522,103 @@ async function copiarPlantillaWhatsApp() {
     const copiado = typeof document.execCommand === 'function' && document.execCommand('copy');
     document.body.removeChild(area);
 
-    if (copiado) { showToast('Plantilla copiada: pégala en WhatsApp', 'ok'); return; }
+    if (copiado) { showToast(mensajeOk, 'ok'); return; }
   } catch (_) { /* último recurso más abajo */ }
 
   // 3) Último recurso: se muestra el texto para copiarlo a mano
-  window.prompt('Copia esta plantilla y envíala por WhatsApp:', texto);
+  window.prompt('Copia este texto y envíalo por WhatsApp:', texto);
+}
+
+/* ============================================================
+   PREGUNTAS DE DIAGNÓSTICO (sql/70, v98)
+   Se guardan como lista SIN número en textos_editables; el número se pone
+   acá al copiar, así nunca quedan saltos al editar. Se leen al iniciar
+   sesión y quedan en memoria: el botón copia al instante (el portapapeles
+   del navegador puede rechazar una copia que espera una respuesta del
+   servidor). Si la base no responde, se usan las originales de abajo, que
+   son las mismas que carga sql/70.
+   ============================================================ */
+const PREGUNTAS_DIAG_ORIGINALES = {
+  encabezado: 'Para revisar tu equipo, respóndenos con el número de cada pregunta:',
+  preguntas: [
+    '¿Qué equipo es? (marca y modelo, si lo sabes)',
+    '¿Qué problema tiene? Lo que ves o escuchas: no enciende, se apaga solo, se calienta, pantalla azul, ruidos, lentitud…',
+    '¿Desde cuándo pasa? ¿Empezó de a poco o de un momento a otro?',
+    '¿Pasó algo justo antes? (golpe, caída, líquido, corte de luz, actualización o programa nuevo)',
+    '¿Pasa siempre o a ratos? ¿Con algo en particular? (al jugar, al cargar, al abrir un programa)',
+    '¿Lo han abierto o reparado antes? ¿Dónde y qué le hicieron?',
+    '¿Le han cambiado o agregado piezas? (disco, RAM, pantalla, batería, fuente)',
+    '¿Notas alguna otra falla, o hay algo más que quieras que revisemos de paso?',
+    '¿Tiene fotos o documentos importantes adentro? ¿Tienes respaldo?',
+    '¿Lo traerás con cargador u otros accesorios?'
+  ],
+  cierre: 'Si tiene clave o PIN, tenla a mano para pedírtela, solo si hace falta para probarlo. ¡Gracias!'
+};
+let preguntasDiag = PREGUNTAS_DIAG_ORIGINALES;
+
+async function cargarPreguntasDiag() {
+  try {
+    const r = await API.ot.leerTexto('preguntas_diagnostico');
+    if (r?.contenido?.preguntas?.length) preguntasDiag = r.contenido;
+  } catch (_) { /* quedan las originales */ }
+}
+
+function textoPreguntasDiag(c) {
+  const partes = [];
+  if (c.encabezado) partes.push(c.encabezado, '');
+  (c.preguntas || []).forEach((p, i) => partes.push(`${i + 1}. ${p}`));
+  if (c.cierre) partes.push('', c.cierre);
+  return partes.join('\n');
+}
+
+async function copiarPreguntasDiag() {
+  await copiarTextoParaWhatsApp(textoPreguntasDiag(preguntasDiag), 'Preguntas copiadas: pégalas en WhatsApp');
+}
+
+// Lo que hay escrito en el modal, con la misma limpieza que hace el servidor.
+function preguntasDiagDelModal() {
+  return {
+    encabezado: (elPreguntasDiagEncabezado?.value || '').trim(),
+    preguntas: (elPreguntasDiagLista?.value || '').split('\n')
+      .map(l => l.trim().replace(/^\d{1,2}\s*[.)\-:]\s*/, ''))
+      .filter(Boolean),
+    cierre: (elPreguntasDiagCierre?.value || '').trim()
+  };
+}
+
+function llenarModalPreguntasDiag(c) {
+  if (elPreguntasDiagEncabezado) elPreguntasDiagEncabezado.value = c.encabezado || '';
+  if (elPreguntasDiagLista) elPreguntasDiagLista.value = (c.preguntas || []).join('\n');
+  if (elPreguntasDiagCierre) elPreguntasDiagCierre.value = c.cierre || '';
+  actualizarVistaPreguntasDiag();
+}
+
+function actualizarVistaPreguntasDiag() {
+  if (elPreguntasDiagVista) elPreguntasDiagVista.textContent = textoPreguntasDiag(preguntasDiagDelModal());
+}
+
+async function abrirModalPreguntasDiag() {
+  if (!esAdmin() || !elModalPreguntasDiag) return;
+  await cargarPreguntasDiag(); // lo último guardado, por si se editó desde otro equipo
+  llenarModalPreguntasDiag(preguntasDiag);
+  elModalPreguntasDiag.classList.add('show');
+  setTimeout(() => elPreguntasDiagLista?.focus(), 80);
+}
+
+async function guardarPreguntasDiag() {
+  const contenido = preguntasDiagDelModal();
+  if (!contenido.preguntas.length) { showToast('Escribe al menos una pregunta', 'err'); return; }
+  if (elBtnGuardarPreguntasDiag) elBtnGuardarPreguntasDiag.disabled = true;
+  try {
+    const r = await API.ot.guardarTexto('preguntas_diagnostico', contenido);
+    preguntasDiag = r.contenido;
+    elModalPreguntasDiag?.classList.remove('show');
+    showToast('Preguntas guardadas', 'ok');
+  } catch (err) {
+    showToast(err.message || 'No se pudieron guardar las preguntas', 'err');
+  } finally {
+    if (elBtnGuardarPreguntasDiag) elBtnGuardarPreguntasDiag.disabled = false;
+  }
 }
 
 // ============================================================
@@ -1137,4 +1250,4 @@ function limpiarFirma() {
 }
 
 /* Las órdenes se cargan al iniciar sesión (evento de auth.js) */
-document.addEventListener('pos:sesion-iniciada', () => cargarOrdenes());
+document.addEventListener('pos:sesion-iniciada', () => { cargarOrdenes(); cargarPreguntasDiag(); });

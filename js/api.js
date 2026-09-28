@@ -551,6 +551,9 @@ const API = {
     porQr: (codigo) => apiRequest(`/ot/por-qr/${encodeURIComponent(codigo)}`),
     qrNuevo: (id) => apiRequest(`/ot/${id}/qr-retiro`, { method: 'POST', body: {} }),
     enviarQr: (id) => apiRequest(`/ot/${id}/enviar-qr`, { method: 'POST', body: {} }),
+    // Preguntas de diagnóstico editables (sql/70)
+    leerTexto: (clave) => apiRequest(`/textos/${encodeURIComponent(clave)}`, { silencioso: true }),
+    guardarTexto: (clave, contenido) => apiRequest(`/textos/${encodeURIComponent(clave)}`, { method: 'PUT', body: { contenido } }),
     // Sellos de garantía con S/N (sql/69)
     agregarSello: (id, numeroSerie) => apiRequest(`/ot/${id}/sellos`, { method: 'POST', body: { numero_serie: numeroSerie } }),
     quitarSello: (id, selloId) => apiRequest(`/ot/${id}/sellos/${selloId}`, { method: 'DELETE' }),

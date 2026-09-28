@@ -9535,6 +9535,45 @@ app.delete('/api/ot/:id/sellos/:selloId', auth(true), async (req, res) => {
   res.json({ ok: true });
 });
 
+/* TEXTOS EDITABLES (sql/70, v98). Solo se aceptan las claves de esta
+   lista, cada una con su validación: la tabla guarda jsonb libre, así que
+   la forma la asegura el servidor. Leer: admin y trabajador (el trabajador
+   copia las preguntas en el mesón). Editar: solo admin. */
+const TEXTOS_EDITABLES = {
+  preguntas_diagnostico(c) {
+    const limpiar = (t, max) => String(t ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
+    const preguntas = (Array.isArray(c?.preguntas) ? c.preguntas : [])
+      .map(p => limpiar(p, 300))
+      // El número lo pone el POS: si alguien lo escribió a mano ("3) ..."), se quita.
+      .map(p => p.replace(/^\d{1,2}\s*[.)\-:]\s*/, ''))
+      .filter(Boolean);
+    if (!preguntas.length) return { error: 'Escribe al menos una pregunta' };
+    if (preguntas.length > 30) return { error: 'Máximo 30 preguntas' };
+    return { contenido: { encabezado: limpiar(c?.encabezado, 500), preguntas, cierre: limpiar(c?.cierre, 500) } };
+  }
+};
+
+app.get('/api/textos/:clave', auth(), async (req, res) => {
+  if (!TEXTOS_EDITABLES[req.params.clave]) return enviarError(res, 404, 'Texto no encontrado');
+  const { data, error } = await db.from('textos_editables')
+    .select('contenido, actualizado_en').eq('clave', req.params.clave).maybeSingle();
+  if (error) return enviarErrorBD(res, error);
+  if (!data) return enviarError(res, 404, 'Texto no encontrado');
+  res.json(data);
+});
+
+app.put('/api/textos/:clave', auth(true), async (req, res) => {
+  const validar = TEXTOS_EDITABLES[req.params.clave];
+  if (!validar) return enviarError(res, 404, 'Texto no encontrado');
+  const { contenido, error: errValidacion } = validar(req.body?.contenido);
+  if (errValidacion) return enviarError(res, 400, errValidacion);
+  const { data, error } = await db.from('textos_editables')
+    .upsert({ clave: req.params.clave, contenido, actualizado_en: new Date().toISOString() }, { onConflict: 'clave' })
+    .select('contenido, actualizado_en').single();
+  if (error) return enviarErrorBD(res, error);
+  res.json(data);
+});
+
 app.delete('/api/ot/:id', auth(true), async (req, res) => {
   const { error } = await db.from('ordenes_trabajo').delete().eq('id', req.params.id);
   if (error) return enviarErrorBD(res, error);

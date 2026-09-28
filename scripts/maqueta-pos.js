@@ -83,6 +83,14 @@ app.get('/api/garantias/servicios', (_req, res) => res.json(ordenes.filter(o => 
   ...o, sellos: (o.sellos || []).map(s => s.numero_serie), vence_el: '2027-03-28', estado_garantia: 'VIGENTE',
 }))));
 
+// Preguntas de diagnóstico editables (sql/70, v98). Parte con 2 preguntas para notar que viene de la "base".
+let textoPreguntas = { encabezado: 'Respóndenos con el número de cada pregunta:', preguntas: ['¿Qué equipo es?', '¿Qué problema tiene?'], cierre: '¡Gracias!' };
+app.get('/api/textos/preguntas_diagnostico', (_req, res) => res.json({ contenido: textoPreguntas, actualizado_en: new Date().toISOString() }));
+app.put('/api/textos/preguntas_diagnostico', (req, res) => {
+  textoPreguntas = req.body.contenido;
+  res.json({ contenido: textoPreguntas, actualizado_en: new Date().toISOString() });
+});
+
 app.use('/api', (req, res) => {
   const clave = `${req.method} ${req.path}`;
   if (!sinManejar.has(clave)) { sinManejar.add(clave); console.log('[maqueta] sin datos:', clave); }
