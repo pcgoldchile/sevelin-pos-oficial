@@ -46,6 +46,11 @@ const ordenes = [
     falla_reportada: 'No enciende', token_retiro: 'a'.repeat(32), acepta_responsabilidad: true },
 ];
 app.get('/api/ot', (_req, res) => res.json(ordenes));
+// Una fase obligatoria sin tachar, para ver el aviso y el motivo de "entregar igual" (sql/66).
+app.get('/api/ot/:id/fases', (_req, res) => res.json({
+  fases: [{ id: 1, nombre: 'Prueba de estrés final', obligatoria: true, completada_en: null, orden: 1 }],
+  total: 1, completadas: 0, obligatorias_pendientes: 1,
+}));
 app.post('/api/ot/:id/entrega', (req, res) => {
   const ot = ordenes.find(o => String(o.id) === req.params.id);
   const b = req.body || {};
@@ -53,7 +58,8 @@ app.post('/api/ot/:id/entrega', (req, res) => {
     if (String(b.verificacion_motivo || '').trim().length < 10) return res.status(400).json({ error: 'Escribe el motivo (mínimo 10 letras)' });
     if (b.pin_admin === 'mal') return res.status(403).json({ error: 'PIN de administrador incorrecto' });
   }
-  Object.assign(ot, { estado: 'ENTREGADO', fecha_entrega: new Date().toISOString(), retira_nombre: b.retira_nombre, retira_rut: b.retira_rut,
+  if (!String(b.entrega_forzada_motivo || '').trim()) return res.status(400).json({ error: 'Faltan fases obligatorias: escribe por qué' });
+  Object.assign(ot, { estado: 'ENTREGADO', entrega_forzada_motivo: b.entrega_forzada_motivo, fecha_entrega: new Date().toISOString(), retira_nombre: b.retira_nombre, retira_rut: b.retira_rut,
     retiro_verificacion: b.verificacion, retiro_verificacion_motivo: b.verificacion === 'ADMIN' ? b.verificacion_motivo.trim() : null });
   res.json(ot);
 });

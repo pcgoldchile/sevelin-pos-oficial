@@ -5749,6 +5749,15 @@
       </div>
       <p class="modal-hint" id="otVerificacionAviso" style="margin-top:6px;"></p>
 
+      <!-- Fases obligatorias sin tachar (sql/66): solo el admin entrega igual, dejando el motivo. -->
+      <div id="otEntregaFasesBloque" style="display:none; margin-top:12px; padding:10px 12px; border:1px solid var(--red); border-radius:10px;">
+        <p class="modal-hint" id="otEntregaFasesAviso" style="margin:0;"></p>
+        <div class="field" id="otEntregaFasesMotivoCampo" style="margin-top:8px;">
+          <label>Por qué se entrega igual (queda en la orden) *</label>
+          <textarea id="otEntregaFasesMotivo" rows="2" maxlength="300" placeholder="Ej: el cliente pidió retirarlo sin la prueba final porque viaja hoy"></textarea>
+        </div>
+      </div>
+
       <div class="grid grid-2" style="margin-top:12px;">
         <div class="field">
           <label>Nombre de quien retira *</label>

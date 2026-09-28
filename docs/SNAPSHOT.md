@@ -70,8 +70,9 @@
 - **OT sin QR ni carnet:** tercera verificación "🔑 Forzar con clave de admin" en el Check-Out. El
   servidor exige el PIN de admin (con el freno de sql/67) aunque la sesión sea de trabajador, y un
   motivo de 10 a 300 letras que queda en `retiro_verificacion_motivo` (sql/68, aplicada) y sale en el
-  comprobante. Detalle en `docs/CHANGELOG-V96.md`. **Visto y no tocado:** forzar con fases
-  obligatorias pendientes no tiene pantalla (el servidor pide un motivo que el modal nunca envía).
+  comprobante. Detalle en `docs/CHANGELOG-V96.md`. Además, el Check-Out ahora muestra las fases
+  obligatorias sin tachar y el campo del motivo para que el admin entregue igual (antes el servidor
+  lo pedía y no había dónde escribirlo).
 - **Tienda:** el Pixel de Meta ahora carga solo si la persona acepta el aviso de cookies; CSP abierta
   para Meta y privacidad 1.4. Ver `docs/SNAPSHOT.md` de sevelin-tienda (28-09-2026).
   **Pendiente del dueño, en espera:** apagar la "Coincidencia avanzada automática" del Pixel en Meta.

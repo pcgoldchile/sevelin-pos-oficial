@@ -67,9 +67,17 @@ era imposible de entregar. Ahora hay una tercera:
 - **Base real:** solo la migración (columna + CHECK verificados con una consulta). **No se hizo una
   entrega real**: la primera OT que se fuerce en el local es la prueba de verdad.
 
-## 4. Visto de paso, NO tocado
+## 4. Agregado el mismo día (con el OK del dueño): el motivo de las fases pendientes
 
-- **Forzar la entrega con fases obligatorias pendientes no tiene pantalla.** El servidor pide
-  `entrega_forzada_motivo` (sql/66) pero el modal nunca lo envía: el admin recibe "Para entregar
-  igual, escribe por qué" y no hay dónde escribirlo. Pendiente de decidir con el dueño.
+El servidor ya pedía, para entregar con fases obligatorias sin tachar (sql/66), sesión de admin +
+`entrega_forzada_motivo`, pero **el modal nunca tuvo dónde escribirlo**: el admin recibía "Para
+entregar igual, escribe por qué" y no podía seguir. Ahora, al abrir el Check-Out se leen las fases de
+la orden (`GET /api/ot/:id/fases`); si faltan obligatorias aparece un recuadro rojo con sus nombres:
+- **admin:** campo "Por qué se entrega igual" (obligatorio, se valida antes de enviar);
+- **trabajador:** solo el aviso de que únicamente el admin puede entregar así.
+La regla la sigue haciendo cumplir el servidor, sin cambios. Probado en la maqueta (fase de ejemplo):
+admin sin motivo → aviso y foco en el campo; con motivo → entregada; trabajador → aviso sin campo.
+
+## 5. Visto de paso, NO tocado
+
 - En el detalle de una OT entregada, el recuadro del QR queda como una barra blanca vacía.

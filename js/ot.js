@@ -93,6 +93,12 @@ const elOtVerificacionAviso = document.getElementById('otVerificacionAviso');
 const elOtVerificacionAdminCampos = document.getElementById('otVerificacionAdminCampos');
 const elOtEntregaPinAdmin = document.getElementById('otEntregaPinAdmin');
 const elOtEntregaMotivoAdmin = document.getElementById('otEntregaMotivoAdmin');
+const elOtEntregaFasesBloque = document.getElementById('otEntregaFasesBloque');
+const elOtEntregaFasesAviso = document.getElementById('otEntregaFasesAviso');
+const elOtEntregaFasesMotivoCampo = document.getElementById('otEntregaFasesMotivoCampo');
+const elOtEntregaFasesMotivo = document.getElementById('otEntregaFasesMotivo');
+// Fases obligatorias sin tachar de la OT que se está entregando (se leen al abrir el modal).
+let otEntregaFasesPendientes = [];
 
 document.addEventListener('DOMContentLoaded', () => {
   setupOtEventListeners();
@@ -793,6 +799,8 @@ function abrirModalEntrega(id, codigoQr) {
   if (elOtEntregaCodigo) elOtEntregaCodigo.value = codigoQr || '';
   if (elOtEntregaPinAdmin) elOtEntregaPinAdmin.value = '';
   if (elOtEntregaMotivoAdmin) elOtEntregaMotivoAdmin.value = '';
+  if (elOtEntregaFasesMotivo) elOtEntregaFasesMotivo.value = '';
+  mostrarFasesPendientesEntrega(ot.id);
   actualizarVerificacionEntrega(true);
   // La garantía del servicio siempre parte en 6 meses (pedido explícito
   // del dueño), editable acá mismo antes de confirmar la entrega.
@@ -807,6 +815,36 @@ function cerrarModalEntrega() {
   // El PIN no queda escrito en el formulario después de cerrar.
   if (elOtEntregaPinAdmin) elOtEntregaPinAdmin.value = '';
   otSeleccionadaEntrega = null;
+}
+
+/* FASES OBLIGATORIAS SIN TACHAR (sql/66). El servidor ya exigía, para
+   entregar así, sesión de admin + entrega_forzada_motivo; pero el modal
+   nunca tuvo dónde escribirlo (visto en v96). Se leen al abrir: si faltan,
+   el admin ve la lista y el campo del motivo; el trabajador ve que solo el
+   admin puede. La regla la sigue haciendo cumplir el servidor. */
+async function mostrarFasesPendientesEntrega(otId) {
+  otEntregaFasesPendientes = [];
+  if (elOtEntregaFasesBloque) elOtEntregaFasesBloque.style.display = 'none';
+  let datos;
+  try {
+    datos = await API.protocolos.fasesDeOt(otId);
+  } catch (_) {
+    return; // Sin la lista, el servidor igual avisa al confirmar.
+  }
+  // El modal pudo cerrarse o cambiar de orden mientras llegaba la respuesta.
+  if (String(elOtEntregaId?.value) !== String(otId)) return;
+  otEntregaFasesPendientes = (datos?.fases || []).filter(f => f.obligatoria && !f.completada_en);
+  if (!otEntregaFasesPendientes.length || !elOtEntregaFasesBloque) return;
+
+  const nombres = otEntregaFasesPendientes.map(f => escHtml(f.nombre)).join(', ');
+  const n = otEntregaFasesPendientes.length;
+  elOtEntregaFasesBloque.style.display = '';
+  if (elOtEntregaFasesMotivoCampo) elOtEntregaFasesMotivoCampo.style.display = esAdmin() ? '' : 'none';
+  if (elOtEntregaFasesAviso) {
+    elOtEntregaFasesAviso.innerHTML = esAdmin()
+      ? `⚠️ Faltan <b>${n} fase(s) obligatoria(s)</b> del protocolo: ${nombres}. Puedes entregar igual escribiendo el motivo.`
+      : `⚠️ Faltan <b>${n} fase(s) obligatoria(s)</b> del protocolo: ${nombres}. Solo el administrador puede entregar así: táchalas en el checklist o pídele que la entregue.`;
+  }
 }
 
 function verificacionElegidaOT() {
@@ -849,6 +887,12 @@ async function confirmarEntrega() {
     showToast('Escanea el QR de quien retira, o elige verificar con carnet', 'err');
     return;
   }
+  const motivoFases = elOtEntregaFasesMotivo?.value.trim() || '';
+  if (otEntregaFasesPendientes.length && esAdmin() && !motivoFases) {
+    showToast('Faltan fases obligatorias: escribe por qué se entrega igual', 'err');
+    elOtEntregaFasesMotivo?.focus();
+    return;
+  }
   const motivoAdmin = elOtEntregaMotivoAdmin?.value.trim() || '';
   if (verificacion === 'ADMIN') {
     if (!elOtEntregaPinAdmin?.value.trim()) {
@@ -873,6 +917,7 @@ async function confirmarEntrega() {
       codigo_retiro: verificacion === 'QR' ? elOtEntregaCodigo?.value.trim() : null,
       pin_admin: verificacion === 'ADMIN' ? elOtEntregaPinAdmin?.value.trim() : undefined,
       verificacion_motivo: verificacion === 'ADMIN' ? motivoAdmin : undefined,
+      entrega_forzada_motivo: motivoFases || undefined,
       meses_garantia: elOtEntregaMesesGarantia?.value.trim() ? Number(elOtEntregaMesesGarantia.value) : 6,
       retira_firma_base64: obtenerFirmaBase64()
     });
