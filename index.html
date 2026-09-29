@@ -248,6 +248,14 @@
       <button id="btnFacturasPendientes" class="btn-notificaciones btn-facturas admin-only" title="Facturas que el proveedor todavía no manda" hidden>
         <span class="chip-punto" aria-hidden="true"></span><span id="textoFacturasPendientes">Facturas</span>
       </button>
+      <!-- v99: compras que el SII tiene "por aceptar" (robot del RCV, sql/51) y gastos
+           fijos del mes vencidos o por vencer sin registrar. Solo admin; ocultos si no hay nada. -->
+      <button id="btnSiiPorAceptar" class="btn-notificaciones btn-facturas admin-only" title="Facturas recibidas que el SII tiene por aceptar" hidden>
+        <span class="chip-punto" aria-hidden="true"></span><span id="textoSiiPorAceptar">SII</span>
+      </button>
+      <button id="btnFijosPorPagar" class="btn-notificaciones btn-facturas admin-only" title="Gastos fijos del mes sin registrar" hidden>
+        <span class="chip-punto" aria-hidden="true"></span><span id="textoFijosPorPagar">Gastos fijos</span>
+      </button>
       <button id="btnSeguimientoDev" class="btn-notificaciones btn-seg-dev admin-only" title="Productos devueltos con seguimiento pendiente" hidden>
         <span class="chip-punto" aria-hidden="true"></span><span id="textoSeguimientoDev">Seguimiento</span>
       </button>
@@ -6686,6 +6694,38 @@
       </p>
       <div class="modal-foot">
         <button class="btn btn-ghost" id="btnCerrarFacturas" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- FACTURAS POR ACEPTAR EN EL SII (v99) -->
+  <div id="modalSiiPorAceptar" class="modal-overlay">
+    <div class="modal-box" style="max-width:740px;">
+      <h2>🧾 Facturas por aceptar en el SII</h2>
+      <p class="modal-hint" id="siiPorAceptarResumen">—</p>
+      <div id="siiPorAceptarLista" style="max-height:52vh; overflow:auto;"></div>
+      <p class="modal-hint">
+        Mientras estén "por aceptar" <strong>no suman crédito fiscal</strong>. Si no haces nada, el SII las
+        acepta solas a los 8 días de recibidas; si alguna no corresponde, <strong>solo se puede reclamar
+        dentro de ese plazo</strong>. Se aceptan o reclaman en el Registro de Compras y Ventas del SII.
+      </p>
+      <div class="modal-foot">
+        <a class="btn btn-outline" href="https://www4.sii.cl/consdcvinternetui/" target="_blank" rel="noopener noreferrer">Abrir el RCV en el SII ↗</a>
+        <button class="btn btn-ghost" id="btnCerrarSiiPorAceptar" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- GASTOS FIJOS DEL MES SIN REGISTRAR (v99) -->
+  <div id="modalFijosPorPagar" class="modal-overlay">
+    <div class="modal-box" style="max-width:600px;">
+      <h2>📅 Gastos fijos por pagar</h2>
+      <p class="modal-hint" id="fijosPorPagarResumen">—</p>
+      <div id="fijosPorPagarLista" style="max-height:52vh; overflow:auto;"></div>
+      <p class="modal-hint">Se sacan del aviso al registrar el pago en Finanzas → Gastos Fijos.</p>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCerrarFijosPorPagar" type="button">Cerrar</button>
+        <button class="btn btn-primary" id="btnIrGastosFijos" type="button">Ir a Gastos Fijos</button>
       </div>
     </div>
   </div>

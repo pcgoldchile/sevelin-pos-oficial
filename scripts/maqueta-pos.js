@@ -83,6 +83,28 @@ app.get('/api/garantias/servicios', (_req, res) => res.json(ordenes.filter(o => 
   ...o, sellos: (o.sellos || []).map(s => s.numero_serie), vence_el: '2027-03-28', estado_garantia: 'VIGENTE',
 }))));
 
+// v99: avisos del encabezado. Facturas por aceptar en el SII (inventadas, no las reales) y
+// gastos fijos del mes: uno vencido, uno por vencer y uno pagado (este último no debe salir).
+app.get('/api/finanzas/sii/por-aceptar', (_req, res) => res.json({
+  cantidad: 2, iva: 45600,
+  documentos: [
+    { periodo: '202609', tipo_doc: 33, rut: '76.000.001-1', razon_social: 'Proveedor de Ejemplo SpA', folio: 1234, fecha_doc: '2026-09-22', total: 190000, iva: 30336 },
+    { periodo: '202609', tipo_doc: 33, rut: '76.000.002-2', razon_social: 'Distribuidora Demo Ltda', folio: 88, fecha_doc: '2026-09-25', total: 95600, iva: 15264 },
+  ],
+  ultimaSync: new Date().toISOString(),
+}));
+app.get('/api/finanzas/gastos-fijos-mes', (_req, res) => {
+  const dia = new Date().getDate();
+  res.json({
+    items: [
+      { id: 1, nombre: 'Arriendo (ejemplo)', monto: 300000, dia_mes: Math.max(1, dia - 2), clasificacion: 'Arriendo', pagado: false },
+      { id: 2, nombre: 'Internet (ejemplo)', monto: 25000, dia_mes: Math.min(31, dia + 2), clasificacion: 'Servicios', pagado: false },
+      { id: 3, nombre: 'Luz (ejemplo)', monto: 40000, dia_mes: 1, clasificacion: 'Servicios', pagado: true },
+    ],
+    totalMes: 365000, totalPagado: 40000, totalPendiente: 325000,
+  });
+});
+
 // Preguntas de diagnóstico editables (sql/70, v98). Parte con 2 preguntas para notar que viene de la "base".
 let textoPreguntas = { encabezado: 'Respóndenos con el número de cada pregunta:', preguntas: ['¿Qué equipo es?', '¿Qué problema tiene?'], cierre: '¡Gracias!' };
 app.get('/api/textos/preguntas_diagnostico', (_req, res) => res.json({ contenido: textoPreguntas, actualizado_en: new Date().toISOString() }));

@@ -942,3 +942,171 @@ async function marcarFacturaRecibida(ingresoId) {
     showToast(err.message || 'No se pudo guardar la factura', 'err');
   }
 }
+
+/* ============================================================
+   FACTURAS POR ACEPTAR EN EL SII y GASTOS FIJOS POR PAGAR (v99)
+   ------------------------------------------------------------
+   Pedido del dueño (28-09-2026): "Notificación de aceptar gastos fijos,
+   aceptar facturas pendientes en el SII."
+
+   · SII: las compras que el robot del RCV (sql/51) trae como PENDIENTE.
+     No suman crédito hasta aceptarlas, y reclamar una que no corresponde
+     solo se puede en los 8 días que el SII tarda en aceptarlas solo. Los
+     datos son de la última pasada del robot (una vez al día): se dice
+     cuándo fue. Ámbar siempre: no sabemos la fecha de recepción en el SII,
+     y un rojo inventado enseña a ignorar el aviso.
+   · Gastos fijos: los del mes que ya vencieron (rojo) o vencen en los
+     próximos 3 días (ámbar) y no tienen pago registrado. Mismo cálculo de
+     "pagado" que el checklist de Finanzas (/api/finanzas/gastos-fijos-mes).
+     "Ir a Gastos Fijos" entra por el menú, así pasa por la clave de
+     Finanzas igual que siempre.
+
+   Solo admin. Se consultan al iniciar sesión y cada 30 minutos.
+   ============================================================ */
+
+const INTERVALO_AVISOS_FINANZAS_MS = 30 * 60 * 1000;
+const DIAS_AVISO_FIJOS = 3;
+let intervaloAvisosFinanzas = null;
+let siiPorAceptarCache = null;
+let fijosPorPagarCache = [];
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btnSiiPorAceptar')?.addEventListener('click', () => {
+    pintarSiiPorAceptar();
+    document.getElementById('modalSiiPorAceptar')?.classList.add('show');
+  });
+  document.getElementById('btnCerrarSiiPorAceptar')?.addEventListener('click', () => cerrarModal('modalSiiPorAceptar'));
+  document.getElementById('btnFijosPorPagar')?.addEventListener('click', () => {
+    pintarFijosPorPagar();
+    document.getElementById('modalFijosPorPagar')?.classList.add('show');
+  });
+  document.getElementById('btnCerrarFijosPorPagar')?.addEventListener('click', () => cerrarModal('modalFijosPorPagar'));
+  document.getElementById('btnIrGastosFijos')?.addEventListener('click', () => {
+    cerrarModal('modalFijosPorPagar');
+    document.querySelector('.nav-subitem[data-view="view-finanzas"][data-subtab="fijos"]')?.click();
+  });
+});
+
+document.addEventListener('pos:sesion-iniciada', () => {
+  if (intervaloAvisosFinanzas) { clearInterval(intervaloAvisosFinanzas); intervaloAvisosFinanzas = null; }
+  if (!esAdmin()) {
+    ['btnSiiPorAceptar', 'btnFijosPorPagar'].forEach(id => { const b = document.getElementById(id); if (b) b.hidden = true; });
+    return;
+  }
+  actualizarAvisosFinanzas();
+  intervaloAvisosFinanzas = setInterval(actualizarAvisosFinanzas, INTERVALO_AVISOS_FINANZAS_MS);
+});
+
+function actualizarAvisosFinanzas() {
+  actualizarAvisoSiiPorAceptar();
+  actualizarAvisoFijosPorPagar();
+}
+
+async function actualizarAvisoSiiPorAceptar() {
+  const btn = document.getElementById('btnSiiPorAceptar');
+  const texto = document.getElementById('textoSiiPorAceptar');
+  if (!btn || !texto || !tokenActual() || !esAdmin()) return;
+  try {
+    siiPorAceptarCache = await API.balance.siiPorAceptar();
+    const n = Number(siiPorAceptarCache?.cantidad) || 0;
+    if (!n) { btn.hidden = true; return; }
+    texto.textContent = `${n} por aceptar en el SII`;
+    btn.title = `${n} factura(s) recibida(s) por aceptar en el SII · ${fmtCLP(siiPorAceptarCache.iva)} de IVA que todavía no suma crédito`;
+    btn.hidden = false;
+  } catch (err) {
+    // Silencioso: sondeo de fondo, se reintenta en el próximo ciclo.
+    console.error('Error al revisar las facturas por aceptar en el SII:', err.message || err);
+  }
+}
+
+// "25-09-2026" desde 'YYYY-MM-DD', sin pasar por Date (evita el corrimiento UTC).
+function fechaCortaAviso(iso) {
+  const [a, m, d] = String(iso || '').slice(0, 10).split('-');
+  return a && m && d ? `${d}-${m}-${a}` : '—';
+}
+
+function pintarSiiPorAceptar() {
+  const cont = document.getElementById('siiPorAceptarLista');
+  const resumen = document.getElementById('siiPorAceptarResumen');
+  const c = siiPorAceptarCache;
+  if (!cont || !c) return;
+  const lista = c.documentos || [];
+  if (resumen) {
+    const sync = c.ultimaSync ? ` Datos del SII al ${tsAChile(c.ultimaSync)}.` : '';
+    resumen.textContent = lista.length
+      ? `${lista.length} factura(s) · ${fmtCLP(c.iva)} de IVA que todavía no suma crédito fiscal.${sync}`
+      : `No hay facturas por aceptar.${sync}`;
+  }
+  cont.innerHTML = lista.length ? lista.map(d => `
+      <div class="agotado-fila">
+        <div class="agotado-cabecera">
+          <div class="agotado-datos">
+            <strong>${escHtml(d.razon_social || d.rut)}</strong>
+            <small>Folio ${escHtml(String(d.folio))} · ${fechaCortaAviso(d.fecha_doc)} · RUT ${escHtml(d.rut)}</small>
+            <small>Total ${fmtCLP(d.total)} · IVA ${fmtCLP(d.iva)}</small>
+          </div>
+        </div>
+      </div>`).join('')
+    : '<p class="modal-hint">Nada pendiente.</p>';
+}
+
+async function actualizarAvisoFijosPorPagar() {
+  const btn = document.getElementById('btnFijosPorPagar');
+  const texto = document.getElementById('textoFijosPorPagar');
+  if (!btn || !texto || !tokenActual() || !esAdmin()) return;
+  try {
+    const chk = await API.balance.gastosFijosMes();
+    const hoy = todayISO();
+    const diaHoy = Number(hoy.slice(8, 10));
+    const [a, m] = hoy.split('-').map(Number);
+    const ultimoDia = new Date(Date.UTC(a, m, 0)).getUTCDate();   // un "día 31" en septiembre vence el 30
+
+    fijosPorPagarCache = (chk?.items || [])
+      .filter(i => !i.pagado && Number(i.monto) > 0)
+      .map(i => {
+        const dia = Math.min(Number(i.dia_mes) || 1, ultimoDia);
+        return { ...i, dia, faltan: dia - diaHoy };
+      })
+      .filter(i => i.faltan <= DIAS_AVISO_FIJOS)
+      .sort((x, y) => x.dia - y.dia);
+
+    if (!fijosPorPagarCache.length) { btn.hidden = true; return; }
+    const vencidos = fijosPorPagarCache.filter(i => i.faltan < 0).length;
+    texto.textContent = vencidos
+      ? `${vencidos} gasto(s) fijo(s) vencido(s)`
+      : `${fijosPorPagarCache.length} gasto(s) fijo(s) por pagar`;
+    btn.classList.toggle('factura-atrasada', vencidos > 0);
+    btn.title = `${fijosPorPagarCache.length} gasto(s) fijo(s) de este mes sin registrar · ${fmtCLP(fijosPorPagarCache.reduce((s, i) => s + num(i.monto), 0))}`;
+    btn.hidden = false;
+    if (document.getElementById('modalFijosPorPagar')?.classList.contains('show')) pintarFijosPorPagar();
+  } catch (err) {
+    console.error('Error al revisar los gastos fijos del mes:', err.message || err);
+  }
+}
+
+function pintarFijosPorPagar() {
+  const cont = document.getElementById('fijosPorPagarLista');
+  const resumen = document.getElementById('fijosPorPagarResumen');
+  if (!cont) return;
+  const lista = fijosPorPagarCache || [];
+  if (resumen) {
+    resumen.textContent = lista.length
+      ? `${lista.length} gasto(s) fijo(s) de este mes sin pago registrado · ${fmtCLP(lista.reduce((s, i) => s + num(i.monto), 0))}`
+      : 'Todos los gastos fijos que vencen por ahora están registrados.';
+  }
+  cont.innerHTML = lista.length ? lista.map(i => {
+    const cuando = i.faltan < 0 ? `<span style="color:var(--red);">⚠️ venció el día ${i.dia} (hace ${-i.faltan} día(s))</span>`
+      : i.faltan === 0 ? '<span style="color:var(--gold);">vence hoy</span>'
+      : `vence el día ${i.dia} (en ${i.faltan} día(s))`;
+    return `
+      <div class="agotado-fila">
+        <div class="agotado-cabecera">
+          <div class="agotado-datos">
+            <strong>${escHtml(i.nombre)}</strong>
+            <small>${fmtCLP(i.monto)}${i.clasificacion ? ' · ' + escHtml(i.clasificacion) : ''} · ${cuando}</small>
+          </div>
+        </div>
+      </div>`;
+  }).join('') : '<p class="modal-hint">Nada pendiente.</p>';
+}
+

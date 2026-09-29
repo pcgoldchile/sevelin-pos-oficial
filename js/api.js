@@ -581,6 +581,8 @@ const API = {
     historialAjustes: (canal) => apiRequest('/finanzas/ajustes-saldo' + (canal ? `?canal=${canal}` : '')),
     // req.4 — checklist de gastos fijos del mes (pagados vs pendientes)
     gastosFijosMes: () => apiRequest('/finanzas/gastos-fijos-mes'),
+    // v99 — compras que el SII tiene por aceptar (robot del RCV)
+    siiPorAceptar: () => apiRequest('/finanzas/sii/por-aceptar', { silencioso: true }),
     // Recordatorio del F29 (sql/49): períodos pendientes y marcar presentado
     f29Estado: () => apiRequest('/finanzas/f29-estado', { silencioso: true }),
     f29Marcar: (datos) => apiRequest('/finanzas/f29-presentado', { method: 'POST', body: datos }),

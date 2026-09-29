@@ -8823,6 +8823,35 @@ app.get('/api/finanzas/sii/iva', auth(true), async (req, res) => {
   }
 });
 
+/* FACTURAS POR ACEPTAR EN EL SII (v99, aviso del encabezado). Las compras
+   que el robot del RCV (sql/51) trae en estado PENDIENTE, de cualquier
+   período: todavía no suman crédito fiscal. Si nadie hace nada, el SII las
+   acepta solas a los 8 días de recibidas; reclamar una que no corresponde
+   solo se puede dentro de ese plazo, por eso el aviso. El estado se
+   actualiza cuando corre el robot (una vez al día): se devuelve la última
+   sincronización para que el aviso diga qué tan fresco es. */
+app.get('/api/finanzas/sii/por-aceptar', auth(true), async (req, res) => {
+  const [{ data: docs, error }, { data: ultimaSync }] = await Promise.all([
+    db.from('sii_rcv_documentos')
+      .select('periodo, tipo_doc, rut, razon_social, folio, fecha_doc, total, iva')
+      .eq('operacion', 'COMPRA').eq('estado', 'PENDIENTE')
+      .order('fecha_doc', { ascending: true }).limit(100),
+    db.from('sii_sync').select('creado_en, ok').eq('ok', true)
+      .order('creado_en', { ascending: false }).limit(1).maybeSingle()
+  ]);
+  if (error) return enviarErrorBD(res, error);
+  const documentos = (docs || []).map(d => {
+    const signo = SII_DOC_RESTA.has(Number(d.tipo_doc)) ? -1 : 1;
+    return { ...d, total: signo * num(d.total), iva: signo * num(d.iva) };
+  });
+  res.json({
+    cantidad: documentos.length,
+    iva: Math.round(documentos.reduce((s, d) => s + d.iva, 0)),
+    documentos,
+    ultimaSync: ultimaSync?.creado_en || null
+  });
+});
+
 /* ============================================================
    AJUSTES MANUALES DE SALDO (req. 3)
    ------------------------------------------------------------

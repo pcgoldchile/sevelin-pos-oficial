@@ -65,6 +65,17 @@
 
 ---
 
+## 28-09-2026 · v99, avisos de facturas por aceptar en el SII y gastos fijos por pagar
+
+- Dos chips nuevos en el encabezado (solo admin, ocultos si no hay nada): **"N por aceptar en el SII"**
+  (compras en `PENDIENTE` del robot del RCV; al 28-09 eran 3, IVA $124.297) y **"gastos fijos
+  vencidos / por pagar"** (rojo si ya venció, ámbar si vence en 3 días). Sin migración. Detalle en
+  `docs/CHANGELOG-V99.md`.
+- **Resend (tarea 5):** los DNS de sevelin.cl tienen el DKIM de Resend, SPF, MX y DMARC. Que el panel
+  diga "Verified" solo lo puede confirmar el dueño en resend.com → Domains.
+
+---
+
 ## 28-09-2026 · v98, preguntas de diagnóstico para copiar y editar
 
 - Check-In → "🩺 Copiar preguntas de diagnóstico": las 10 preguntas del dueño numeradas, con una línea
