@@ -363,7 +363,9 @@ function renderQrRetiroOT(ot) {
     const verificado = !!ot?.retiro_verificacion;
     elOtQrRetiroBloque.style.display = verificado ? 'block' : 'none';
     if (verificado) {
-      if (elOtQrRetiroImagen) elOtQrRetiroImagen.innerHTML = '';
+      // Sin QR que mostrar, el recuadro blanco del QR se oculta (antes quedaba
+      // como una barra blanca vacía).
+      if (elOtQrRetiroImagen) { elOtQrRetiroImagen.innerHTML = ''; elOtQrRetiroImagen.style.display = 'none'; }
       if (elOtQrRetiroEstado) {
         elOtQrRetiroEstado.innerHTML = `Entregado a <b>${escHtml(ot.retira_nombre || '—')}</b> (RUT ${escHtml(ot.retira_rut || '—')}), ${textoVerificacionRetiro(ot)}.`;
       }
@@ -376,7 +378,7 @@ function renderQrRetiroOT(ot) {
   botones.forEach(b => { if (b) b.style.display = ''; });
 
   if (!ot.token_retiro) {
-    if (elOtQrRetiroImagen) elOtQrRetiroImagen.innerHTML = '';
+    if (elOtQrRetiroImagen) { elOtQrRetiroImagen.innerHTML = ''; elOtQrRetiroImagen.style.display = 'none'; }
     if (elOtQrRetiroEstado) elOtQrRetiroEstado.textContent = 'Esta orden es anterior al QR de retiro. Genera uno para enviárselo al cliente.';
     if (elBtnOtQrWhatsapp) elBtnOtQrWhatsapp.style.display = 'none';
     if (elBtnOtQrCorreo) elBtnOtQrCorreo.style.display = 'none';
@@ -389,6 +391,7 @@ function renderQrRetiroOT(ot) {
   if (elOtQrRetiroEstado) {
     elOtQrRetiroEstado.innerHTML = `Vigente desde ${tsAChile(ot.token_retiro_generado_en)}.${ot.cliente_correo ? '' : ' <b>La orden no tiene correo:</b> envíalo por WhatsApp.'}<br>Quien retire deberá mostrarlo, o ser el titular con su carnet.`;
   }
+  if (elOtQrRetiroImagen) elOtQrRetiroImagen.style.display = '';
   if (elOtQrRetiroImagen && typeof QRCode !== 'undefined') {
     QRCode.toString(URL_RETIRO_TIENDA + ot.token_retiro, { type: 'svg', margin: 1, width: 124 }, (err, svg) => {
       elOtQrRetiroImagen.innerHTML = err ? '' : svg;
@@ -640,7 +643,12 @@ function renderOrdenesTabla(lista) {
   if (!elOtTableBody) return;
 
   const filtro = (elOtBuscar?.value || '').trim().toLowerCase();
+  // Sellos de garantía (sql/69): mismo criterio que Garantías, solo letras y
+  // números, así "sv 0002" encuentra SV-0002.
+  const claveSello = t => String(t || '').replace(/[^0-9a-z]/gi, '').toUpperCase();
+  const filtroSello = claveSello(filtro);
   const filas = (lista || []).filter(o => !filtro ||
+    (filtroSello && (o.sellos || []).some(s => claveSello(s.numero_serie).includes(filtroSello))) ||
     (o.numero_ot || '').toLowerCase().includes(filtro) ||
     (o.cliente_nombre || '').toLowerCase().includes(filtro) ||
     (o.cliente_rut || '').toLowerCase().includes(filtro) ||
