@@ -65,6 +65,18 @@
 
 ---
 
+## 29-09-2026 · v100, precio de oferta web con fechas (y arreglos chicos)
+
+- **Producto → "🏷️ Oferta web":** precio, desde y hasta (hora de Chile). Empieza y termina sola, solo en
+  sevelin.cl. `sql/71` (POS) + `supabase/37` (tienda), aplicadas. El feed de Google/Meta manda
+  `sale_price` con su rango. Detalle en `docs/CHANGELOG-V100.md`.
+- Buscar OT por sello en la lista de órdenes; sin la barra blanca del QR en órdenes entregadas.
+- Tienda: fotos de productos reales en el carrusel; "Viene en camino" se oculta si no hay nada por llegar.
+- **Plan Cyber (rebajas recomendadas) PENDIENTE** en `sevelin-tienda/docs/PLAN-CYBER-OCTUBRE-2026.md`:
+  el dueño lo aplica cuando termine de cargar productos.
+
+---
+
 ## 28-09-2026 · v99, avisos de facturas por aceptar en el SII y gastos fijos por pagar
 
 - Dos chips nuevos en el encabezado (solo admin, ocultos si no hay nada): **"N por aceptar en el SII"**

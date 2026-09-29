@@ -92,6 +92,48 @@ const elProdPrecioAConsultar = document.getElementById('prodPrecioAConsultar');
 const elProdCondicion = document.getElementById('prodCondicion');
 const elProdMesesGarantia = document.getElementById('prodMesesGarantia');
 const elProdPrecioWeb = document.getElementById('prodPrecioWeb');
+// Oferta web con fechas (sql/71, v100)
+const elProdPrecioOfertaWeb = document.getElementById('prodPrecioOfertaWeb');
+const elProdOfertaDesde = document.getElementById('prodOfertaDesde');
+const elProdOfertaHasta = document.getElementById('prodOfertaHasta');
+const elProdOfertaResumen = document.getElementById('prodOfertaResumen');
+const TEXTO_OFERTA_VACIA = 'Precio rebajado en sevelin.cl entre esas fechas (hora de Chile). Empieza y termina sola; en el local se cobra el precio normal. Vacío = sin oferta.';
+
+/* <input type="datetime-local"> trabaja en la hora del navegador (el POS se
+   usa en Chile) y la base guarda en UTC: estas dos funciones convierten. */
+function isoAFechaHoraLocal(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  const dos = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${dos(d.getMonth() + 1)}-${dos(d.getDate())}T${dos(d.getHours())}:${dos(d.getMinutes())}`;
+}
+function fechaHoraLocalAIso(valor) {
+  if (!valor) return null;
+  const d = new Date(valor);
+  return isNaN(d) ? null : d.toISOString();
+}
+
+// Resumen en vivo bajo los campos: porcentaje real y cualquier error antes de guardar.
+function actualizarResumenOfertaWeb() {
+  if (!elProdOfertaResumen) return;
+  const oferta = Number(elProdPrecioOfertaWeb?.value) || 0;
+  if (!oferta) { elProdOfertaResumen.textContent = TEXTO_OFERTA_VACIA; elProdOfertaResumen.style.color = ''; return; }
+  const normal = Number(elProdPrecioWeb?.value) || Number(elProdPrecio?.value) || 0;
+  const desde = elProdOfertaDesde?.value, hasta = elProdOfertaHasta?.value;
+  let texto, error = false;
+  if (normal && oferta >= normal) { texto = `⚠️ Tiene que ser menor que el precio normal en la web (${fmtCLP(normal)}).`; error = true; }
+  else if (!desde || !hasta) { texto = '⚠️ Falta cuándo empieza y cuándo termina.'; error = true; }
+  else if (new Date(hasta) <= new Date(desde)) { texto = '⚠️ El fin tiene que ser después del inicio.'; error = true; }
+  else if (new Date(hasta) <= new Date()) { texto = '⚠️ Con ese fin, la oferta ya terminó.'; error = true; }
+  else {
+    const pct = normal ? Math.floor((normal - oferta) / normal * 100) : 0;
+    const f = v => new Date(v).toLocaleString('es-CL', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
+    texto = `✅ ${fmtCLP(oferta)} en vez de ${fmtCLP(normal)} (−${pct}%) · desde ${f(desde)} hasta ${f(hasta)}`;
+  }
+  elProdOfertaResumen.textContent = texto;
+  elProdOfertaResumen.style.color = error ? 'var(--red)' : 'var(--green)';
+}
 const elProdCategoriaWeb = document.getElementById('prodCategoriaWeb');
 const elProdStockUmbralWeb = document.getElementById('prodStockUmbralWeb');
 const elProdEtiquetaWeb = document.getElementById('prodEtiquetaWeb');
@@ -176,6 +218,9 @@ const elValorizacionNota = document.getElementById('valorizacionNota');
 const STOCK_MINIMO_POR_DEFECTO = 3;
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Oferta web (sql/71): el resumen se recalcula con cualquier campo que la afecte.
+  [elProdPrecioOfertaWeb, elProdOfertaDesde, elProdOfertaHasta, elProdPrecioWeb, elProdPrecio]
+    .forEach(el => el?.addEventListener('input', actualizarResumenOfertaWeb));
   setupProductosEventListeners();
 });
 
@@ -1536,6 +1581,10 @@ function abrirModalProducto(producto = null) {
     if (elProdCondicion) elProdCondicion.value = producto.condicion || 'nuevo';
     if (elProdMesesGarantia) elProdMesesGarantia.value = producto.meses_garantia ?? 6;
     if (elProdPrecioWeb) elProdPrecioWeb.value = producto.precio_web ?? '';
+    if (elProdPrecioOfertaWeb) elProdPrecioOfertaWeb.value = producto.precio_oferta_web ?? '';
+    if (elProdOfertaDesde) elProdOfertaDesde.value = isoAFechaHoraLocal(producto.oferta_desde);
+    if (elProdOfertaHasta) elProdOfertaHasta.value = isoAFechaHoraLocal(producto.oferta_hasta);
+    actualizarResumenOfertaWeb();
     if (elProdStockUmbralWeb) elProdStockUmbralWeb.value = producto.stock_umbral_web ?? '';
     if (elProdEtiquetaWeb) elProdEtiquetaWeb.value = producto.etiqueta_web || '';
     // Los productos creados antes de sql/40 no traen el campo; el default
@@ -1594,6 +1643,10 @@ function abrirModalProducto(producto = null) {
     if (elProdCondicion) elProdCondicion.value = 'nuevo';
     if (elProdMesesGarantia) elProdMesesGarantia.value = 6;
     if (elProdPrecioWeb) elProdPrecioWeb.value = '';
+    if (elProdPrecioOfertaWeb) elProdPrecioOfertaWeb.value = '';
+    if (elProdOfertaDesde) elProdOfertaDesde.value = '';
+    if (elProdOfertaHasta) elProdOfertaHasta.value = '';
+    actualizarResumenOfertaWeb();
     if (elProdStockUmbralWeb) elProdStockUmbralWeb.value = '';
     if (elProdEtiquetaWeb) elProdEtiquetaWeb.value = '';
     if (elProdUrgenciaStockWeb) elProdUrgenciaStockWeb.checked = true;
@@ -1801,6 +1854,10 @@ function construirPayloadProducto() {
     condicion: elProdCondicion?.value || 'nuevo',
     meses_garantia: elProdMesesGarantia?.value.trim() ? Number(elProdMesesGarantia.value) : 6,
     precio_web: elProdPrecioWeb?.value.trim() ? Number(elProdPrecioWeb.value) : null,
+    // Oferta web (sql/71). Sin precio de oferta, el servidor borra las fechas.
+    precio_oferta_web: elProdPrecioOfertaWeb?.value.trim() ? Number(elProdPrecioOfertaWeb.value) : null,
+    oferta_desde: fechaHoraLocalAIso(elProdOfertaDesde?.value),
+    oferta_hasta: fechaHoraLocalAIso(elProdOfertaHasta?.value),
     categoria_web,
     categoria_id,
     subcategoria_web,

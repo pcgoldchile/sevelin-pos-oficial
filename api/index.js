@@ -731,6 +731,29 @@ async function frenoLogin(req, res, next) {
   next();
 }
 
+/* OFERTA WEB (sql/71, v100). Reglas de negocio que el CHECK de la base no
+   puede ver porque dependen del precio normal y de la hora actual. `actual`
+   es la fila guardada (al editar), para lo que el body no traiga. Devuelve
+   el mensaje de error o null. */
+function validarOfertaWeb(p, actual = {}) {
+  if (p.precio_oferta_web === undefined) return null;   // no se tocó la oferta
+  if (p.precio_oferta_web === null) return null;        // se quitó: siempre válido
+  const valor = k => (p[k] !== undefined ? p[k] : actual[k]);
+  if (valor('precio_a_consultar')) return 'Un producto "precio a consultar" no se vende en línea: no puede tener oferta web';
+  const normal = num(valor('precio_web')) || num(valor('precio_unitario'));
+  if (!(normal > 0)) return 'Define el precio normal antes de la oferta';
+  if (p.precio_oferta_web >= normal) {
+    const clp = n => '$' + Number(n).toLocaleString('es-CL');
+    return `El precio de oferta (${clp(p.precio_oferta_web)}) tiene que ser menor que el precio normal en la web (${clp(normal)})`;
+  }
+  const desde = Date.parse(valor('oferta_desde') || '');
+  const hasta = Date.parse(valor('oferta_hasta') || '');
+  if (!Number.isFinite(desde) || !Number.isFinite(hasta)) return 'Indica cuándo empieza y cuándo termina la oferta';
+  if (hasta <= desde) return 'La oferta tiene que terminar después de empezar';
+  if (hasta <= Date.now()) return 'Esa oferta ya terminó: revisa la fecha de fin';
+  return null;
+}
+
 /* Reconfirmación del PIN de administrador para operaciones destructivas
    masivas (borrar todo el catálogo, todo el historial, lotes completos).
    Se valida SIEMPRE en el servidor: aunque alguien manipule el frontend o
@@ -861,6 +884,9 @@ const CAMPOS_PRODUCTO = [
   // Precio base que depende del equipo: la tienda no lo vende en línea, solo
   // lo cotiza por WhatsApp — ver sql/45-precio-a-consultar.sql.
   'precio_a_consultar',
+  // Oferta web con fechas (sql/71): la tienda la aplica y la quita sola.
+  // Se valida aparte en validarOfertaWeb() (necesita el precio normal).
+  'precio_oferta_web', 'oferta_desde', 'oferta_hasta',
   // categoria_id (Fase "Página Web → Categorías"): FK interna del POS, no se
   // sincroniza a la tienda (el trigger solo usa categoria_web). stock_umbral_web:
   // NULL = usa el default de la tienda (+5); ver sql/23-categorias-web-y-umbral-stock.sql.
@@ -995,6 +1021,19 @@ function sanearProducto(body = {}) {
     }
   });
   if (p.categoria_id !== undefined) p.categoria_id = p.categoria_id || null;
+  /* Oferta web (sql/71): sin precio de oferta no hay oferta, y se borran las
+     fechas con él (el CHECK exige los tres o ninguno). Las fechas llegan en
+     ISO; una fecha inválida queda en null y la rechaza validarOfertaWeb(). */
+  if (p.precio_oferta_web !== undefined) {
+    const v = Math.round(num(p.precio_oferta_web));
+    p.precio_oferta_web = v > 0 ? v : null;
+    if (!p.precio_oferta_web) { p.oferta_desde = null; p.oferta_hasta = null; }
+  }
+  for (const k of ['oferta_desde', 'oferta_hasta']) {
+    if (p[k] === undefined || p[k] === null) continue;
+    const t = Date.parse(String(p[k]));
+    p[k] = Number.isFinite(t) ? new Date(t).toISOString() : null;
+  }
   // Etiqueta destacada: solo una de las 3 opciones válidas o NULL — cualquier
   // otra cosa (manipulación directa del payload) se descarta en vez de
   // dejar que la base rechace todo el guardado por el check constraint.
@@ -1262,6 +1301,9 @@ app.post('/api/productos', auth(true), async (req, res) => {
   // Se cancela el guardado si choca con algo existente
   const dup = await buscarDuplicado(producto);
   if (dup) return enviarError(res, 409, errorDuplicado(dup), { duplicado: dup });
+
+  const errOferta = validarOfertaWeb(producto);
+  if (errOferta) return enviarError(res, 400, errOferta);
 
   const { data, error } = await db.from('productos').insert([producto]).select().single();
   if (error) return enviarErrorBD(res, error);
@@ -3517,6 +3559,15 @@ app.put('/api/productos/:id', auth(true), async (req, res) => {
   // Al editar se excluye el propio registro: no puede chocar consigo mismo
   const dup = await buscarDuplicado(producto, req.params.id);
   if (dup) return enviarError(res, 409, errorDuplicado(dup), { duplicado: dup });
+
+  // Oferta web (sql/71): lo que el body no traiga se completa con lo guardado.
+  if (producto.precio_oferta_web !== undefined) {
+    const { data: actualOferta } = await db.from('productos')
+      .select('precio_web, precio_unitario, precio_a_consultar, oferta_desde, oferta_hasta')
+      .eq('id', req.params.id).maybeSingle();
+    const errOferta = validarOfertaWeb(producto, actualOferta || {});
+    if (errOferta) return enviarError(res, 400, errOferta);
+  }
 
   /* Se lee el stock ANTERIOR antes de escribir: es la única forma de
      saber si esta edición fue una reposición (sql/57). Una consulta más
@@ -12718,13 +12769,31 @@ function descripcionParaFeed(fila) {
    sube el feed no tiene cómo saber cuál de los dos creer.
    Devuelve el CSV SIN BOM — cada endpoint decide si lo necesita (ver la
    nota del BOM en cada uno, no es un detalle cosmético). */
+/* OFERTA EN EL FEED (v100). Google y Meta aplican `sale_price` solo dentro
+   de `sale_price_effective_date` (ISO 8601 "inicio/fin"), así una oferta
+   cargada con anticipación aparece y desaparece a la hora exacta aunque el
+   feed se lea una vez al día. `price` sigue siendo el precio normal: es el
+   "antes" que muestran tachado. Sin oferta, o ya terminada, van vacíos. */
+function ofertaParaFeed(p) {
+  const oferta = Math.round(num(p.precio_oferta));
+  const desde = Date.parse(p.oferta_desde || '');
+  const hasta = Date.parse(p.oferta_hasta || '');
+  if (!(oferta > 0) || oferta >= num(p.precio_web) || !Number.isFinite(desde) || !Number.isFinite(hasta) || hasta <= Date.now()) {
+    return { sale_price: '', sale_price_effective_date: '' };
+  }
+  return {
+    sale_price: `${oferta} CLP`,
+    sale_price_effective_date: `${new Date(desde).toISOString()}/${new Date(hasta).toISOString()}`
+  };
+}
+
 async function construirFeedCatalogo() {
   const sitio = (process.env.TIENDA_URL_PUBLICA || 'https://www.sevelin.cl').replace(/\/+$/, '');
 
   {
     const [respWeb, respPos] = await Promise.all([
       dbWeb.from('productos_web')
-        .select('producto_pos_id, sku, nombre, descripcion_web, precio_web, stock_web, imagen_urls, categoria, subcategoria, publicado_web, es_pedido_encargo')
+        .select('producto_pos_id, sku, nombre, descripcion_web, precio_web, stock_web, imagen_urls, categoria, subcategoria, publicado_web, es_pedido_encargo, precio_oferta, oferta_desde, oferta_hasta')
         .eq('publicado_web', true),
       db.from('productos').select('id, condicion, marca, archivado, es_borrador')
     ]);
@@ -12736,7 +12805,9 @@ async function construirFeedCatalogo() {
     const COLUMNAS = [
       'id', 'title', 'description', 'availability', 'condition', 'price',
       'link', 'image_link', 'additional_image_link', 'brand', 'product_type',
-      'quantity_to_sell_on_facebook', 'identifier_exists'
+      'quantity_to_sell_on_facebook', 'identifier_exists',
+      // Oferta web con fechas (sql/71 → supabase/37 de la tienda)
+      'sale_price', 'sale_price_effective_date'
     ];
 
     const filas = [];
@@ -12853,7 +12924,8 @@ async function construirFeedCatalogo() {
         brand: (marcaProducto || 'Sevelin'),
         product_type: [p.categoria, p.subcategoria].filter(Boolean).join(' > '),
         quantity_to_sell_on_facebook: p.es_pedido_encargo ? '' : Math.max(0, Math.round(num(p.stock_web))),
-        identifier_exists: 'no'
+        identifier_exists: 'no',
+        ...ofertaParaFeed(p)
       });
     }
 
