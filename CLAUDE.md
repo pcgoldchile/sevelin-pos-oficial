@@ -103,9 +103,21 @@ inserte en el DOM pasa por `escHtml`** (regla de seguridad).
 
 **El dueño trabaja en Sonnet por defecto** para ahorrar. Pidió expresamente que **le avises ANTES de
 empezar** si la tarea que acaba de mandar es de las que conviene hacer en Opus. **Desde el 30-09-2026
-también el ESFUERZO** (el control "Esfuerzo" de la app: Bajo · Medio · Alto · Extra · Máximo; "Alto" es
-el recomendado por la app). Si él nombra otro modo que no conoces (dijo "Ultracode"), no inventes qué
-hace: pregúntale.
+también el ESFUERZO** (control "Esfuerzo" de la app, de más rápido a más inteligente):
+
+| En la app | Interno | Qué hace |
+|---|---|---|
+| Bajo | `low` | Lo mínimo: pocas herramientas, pocos tokens. |
+| Medio | `medium` | Barato, cambia algo de inteligencia por costo. |
+| **Alto** | `high` | El equilibrado; la app lo marca "Recomendado". |
+| Extra | `xhigh` | Razona más a fondo, gasta más tokens. |
+| Máximo | `max` | El razonamiento más profundo, sin tope de tokens. Solo dura la sesión. |
+| Ultracode | `xhigh` + agentes | **No es un nivel**: corre en Extra y, en tareas grandes, reparte el trabajo entre VARIOS agentes en paralelo. Solo dura la sesión. El más caro. |
+
+Fuente oficial (Claude Academy, verificado 30-09-2026): *"Ultracode is not an effort level. It is a
+session-only Claude Code setting that runs the model at xhigh and... fans work out to multiple agents"*,
+y el consejo es **partir del recomendado y subir de a un nivel**, no saltar al máximo.
+`get_session("self")` dice qué esfuerzo corre de verdad (con Ultracode marcado, reporta `xhigh`).
 
 **Cómo avisar:** una sola línea al principio de tu respuesta, antes de tocar nada, SIEMPRE que la tarea
 sea más que trivial — aunque ya esté en el modelo correcto (así sabe que lo pensaste). Por ejemplo:
@@ -123,6 +135,11 @@ línea y sigue. Si dice que sigas igual, sigues — es su decisión, no la discu
   IVA), permisos o datos personales, legal.
 - **Máximo:** auditorías y decisiones de negocio donde un número mal leído cuesta plata, seguridad,
   diseñar algo grande desde cero (ej. venta mayorista).
+- **Ultracode:** casi nunca en este proyecto. Sirve para trabajo grande que se puede partir en piezas
+  independientes (ej. revisar 150 fichas, auditar dos repos a la vez). **No** para construir funciones:
+  aquí todos los `js/*.js` comparten el mismo ámbito global (regla crítica 1) y las migraciones van en
+  orden, así que varios agentes editando en paralelo multiplican el costo y el riesgo de pisarse. Si el
+  dueño lo tiene puesto para una tarea que no lo necesita, díselo.
 
 **Avisa cuando la tarea:**
 - toca **plata**: costos, precios, márgenes, utilidad, comisiones, IVA;
