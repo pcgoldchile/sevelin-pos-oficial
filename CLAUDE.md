@@ -99,17 +99,30 @@ inserte en el DOM pasa por `escHtml`** (regla de seguridad).
 
 ---
 
-## ⚠️ Modelo: avísame si esta tarea pide Opus (regla del dueño, 08-09-2026)
+## ⚠️ Modelo y esfuerzo: avísame ANTES de cada tarea (regla del dueño, 08-09 y 30-09-2026)
 
 **El dueño trabaja en Sonnet por defecto** para ahorrar. Pidió expresamente que **le avises ANTES de
-empezar** si la tarea que acaba de mandar es de las que conviene hacer en Opus.
+empezar** si la tarea que acaba de mandar es de las que conviene hacer en Opus. **Desde el 30-09-2026
+también el ESFUERZO** (el control "Esfuerzo" de la app: Bajo · Medio · Alto · Extra · Máximo; "Alto" es
+el recomendado por la app). Si él nombra otro modo que no conoces (dijo "Ultracode"), no inventes qué
+hace: pregúntale.
 
-**Cómo avisar:** una sola línea al principio de tu respuesta, antes de tocar nada. Por ejemplo:
-> ⚠️ Esto conviene hacerlo en Opus: toca el cálculo del margen y se replica en dos paneles. ¿Cambias
-> de modelo o sigo igual?
+**Cómo avisar:** una sola línea al principio de tu respuesta, antes de tocar nada, SIEMPRE que la tarea
+sea más que trivial — aunque ya esté en el modelo correcto (así sabe que lo pensaste). Por ejemplo:
+> ⚙️ Recomendado: **Opus · Extra** — toca precios y cruza los dos repos. Hoy estás en Sonnet · Alto.
+> ¿Cambias o sigo?
 
-Y después **espera su respuesta**. Si dice que sigas, sigues — es su decisión, no la discutas dos
-veces.
+Y después **espera su respuesta** si hay que cambiar algo. Si ya está bien configurado, dilo en esa
+línea y sigue. Si dice que sigas igual, sigues — es su decisión, no la discutas dos veces.
+
+**Guía de esfuerzo** (combínala con la de modelo de abajo):
+- **Bajo / Medio:** textos, CSS, un campo o chip siguiendo un patrón que ya existe, cargar datos con
+  regla clara, arreglar algo ya diagnosticado.
+- **Alto:** una función nueva mediana en un repo, varios archivos, con pruebas (lo normal).
+- **Extra:** cruza los dos repos o las dos bases, migración + sincronización, plata (precios, márgenes,
+  IVA), permisos o datos personales, legal.
+- **Máximo:** auditorías y decisiones de negocio donde un número mal leído cuesta plata, seguridad,
+  diseñar algo grande desde cero (ej. venta mayorista).
 
 **Avisa cuando la tarea:**
 - toca **plata**: costos, precios, márgenes, utilidad, comisiones, IVA;
