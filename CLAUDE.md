@@ -151,6 +151,9 @@ escriba en esa tabla** ("o tú mismo los marques") — solo en esa tabla; el res
   lista buena es la tabla.
 - Nunca borrar filas: lo que ya no se hace va a `descartado`.
 
+**Estudio antes de comprar por mayor:** skill `/auditar-producto` (`.claude/skills/auditar-producto/`).
+Informe con veredicto y fuentes; se guarda en `docs/estudios-producto/`.
+
 ---
 
 ## Backlog (pendientes, ninguno bloqueante — ver `docs/SNAPSHOT.md` para el detalle)
