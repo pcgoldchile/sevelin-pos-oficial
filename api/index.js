@@ -12927,13 +12927,37 @@ function ofertaParaFeed(p) {
   };
 }
 
+/* ENVÍO POR PESO EN EL FEED (30-09-2026). Merchant Center tiene UNA tarifa
+   fija de $6.500 para todo Chile ("Chilexpress a todo Chile"), que cubre lo
+   liviano. Lo más pesado manda su propia tarifa en la columna `shipping`,
+   que pisa la de la cuenta para ese producto. Tramos sacados de cotizaciones
+   REALES de Chilexpress desde Arica el 30-09-2026 (con el descuento del
+   convenio), al destino más caro probado (Punta Arenas / Puerto Montt /
+   Santiago): 0,05 kg → $6.147 · 1 kg → $9.505 · 2 kg → $11.394 ·
+   3,14 kg → $17.299 · 4,46 kg → $20.192 · 8 kg → $20.092. Cada tramo queda
+   por ENCIMA del máximo visto: mostrar en Google menos de lo que cobra el
+   checkout es lo que la plataforma castiga. Sin peso cargado → tarifa base. */
+const ENVIO_FEED_POR_PESO = [
+  { hastaKg: 0.5, precio: null },   // usa la tarifa fija de la cuenta ($6.500)
+  { hastaKg: 2, precio: 11990 },
+  { hastaKg: 3.5, precio: 17990 },
+  { hastaKg: Infinity, precio: 21990 }
+];
+
+function envioFeedPorPeso(pesoKg) {
+  const peso = num(pesoKg);
+  if (!(peso > 0)) return '';
+  const tramo = ENVIO_FEED_POR_PESO.find(t => peso <= t.hastaKg);
+  return tramo && tramo.precio ? `CL:::${tramo.precio} CLP` : '';
+}
+
 async function construirFeedCatalogo() {
   const sitio = (process.env.TIENDA_URL_PUBLICA || 'https://www.sevelin.cl').replace(/\/+$/, '');
 
   {
     const [respWeb, respPos] = await Promise.all([
       dbWeb.from('productos_web')
-        .select('producto_pos_id, sku, nombre, descripcion_web, precio_web, stock_web, imagen_urls, categoria, subcategoria, publicado_web, es_pedido_encargo, precio_oferta, oferta_desde, oferta_hasta')
+        .select('producto_pos_id, sku, nombre, descripcion_web, precio_web, stock_web, imagen_urls, categoria, subcategoria, publicado_web, es_pedido_encargo, precio_oferta, oferta_desde, oferta_hasta, peso_kg')
         .eq('publicado_web', true),
       db.from('productos').select('id, condicion, marca, archivado, es_borrador')
     ]);
@@ -12947,7 +12971,9 @@ async function construirFeedCatalogo() {
       'link', 'image_link', 'additional_image_link', 'brand', 'product_type',
       'quantity_to_sell_on_facebook', 'identifier_exists',
       // Oferta web con fechas (sql/71 → supabase/37 de la tienda)
-      'sale_price', 'sale_price_effective_date'
+      'sale_price', 'sale_price_effective_date',
+      // Tarifa propia de los productos pesados (ver ENVIO_FEED_POR_PESO)
+      'shipping'
     ];
 
     const filas = [];
@@ -13065,6 +13091,7 @@ async function construirFeedCatalogo() {
         product_type: [p.categoria, p.subcategoria].filter(Boolean).join(' > '),
         quantity_to_sell_on_facebook: p.es_pedido_encargo ? '' : Math.max(0, Math.round(num(p.stock_web))),
         identifier_exists: 'no',
+        shipping: envioFeedPorPeso(p.peso_kg),
         ...ofertaParaFeed(p)
       });
     }
