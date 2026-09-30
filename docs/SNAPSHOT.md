@@ -7,6 +7,11 @@
 > una línea antes de empezar y espera su respuesta**. El criterio completo está en `CLAUDE.md`,
 > sección "Modelo: avísame si esta tarea pide Opus".
 
+## 📋 Desde el 30-09-2026 (v101) la lista viva de pendientes es la tabla `pendientes`
+
+Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
+La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
+
 ## 🔴 PENDIENTES ABIERTOS (al 26-09-2026) — leer esto primero
 
 **Del dueño (Carlos), bloquean cosas ya construidas:**

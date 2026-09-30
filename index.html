@@ -256,6 +256,11 @@
       <button id="btnFijosPorPagar" class="btn-notificaciones btn-facturas admin-only" title="Gastos fijos del mes sin registrar" hidden>
         <span class="chip-punto" aria-hidden="true"></span><span id="textoFijosPorPagar">Gastos fijos</span>
       </button>
+      <!-- v101 (sql/72): pendientes del dueño y de Claude. Visible siempre para admin (aunque no
+           haya nada), para poder anotar uno nuevo; rojo si alguno pasó su fecha límite. -->
+      <button id="btnPendientes" class="btn-notificaciones btn-facturas btn-pendientes admin-only" title="Pendientes del dueño y de Claude" hidden>
+        <span class="chip-punto" aria-hidden="true"></span><span id="textoPendientes">Pendientes</span>
+      </button>
       <button id="btnSeguimientoDev" class="btn-notificaciones btn-seg-dev admin-only" title="Productos devueltos con seguimiento pendiente" hidden>
         <span class="chip-punto" aria-hidden="true"></span><span id="textoSeguimientoDev">Seguimiento</span>
       </button>
@@ -6746,6 +6751,84 @@
     </div>
   </div>
 
+  <!-- PENDIENTES DEL DUEÑO Y DE CLAUDE (v101, sql/72) -->
+  <div id="modalPendientes" class="modal-overlay">
+    <div class="modal-box" style="max-width:760px;">
+      <h2>📋 Pendientes</h2>
+      <p class="modal-hint" id="pendientesResumen">—</p>
+      <div class="pendientes-filtros" role="tablist" aria-label="Filtrar pendientes">
+        <button type="button" class="btn btn-sm btn-primary" data-filtro-pend="dueno">Míos</button>
+        <button type="button" class="btn btn-sm btn-outline" data-filtro-pend="claude">De Claude</button>
+        <button type="button" class="btn btn-sm btn-outline" data-filtro-pend="postergados">Postergados</button>
+        <button type="button" class="btn btn-sm btn-outline" data-filtro-pend="cerrados">Hechos</button>
+      </div>
+      <div id="pendientesLista" style="max-height:48vh; overflow:auto;"></div>
+
+      <details id="pendientesNuevo" class="pendientes-nuevo">
+        <summary>➕ Anotar un pendiente</summary>
+        <div class="field" style="margin-top:10px;">
+          <label for="pendTitulo">Qué hay que hacer <span class="obligatorio">*</span></label>
+          <input type="text" id="pendTitulo" maxlength="200" placeholder="Ej: Corregir el horario en Google Maps">
+        </div>
+        <div class="field" style="margin-top:10px;">
+          <label for="pendDetalle">Detalle <span class="opcional">(Opcional)</span></label>
+          <textarea id="pendDetalle" rows="2" maxlength="2000"></textarea>
+        </div>
+        <div class="grid grid-2" style="margin-top:10px;">
+          <div class="field">
+            <label for="pendResponsable">Quién lo hace</label>
+            <select id="pendResponsable">
+              <option value="dueno">Yo</option>
+              <option value="claude">Claude</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="pendFechaLimite">Fecha límite <span class="opcional">(Opcional)</span></label>
+            <input type="date" id="pendFechaLimite">
+          </div>
+          <div class="field">
+            <label for="pendCategoria">Tema <span class="opcional">(Opcional)</span></label>
+            <input type="text" id="pendCategoria" maxlength="40" placeholder="Tienda, SII, Meta…">
+          </div>
+          <div class="field">
+            <label class="pend-urgente">
+              <input type="checkbox" id="pendAlta"> Urgente
+            </label>
+          </div>
+        </div>
+        <div class="modal-foot" style="margin-top:12px;">
+          <button class="btn btn-primary" id="btnGuardarPendiente" type="button">Anotar</button>
+        </div>
+      </details>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCerrarPendientes" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Postergar un pendiente: pide para cuándo volver a mirarlo -->
+  <div id="modalPostergarPendiente" class="modal-overlay">
+    <div class="modal-box" style="max-width:440px;">
+      <h2>⏳ Postergar</h2>
+      <p class="modal-hint" id="postergarPendTitulo">—</p>
+      <div class="pendientes-filtros">
+        <button type="button" class="btn btn-sm btn-outline" data-posterga-dias="1">Mañana</button>
+        <button type="button" class="btn btn-sm btn-outline" data-posterga-dias="3">En 3 días</button>
+        <button type="button" class="btn btn-sm btn-outline" data-posterga-dias="7">En una semana</button>
+      </div>
+      <div class="field" style="margin-top:10px;">
+        <label for="postergarPendFecha">O elige el día</label>
+        <input type="date" id="postergarPendFecha">
+      </div>
+      <p class="modal-hint" id="postergarPendAviso"></p>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarPostergar" type="button">Cancelar</button>
+        <button class="btn btn-primary" id="btnConfirmarPostergar" type="button">Postergar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modalF29" class="modal-overlay">
     <div class="modal-box" style="max-width:600px;">
       <h2>🧾 F29 pendiente</h2>
@@ -6917,6 +7000,7 @@
   <script src="js/pedidos-web.js"></script>
   <script src="js/pagina-web.js"></script>   <!-- después de pedidos-web.js: envuelve su vista en el subtab "pedidos" -->
   <script src="js/notificaciones.js"></script>
+  <script src="js/pendientes.js"></script>   <!-- v101: después de notificaciones.js, reutiliza fechaCortaAviso -->
   <script src="js/completitud.js"></script>
   <script src="js/ubicaciones.js"></script>   <!-- usa API.pedidosWeb (js/api.js) y activarVista (js/config.js), ya cargados antes -->
   <script src="js/garantias.js"></script>

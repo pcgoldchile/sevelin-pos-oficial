@@ -8904,6 +8904,134 @@ app.get('/api/finanzas/sii/por-aceptar', auth(true), async (req, res) => {
 });
 
 /* ============================================================
+   PENDIENTES (v101, sql/72)
+   ------------------------------------------------------------
+   Pedido del dueño (30-09-2026): un lugar donde ver qué está pendiente
+   (suyo y de Claude), marcarlo como hecho y ver qué ya se cerró, porque
+   "siempre digo postergo, postergo". Es la fuente única de pendientes:
+   Claude la lee al empezar cada sesión y la actualiza al cerrarla (ver
+   CLAUDE.md). Desde el POS se marca como dueño; Claude escribe directo en
+   la base con la CLI y queda como 'claude'.
+
+   Postergar pide una fecha para volver a mirarlo y suma
+   `veces_postergado`: el contador es a propósito, para que se vea.
+   Nunca se borra: "descartado" guarda el historial. Solo admin.
+   ============================================================ */
+const PENDIENTES_ACCIONES = ['hecho', 'postergar', 'descartar', 'reabrir', 'editar'];
+
+// 'YYYY-MM-DD' que además existe en el calendario (fechaValidaISO solo mira el formato).
+function fechaISOExistente(v) {
+  if (!fechaValidaISO(v)) return false;
+  const d = new Date(v + 'T12:00:00Z');
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+}
+
+/* Valida y normaliza los campos editables. Devuelve { datos } o { error }.
+   `parcial` = solo se validan los campos que vienen (edición). */
+function camposPendiente(body, parcial) {
+  const datos = {};
+  const b = body || {};
+  if (!parcial || b.titulo !== undefined) {
+    const titulo = String(b.titulo ?? '').trim();
+    if (titulo.length < 3 || titulo.length > 200) return { error: 'El título debe tener entre 3 y 200 caracteres' };
+    datos.titulo = titulo;
+  }
+  if (b.detalle !== undefined) {
+    const detalle = String(b.detalle ?? '').trim();
+    if (detalle.length > 2000) return { error: 'El detalle no puede pasar de 2000 caracteres' };
+    datos.detalle = detalle || null;
+  }
+  if (b.responsable !== undefined) {
+    if (!['dueno', 'claude'].includes(b.responsable)) return { error: 'Responsable inválido' };
+    datos.responsable = b.responsable;
+  }
+  if (b.prioridad !== undefined) {
+    if (!['alta', 'normal'].includes(b.prioridad)) return { error: 'Prioridad inválida' };
+    datos.prioridad = b.prioridad;
+  }
+  if (b.fecha_limite !== undefined) {
+    if (b.fecha_limite === null || b.fecha_limite === '') datos.fecha_limite = null;
+    else if (!fechaISOExistente(b.fecha_limite)) return { error: 'Fecha límite inválida' };
+    else datos.fecha_limite = b.fecha_limite;
+  }
+  if (b.categoria !== undefined) {
+    const categoria = String(b.categoria ?? '').trim();
+    if (categoria.length > 40) return { error: 'La categoría no puede pasar de 40 caracteres' };
+    datos.categoria = categoria || null;
+  }
+  return { datos };
+}
+
+app.get('/api/pendientes', auth(true), async (req, res) => {
+  const [abiertos, cerrados] = await Promise.all([
+    db.from('pendientes').select('*').in('estado', ['pendiente', 'postergado'])
+      .order('fecha_limite', { ascending: true, nullsFirst: false })
+      .order('creado_en', { ascending: true }).limit(300),
+    db.from('pendientes').select('*').in('estado', ['hecho', 'descartado'])
+      .order('cerrado_en', { ascending: false }).limit(40)
+  ]);
+  const error = abiertos.error || cerrados.error;
+  if (error) return enviarErrorBD(res, error, 'pendientes');
+  res.json({ hoy: fechaHoyChile(), abiertos: abiertos.data || [], cerrados: cerrados.data || [] });
+});
+
+app.post('/api/pendientes', auth(true), async (req, res) => {
+  const { datos, error: errVal } = camposPendiente(req.body, false);
+  if (errVal) return enviarError(res, 400, errVal);
+  const { data, error } = await db.from('pendientes')
+    .insert([{ responsable: 'dueno', prioridad: 'normal', ...datos, creado_por: 'dueno' }])
+    .select('*').single();
+  if (error) return enviarErrorBD(res, error, 'crear pendiente');
+  res.status(201).json(data);
+});
+
+app.patch('/api/pendientes/:id', auth(true), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return enviarError(res, 400, 'Pendiente inválido');
+  const accion = String(req.body?.accion || '');
+  if (!PENDIENTES_ACCIONES.includes(accion)) return enviarError(res, 400, 'Acción inválida');
+
+  const { data: actual, error: errLeer } = await db.from('pendientes')
+    .select('id, estado, veces_postergado').eq('id', id).maybeSingle();
+  if (errLeer) return enviarErrorBD(res, errLeer, 'leer pendiente');
+  if (!actual) return enviarError(res, 404, 'Ese pendiente no existe');
+
+  const abierto = ['pendiente', 'postergado'].includes(actual.estado);
+  const ahora = new Date().toISOString();
+  const nota = String(req.body?.nota_cierre ?? '').trim();
+  if (nota.length > 1000) return enviarError(res, 400, 'La nota no puede pasar de 1000 caracteres');
+  let cambios;
+
+  if (accion === 'hecho' || accion === 'descartar') {
+    if (!abierto) return enviarError(res, 409, 'Ese pendiente ya está cerrado');
+    cambios = {
+      estado: accion === 'hecho' ? 'hecho' : 'descartado',
+      hecho_por: accion === 'hecho' ? 'dueno' : null,
+      nota_cierre: nota || null, cerrado_en: ahora, revisar_el: null
+    };
+  } else if (accion === 'postergar') {
+    if (!abierto) return enviarError(res, 409, 'Ese pendiente ya está cerrado');
+    const revisar = req.body?.revisar_el;
+    if (!fechaISOExistente(revisar)) return enviarError(res, 400, 'Elige para cuándo lo postergas');
+    if (revisar <= fechaHoyChile()) return enviarError(res, 400, 'La fecha para volver a verlo tiene que ser después de hoy');
+    cambios = { estado: 'postergado', revisar_el: revisar, veces_postergado: (actual.veces_postergado || 0) + 1 };
+  } else if (accion === 'reabrir') {
+    if (abierto) return enviarError(res, 409, 'Ese pendiente ya está abierto');
+    cambios = { estado: 'pendiente', hecho_por: null, nota_cierre: null, cerrado_en: null, revisar_el: null };
+  } else {
+    const { datos, error: errVal } = camposPendiente(req.body, true);
+    if (errVal) return enviarError(res, 400, errVal);
+    if (!Object.keys(datos).length) return enviarError(res, 400, 'No hay nada que cambiar');
+    cambios = datos;
+  }
+
+  const { data, error } = await db.from('pendientes')
+    .update({ ...cambios, actualizado_en: ahora }).eq('id', id).select('*').single();
+  if (error) return enviarErrorBD(res, error, 'actualizar pendiente');
+  res.json(data);
+});
+
+/* ============================================================
    AJUSTES MANUALES DE SALDO (req. 3)
    ------------------------------------------------------------
    Corrige el saldo de un canal cuando la realidad no cuadra con lo

@@ -132,6 +132,27 @@ Khipu al checkout de una tienda en vivo. Ese es el tipo de tarea que justifica e
 
 ---
 
+## 📋 Pendientes: la tabla `pendientes` es la lista única (regla del dueño, 30-09-2026)
+
+El dueño lo pidió así: *"siempre digo postergo, postergo, deja pendiente eso"*. Los pendientes ya no viven
+solo en la memoria de Claude ni en SNAPSHOT: viven en la tabla `pendientes` (sql/72) y el dueño los ve en
+el POS (chip **"Pendientes"** del encabezado, v101). **Autorización permanente del dueño para que Claude
+escriba en esa tabla** ("o tú mismo los marques") — solo en esa tabla; el resto de la base sigue igual.
+
+- **Al empezar la sesión:** leer los abiertos (`estado in ('pendiente','postergado')`) con la CLI de
+  Supabase y tenerlos en cuenta. Si alguno postergado ya llegó a su `revisar_el`, recordárselo.
+- **Cuando el dueño dice "déjalo pendiente", "después", "te aviso":** insertar una fila (`creado_por =
+  'claude'`, `responsable` = quien lo tiene que hacer). Si él da fecha o dice "te aviso", `estado =
+  'postergado'` con `revisar_el`.
+- **Cuando Claude termina algo de la lista:** `estado = 'hecho'`, `hecho_por = 'claude'`, `cerrado_en =
+  now()` y **`nota_cierre` con cómo se verificó** (commit, deploy, prueba). Nunca marcar como hecho algo
+  del dueño sin que él lo diga o sin evidencia real.
+- **Al cerrar la sesión:** la tabla tiene que calzar con lo conversado. SNAPSHOT puede resumir, pero la
+  lista buena es la tabla.
+- Nunca borrar filas: lo que ya no se hace va a `descartado`.
+
+---
+
 ## Backlog (pendientes, ninguno bloqueante — ver `docs/SNAPSHOT.md` para el detalle)
 
 1. **E-commerce: YA conectado y en producción** (`sevelin-tienda`, repo aparte) — catálogo real

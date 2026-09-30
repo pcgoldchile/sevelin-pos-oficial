@@ -583,6 +583,10 @@ const API = {
     gastosFijosMes: () => apiRequest('/finanzas/gastos-fijos-mes'),
     // v99 — compras que el SII tiene por aceptar (robot del RCV)
     siiPorAceptar: () => apiRequest('/finanzas/sii/por-aceptar', { silencioso: true }),
+    // v101 — pendientes del dueño y de Claude (sql/72)
+    pendientes: () => apiRequest('/pendientes', { silencioso: true }),
+    crearPendiente: (datos) => apiRequest('/pendientes', { method: 'POST', body: datos }),
+    accionPendiente: (id, datos) => apiRequest(`/pendientes/${id}`, { method: 'PATCH', body: datos }),
     // Recordatorio del F29 (sql/49): períodos pendientes y marcar presentado
     f29Estado: () => apiRequest('/finanzas/f29-estado', { silencioso: true }),
     f29Marcar: (datos) => apiRequest('/finanzas/f29-presentado', { method: 'POST', body: datos }),
