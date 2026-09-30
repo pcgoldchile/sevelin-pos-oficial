@@ -211,6 +211,58 @@ app.put('/api/textos/preguntas_diagnostico', (req, res) => {
   res.json({ contenido: textoPreguntas, actualizado_en: new Date().toISOString() });
 });
 
+// v103: venta mayorista (sql/76 + supabase/39). Dos productos con precio mayorista, uno
+// desactivado solo por la base (subió el costo), y cuentas en los cuatro estados.
+Object.assign(productos.find(p => p.id === 104), { precio_mayorista: 3500, mayorista_desde: 5 });
+Object.assign(productos.find(p => p.id === 126), { precio_mayorista: 7000, mayorista_desde: 3 });
+Object.assign(productos.find(p => p.id === 100), { mayorista_aviso: 'Se desactivó el mayorista de $5.200 (5 u.): Con el costo de $4.228, el mayorista mínimo es $5.285 (piso de 20% de margen)', mayorista_aviso_en: '2026-09-30T18:00:00Z' });
+const PISO_MAQUETA = 0.2;
+const costoRefMaqueta = p => (p.id === 100 ? 4228 : Number(p.costo_unitario) || 0);
+const minimoMaqueta = p => Math.ceil(costoRefMaqueta(p) / (1 - PISO_MAQUETA));
+let pedidoMinimoMaqueta = 100000;
+const cuentasMayoristas = [
+  { user_id: '11111111-1111-4111-8111-111111111111', estado: 'PENDIENTE', nombre: 'Juan Pérez Técnico', rut: '12345678-5', telefono: '+56912345678',
+    email: 'juan@example.com', ciudad: 'Arica', actividad: 'Reparo computadores en mi casa y compro cables, pendrives y pasta térmica.', declara_reventa: true,
+    solicitado_en: '2026-10-01T13:10:00Z' },
+  { user_id: '22222222-2222-4222-8222-222222222222', estado: 'PENDIENTE', nombre: 'Comercial Los Andes SpA', rut: '76543210-3', telefono: '+56987654321',
+    email: 'compras@example.com', ciudad: 'Putre', actividad: 'Minimarket, queremos vender power banks y cargadores.', declara_reventa: true,
+    solicitado_en: '2026-10-01T15:40:00Z' },
+  { user_id: '33333333-3333-4333-8333-333333333333', estado: 'APROBADA', nombre: 'María Soto', rut: '15678901-2', telefono: '+56911112222',
+    email: 'maria@example.com', ciudad: 'Arica', actividad: 'Cyber y servicio técnico.', declara_reventa: true, solicitado_en: '2026-09-29T12:00:00Z',
+    revisado_en: '2026-09-29T16:00:00Z', revisado_por: 'admin', nota_verificacion: 'Hablé por WhatsApp, es clienta del local hace meses.' },
+];
+app.get('/api/pos/mayoristas', (_req, res) => res.json({
+  cuentas: cuentasMayoristas, pedido_minimo: pedidoMinimoMaqueta, pedido_minimo_actualizado_en: null, piso_margen: PISO_MAQUETA,
+  productos: productos.filter(p => p.precio_mayorista || p.mayorista_aviso).map(p => ({
+    ...p, imagen: p.imagen_urls[0] || null, costo_referencia: costoRefMaqueta(p), precio_minimo: minimoMaqueta(p) })),
+}));
+app.get('/api/pos/mayoristas/avisos', (_req, res) => res.json({
+  por_aprobar: cuentasMayoristas.filter(c => c.estado === 'PENDIENTE').length,
+  desactivados: productos.filter(p => p.mayorista_aviso && !p.precio_mayorista).length,
+}));
+app.post('/api/pos/mayoristas/:userId/estado', (req, res) => {
+  const c = cuentasMayoristas.find(x => x.user_id === req.params.userId);
+  if (!c) return res.status(404).json({ error: 'Cuenta no encontrada' });
+  const nota = String(req.body.nota || '').trim();
+  const estado = req.body.estado;
+  if (estado === 'APROBADA' && nota.length < 10) return res.status(400).json({ error: 'Escribe cómo verificaste a este cliente: entre 10 y 300 letras' });
+  if (estado !== 'APROBADA' && nota.length < 5) return res.status(400).json({ error: 'Escribe el motivo: entre 5 y 300 letras' });
+  Object.assign(c, { estado, revisado_en: new Date().toISOString(), revisado_por: 'admin' },
+    estado === 'APROBADA' ? { nota_verificacion: nota, motivo: null } : { motivo: nota });
+  res.json({ cuenta: c, correo: estado === 'APROBADA' ? { enviado: true } : null });
+});
+app.put('/api/pos/mayoristas/ajustes', (req, res) => {
+  const v = Number(req.body.pedido_minimo);
+  if (!Number.isInteger(v) || v < 0) return res.status(400).json({ error: 'Monto inválido' });
+  pedidoMinimoMaqueta = v;
+  res.json({ pedido_minimo: v, actualizado_en: new Date().toISOString() });
+});
+app.get('/api/productos/:id/mayorista-minimo', (req, res) => {
+  const p = productos.find(x => x.id === Number(req.params.id));
+  if (!p) return res.status(404).json({ error: 'Producto no encontrado' });
+  res.json({ precio_minimo: minimoMaqueta(p), costo_referencia: costoRefMaqueta(p), piso_margen: PISO_MAQUETA });
+});
+
 app.use('/api', (req, res) => {
   const clave = `${req.method} ${req.path}`;
   if (!sinManejar.has(clave)) { sinManejar.add(clave); console.log('[maqueta] sin datos:', clave); }

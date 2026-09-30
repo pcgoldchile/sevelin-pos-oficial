@@ -165,6 +165,7 @@
           <button class="nav-subitem" data-view="view-pagina-web" data-subtab="pedidos">Pedidos Web</button>
           <button class="nav-subitem" data-view="view-pagina-web" data-subtab="cotizaciones">Cotizaciones</button>
           <button class="nav-subitem" data-view="view-pagina-web" data-subtab="categorias">Categorías</button>
+          <button class="nav-subitem" data-view="view-pagina-web" data-subtab="mayoristas">Mayoristas</button>
         </div>
       </div>
 
@@ -256,6 +257,11 @@
       </button>
       <button id="btnFijosPorPagar" class="btn-notificaciones btn-facturas admin-only" title="Gastos fijos del mes sin registrar" hidden>
         <span class="chip-punto" aria-hidden="true"></span><span id="textoFijosPorPagar">Gastos fijos</span>
+      </button>
+      <!-- v103 (sql/76): cuentas mayoristas por aprobar y precios mayoristas que la base
+           desactivó sola (subió el costo). Solo admin; oculto si no hay nada. -->
+      <button id="btnMayoristasAviso" class="btn-notificaciones btn-facturas admin-only" title="Venta mayorista" hidden>
+        <span class="chip-punto" aria-hidden="true"></span><span id="textoMayoristasAviso">Mayoristas</span>
       </button>
       <!-- v101 (sql/72): pendientes del dueño y de Claude. Visible siempre para admin (aunque no
            haya nada), para poder anotar uno nuevo; rojo si alguno pasó su fecha límite. -->
@@ -2448,6 +2454,21 @@
 
           <p class="modal-hint" id="prodCostoLotesNota" style="margin-top:8px; color:var(--blue);"></p>
 
+          <!-- v103 (sql/76): precio mayorista. En sevelin.cl solo lo ven las cuentas
+               mayoristas aprobadas; en el local, la caja lo sugiere desde esa cantidad. -->
+          <div class="grid grid-2" id="gridProdMayorista" style="margin-top:12px;">
+            <div class="field">
+              <label for="prodPrecioMayorista">🤝 Precio mayorista (opcional)</label>
+              <input type="number" id="prodPrecioMayorista" min="0" step="1" placeholder="Vacío = sin precio mayorista">
+            </div>
+            <div class="field">
+              <label for="prodMayoristaDesde">Desde (unidades)</label>
+              <input type="number" id="prodMayoristaDesde" min="2" step="1" placeholder="Ej: 3">
+            </div>
+          </div>
+          <p class="modal-hint" id="prodMayoristaResumen">Por unidad, desde esa cantidad del mismo producto. Nunca por debajo del piso de margen (la base lo desactiva sola si una compra sube el costo).</p>
+          <div id="prodMayoristaAviso" class="callout-warning" style="display:none;"></div>
+
           <label class="check-item" id="itemProdStockIlimitado" style="margin-top:16px;">
             <input type="checkbox" id="prodStockIlimitado">
             <span>♾️ Stock ilimitado (para servicios o ítems sin inventario físico — no se descuenta al vender)</span>
@@ -3049,11 +3070,70 @@
         <button class="subtab activo" data-subtab="pedidos">🌐 Pedidos Web</button>
         <button class="subtab" data-subtab="cotizaciones">📄 Cotizaciones</button>
         <button class="subtab" data-subtab="categorias">🗂️ Categorías</button>
+        <button class="subtab" data-subtab="mayoristas">🤝 Mayoristas</button>
         <button class="subtab" data-subtab="mas-buscados">🔍 Más buscados</button>
         <button class="subtab" data-subtab="metricas">📊 Métricas</button>
         <button class="subtab" data-subtab="feed">📣 Feed de catálogo</button>
         <button class="subtab" data-subtab="salud">🩺 Salud</button>
       </nav>
+
+      <!-- ============================================================
+           MAYORISTAS (v103, sql/76 + supabase/39 en sevelin-tienda)
+           Cuentas que se piden desde "Mi cuenta" en sevelin.cl y se aprueban
+           acá a mano, después de verificar por WhatsApp o llamada. El pedido
+           mínimo y los precios cargados. Lo pinta js/mayoristas.js.
+           ============================================================ -->
+      <div class="panel-pagina-web" data-panel-pagina-web="mayoristas">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>🤝 Cuentas mayoristas</h2>
+              <p class="subtitle" id="mayoristasResumen">Clientes que piden precios mayoristas en sevelin.cl. Verifica por WhatsApp o llamada antes de aprobar.</p>
+            </div>
+            <div class="toolbar-group">
+              <div class="chip-group" id="mayoristasChips">
+                <button class="chip active" data-may-filtro="PENDIENTE">Por aprobar</button>
+                <button class="chip" data-may-filtro="APROBADA">Aprobadas</button>
+                <button class="chip" data-may-filtro="SUSPENDIDA">Suspendidas</button>
+                <button class="chip" data-may-filtro="RECHAZADA">Rechazadas</button>
+              </div>
+              <button class="btn btn-outline btn-sm" id="btnRecargarMayoristas" type="button">↻ Actualizar</button>
+            </div>
+          </div>
+          <div id="mayoristasLista"><p class="modal-hint">Cargando…</p></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div>
+            <h2>Pedido mínimo mayorista</h2>
+            <p class="subtitle">En sevelin.cl, los precios mayoristas se aplican solo si el pedido (sin envío) llega a este monto. Si no llega, se cobra todo a precio normal y el carrito le dice al cliente cuánto le falta.</p>
+          </div></div>
+          <div class="grid grid-2">
+            <div class="field">
+              <label for="mayoristaPedidoMinimo">Monto mínimo</label>
+              <input type="number" id="mayoristaPedidoMinimo" min="0" step="1000" placeholder="100000">
+            </div>
+            <div class="field">
+              <label class="field-ghost-label">Guardar</label>
+              <button class="btn btn-primary" id="btnGuardarPedidoMinimo" type="button">Guardar monto</button>
+            </div>
+          </div>
+          <p class="modal-hint" id="mayoristaPedidoMinimoInfo"></p>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div>
+            <h2>Productos con precio mayorista</h2>
+            <p class="subtitle" id="mayoristasProductosResumen">Se cargan en el editor de cada producto (tarjeta "Precio y stock").</p>
+          </div></div>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead><tr><th>Producto</th><th class="num">Normal</th><th class="num">Mayorista</th><th class="num">Desde</th><th class="num">Margen</th><th class="num">Mínimo</th><th class="num">Stock</th><th></th></tr></thead>
+              <tbody id="mayoristasProductosBody"><tr class="empty-row"><td colspan="8">Cargando…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
 
       <!-- ============================================================
            COTIZACIONES (supabase/35 en sevelin-tienda)
@@ -6801,6 +6881,23 @@
   </div>
 
   <!-- FACTURAS POR ACEPTAR EN EL SII (v99) -->
+  <!-- v103: aprobar, rechazar, suspender o reactivar una cuenta mayorista (js/mayoristas.js) -->
+  <div id="modalEstadoMayorista" class="modal-overlay">
+    <div class="modal-box" style="max-width:560px;">
+      <h2 id="estadoMayoristaTitulo">Aprobar cuenta mayorista</h2>
+      <p class="modal-hint" id="estadoMayoristaCliente">—</p>
+      <div class="field">
+        <label for="estadoMayoristaNota" id="estadoMayoristaNotaLabel">¿Cómo lo verificaste?</label>
+        <textarea id="estadoMayoristaNota" rows="3" maxlength="300" placeholder="Ej: hablé por WhatsApp el 01-10, es técnico en Arica y compra cables y pendrives para su taller"></textarea>
+      </div>
+      <p class="modal-hint" id="estadoMayoristaAyuda">Queda guardado con la fecha. Al aprobar, a la persona le llega un correo avisándole que ya puede ver sus precios.</p>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarEstadoMayorista" type="button">Cancelar</button>
+        <button class="btn btn-primary" id="btnConfirmarEstadoMayorista" type="button">Aprobar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modalSiiPorAceptar" class="modal-overlay">
     <div class="modal-box" style="max-width:740px;">
       <h2>🧾 Facturas por aceptar en el SII</h2>
@@ -7090,6 +7187,7 @@
   <script src="js/repuestos.js"></script>
   <script src="js/ot.js"></script>
   <script src="js/protocolos.js"></script>
+  <script src="js/mayoristas.js"></script>   <!-- v103: después de ot.js, reutiliza telefonoWhatsappOT -->
   <script src="js/pos.js"></script>
   <script src="js/pos-layout.js"></script>   <!-- después de pos.js: solo toca la maquetación -->
   <script src="js/caja.js"></script>   <!-- apertura/arqueo de caja en el POS (punto 4) -->

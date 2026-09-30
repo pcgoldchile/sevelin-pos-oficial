@@ -134,6 +134,61 @@ function actualizarResumenOfertaWeb() {
   elProdOfertaResumen.textContent = texto;
   elProdOfertaResumen.style.color = error ? 'var(--red)' : 'var(--green)';
 }
+/* Precio mayorista (sql/76, v103). El mínimo lo decide el servidor (piso de
+   margen sobre el mayor costo conocido, incluida la última compra); acá solo
+   se muestra para no tener que adivinarlo. */
+const elProdPrecioMayorista = document.getElementById('prodPrecioMayorista');
+const elProdMayoristaDesde = document.getElementById('prodMayoristaDesde');
+const elProdMayoristaResumen = document.getElementById('prodMayoristaResumen');
+const elProdMayoristaAviso = document.getElementById('prodMayoristaAviso');
+const TEXTO_MAYORISTA_VACIO = elProdMayoristaResumen?.textContent || '';
+let minimoMayoristaEditor = null;   // { precio_minimo, costo_referencia, piso_margen } del producto abierto
+
+function actualizarResumenMayorista() {
+  if (!elProdMayoristaResumen) return;
+  const precio = Number(elProdPrecioMayorista?.value) || 0;
+  const desde = Number(elProdMayoristaDesde?.value) || 0;
+  if (!precio) { elProdMayoristaResumen.textContent = TEXTO_MAYORISTA_VACIO; elProdMayoristaResumen.style.color = ''; return; }
+  const normal = Math.min(Number(elProdPrecio?.value) || Infinity, Number(elProdPrecioWeb?.value) || Infinity);
+  // El costo de la ficha puede estar más bajo que el de la última compra: se usa el mayor.
+  const costo = Math.max(Number(elProdCosto?.value) || 0, Number(minimoMayoristaEditor?.costo_referencia) || 0);
+  const piso = Number(minimoMayoristaEditor?.piso_margen) || 0.2;
+  const minimo = costo ? Math.ceil(costo / (1 - piso)) : 0;
+  let texto, error = false;
+  if (!(desde >= 2)) { texto = '⚠️ Indica desde cuántas unidades (2 o más).'; error = true; }
+  else if (Number.isFinite(normal) && precio >= normal) { texto = `⚠️ Tiene que ser menor que el precio normal (${fmtCLP(normal)}).`; error = true; }
+  else if (!costo) { texto = '⚠️ Carga el costo antes: sin costo no se puede asegurar que no haya pérdida.'; error = true; }
+  else if (precio < minimo) { texto = `⚠️ El mínimo es ${fmtCLP(minimo)}: con costo ${fmtCLP(costo)} deja menos de ${Math.round(piso * 100)}% de margen.`; error = true; }
+  else {
+    const margen = Math.round((precio - costo) / precio * 100);
+    const dcto = Number.isFinite(normal) ? Math.round((normal - precio) / normal * 100) : 0;
+    texto = `✅ ${fmtCLP(precio)} desde ${desde} u. (−${dcto}% del normal) · margen ${margen}% sobre costo ${fmtCLP(costo)} · mínimo ${fmtCLP(minimo)}`;
+  }
+  elProdMayoristaResumen.textContent = texto;
+  elProdMayoristaResumen.style.color = error ? 'var(--red)' : 'var(--green)';
+}
+
+async function cargarMinimoMayoristaEditor(productoId) {
+  minimoMayoristaEditor = null;
+  if (!productoId) { actualizarResumenMayorista(); return; }
+  try {
+    minimoMayoristaEditor = await API.productos.mayoristaMinimo(productoId);
+  } catch (err) {
+    console.error('No se pudo leer el mínimo mayorista:', err.message || err);
+  }
+  // Solo si el editor sigue en el mismo producto (se pudo abrir otro mientras tanto).
+  if (editingProductId === productoId) actualizarResumenMayorista();
+}
+
+function pintarAvisoMayorista(producto) {
+  if (!elProdMayoristaAviso) return;
+  const aviso = producto?.mayorista_aviso;
+  elProdMayoristaAviso.style.display = aviso ? '' : 'none';
+  elProdMayoristaAviso.textContent = aviso
+    ? `⚠️ ${aviso}${producto.mayorista_aviso_en ? ` (${tsAChile(producto.mayorista_aviso_en)})` : ''}. Revisa el precio y guarda de nuevo si quieres volver a activarlo.`
+    : '';
+}
+
 const elProdCategoriaWeb = document.getElementById('prodCategoriaWeb');
 const elProdStockUmbralWeb = document.getElementById('prodStockUmbralWeb');
 const elProdEtiquetaWeb = document.getElementById('prodEtiquetaWeb');
@@ -221,6 +276,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // Oferta web (sql/71): el resumen se recalcula con cualquier campo que la afecte.
   [elProdPrecioOfertaWeb, elProdOfertaDesde, elProdOfertaHasta, elProdPrecioWeb, elProdPrecio]
     .forEach(el => el?.addEventListener('input', actualizarResumenOfertaWeb));
+  [elProdPrecioMayorista, elProdMayoristaDesde, elProdCosto, elProdPrecio, elProdPrecioWeb]
+    .forEach(el => el?.addEventListener('input', actualizarResumenMayorista));
   setupProductosEventListeners();
 });
 
@@ -1585,6 +1642,10 @@ function abrirModalProducto(producto = null) {
     if (elProdOfertaDesde) elProdOfertaDesde.value = isoAFechaHoraLocal(producto.oferta_desde);
     if (elProdOfertaHasta) elProdOfertaHasta.value = isoAFechaHoraLocal(producto.oferta_hasta);
     actualizarResumenOfertaWeb();
+    if (elProdPrecioMayorista) elProdPrecioMayorista.value = producto.precio_mayorista ?? '';
+    if (elProdMayoristaDesde) elProdMayoristaDesde.value = producto.mayorista_desde ?? '';
+    pintarAvisoMayorista(producto);
+    cargarMinimoMayoristaEditor(producto.id);
     if (elProdStockUmbralWeb) elProdStockUmbralWeb.value = producto.stock_umbral_web ?? '';
     if (elProdEtiquetaWeb) elProdEtiquetaWeb.value = producto.etiqueta_web || '';
     // Los productos creados antes de sql/40 no traen el campo; el default
@@ -1647,6 +1708,10 @@ function abrirModalProducto(producto = null) {
     if (elProdOfertaDesde) elProdOfertaDesde.value = '';
     if (elProdOfertaHasta) elProdOfertaHasta.value = '';
     actualizarResumenOfertaWeb();
+    if (elProdPrecioMayorista) elProdPrecioMayorista.value = '';
+    if (elProdMayoristaDesde) elProdMayoristaDesde.value = '';
+    pintarAvisoMayorista(null);
+    cargarMinimoMayoristaEditor(null);
     if (elProdStockUmbralWeb) elProdStockUmbralWeb.value = '';
     if (elProdEtiquetaWeb) elProdEtiquetaWeb.value = '';
     if (elProdUrgenciaStockWeb) elProdUrgenciaStockWeb.checked = true;
@@ -1863,6 +1928,9 @@ function construirPayloadProducto() {
     precio_oferta_web: elProdPrecioOfertaWeb?.value.trim() ? Number(elProdPrecioOfertaWeb.value) : null,
     oferta_desde: fechaHoraLocalAIso(elProdOfertaDesde?.value),
     oferta_hasta: fechaHoraLocalAIso(elProdOfertaHasta?.value),
+    // Venta mayorista (sql/76). Sin precio, el servidor borra la cantidad.
+    precio_mayorista: elProdPrecioMayorista?.value.trim() ? Number(elProdPrecioMayorista.value) : null,
+    mayorista_desde: elProdMayoristaDesde?.value.trim() ? Number(elProdMayoristaDesde.value) : null,
     categoria_web,
     categoria_id,
     subcategoria_web,

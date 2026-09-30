@@ -197,9 +197,11 @@ function renderPedidosWebTabla(lista) {
     const tracking = p.tracking_courier
       ? `<br><small style="color:var(--text-muted);">${escHtml(p.tracking_courier)}</small>` : '';
     const badgeEncargo = p.tipo_pedido === 'ENCARGO' ? ' <span class="badge badge-gold">📦 Encargo</span>' : '';
+    // Venta mayorista (supabase/39): al menos una línea se cobró a precio mayorista.
+    const badgeMayorista = p.es_mayorista ? ' <span class="badge badge-blue">🤝 Mayorista</span>' : '';
 
     return `<tr>
-      <td>${escHtml(p.numero_pedido)}${badgeEncargo}</td>
+      <td>${escHtml(p.numero_pedido)}${badgeEncargo}${badgeMayorista}</td>
       <td>${tsAChile(p.creado_en)}</td>
       <td>${escHtml(p.cliente_nombre || '—')}</td>
       <td>${badgeMedioPagoPedidoWeb(p)}</td>
@@ -312,9 +314,13 @@ function abrirModalPedidoWeb(id) {
 
   if (elPedidoWebItems) {
     const items = Array.isArray(pedido.items) ? pedido.items : [];
-    elPedidoWebItems.innerHTML = items.map(it =>
-      `<li>${escHtml(it.nombre)} × ${it.cantidad} — ${fmtCLP(it.precio_web * it.cantidad)}</li>`
-    ).join('') || '<li>Sin ítems</li>';
+    elPedidoWebItems.innerHTML = items.map(it => {
+      // Línea mayorista: se muestra el precio normal al lado, para ver cuánto se rebajó.
+      const mayorista = it.precio_tipo === 'MAYORISTA'
+        ? ` <span class="badge badge-blue">🤝 Mayorista ${fmtCLP(it.precio_web)} c/u${Number(it.precio_normal) > 0 ? ` (normal ${fmtCLP(it.precio_normal)})` : ''}</span>`
+        : '';
+      return `<li>${escHtml(it.nombre)} × ${it.cantidad} — ${fmtCLP(it.precio_web * it.cantidad)}${mayorista}</li>`;
+    }).join('') || '<li>Sin ítems</li>';
   }
 
   if (elPedidoWebTotales) {

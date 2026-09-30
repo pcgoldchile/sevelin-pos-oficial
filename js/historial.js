@@ -1541,7 +1541,9 @@ async function abrirModalEditarVenta(ventaId) {
       cantidad: Number(it.cantidad) || 1,
       costo_unitario: Number(it.costo_unitario) || 0,
       precio_unitario: Number(it.precio_unitario) || 0,
-      serial_number: it.serial_number || null
+      serial_number: it.serial_number || null,
+      // Venta mayorista (sql/76): editar la venta no borra la marca.
+      precio_tipo: it.precio_tipo === 'MAYORISTA' ? 'MAYORISTA' : 'NORMAL'
     }));
 
     if (elEditVentaId) elEditVentaId.value = venta.id;

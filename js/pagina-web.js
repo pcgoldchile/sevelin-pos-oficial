@@ -72,6 +72,7 @@ function mostrarPanelPaginaWeb(nombre) {
   if (nombre === 'pedidos' && typeof cargarPedidosWeb === 'function') cargarPedidosWeb();
   if (nombre === 'cotizaciones') cargarCotizacionesWeb();
   if (nombre === 'categorias') cargarCategoriasWeb();
+  if (nombre === 'mayoristas' && typeof cargarMayoristas === 'function') cargarMayoristas();
   if (nombre === 'mas-buscados') cargarMasBuscados();
   if (nombre === 'metricas') { cargarMetricasWeb(); iniciarRefrescoVisitantesActivos(); }
   else { detenerRefrescoVisitantesActivos(); }
@@ -1154,7 +1155,7 @@ function pintarSaludCatalogoWeb() {
       `${num(catalogoWebCache.total_pos)} publicados en el POS · ${num(catalogoWebCache.total_web)} visibles en sevelin.cl` +
       (faltantes.length || sobrantes.length ? ' — hay diferencias.' : ' — todo cuadrado.');
   }
-  if (btnReenviar) btnReenviar.hidden = faltantes.length === 0;
+  if (btnReenviar) btnReenviar.hidden = faltantes.length === 0 && !sobrantes.some(x => x.reenviable);
 
   if (!faltantes.length && !sobrantes.length) {
     cont.innerHTML = '<p class="modal-hint">✅ Todos los productos publicados en el POS están en la tienda.</p>';
@@ -1190,7 +1191,10 @@ function pintarSaludCatalogoWeb() {
 }
 
 async function reenviarCatalogoFaltante() {
-  const faltantes = catalogoWebCache?.faltantes || [];
+  /* Los que faltan, más los "de más" que se arreglan reenviando (un precio
+     mayorista viejo en la web, sql/76). Un producto despublicado que sigue
+     visible NO se reenvía desde acá: ese se revisa a mano. */
+  const faltantes = [...(catalogoWebCache?.faltantes || []), ...(catalogoWebCache?.sobrantes || []).filter(x => x.reenviable)];
   if (!faltantes.length) return;
 
   if (!confirm(`¿Reenviar ${faltantes.length} producto(s) a sevelin.cl?\n\nSe vuelve a disparar la sincronización de cada uno.`)) return;

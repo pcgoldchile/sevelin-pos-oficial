@@ -4608,6 +4608,15 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .cart-prod-sub { font-size: .72rem; color: var(--text-muted); margin-top: 2px; }
+/* v103: precio mayorista en la línea del carrito (js/pos.js, detalleMayoristaLinea) */
+.cart-mayorista { color: var(--text-muted); }
+.cart-mayorista.activo { color: var(--blue); font-weight: 600; }
+.cart-mayorista-btn {
+    font: inherit; font-size: .7rem; line-height: 1.2; padding: 1px 7px; margin-left: 2px;
+    border-radius: 999px; border: 1px solid rgba(var(--blue-rgb), .45); background: rgba(var(--blue-rgb), .08);
+    color: var(--blue); cursor: pointer;
+}
+.cart-mayorista-btn:hover { background: rgba(var(--blue-rgb), .16); }
 #cartTableBody td.cart-cant { text-align: center; }
 #cartTableBody td.cart-subtotal { text-align: right; font-weight: 600; color: var(--text-100); }
 #cartTableBody td.cart-quitar { text-align: right; padding-left: 0; }

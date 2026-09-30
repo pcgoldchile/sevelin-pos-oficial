@@ -78,6 +78,8 @@ const API = {
     // Borradores: mismo criterio, ?borradores=1 (ver sql/34-borrador-productos.sql).
     listarBorradores: () => apiRequest('/productos?borradores=1'),
     crear: (p) => apiRequest('/productos', { method: 'POST', body: p }),
+    // Venta mayorista (sql/76): mínimo que acepta el piso, con la última compra.
+    mayoristaMinimo: (id) => apiRequest(`/productos/${id}/mayorista-minimo`, { silencioso: true }),
     actualizar: (id, p) => apiRequest(`/productos/${id}`, { method: 'PUT', body: p }),
     // Medidas y peso van por su propia ruta (sql/43): el guardado normal
     // ya no las toca, y ésta exige el nombre de quien midió.
@@ -426,6 +428,17 @@ const API = {
   /* Cotizaciones que el cliente se armó solo en la tienda (supabase/35 de
      sevelin-tienda). Solo lectura + marcar como revisada: un documento ya
      emitido no se edita desde el POS. */
+  /* Venta mayorista (v103): cuentas que se piden en sevelin.cl y se aprueban
+     acá a mano, y el pedido mínimo. Viven en Supabase Web (supabase/39). */
+  mayoristas: {
+    listar: () => apiRequest('/pos/mayoristas'),
+    avisos: () => apiRequest('/pos/mayoristas/avisos', { silencioso: true }),
+    cambiarEstado: (userId, estado, nota) =>
+      apiRequest(`/pos/mayoristas/${encodeURIComponent(userId)}/estado`, { method: 'POST', body: { estado, nota } }),
+    guardarPedidoMinimo: (pedido_minimo) =>
+      apiRequest('/pos/mayoristas/ajustes', { method: 'PUT', body: { pedido_minimo } })
+  },
+
   cotizacionesWeb: {
     listar: (soloPendientes) => apiRequest('/pos/cotizaciones' + (soloPendientes ? '?pendientes=1' : '')),
     marcar: (id, gestionada) =>

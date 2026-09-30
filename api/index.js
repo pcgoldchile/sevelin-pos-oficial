@@ -754,6 +754,46 @@ function validarOfertaWeb(p, actual = {}) {
   return null;
 }
 
+/* VENTA MAYORISTA (sql/76, v103). El piso vive en la base
+   (precio_minimo_mayorista: 20% de margen sobre el mayor costo conocido) y
+   la base desactiva sola un mayorista que quede bajo él. Esto lo valida
+   ANTES, para rechazar el guardado con un mensaje claro en vez de guardar
+   y desactivarlo en silencio. `actual` es la fila guardada (al editar).
+   Devuelve el mensaje de error o null. */
+async function validarPrecioMayorista(p, actual = {}, productoId = null) {
+  const toca = ['precio_mayorista', 'mayorista_desde', 'costo_unitario', 'precio_unitario', 'precio_web',
+    'es_servicio', 'stock_ilimitado', 'es_pedido_encargo', 'precio_a_consultar'].some(k => p[k] !== undefined);
+  if (!toca) return null;
+  const valor = k => (p[k] !== undefined ? p[k] : actual[k]);
+  const precio = num(valor('precio_mayorista'));
+  if (!(precio > 0)) return null;   // sin precio mayorista no hay nada que validar
+  const clp = n => '$' + Math.round(Number(n)).toLocaleString('es-CL');
+
+  const desde = num(valor('mayorista_desde'));
+  if (!Number.isInteger(desde) || desde < 2 || desde > 1000) return 'Indica desde cuántas unidades se aplica el precio mayorista (2 o más)';
+  if (valor('es_servicio') || valor('stock_ilimitado')) return 'Los servicios no llevan precio mayorista';
+  if (valor('es_pedido_encargo')) return 'Los productos por encargo no llevan precio mayorista';
+  if (valor('precio_a_consultar')) return 'Un producto "precio a consultar" no lleva precio mayorista';
+
+  const normalPos = num(valor('precio_unitario'));
+  const normalWeb = num(valor('precio_web')) || normalPos;
+  const normal = Math.min(normalPos || Infinity, normalWeb || Infinity);
+  if (!(precio < normal)) return `El precio mayorista (${clp(precio)}) tiene que ser menor que el precio normal (${clp(normal)})`;
+
+  const costoFicha = num(valor('costo_unitario'));
+  if (!(costoFicha > 0)) return 'Carga el costo antes: sin costo no se puede asegurar que el precio mayorista no deje pérdida';
+
+  const { data: minimo, error } = await db.rpc('precio_minimo_mayorista', {
+    p_producto_id: productoId ? Number(productoId) : null,
+    p_costo_ficha: costoFicha
+  });
+  if (error) throw new Error(error.message);
+  if (precio < num(minimo)) {
+    return `Con el costo de este producto el precio mayorista mínimo es ${clp(minimo)} (el piso de margen mayorista, contando la última compra). No se puede vender más barato.`;
+  }
+  return null;
+}
+
 /* Reconfirmación del PIN de administrador para operaciones destructivas
    masivas (borrar todo el catálogo, todo el historial, lotes completos).
    Se valida SIEMPRE en el servidor: aunque alguien manipule el frontend o
@@ -887,6 +927,9 @@ const CAMPOS_PRODUCTO = [
   // Oferta web con fechas (sql/71): la tienda la aplica y la quita sola.
   // Se valida aparte en validarOfertaWeb() (necesita el precio normal).
   'precio_oferta_web', 'oferta_desde', 'oferta_hasta',
+  // Venta mayorista (sql/76): se valida aparte en validarPrecioMayorista()
+  // (necesita el costo de la última compra), y la base la vuelve a revisar.
+  'precio_mayorista', 'mayorista_desde',
   // categoria_id (Fase "Página Web → Categorías"): FK interna del POS, no se
   // sincroniza a la tienda (el trigger solo usa categoria_web). stock_umbral_web:
   // NULL = usa el default de la tienda (+5); ver sql/23-categorias-web-y-umbral-stock.sql.
@@ -1033,6 +1076,20 @@ function sanearProducto(body = {}) {
     if (p[k] === undefined || p[k] === null) continue;
     const t = Date.parse(String(p[k]));
     p[k] = Number.isFinite(t) ? new Date(t).toISOString() : null;
+  }
+  /* Venta mayorista (sql/76): sin precio no hay cantidad mínima (el CHECK
+     exige los dos o ninguno). Guardarlo de nuevo borra el aviso de "se
+     desactivó solo": quien guarda ya lo vio en el editor. */
+  if (p.precio_mayorista !== undefined) {
+    const v = Math.round(num(p.precio_mayorista));
+    p.precio_mayorista = v > 0 ? v : null;
+    if (!p.precio_mayorista) p.mayorista_desde = null;
+    p.mayorista_aviso = null;
+    p.mayorista_aviso_en = null;
+  }
+  if (p.mayorista_desde !== undefined && p.mayorista_desde !== null) {
+    const d = Math.round(num(p.mayorista_desde));
+    p.mayorista_desde = d > 0 ? d : null;
   }
   // Etiqueta destacada: solo una de las 3 opciones válidas o NULL — cualquier
   // otra cosa (manipulación directa del payload) se descarta en vez de
@@ -1304,6 +1361,13 @@ app.post('/api/productos', auth(true), async (req, res) => {
 
   const errOferta = validarOfertaWeb(producto);
   if (errOferta) return enviarError(res, 400, errOferta);
+
+  try {
+    const errMayorista = await validarPrecioMayorista(producto);
+    if (errMayorista) return enviarError(res, 400, errMayorista);
+  } catch (e) {
+    return enviarErrorBD(res, e, 'POST /api/productos (mayorista)');
+  }
 
   const { data, error } = await db.from('productos').insert([producto]).select().single();
   if (error) return enviarErrorBD(res, error);
@@ -3711,6 +3775,18 @@ app.put('/api/productos/:id', auth(true), async (req, res) => {
     if (errOferta) return enviarError(res, 400, errOferta);
   }
 
+  // Venta mayorista (sql/76): mismo criterio, lo que falte sale de lo guardado.
+  try {
+    const { data: actualMayorista, error: errActual } = await db.from('productos')
+      .select('precio_mayorista, mayorista_desde, costo_unitario, precio_unitario, precio_web, es_servicio, stock_ilimitado, es_pedido_encargo, precio_a_consultar')
+      .eq('id', req.params.id).maybeSingle();
+    if (errActual) throw errActual;
+    const errMayorista = await validarPrecioMayorista(producto, actualMayorista || {}, req.params.id);
+    if (errMayorista) return enviarError(res, 400, errMayorista);
+  } catch (e) {
+    return enviarErrorBD(res, e, 'PUT /api/productos/:id (mayorista)');
+  }
+
   /* Se lee el stock ANTERIOR antes de escribir: es la única forma de
      saber si esta edición fue una reposición (sql/57). Una consulta más
      por edición de producto, que es una operación poco frecuente. */
@@ -4047,6 +4123,8 @@ async function normalizarItems(items, rolSolicitante) {
       costo_unitario: costo,
       precio_unitario: precio,
       subtotal: precio * cantidad,
+      // Venta mayorista (sql/76): solo una marca para medir; el precio es el de la línea.
+      precio_tipo: it.precio_tipo === 'MAYORISTA' ? 'MAYORISTA' : 'NORMAL',
       serial_number: it.serial_number || null,
       // Módulo Garantías: sin producto de catálogo (ítem escrito a mano)
       // queda sin condición y con el default de 6 meses.
@@ -11714,6 +11792,8 @@ app.post('/api/interno/registrar-venta-web', authSync, async (req, res) => {
         // La tienda marca los servicios técnicos desde el carrito mixto
         // (12-09-2026). Sin esto el Balance los contaba como productos.
         es_servicio: !!i.es_servicio,
+        // La tienda marca las líneas cobradas a precio mayorista (sql/76).
+        precio_tipo: i.precio_tipo === 'MAYORISTA' ? 'MAYORISTA' : 'NORMAL',
         condicion: prod.condicion || null,
         meses_garantia: prod.meses_garantia ?? 6,
       };
@@ -11966,6 +12046,179 @@ app.put('/api/pos/pedidos-web/:id', auth(true), async (req, res) => {
   res.json({ ...data, stock_repuesto: stockRepuesto, correo_enviado: correoEnviado });
 });
 
+/* ============================================================
+   VENTA MAYORISTA — Fase 1 (v103, sql/76 + supabase/39 de la tienda)
+   ------------------------------------------------------------
+   El cliente pide la cuenta desde "Mi cuenta" en sevelin.cl; acá el dueño
+   la revisa, verifica por WhatsApp o llamada y la aprueba (con la nota de
+   cómo verificó, obligatoria) o la rechaza. Las cuentas y el pedido mínimo
+   viven en Supabase Web (dbWeb, igual que Pedidos Web). Los precios
+   mayoristas viven en productos (este Supabase) y viajan solos a la
+   tienda por el trigger de siempre.
+   Solo admin.
+   ============================================================ */
+
+// RECHAZADA no se reabre desde acá: el cliente puede volver a pedirla.
+const TRANSICIONES_MAYORISTA = {
+  PENDIENTE: ['APROBADA', 'RECHAZADA'],
+  APROBADA: ['SUSPENDIDA'],
+  SUSPENDIDA: ['APROBADA'],
+  RECHAZADA: []
+};
+
+/* Avisa al cliente que su cuenta quedó aprobada. El correo lo manda la
+   tienda (tiene Resend y la plantilla); la URL se deriva de
+   TIENDA_NOTIFICAR_ENTREGA_URL, mismo criterio que el QR de retiro de las
+   OT. Nunca lanza: la aprobación ya quedó guardada. */
+async function notificarMayoristaAprobado(userId) {
+  const url = String(TIENDA_NOTIFICAR_ENTREGA_URL || '').replace(/notificar-entrega\/?$/, 'notificar-mayorista');
+  if (!url || url === TIENDA_NOTIFICAR_ENTREGA_URL || !SYNC_SECRET) {
+    return { enviado: false, motivo: 'Falta TIENDA_NOTIFICAR_ENTREGA_URL o SYNC_SECRET: avísale tú por WhatsApp.' };
+  }
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-sync-secret': SYNC_SECRET },
+      body: JSON.stringify({ user_id: userId })
+    });
+    const datos = await resp.json().catch(() => ({}));
+    if (!resp.ok) return { enviado: false, motivo: datos.error || `La tienda respondió ${resp.status}` };
+    return { enviado: !!datos.enviado, motivo: datos.enviado ? null : 'La tienda no pudo mandar el correo: avísale tú por WhatsApp.' };
+  } catch (e) {
+    console.error('[MAYORISTAS] no se pudo pedir el correo de aprobación:', e.message);
+    return { enviado: false, motivo: 'No se pudo contactar la tienda: avísale tú por WhatsApp.' };
+  }
+}
+
+app.get('/api/pos/mayoristas', auth(true), async (req, res) => {
+  try {
+    const [cuentas, ajustes, productos, resumen, piso] = await Promise.all([
+      consultarConReintento(() => dbWeb.from('cuentas_mayoristas').select('*').order('solicitado_en', { ascending: false })),
+      consultarConReintento(() => dbWeb.from('ajustes_mayorista').select('pedido_minimo, actualizado_en, actualizado_por').eq('id', 1).maybeSingle()),
+      db.from('productos')
+        .select('id, nombre, sku, stock, costo_unitario, precio_unitario, precio_web, precio_mayorista, mayorista_desde, mayorista_aviso, mayorista_aviso_en, publicado_web, imagen_urls')
+        .or('precio_mayorista.not.is.null,mayorista_aviso.not.is.null')
+        .eq('archivado', false)
+        .order('nombre'),
+      db.rpc('resumen_precios_mayoristas'),
+      db.rpc('piso_margen_mayorista')
+    ]);
+    for (const r of [cuentas, ajustes, productos, resumen, piso]) if (r.error) throw r.error;
+    const porId = new Map((resumen.data || []).map(r => [Number(r.producto_id), r]));
+    res.json({
+      cuentas: cuentas.data || [],
+      pedido_minimo: num(ajustes.data?.pedido_minimo),
+      pedido_minimo_actualizado_en: ajustes.data?.actualizado_en || null,
+      piso_margen: num(piso.data),
+      productos: (productos.data || []).map(p => ({
+        ...p,
+        imagen: (p.imagen_urls || [])[0] || null,
+        imagen_urls: undefined,
+        costo_referencia: num(porId.get(Number(p.id))?.costo_referencia),
+        precio_minimo: num(porId.get(Number(p.id))?.precio_minimo)
+      }))
+    });
+  } catch (e) {
+    return enviarErrorBD(res, e, 'GET /api/pos/mayoristas');
+  }
+});
+
+// Para el chip del encabezado: solicitudes por revisar y precios que se desactivaron solos.
+app.get('/api/pos/mayoristas/avisos', auth(true), async (req, res) => {
+  try {
+    const [pendientes, desactivados] = await Promise.all([
+      dbWeb.from('cuentas_mayoristas').select('user_id', { count: 'exact', head: true }).eq('estado', 'PENDIENTE'),
+      db.from('productos').select('id', { count: 'exact', head: true }).not('mayorista_aviso', 'is', null).eq('archivado', false)
+    ]);
+    if (pendientes.error) throw pendientes.error;
+    if (desactivados.error) throw desactivados.error;
+    res.json({ por_aprobar: pendientes.count || 0, desactivados: desactivados.count || 0 });
+  } catch (e) {
+    return enviarErrorBD(res, e, 'GET /api/pos/mayoristas/avisos');
+  }
+});
+
+app.post('/api/pos/mayoristas/:userId/estado', auth(true), async (req, res) => {
+  const userId = String(req.params.userId || '');
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)) return enviarError(res, 400, 'Cuenta inválida');
+  const nuevo = String(req.body?.estado || '').toUpperCase();
+  const nota = String(req.body?.nota || '').trim();
+  if (!['APROBADA', 'RECHAZADA', 'SUSPENDIDA'].includes(nuevo)) return enviarError(res, 400, 'Estado inválido');
+  if (nuevo === 'APROBADA' && (nota.length < 10 || nota.length > 300)) {
+    return enviarError(res, 400, 'Escribe cómo verificaste a este cliente (WhatsApp, llamada, lo conoces del local...): entre 10 y 300 letras');
+  }
+  if (nuevo !== 'APROBADA' && (nota.length < 5 || nota.length > 300)) {
+    return enviarError(res, 400, 'Escribe el motivo: entre 5 y 300 letras');
+  }
+
+  try {
+    const { data: cuenta, error } = await dbWeb.from('cuentas_mayoristas').select('*').eq('user_id', userId).maybeSingle();
+    if (error) throw error;
+    if (!cuenta) return enviarError(res, 404, 'Cuenta no encontrada');
+    if (!(TRANSICIONES_MAYORISTA[cuenta.estado] || []).includes(nuevo)) {
+      return enviarError(res, 409, `Una cuenta ${String(cuenta.estado).toLowerCase()} no puede pasar a ${nuevo.toLowerCase()}`);
+    }
+
+    const ahora = new Date().toISOString();
+    const cambios = {
+      estado: nuevo,
+      revisado_en: ahora,
+      revisado_por: req.usuario?.usuario || req.usuario?.rol || 'admin',
+      actualizado_en: ahora
+    };
+    if (nuevo === 'APROBADA') { cambios.nota_verificacion = nota; cambios.motivo = null; }
+    else cambios.motivo = nota;
+
+    // Candado: solo si sigue en el estado que se leyó (dos pestañas abiertas a la vez).
+    const { data: actualizada, error: errU } = await dbWeb.from('cuentas_mayoristas')
+      .update(cambios).eq('user_id', userId).eq('estado', cuenta.estado).select().maybeSingle();
+    if (errU) throw errU;
+    if (!actualizada) return enviarError(res, 409, 'La cuenta cambió mientras la revisabas. Recarga la lista.');
+
+    const correo = nuevo === 'APROBADA' ? await notificarMayoristaAprobado(userId) : null;
+    res.json({ cuenta: actualizada, correo });
+  } catch (e) {
+    return enviarErrorBD(res, e, 'POST /api/pos/mayoristas/:userId/estado');
+  }
+});
+
+app.put('/api/pos/mayoristas/ajustes', auth(true), async (req, res) => {
+  const minimo = Number(req.body?.pedido_minimo);
+  if (!Number.isInteger(minimo) || minimo < 0 || minimo > 10000000) {
+    return enviarError(res, 400, 'El pedido mínimo tiene que ser un monto entre $0 y $10.000.000, sin decimales');
+  }
+  try {
+    const { data, error } = await dbWeb.from('ajustes_mayorista')
+      .update({ pedido_minimo: minimo, actualizado_en: new Date().toISOString(), actualizado_por: req.usuario?.usuario || req.usuario?.rol || 'admin' })
+      .eq('id', 1).select().maybeSingle();
+    if (error) throw error;
+    if (!data) return enviarError(res, 500, 'Falta la fila de ajustes (supabase/39 de la tienda)');
+    res.json(data);
+  } catch (e) {
+    return enviarErrorBD(res, e, 'PUT /api/pos/mayoristas/ajustes');
+  }
+});
+
+// Para el editor de producto: el mínimo que acepta el piso, con la última compra incluida.
+app.get('/api/productos/:id/mayorista-minimo', auth(true), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return enviarError(res, 400, 'Producto inválido');
+  try {
+    const { data: p, error } = await db.from('productos').select('id, costo_unitario').eq('id', id).maybeSingle();
+    if (error) throw error;
+    if (!p) return enviarError(res, 404, 'Producto no encontrado');
+    const [{ data: minimo, error: e1 }, { data: costo, error: e2 }, { data: piso, error: e3 }] = await Promise.all([
+      db.rpc('precio_minimo_mayorista', { p_producto_id: id, p_costo_ficha: num(p.costo_unitario) }),
+      db.rpc('costo_referencia_mayorista', { p_producto_id: id, p_costo_ficha: num(p.costo_unitario) }),
+      db.rpc('piso_margen_mayorista')
+    ]);
+    if (e1 || e2 || e3) throw (e1 || e2 || e3);
+    res.json({ precio_minimo: num(minimo), costo_referencia: num(costo), piso_margen: num(piso) });
+  } catch (e) {
+    return enviarErrorBD(res, e, 'GET /api/productos/:id/mayorista-minimo');
+  }
+});
+
 /* Panel "Más buscados" (Página Web → Más buscados): agrega los eventos que
    la tienda registra en `eventos_web` (sevelin-tienda/src/lib/eventos-web.ts)
    cada vez que alguien busca un término o abre una ficha de producto. Usa
@@ -12117,13 +12370,15 @@ app.get('/api/salud-sistema/catalogo-web', auth(true), async (req, res) => {
   }
 
   try {
-    const [respPos, respWeb] = await Promise.all([
+    const [respPos, respWeb, respMay] = await Promise.all([
       db.from('productos')
-        .select('id, nombre, sku, precio_unitario, publicado_web, archivado, es_borrador, stock_actualizado_en'),
-      dbWeb.from('productos_web').select('producto_pos_id, publicado_web')
+        .select('id, nombre, sku, precio_unitario, publicado_web, archivado, es_borrador, stock_actualizado_en, precio_mayorista, mayorista_desde'),
+      dbWeb.from('productos_web').select('producto_pos_id, publicado_web'),
+      dbWeb.from('precios_mayoristas').select('producto_pos_id, precio_mayorista, desde_cantidad')
     ]);
     if (respPos.error) throw new Error(respPos.error.message);
     if (respWeb.error) throw new Error(respWeb.error.message);
+    if (respMay.error) throw new Error(respMay.error.message);
 
     /* Lo que el POS dice que TIENE que estar en la web. Un archivado o un
        borrador no cuenta: no debería estar publicado. */
@@ -12163,6 +12418,33 @@ app.get('/api/salud-sistema/catalogo-web', auth(true), async (req, res) => {
           motivo: p ? 'El POS lo despublicó pero sigue visible en la web' : 'Ya no existe en el POS'
         };
       });
+
+    /* Precios mayoristas (sql/76 → supabase/39). Viajan por la misma
+       sincronización "dispara y olvida", así que pueden quedar descuadrados
+       igual. Lo grave es que la web cobre MENOS que lo que dice el POS (o
+       un mayorista que el POS ya quitó, por ejemplo porque subió el costo):
+       eso va a "sobrantes". Todos se arreglan reenviando el producto. */
+    const clp = n => '$' + Math.round(num(n)).toLocaleString('es-CL');
+    const mayWeb = new Map((respMay.data || []).map(m => [Number(m.producto_pos_id), m]));
+    for (const p of respPos.data || []) {
+      const id = Number(p.id);
+      const w = mayWeb.get(id);
+      const pm = num(p.precio_mayorista);
+      if (!pm && !w) continue;
+      if (!enWeb.has(id)) continue;   // sin ficha en la tienda: ya lo cubre "faltantes"
+      if (!pm && w) {
+        sobrantes.push({ id, nombre: p.nombre, reenviable: true,
+          motivo: `La web tiene un precio mayorista (${clp(w.precio_mayorista)}) que el POS ya quitó` });
+      } else if (pm && !w) {
+        faltantes.push({ id, nombre: p.nombre, sku: p.sku || null, precio: num(p.precio_unitario),
+          motivo: `El precio mayorista (${clp(pm)} desde ${p.mayorista_desde} u.) no llegó a la web`, actualizado_en: p.stock_actualizado_en });
+      } else if (num(w.precio_mayorista) !== pm || Number(w.desde_cantidad) !== Number(p.mayorista_desde)) {
+        const masBarato = num(w.precio_mayorista) < pm || Number(w.desde_cantidad) < Number(p.mayorista_desde);
+        const motivo = `Mayorista distinto: la web dice ${clp(w.precio_mayorista)} desde ${w.desde_cantidad} u. y el POS ${clp(pm)} desde ${p.mayorista_desde} u.`;
+        if (masBarato) sobrantes.push({ id, nombre: p.nombre, reenviable: true, motivo });
+        else faltantes.push({ id, nombre: p.nombre, sku: p.sku || null, precio: num(p.precio_unitario), motivo, actualizado_en: p.stock_actualizado_en });
+      }
+    }
 
     res.json({
       configurado: true,
