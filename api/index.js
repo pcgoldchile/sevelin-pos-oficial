@@ -3324,6 +3324,52 @@ app.put('/api/proveedores-plazos', auth(true), async (req, res) => {
 });
 
 /* ============================================================
+   COMPLEMENTA TU COMPRA (sql/75, pedido del dueño 30-09-2026)
+   ------------------------------------------------------------
+   La lista de complementarios de un producto para el carrusel de la
+   ficha en sevelin.cl. Ruta propia, igual que medidas y fotos: el
+   formulario general no la manda, así editar un precio nunca la pisa.
+   Se guarda en el orden recibido (es el orden en que se muestran).
+   Solo se validan cosas que romperían la ficha: que existan, que no
+   estén archivados, que no se repitan y que no sea el mismo producto.
+   ============================================================ */
+const MAX_COMPLEMENTARIOS = 12;
+
+app.put('/api/productos/:id/relacionados', auth(true), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return enviarError(res, 400, 'Producto inválido');
+  const crudos = req.body?.ids;
+  if (!Array.isArray(crudos)) return enviarError(res, 400, 'Falta la lista de productos');
+
+  const ids = [];
+  for (const valor of crudos) {
+    const n = Number(valor);
+    if (!Number.isInteger(n) || n <= 0) return enviarError(res, 400, 'Hay un producto inválido en la lista');
+    if (n === id) return enviarError(res, 400, 'Un producto no puede ser complemento de sí mismo');
+    if (!ids.includes(n)) ids.push(n);
+  }
+  if (ids.length > MAX_COMPLEMENTARIOS) {
+    return enviarError(res, 400, `Máximo ${MAX_COMPLEMENTARIOS} complementos por producto`);
+  }
+
+  if (ids.length) {
+    const { data: existentes, error: errExist } = await db.from('productos')
+      .select('id, archivado').in('id', ids);
+    if (errExist) return enviarErrorBD(res, errExist, 'validar complementarios');
+    const vivos = new Set((existentes || []).filter(p => !p.archivado).map(p => p.id));
+    if (ids.some(n => !vivos.has(n))) {
+      return enviarError(res, 400, 'Alguno de los productos no existe o está archivado');
+    }
+  }
+
+  const { data, error } = await db.from('productos')
+    .update({ relacionados_ids: ids }).eq('id', id).select('id, relacionados_ids').maybeSingle();
+  if (error) return enviarErrorBD(res, error, 'guardar complementarios');
+  if (!data) return enviarError(res, 404, 'Ese producto no existe');
+  res.json(data);
+});
+
+/* ============================================================
    MERCADERÍA EN CAMINO (aviso del header, sql/59)
    ------------------------------------------------------------
    "Que se vea en notificaciones productos en camino, o que ya llegaron y

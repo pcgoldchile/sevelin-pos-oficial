@@ -4716,3 +4716,19 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
 }
 .pend-num { font-weight: 600; color: var(--text-muted); font-size: 12px; margin-right: 2px; }
 @media (max-width: 640px) { .pend-acciones { flex-wrap: wrap; } }
+
+/* ============================================================
+   COMPLEMENTA TU COMPRA (v102, sql/75) — tarjeta del editor de producto
+   ============================================================ */
+.complementos-lista { display: flex; flex-direction: column; gap: 6px; }
+.complemento-fila { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; }
+.complemento-pos { width: 22px; height: 22px; border-radius: 50%; background: var(--surface-soft); color: var(--text-300); font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.complemento-datos { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.complemento-datos strong { color: var(--text-100); font-size: 13px; overflow-wrap: anywhere; }
+.complemento-datos small { color: var(--text-muted); font-size: 12px; }
+.complemento-aviso { color: var(--gold); }
+.complemento-acciones { display: flex; gap: 2px; flex-shrink: 0; }
+.complementos-sugerencias { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.complemento-sugerencia { text-align: left; padding: 7px 10px; border: 1px dashed var(--border-strong); border-radius: 8px; background: transparent; color: var(--text-100); font-size: 13px; cursor: pointer; }
+.complemento-sugerencia:hover { border-color: var(--primary, #3b82f6); background: var(--surface-soft); }
+.complemento-sugerencia small { color: var(--text-muted); margin-left: 4px; }

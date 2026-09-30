@@ -144,6 +144,19 @@ app.patch('/api/pendientes/:id', (req, res) => {
   res.json(p);
 });
 
+// v102: "Complementa tu compra" (sql/75), en memoria. Misma validación que el servidor real.
+app.put('/api/productos/:id/relacionados', (req, res) => {
+  const id = Number(req.params.id);
+  const p = productos.find(x => x.id === id);
+  if (!p) return res.status(404).json({ error: 'Ese producto no existe' });
+  const ids = [...new Set((req.body.ids || []).map(Number))];
+  if (ids.includes(id)) return res.status(400).json({ error: 'Un producto no puede ser complemento de sí mismo' });
+  if (ids.length > 12) return res.status(400).json({ error: 'Máximo 12 complementos por producto' });
+  if (ids.some(n => !productos.find(x => x.id === n))) return res.status(400).json({ error: 'Alguno de los productos no existe o está archivado' });
+  p.relacionados_ids = ids;
+  res.json({ id, relacionados_ids: ids });
+});
+
 // Preguntas de diagnóstico editables (sql/70, v98). Parte con 2 preguntas para notar que viene de la "base".
 let textoPreguntas = { encabezado: 'Respóndenos con el número de cada pregunta:', preguntas: ['¿Qué equipo es?', '¿Qué problema tiene?'], cierre: '¡Gracias!' };
 app.get('/api/textos/preguntas_diagnostico', (_req, res) => res.json({ contenido: textoPreguntas, actualizado_en: new Date().toISOString() }));

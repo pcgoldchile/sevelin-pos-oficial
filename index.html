@@ -2968,6 +2968,22 @@
             </button>
             <p class="subtitle" id="prodSeoIAAviso">Escribe la Descripción primero — la IA reescribe lo que ya está ahí, nunca inventa características nuevas.</p>
           </div>
+
+          <!-- v102 (sql/75): "Complementa tu compra" en la ficha de sevelin.cl. Se guarda al tocar,
+               por su propia ruta (como las fotos), no con el botón Guardar del producto. -->
+          <div class="card card-plegable" data-seccion="complementos">
+            <div class="card-head"><div><h2>🧩 Complementa tu compra</h2></div></div>
+            <p class="modal-hint">
+              Productos que se sugieren en la ficha de sevelin.cl junto a este (pasta térmica, limpieza, cables…).
+              Salen en este orden y solo los que tengan stock. Máximo 12. Se guarda al instante.
+            </p>
+            <div id="prodComplementosLista" class="complementos-lista"></div>
+            <div class="field" style="margin-top:10px;">
+              <label for="prodComplementosBuscar">Agregar producto</label>
+              <input type="text" id="prodComplementosBuscar" placeholder="Escribe el nombre o SKU…" autocomplete="off">
+            </div>
+            <div id="prodComplementosSugerencias" class="complementos-sugerencias"></div>
+          </div>
         </div>
       </div>
     </section>
@@ -6988,6 +7004,7 @@
   <script src="js/tiendanube.js"></script>
   <script src="js/lotes.js"></script>
   <script src="js/productos.js"></script>
+  <script src="js/complementos.js"></script>   <!-- v102: después de productos.js, usa productsList -->
   <script src="js/historial.js"></script>
   <script src="js/devoluciones.js"></script>   <!-- después de historial.js: su botón vive en las filas del historial y llama a cargarHistorial() -->
   <script src="js/escaner.js"></script>

@@ -1705,6 +1705,8 @@ function abrirModalProducto(producto = null) {
   }
   cargarMargenSugerido();
   cargarPlazosProveedores();
+  // v102: "Complementa tu compra" (js/complementos.js)
+  if (typeof pintarComplementosProducto === 'function') pintarComplementosProducto(producto);
 }
 
 /* (C) El margen que ya usa este producto — o la mediana de su categoría —
