@@ -1,5 +1,6 @@
 ---
 name: auditar-producto
+model: opus
 description: Estudio de compra para Sevelin antes de comprar un producto por mayor (componentes de PC, monitores, periféricos o productos genéricos con ficha técnica). Investiga reseñas reales, fallas conocidas, calidad de componentes, protecciones obligatorias, certificación SEC, precio en Chile y alternativas más seguras, y entrega un veredicto COMPRAR / CON CONDICIONES / NO COMPRAR con fuentes. Úsalo cuando el dueño pregunte si un producto "es bueno", "es confiable", "tiene fallas", "conviene comprarlo o venderlo", o pegue una ficha técnica para evaluar.
 ---
 
