@@ -446,6 +446,9 @@ function activarVista(viewId, subtab) {
      que se abra directo ahí en vez de la lista normal — y lo devuelve a
      "" si se entra por el botón padre (📦 Productos) sin sub-pestaña,
      para no quedar pegado la próxima vez que se entre por el atajo normal. */
+  // v102: Productos → Agotados (js/agotados-panel.js)
+  if (viewId === 'view-agotados' && typeof cargarPanelAgotados === 'function') cargarPanelAgotados();
+
   if (viewId === 'view-productos') {
     const elOrden = document.getElementById('ordenProductos');
     if (elOrden) elOrden.value = (subtab === 'archivados' || subtab === 'borradores') ? subtab : '';

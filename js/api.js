@@ -90,6 +90,8 @@ const API = {
        decida qué hacer. `decidirAgotado` es lo ÚNICO que los mueve — el
        listado solo detecta y pregunta. */
     agotados: () => apiRequest('/productos/agotados'),
+    // v102: vista completa de agotados (Productos → Agotados), solo lectura
+    agotadosPanel: () => apiRequest('/agotados/panel'),
     decidirAgotado: (id, datos) =>
       apiRequest(`/productos/${id}/agotado`, { method: 'POST', body: datos }),
 

@@ -2117,6 +2117,90 @@ app.get('/api/productos/agotados', auth(true), async (req, res) => {
   }
 });
 
+/* PANEL DE AGOTADOS (v102, dueño 30-09-2026: "un submódulo en productos
+   para verificar esto y editar información").
+   El chip del encabezado muestra solo los que esperan decisión; esto es
+   la vista completa: TODOS los agotados físicos (también los por llegar y
+   los ya decididos), con lo que hace falta para decidir o corregir:
+   decisión tomada, ventas de los últimos 90 días y cuántos clientes
+   esperan el aviso en la tienda (avisos_producto de la base web).
+   Solo lee: el ciclo de vida de agotados_decisiones lo lleva el GET de
+   arriba, para no tener dos reglas de "cuándo vuelve a preguntar". */
+app.get('/api/agotados/panel', auth(true), async (req, res) => {
+  try {
+    const { data: productos, error } = await db.from('productos')
+      .select('id, nombre, sku, stock, costo_unitario, precio_unitario, imagen_urls, categoria_web, ' +
+              'stock_ilimitado, es_servicio, es_pedido_encargo, por_llegar, fecha_llegada_estimada, ' +
+              'stock_por_llegar, archivado, es_borrador, publicado_web, stock_actualizado_en');
+    if (error) throw error;
+
+    const agotados = (productos || []).filter(p => num(p.stock) <= 0
+      && !p.stock_ilimitado && !p.es_servicio && !p.es_pedido_encargo && !p.archivado && !p.es_borrador);
+    const ids = agotados.map(p => Number(p.id));
+
+    const [{ data: decisiones, error: errD }, ventas, avisos] = await Promise.all([
+      ids.length ? db.from('agotados_decisiones').select('*').in('producto_id', ids) : { data: [] },
+      ventasRecientesPorProducto(ids, DIAS_VENTAS_AGOTADOS),
+      /* Los avisos viven en la base de la tienda. Si no responde, el panel
+         sale igual, sin ese dato (null = "no se sabe", no "cero"). */
+      (async () => {
+        if (!ids.length) return new Map();
+        try {
+          const { data, error: errA } = await dbWeb.from('avisos_producto')
+            .select('producto_pos_id, tipo').in('producto_pos_id', ids).eq('estado', 'PENDIENTE');
+          if (errA) throw errA;
+          const m = new Map();
+          for (const a of data || []) {
+            const k = Number(a.producto_pos_id);
+            const c = m.get(k) || { avisos: 0, reservas: 0 };
+            if (a.tipo === 'RESERVA') c.reservas++; else c.avisos++;
+            m.set(k, c);
+          }
+          return m;
+        } catch (e) {
+          console.error('[POS] panel de agotados: no se pudieron leer los avisos de la tienda —', e?.message || e);
+          return null;
+        }
+      })()
+    ]);
+    if (errD) throw errD;
+    const porId = new Map((decisiones || []).map(d => [Number(d.producto_id), d]));
+
+    res.json({
+      dias: DIAS_VENTAS_AGOTADOS,
+      avisosDisponibles: avisos !== null,
+      productos: agotados.map(p => {
+        const d = porId.get(Number(p.id));
+        const v = ventas.get(Number(p.id)) || { unidades: 0, ultimaVenta: null };
+        const a = avisos ? (avisos.get(Number(p.id)) || { avisos: 0, reservas: 0 }) : null;
+        return {
+          id: p.id,
+          nombre: p.nombre,
+          sku: p.sku || null,
+          imagen_url: Array.isArray(p.imagen_urls) ? (p.imagen_urls[0] || null) : null,
+          categoria_web: p.categoria_web || null,
+          publicado_web: !!p.publicado_web,
+          por_llegar: !!p.por_llegar,
+          fecha_llegada_estimada: p.fecha_llegada_estimada || null,
+          stock_por_llegar: num(p.stock_por_llegar),
+          precio_unitario: num(p.precio_unitario),
+          costo_unitario: num(p.costo_unitario),
+          agotado_desde: p.stock_actualizado_en || null,
+          decision: d?.decision || null,
+          decidido_en: d?.decidido_en || null,
+          unidades_vendidas: v.unidades,
+          ultima_venta: v.ultimaVenta,
+          avisos_pendientes: a ? a.avisos : null,
+          reservas_pendientes: a ? a.reservas : null
+        };
+      }).sort((x, y) => ((y.avisos_pendientes || 0) + (y.reservas_pendientes || 0)) - ((x.avisos_pendientes || 0) + (x.reservas_pendientes || 0))
+        || y.unidades_vendidas - x.unidades_vendidas)
+    });
+  } catch (error) {
+    return enviarErrorBD(res, error, 'GET /api/agotados/panel');
+  }
+});
+
 /* Aplica la decisión del dueño. Es el ÚNICO lugar donde un agotado cambia
    de estado: el GET de arriba solo detecta y pregunta. */
 const DECISIONES_AGOTADO = ['por_llegar', 'encargo', 'archivar', 'dejar'];

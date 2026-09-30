@@ -1759,7 +1759,10 @@ async function poblarSelectCategoriaWeb(nombreSeleccionado) {
 
 function cerrarModalProducto() {
   elViewProductoEditor?.classList.remove('active');
-  elViewProductos?.classList.add('active');
+  // v102: si se abrió desde Productos → Agotados, vuelve ahí (js/agotados-panel.js)
+  if (!(typeof volverDelEditorAAgotados === 'function' && volverDelEditorAAgotados())) {
+    elViewProductos?.classList.add('active');
+  }
   editingProductId = null;
   productoEnEdicionImagenUrls = [];
   fotosNuevasStaged = [];

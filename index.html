@@ -123,6 +123,7 @@
         <div class="nav-subitems admin-only">
           <button class="nav-subitem" data-view="view-productos" data-subtab="archivados">Archivados</button>
           <button class="nav-subitem" data-view="view-productos" data-subtab="borradores">Borradores</button>
+          <button class="nav-subitem" data-view="view-agotados" data-subtab="agotados">Agotados</button>
         </div>
       </div>
 
@@ -2211,6 +2212,33 @@
       </div>
     </div>
 
+    </section>
+
+    <!-- v102: PRODUCTOS → AGOTADOS. Todos los agotados físicos (también los por llegar y los ya
+         decididos): decidir, ver quién los espera en la tienda y abrir su ficha para corregir. -->
+    <section id="view-agotados" class="view-section admin-only">
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h2>📦 Agotados</h2>
+            <p class="subtitle">Productos sin stock: decide qué hacer con cada uno, mira cuántos clientes lo esperan en sevelin.cl y corrige su información.</p>
+          </div>
+          <div class="toolbar-group">
+            <input type="search" id="agotadosPanelBuscar" class="campo-pos" placeholder="Buscar por nombre o SKU…" style="min-width:220px;">
+            <button class="btn btn-outline" id="btnAgotadosPanelRecargar" type="button">↻ Actualizar</button>
+          </div>
+        </div>
+        <div class="pendientes-filtros" id="agotadosPanelFiltros" role="tablist" aria-label="Filtrar agotados"></div>
+        <p class="modal-hint" id="agotadosPanelResumen">Cargando…</p>
+        <div class="table-wrapper">
+          <table class="data-table tabla-agotados-panel">
+            <thead>
+              <tr><th>Producto</th><th>Ventas</th><th>Esperando</th><th>Estado</th><th>Acciones</th></tr>
+            </thead>
+            <tbody id="agotadosPanelCuerpo"></tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
     <section id="view-productos" class="view-section admin-only">
@@ -7005,6 +7033,7 @@
   <script src="js/lotes.js"></script>
   <script src="js/productos.js"></script>
   <script src="js/complementos.js"></script>   <!-- v102: después de productos.js, usa productsList -->
+  <script src="js/agotados-panel.js"></script>   <!-- v102: Productos → Agotados; usa fechaCortaAviso (notificaciones.js) al pintar -->
   <script src="js/historial.js"></script>
   <script src="js/devoluciones.js"></script>   <!-- después de historial.js: su botón vive en las filas del historial y llama a cargarHistorial() -->
   <script src="js/escaner.js"></script>

@@ -157,6 +157,32 @@ app.put('/api/productos/:id/relacionados', (req, res) => {
   res.json({ id, relacionados_ids: ids });
 });
 
+// v102: Productos → Agotados. Los productos de la maqueta con stock 0 (294 y 157), uno con
+// clientes esperando y otro sin decidir; la decisión se guarda en memoria.
+const decisionesAgotados = new Map();
+app.get('/api/agotados/panel', (_req, res) => res.json({
+  dias: 90, avisosDisponibles: true,
+  productos: productos.filter(p => p.stock <= 0 && !p.stock_ilimitado && !p.es_servicio && !p.archivado).map(p => ({
+    id: p.id, nombre: p.nombre, sku: p.sku, imagen_url: p.imagen_urls[0] || null, categoria_web: p.categoria_web,
+    publicado_web: p.publicado_web, por_llegar: !!p.por_llegar, fecha_llegada_estimada: p.fecha_llegada_estimada || null,
+    stock_por_llegar: p.stock_por_llegar || 0, precio_unitario: p.precio_unitario, costo_unitario: p.costo_unitario,
+    agotado_desde: '2026-09-20T12:00:00Z', decision: decisionesAgotados.get(p.id)?.decision || null,
+    decidido_en: decisionesAgotados.get(p.id)?.en || null,
+    unidades_vendidas: p.id === 157 ? 3 : 0, ultima_venta: p.id === 157 ? '2026-09-18' : null,
+    avisos_pendientes: p.id === 157 ? 2 : 0, reservas_pendientes: p.id === 157 ? 1 : 0,
+  })),
+}));
+app.post('/api/productos/:id/agotado', (req, res) => {
+  const p = productos.find(x => x.id === Number(req.params.id));
+  if (!p) return res.status(404).json({ error: 'Producto no encontrado' });
+  const d = req.body.decision;
+  if (d === 'por_llegar') Object.assign(p, { por_llegar: true, fecha_llegada_estimada: req.body.fecha_llegada_estimada || null, stock_por_llegar: req.body.stock_por_llegar || 0 });
+  if (d === 'encargo') p.es_pedido_encargo = true;
+  if (d === 'archivar') p.archivado = true;
+  decisionesAgotados.set(p.id, { decision: d, en: new Date().toISOString() });
+  res.json({ ok: true });
+});
+
 // Preguntas de diagnóstico editables (sql/70, v98). Parte con 2 preguntas para notar que viene de la "base".
 let textoPreguntas = { encabezado: 'Respóndenos con el número de cada pregunta:', preguntas: ['¿Qué equipo es?', '¿Qué problema tiene?'], cierre: '¡Gracias!' };
 app.get('/api/textos/preguntas_diagnostico', (_req, res) => res.json({ contenido: textoPreguntas, actualizado_en: new Date().toISOString() }));
