@@ -83,6 +83,11 @@ const EVALUADORES = {
     falta: p => p.imagen_urls.length === 0,
     foco: 'prodFotoInput'
   },
+  fotos_pocas: {
+    aplica: p => p.publicado_web && !p.es_servicio && (p.stock_ilimitado || p.stock > 0),
+    falta: p => p.imagen_urls.length === 1,
+    foco: 'prodFotoInput'
+  },
   medidas: {
     aplica: p => !p.es_servicio && !p.stock_ilimitado && p.stock > 0,
     falta: p => !(p.peso_kg > 0) || !(p.alto_cm > 0) || !(p.ancho_cm > 0) || !(p.profundidad_cm > 0),

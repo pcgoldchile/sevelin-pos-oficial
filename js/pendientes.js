@@ -189,14 +189,15 @@ function filaPendienteHtml(p, hoy) {
 
   const acciones = cerrado
     ? `<button type="button" class="btn btn-sm btn-ghost" data-pend-accion="reabrir" data-id="${p.id}">Reabrir</button>`
-    : `<button type="button" class="btn btn-sm btn-outline" data-pend-accion="postergar" data-id="${p.id}">Postergar</button>
+    : `<button type="button" class="btn btn-sm btn-outline" data-pend-accion="claude" data-id="${p.id}" title="Copia un mensaje para pegárselo a Claude">🤖 Para Claude</button>
+       <button type="button" class="btn btn-sm btn-outline" data-pend-accion="postergar" data-id="${p.id}">Postergar</button>
        <button type="button" class="btn btn-sm btn-ghost" data-pend-accion="descartar" data-id="${p.id}">${descartePendienteArmado === p.id ? '¿Seguro?' : 'Descartar'}</button>`;
 
   return `
     <div class="pend-fila${cerrado ? ' cerrado' : ''}">
       ${cerrado ? '' : `<input type="checkbox" class="pend-check" data-id="${p.id}" title="Marcar como hecho" aria-label="Marcar como hecho: ${escHtml(p.titulo)}">`}
       <div class="pend-cuerpo">
-        <strong>${escHtml(p.titulo)}</strong>
+        <strong><span class="pend-num">#${p.id}</span> ${escHtml(p.titulo)}</strong>
         ${p.detalle ? `<small class="pend-detalle">${escHtml(p.detalle)}</small>` : ''}
         ${p.nota_cierre ? `<small class="pend-detalle">📝 ${escHtml(p.nota_cierre)}</small>` : ''}
         <div class="pend-etiquetas">${et.join('')}</div>
@@ -211,6 +212,7 @@ function clickEnListaPendientes(e) {
   const id = Number(btn.dataset.id);
   const accion = btn.dataset.pendAccion;
   if (accion === 'postergar') return abrirPostergarPendiente(id);
+  if (accion === 'claude') return copiarPendienteParaClaude(id);
   if (accion === 'reabrir') return accionSobrePendiente(id, { accion: 'reabrir' }, 'Reabierto');
   if (accion === 'descartar') {
     // Dos clics en vez de confirm(): el primero arma, el segundo descarta.
@@ -287,4 +289,25 @@ async function guardarNuevoPendiente() {
 
 function vecesPendiente(n) {
   return `${n} ${n === 1 ? 'vez' : 'veces'}`;
+}
+
+/* "Hacerlo con Claude" (dueño, 30-09-2026): el POS no puede abrir una sesión
+   de Claude por su cuenta, así que copia un mensaje con el número y el
+   contexto, listo para pegar en la app de Claude (pestaña Code, repo del POS).
+   Claude lee la tabla, así que el número basta; el resto es por si acaso. */
+async function copiarPendienteParaClaude(id) {
+  const p = datosPendientes?.abiertos.find(x => x.id === id);
+  if (!p) return;
+  const texto = [
+    `Hagamos juntos el pendiente #${p.id} de la tabla pendientes: "${p.titulo}".`,
+    p.detalle ? `Contexto: ${p.detalle}` : '',
+    p.fecha_limite ? `Fecha límite: ${fechaCortaAviso(p.fecha_limite)}.` : '',
+    'Revísalo, dime qué necesitas de mí y, cuando esté listo y verificado, márcalo como hecho con la nota de cómo se probó.'
+  ].filter(Boolean).join('\n');
+  try {
+    await navigator.clipboard.writeText(texto);
+    showToast('Copiado. Pégalo en Claude (pestaña Code)', 'ok');
+  } catch {
+    showToast('No se pudo copiar. Dile a Claude: "haz el pendiente #' + p.id + '"', 'err');
+  }
 }

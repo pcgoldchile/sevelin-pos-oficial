@@ -4714,3 +4714,5 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
     .pend-acciones { width: 100%; justify-content: flex-end; }
     .pend-urgente { margin-top: 0; }
 }
+.pend-num { font-weight: 600; color: var(--text-muted); font-size: 12px; margin-right: 2px; }
+@media (max-width: 640px) { .pend-acciones { flex-wrap: wrap; } }

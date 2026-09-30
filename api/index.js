@@ -2464,6 +2464,18 @@ const REGLAS_PRODUCTO = [
     falta: p => !Array.isArray(p.imagen_urls) || p.imagen_urls.filter(Boolean).length === 0
   },
   {
+    /* 30-09-2026: Merchant Center puso "Imágenes por oferta: Bajo" (1,1 por
+       producto; Google pide 2+ y premia 3+). Solo lo que se puede vender hoy
+       (con stock), y solo si tiene UNA: sin ninguna ya es crítico arriba. */
+    clave: 'fotos_pocas',
+    titulo: 'Publicado con una sola foto',
+    seccion: 'fotos',
+    gravedad: 'pendiente',
+    porque: 'Con una sola foto el cliente duda más y Google lo muestra peor. Sube al menos 3 (frente, atrás/puertos, en uso).',
+    aplica: p => !!p.publicado_web && !p.es_servicio && (!!p.stock_ilimitado || num(p.stock) > 0),
+    falta: p => Array.isArray(p.imagen_urls) && p.imagen_urls.filter(Boolean).length === 1
+  },
+  {
     clave: 'medidas',
     titulo: 'Sin peso ni medidas',
     seccion: 'medidas',
