@@ -6516,6 +6516,43 @@
     </div>
   </div>
 
+  <!-- MODAL: EDITAR UN ACTIVO DE USO INTERNO (v102). Motivo y respaldo; la cantidad y el costo
+       no se editan porque están amarrados al movimiento de stock (para eso: deshacer y crear de nuevo). -->
+  <div id="modalEditarActivo" class="modal-overlay">
+    <div class="modal-box" style="max-width: 560px;">
+      <h2>✏️ Editar activo de uso interno</h2>
+      <div class="confirmar-pin-resumen" id="editarActivoResumen"></div>
+
+      <div class="field" style="margin-top:12px;">
+        <label for="editarActivoMotivo">¿Para qué se usa? <span class="obligatorio">*</span></label>
+        <textarea id="editarActivoMotivo" rows="2"></textarea>
+      </div>
+
+      <div class="grid grid-2" style="margin-top:12px;">
+        <div class="field">
+          <label for="editarActivoDocNumero">N° de factura o boleta</label>
+          <input type="text" id="editarActivoDocNumero" placeholder="Ej: 12345" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>Archivo de respaldo</label>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button class="btn btn-ghost btn-sm" id="btnEditarActivoSubir" type="button">📎 Adjuntar o cambiar</button>
+            <button class="btn btn-ghost btn-sm" id="btnEditarActivoQuitarDoc" type="button">Quitar</button>
+          </div>
+          <input type="file" id="editarActivoArchivo" accept="image/*,application/pdf" style="display:none;">
+          <span class="doc-estado" id="editarActivoEstadoArchivo">Sin archivo</span>
+        </div>
+      </div>
+
+      <p class="modal-hint">La cantidad y el costo no se editan: ya movieron el stock. Si están mal, usa ✖ (la unidad vuelve al stock) y apártala de nuevo.</p>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarEditarActivo" type="button">Cancelar</button>
+        <button class="btn btn-primary" id="btnGuardarEditarActivo" type="button">Guardar cambios</button>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL: CERRAR UN ACTIVO DE USO INTERNO -->
   <div id="modalCerrarActivo" class="modal-overlay">
     <div class="modal-box" style="max-width: 560px;">

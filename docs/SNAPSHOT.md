@@ -12,6 +12,16 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 30-09-2026 · v101-v102 (una sesión larga)
+
+- **v101 Pendientes** (sql/72): chip + checklist; tabla `pendientes` es la lista viva (regla en CLAUDE.md).
+- **Servicios por equipo** (sql/73-74): 41 servicios en 7 grupos; 14 estaban sin marcar "es servicio".
+- **Merchant:** envío $6.500 fijo + tarifa por peso en el feed (columna `shipping`); política de
+  devoluciones con URL nueva (la vieja daba 404). Aviso de productos con una sola foto.
+- **v102** (sql/75): "Complementa tu compra" (57 productos cargados), Productos → Agotados, editar activos.
+  Ver `docs/CHANGELOG-V102.md`.
+- Devoluciones según la ley vigente (retracto web obligatorio): publicado en la tienda.
+
 ## 🔴 PENDIENTES ABIERTOS (al 26-09-2026) — leer esto primero
 
 **Del dueño (Carlos), bloquean cosas ya construidas:**

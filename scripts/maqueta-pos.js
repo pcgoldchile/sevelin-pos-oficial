@@ -183,6 +183,26 @@ app.post('/api/productos/:id/agotado', (req, res) => {
   res.json({ ok: true });
 });
 
+// v102: Activos de uso interno (sql/64) con edición. Uno en uso sin respaldo y uno cerrado.
+const activos = [
+  { id: 1, producto_id: 144, nombre: 'Fuente de Poder 650W (Certificada) 80+ Bronce - MSI MAG A650BN - ATX', sku: 'fuente-de-poder-650w-msi-mag-a650bn',
+    cantidad: 1, costo_unitario: 44752, motivo: 'Pruebas del taller.', estado: 'EN_USO', documento_numero: null, documento_ruta: null },
+  { id: 2, producto_id: 104, nombre: 'Adaptador HDMI a VGA', sku: 'adaptador-hdmi-a-vga-43wbg', cantidad: 1, costo_unitario: 2201,
+    motivo: 'Banco de pruebas', estado: 'DEVUELTO_A_VENTA', documento_numero: '8812', documento_ruta: null, cierre_nota: 'Se devolvió' },
+];
+app.get('/api/activos', (_req, res) => {
+  const enUso = activos.filter(a => a.estado === 'EN_USO');
+  res.json({ activos, resumen: { en_uso: enUso.length, unidades_en_uso: enUso.reduce((s, a) => s + a.cantidad, 0),
+    valor_en_uso: enUso.reduce((s, a) => s + a.costo_unitario * a.cantidad, 0) } });
+});
+app.patch('/api/activos/:id', (req, res) => {
+  const a = activos.find(x => x.id === Number(req.params.id));
+  if (!a) return res.status(404).json({ error: 'No se encontró ese activo' });
+  if (req.body.motivo !== undefined && !String(req.body.motivo).trim()) return res.status(400).json({ error: 'El motivo no puede quedar vacío' });
+  ['motivo', 'documento_numero', 'documento_ruta'].forEach(k => { if (req.body[k] !== undefined) a[k] = String(req.body[k] || '').trim() || null; });
+  res.json(a);
+});
+
 // Preguntas de diagnóstico editables (sql/70, v98). Parte con 2 preguntas para notar que viene de la "base".
 let textoPreguntas = { encabezado: 'Respóndenos con el número de cada pregunta:', preguntas: ['¿Qué equipo es?', '¿Qué problema tiene?'], cierre: '¡Gracias!' };
 app.get('/api/textos/preguntas_diagnostico', (_req, res) => res.json({ contenido: textoPreguntas, actualizado_en: new Date().toISOString() }));

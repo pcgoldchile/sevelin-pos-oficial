@@ -184,15 +184,19 @@ function renderTablaActivos(lista) {
       <td>${doc}</td>
       <td><span class="badge ${estado.clase}">${estado.texto}</span></td>
       <td>
+        <button class="btn btn-sm btn-ghost" data-editar-activo="${a.id}" title="Editar motivo y respaldo (factura o boleta)">✏️</button>
         ${enUso ? `<button class="btn btn-sm" data-cerrar="${a.id}">Cerrar</button>
                    <button class="btn btn-sm btn-icon-del" data-borrar="${a.id}" title="Deshacer: la unidad vuelve al stock">✖</button>`
-                : '<span style="color:var(--text-muted);">—</span>'}
+                : ''}
       </td>
     </tr>`;
   }).join('');
 
   elActivosTabla.querySelectorAll('[data-doc]').forEach(b => {
     b.addEventListener('click', () => abrirDocumentoActivo(Number(b.dataset.doc)));
+  });
+  elActivosTabla.querySelectorAll('[data-editar-activo]').forEach(b => {
+    b.addEventListener('click', () => abrirEditarActivo(Number(b.dataset.editarActivo)));
   });
   elActivosTabla.querySelectorAll('[data-cerrar]').forEach(b => {
     b.addEventListener('click', () => abrirModalCierreActivo(Number(b.dataset.cerrar)));
@@ -563,5 +567,105 @@ async function eliminarActivo(id) {
   } catch (err) {
     console.error('Error al deshacer el activo:', err.message || err);
     showToast(err.message || 'No se pudo deshacer el registro', 'err');
+  }
+}
+
+/* ============================================================
+   EDITAR (v102, dueño 30-09-2026: "que se pueda editar ... si faltó la
+   factura o boleta, entre otras cosas").
+   El backend ya lo permitía (PATCH /api/activos/:id: motivo, número y
+   archivo); faltaba la pantalla. La cantidad y el costo quedan fuera a
+   propósito: están amarrados al movimiento de stock que ya ocurrió.
+   ============================================================ */
+let activoEnEdicion = null;
+let rutaDocEdicionActivo;   // undefined = sin cambios · null = quitar · texto = ruta nueva
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btnCancelarEditarActivo')?.addEventListener('click', cerrarEditarActivo);
+  document.getElementById('btnGuardarEditarActivo')?.addEventListener('click', guardarEdicionActivo);
+  document.getElementById('btnEditarActivoSubir')?.addEventListener('click', () => document.getElementById('editarActivoArchivo')?.click());
+  document.getElementById('editarActivoArchivo')?.addEventListener('change', subirArchivoEdicionActivo);
+  document.getElementById('btnEditarActivoQuitarDoc')?.addEventListener('click', () => {
+    rutaDocEdicionActivo = null;
+    pintarEstadoDocEdicionActivo('Se quitará al guardar', 'doc-falta');
+  });
+});
+
+function pintarEstadoDocEdicionActivo(texto, clase) {
+  const el = document.getElementById('editarActivoEstadoArchivo');
+  if (el) { el.textContent = texto; el.className = `doc-estado ${clase || ''}`; }
+}
+
+function abrirEditarActivo(id) {
+  const a = activosLista.find(x => x.id === id);
+  if (!a) return;
+  activoEnEdicion = a;
+  rutaDocEdicionActivo = undefined;
+  const resumen = document.getElementById('editarActivoResumen');
+  if (resumen) {
+    resumen.textContent = `${a.nombre}\n${num(a.cantidad)} unidad(es) · ${fmtCLP(num(a.costo_unitario) * num(a.cantidad))}`;
+  }
+  document.getElementById('editarActivoMotivo').value = a.motivo || '';
+  document.getElementById('editarActivoDocNumero').value = a.documento_numero || '';
+  pintarEstadoDocEdicionActivo(a.documento_ruta ? '📎 Tiene archivo' : 'Sin archivo', a.documento_ruta ? 'doc-ok' : 'doc-falta');
+  document.getElementById('modalEditarActivo')?.classList.add('show');
+  setTimeout(() => document.getElementById('editarActivoDocNumero')?.focus(), 80);
+}
+
+function cerrarEditarActivo() {
+  document.getElementById('modalEditarActivo')?.classList.remove('show');
+  activoEnEdicion = null;
+  rutaDocEdicionActivo = undefined;
+}
+
+async function subirArchivoEdicionActivo(evento) {
+  const archivo = evento.target.files[0];
+  if (!archivo) return;
+  if (archivo.size > 4 * 1024 * 1024) {
+    showToast('El archivo supera los 4 MB', 'err');
+    evento.target.value = '';
+    return;
+  }
+  pintarEstadoDocEdicionActivo('⏳ Subiendo…');
+  try {
+    const base64 = await new Promise((resolve, reject) => {
+      const lector = new FileReader();
+      lector.onload = () => resolve(String(lector.result).split(',')[1]);
+      lector.onerror = () => reject(new Error('No se pudo leer el archivo'));
+      lector.readAsDataURL(archivo);
+    });
+    // Mismo endpoint y bucket privado que el alta (FILE-01).
+    const { url, ruta } = await API.compras.subirArchivo(archivo.name, archivo.type, base64);
+    rutaDocEdicionActivo = ruta || url;
+    pintarEstadoDocEdicionActivo('✔ ' + archivo.name + ' (se guarda al confirmar)', 'doc-ok');
+  } catch (err) {
+    pintarEstadoDocEdicionActivo('✖ No se pudo subir', 'doc-falta');
+    showToast(err.message || 'No se pudo subir el archivo', 'err');
+  } finally {
+    evento.target.value = '';
+  }
+}
+
+async function guardarEdicionActivo() {
+  if (!activoEnEdicion) return;
+  const motivo = document.getElementById('editarActivoMotivo').value.trim();
+  if (!motivo) return showToast('El motivo no puede quedar vacío', 'err');
+  const cambios = {
+    motivo,
+    documento_numero: document.getElementById('editarActivoDocNumero').value.trim()
+  };
+  if (rutaDocEdicionActivo !== undefined) cambios.documento_ruta = rutaDocEdicionActivo || '';
+
+  const btn = document.getElementById('btnGuardarEditarActivo');
+  if (btn) btn.disabled = true;
+  try {
+    await API.activos.actualizar(activoEnEdicion.id, cambios);
+    showToast('Activo actualizado', 'ok');
+    cerrarEditarActivo();
+    cargarActivos();
+  } catch (err) {
+    showToast(err.message || 'No se pudo guardar', 'err');
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
