@@ -12,6 +12,22 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 30-09 y 01-10-2026 · v103-v104, venta mayorista y despacho cobrado
+
+Detalle en `docs/CHANGELOG-V103.md`.
+- **v103 Venta mayorista, Fase 1** (sql/76 + supabase/39), publicada en POS y tienda. Precio por producto
+  con cantidad mínima, pedido mínimo $100.000, cuenta aprobada a mano en Página Web → Mayoristas.
+  **Piso de 20% de margen que hace cumplir la base** sobre el mayor costo conocido. Falta cargar los
+  precios: propuesta en `docs/estudios-precios/2026-10-01-propuesta-precios.md`, esperando el OK del dueño.
+- **v104 Despacho cobrado** (sql/77): `ventas.envio_cobrado`, aparte del total. Se ve en el Detalle de
+  Venta y Finanzas lo suma en su propia tarjeta.
+- **Skill `/revisar-precios`**: revisa márgenes y propone precios; no cambia nada sin OK.
+- **Maquetas:** `pos-maqueta` (POS) y `tienda-maqueta` (tienda, Supabase simulado). Ninguna toca la base real.
+
+> ⚠️ Trampas nuevas: registrar una compra más cara NO sube `productos.costo_unitario` (por eso el piso mira
+> también la última compra y los lotes). El precio mayorista nunca va en `productos_web`. En los productos
+> de marca el margen flaco es por el costo de compra, no por el precio: no proponer subirlos sin mirar el mercado.
+
 ## 30-09-2026 · v101-v102 (una sesión larga)
 
 - **v101 Pendientes** (sql/72): chip + checklist; tabla `pendientes` es la lista viva (regla en CLAUDE.md).

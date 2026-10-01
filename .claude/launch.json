@@ -4,26 +4,47 @@
     {
       "name": "pos-estatico",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "4173"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4173"
+      ],
       "port": 4173
     },
     {
       "name": "sevelin-pos-dev",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["api/index.js"],
+      "runtimeArgs": [
+        "api/index.js"
+      ],
       "port": 3100
     },
     {
       "name": "pos-maqueta",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["scripts/maqueta-pos.js"],
+      "runtimeArgs": [
+        "scripts/maqueta-pos.js"
+      ],
       "port": 4180
     },
     {
       "name": "sevelin-tienda-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "C:\\Users\\Usuario\\Desktop\\sevelin-tienda", "run", "dev"],
+      "runtimeArgs": [
+        "--prefix",
+        "C:\\Users\\Usuario\\Desktop\\sevelin-tienda",
+        "run",
+        "dev"
+      ],
       "port": 3000
+    },
+    {
+      "name": "tienda-maqueta",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:\\Users\\Usuario\\Desktop\\sevelin-tienda\\scripts\\maqueta-tienda.mjs"
+      ],
+      "port": 3100
     }
   ]
 }

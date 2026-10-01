@@ -63,6 +63,10 @@ inserte en el DOM pasa por `escHtml`** (regla de seguridad).
   (`scripts/maqueta-pos.js`, puerto 4180): el frontend real con una API simulada y 10 productos
   reales. No toca Supabase ni producción, y cualquier PIN entra (como admin; `trabajador` entra
   como trabajador). Nunca se prueba con el PIN real ni contra la base real.
+- **Tienda (sevelin-tienda):** config `tienda-maqueta` (`scripts/maqueta-tienda.mjs` de ese repo, puerto
+  3100): la tienda real contra un Supabase simulado con 40 productos, sesiones de prueba
+  (`http://localhost:54399/maqueta/entrar?quien=mayorista|pendiente|cliente|salir`) y un Khipu falso.
+  No toca la base real, no manda correos y no cobra.
 - **Backend:** supabase-js real con un `fetch` falso que imita a PostgREST, o doble en memoria de
   Supabase (mock de `createClient` vía `require.cache`), y el `app` de Express con `app.listen(0)`.
 - **Frontend sin navegador:** **jsdom** — se concatenan los `js/*.js` en orden y se evalúan en un
@@ -182,6 +186,8 @@ escriba en esa tabla** ("o tú mismo los marques") — solo en esa tabla; el res
 - Nunca borrar filas: lo que ya no se hace va a `descartado`.
 
 **Estudio antes de comprar por mayor:** skill `/auditar-producto` (`.claude/skills/auditar-producto/`).
+**Revisión de precios:** skill `/revisar-precios` (`.claude/skills/revisar-precios/`): márgenes, mercado y
+propuesta de precios normales y mayoristas en `docs/estudios-precios/`. Nunca cambia un precio sin OK.
 Informe con veredicto y fuentes; se guarda en `docs/estudios-producto/`.
 
 ---
