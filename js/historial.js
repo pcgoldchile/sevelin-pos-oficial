@@ -1856,6 +1856,16 @@ function renderDetalleVenta(venta) {
       <div style="display:flex; justify-content:space-between; font-weight:bold; font-size:17px;">
         <span>TOTAL</span><span>${fmtCLP(venta.total)}</span>
       </div>
+      ${num(venta.envio_cobrado) > 0 ? `
+      <!-- sql/77: el despacho que el cliente pagó junto con la venta. Va aparte
+           del TOTAL (productos y servicios) para no mezclarlo con el margen. -->
+      <div style="display:flex; justify-content:space-between; font-size:14px; margin-top:8px;">
+        <span>🚚 Despacho cobrado al cliente</span><span>${fmtCLP(venta.envio_cobrado)}</span>
+      </div>
+      <div style="display:flex; justify-content:space-between; font-size:14px; font-weight:600; margin-top:2px;">
+        <span>El cliente pagó</span><span>${fmtCLP(num(venta.total) + num(venta.envio_cobrado))}</span>
+      </div>
+      ` : ''}
     </div>
     ${esVistaAdmin ? `<p class="modal-hint admin-only">
         Costo ${fmtCLP(venta.costo_total)} ·
@@ -2115,7 +2125,9 @@ function bloqueDespachoDetalle(venta) {
           ${fila('Sector', escHtml(e.sector || ''))}
           ${fila('Distancia', e.km ? `${e.km} km` : '')}
           ${fila('Demoró', e.duracion_min ? `${e.duracion_min} min` : '')}
-        ` : '<p class="modal-hint" style="margin:6px 0 0;">Todavía no se anotó el costo de este viaje.</p>'}
+        ` : `
+          ${num(venta.envio_cobrado) > 0 ? fila('Cobrado al cliente', `${fmtCLP(venta.envio_cobrado)} <small style="color:var(--text-muted);">(pagado con la venta)</small>`) : ''}
+          <p class="modal-hint" style="margin:6px 0 0;">Todavía no se anotó el costo de este viaje${num(venta.envio_cobrado) > 0 ? ': anótalo en "Editar despacho" para ver si el envío dejó plata o la pusiste tú' : ''}.</p>`}
       </div>
       ${bolsillo}
       <div class="row-actions" style="justify-content:flex-end; margin-top:10px;">
@@ -2142,7 +2154,8 @@ function abrirEditorDespacho(venta) {
   set('envioNotasEdit', venta.notas_despacho || '');
   set('envioRepartidorEdit', e.repartidor || 'indrive');
   set('envioCostoEdit', e.costo ?? '');
-  set('envioCobradoEdit', e.cobrado_cliente ?? '');
+  // Venta web (sql/77): lo cobrado ya se sabe, viene escrito; solo falta el costo del viaje.
+  set('envioCobradoEdit', e.cobrado_cliente ?? venta.envio_cobrado ?? '');
   set('envioKmEdit', e.km ?? '');
   set('envioDuracionEdit', e.duracion_min ?? '');
   set('envioSectorEdit', e.sector || '');

@@ -263,6 +263,29 @@ app.get('/api/productos/:id/mayorista-minimo', (req, res) => {
   res.json({ precio_minimo: minimoMaqueta(p), costo_referencia: costoRefMaqueta(p), piso_margen: PISO_MAQUETA });
 });
 
+// v104 (sql/77): una venta web con despacho cobrado, como la #245 real, para ver el Detalle de Venta.
+const ventaWebMaqueta = {
+  id: 245, numero_orden: 245, fecha: '2026-10-01', hora: '14:18', cliente: 'Cliente de Prueba', cliente_telefono: '56900000000',
+  metodo_pago: 'Transferencia', metodo_pago_final: 'Transferencia', estado: 'PAGADA', total: 37000, costo_total: 27011, utilidad: 9989,
+  tipo_entrega: 'despacho', direccion_envio: 'Codpa 2114 Arica', estado_envio: 'pendiente', origen_pago: 'web',
+  pedido_web_numero: 'WEB-000012', envio_cobrado: 4500, descuento_monto: 0, comision_pasarela: 494,
+};
+const itemsVentaWebMaqueta = [
+  { id: 1, venta_id: 245, nombre: 'Hub Adaptador USB Tipo C 8 en 1', cantidad: 1, precio_unitario: 10000, costo_unitario: 3975, subtotal: 10000 },
+  { id: 2, venta_id: 245, nombre: 'Cable Adaptador DisplayPort a HDMI 4K', cantidad: 1, precio_unitario: 5000, costo_unitario: 3990, subtotal: 5000 },
+  { id: 3, venta_id: 245, nombre: 'Tarjeta de Memoria Kingston Canvas Select Plus 128GB', cantidad: 1, precio_unitario: 22000, costo_unitario: 19046, subtotal: 22000 },
+];
+let envioVentaWebMaqueta = null;
+app.get('/api/ventas', (_req, res) => res.json([ventaWebMaqueta]));
+app.get('/api/ventas/:id', (req, res) => (Number(req.params.id) === 245
+  ? res.json({ ...ventaWebMaqueta, items: itemsVentaWebMaqueta, envio: envioVentaWebMaqueta })
+  : res.status(404).json({ error: 'Venta no encontrada' })));
+app.put('/api/ventas/:id/despacho', (req, res) => {
+  const e = req.body.envio || {};
+  envioVentaWebMaqueta = { repartidor: e.repartidor || 'indrive', costo: Number(e.costo) || 0, cobrado_cliente: e.cobrado_cliente ?? null, km: e.km || null, sector: e.sector || null, duracion_min: e.duracion_min || null, metodo_pago: 'Efectivo' };
+  res.json({ ok: true });
+});
+
 app.use('/api', (req, res) => {
   const clave = `${req.method} ${req.path}`;
   if (!sinManejar.has(clave)) { sinManejar.add(clave); console.log('[maqueta] sin datos:', clave); }

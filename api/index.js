@@ -7179,6 +7179,44 @@ app.post('/api/arqueos/cerrar', auth(true), async (req, res) => {
   res.json(data);
 });
 
+/* ---------- Despachos: cuánto se cobró y cuánto se gastó (sql/77) ----------
+   Para las ventas con despacho del período:
+     · cobrado: lo que pagó el cliente por el despacho. Sale de la nota del
+       viaje (envios.cobrado_cliente, sql/54) y, si todavía no se anotó, de
+       lo que se cobró junto con la venta (ventas.envio_cobrado, ventas web).
+     · gastado: el costo real de los viajes ya anotados (envios.costo).
+     · cobradoConVenta: SOLO ventas.envio_cobrado. Es la parte que entró con
+       seguridad por el medio de pago de la venta (Khipu), y la única que
+       Finanzas suma a la plata recibida y a la utilidad neta. Lo anotado a
+       mano en un despacho del local sigue siendo una nota, como siempre:
+       el POS no sabe por dónde entró esa plata.
+   `ventas` debe traer id, tipo_entrega y envio_cobrado. */
+async function resumenDespachos(ventas) {
+  const conDespacho = (ventas || []).filter(v => v.tipo_entrega === 'despacho');
+  const vacio = { cantidad: 0, sinViajeAnotado: 0, cobrado: 0, gastado: 0, resultado: 0, cobradoConVenta: 0 };
+  if (!conDespacho.length) return vacio;
+
+  const porVenta = new Map();
+  const ids = conDespacho.map(v => v.id);
+  for (let i = 0; i < ids.length; i += 300) {
+    const { data, error } = await db.from('envios').select('venta_id, costo, cobrado_cliente').in('venta_id', ids.slice(i, i + 300));
+    if (error) throw new Error(error.message);
+    (data || []).forEach(e => porVenta.set(e.venta_id, e));
+  }
+
+  const r = { ...vacio, cantidad: conDespacho.length };
+  conDespacho.forEach(v => {
+    const e = porVenta.get(v.id);
+    if (!e) r.sinViajeAnotado += 1;
+    else r.gastado += num(e.costo);
+    const anotado = e && e.cobrado_cliente !== null && e.cobrado_cliente !== undefined;
+    r.cobrado += anotado ? num(e.cobrado_cliente) : num(v.envio_cobrado);
+    r.cobradoConVenta += num(v.envio_cobrado);
+  });
+  r.resultado = r.cobrado - r.gastado;
+  return r;
+}
+
 /* ---------- Balance consolidado ----------
    Un solo endpoint que devuelve todo el panel ya calculado. Se hace en
    el servidor y no en el navegador por dos razones: los costos y
@@ -7195,11 +7233,13 @@ app.get('/api/balance', auth(true), async (req, res) => {
     // (ver definición del helper), reintenta sola antes de devolver un
     // balance vacío o a medio calcular.
     const { data: ventasRaw } = await consultarConReintento(() => db.from('ventas')
-      .select('id, fecha, total, costo_total, utilidad, comision_pos, tipo_dte, metodo_pago, metodo_pago_final, pago_mixto, estado, encargo_id')
+      .select('id, fecha, total, costo_total, utilidad, comision_pos, tipo_dte, metodo_pago, metodo_pago_final, pago_mixto, estado, encargo_id, tipo_entrega, envio_cobrado')
       .gte('fecha', desde).lte('fecha', hasta).eq('estado', 'PAGADA'));
 
     const ventas = ventasRaw || [];
     const ids = ventas.map(v => v.id);
+
+    const despachos = await resumenDespachos(ventas);
 
     // Desglose de las mixtas, para repartir por medio de pago
     let pagos = [];
@@ -7246,6 +7286,8 @@ app.get('/api/balance', auth(true), async (req, res) => {
       if (v.pago_mixto && desglose?.length) desglose.forEach(p => sumar(p.metodo, p.monto));
       else sumar(v.metodo_pago_final || v.metodo_pago, v.total);
     });
+    // El despacho cobrado con la venta (sql/77) entró por el mismo medio de pago.
+    ventas.forEach(v => { if (num(v.envio_cobrado) > 0) sumar(v.metodo_pago_final || v.metodo_pago, v.envio_cobrado); });
 
     /* Por medio de pago y caja son vistas de PLATA RECIBIDA: los abonos del
        período entran por su medio el día que llegaron. Ingresos y utilidad
@@ -7330,7 +7372,11 @@ app.get('/api/balance', auth(true), async (req, res) => {
        La comisión ya está descontada dentro de utilidad_bruta?
        No: utilidad_bruta es ingresos - costo. La comisión es un gasto
        aparte, así que se resta acá para no perderla. */
-    const utilidadNeta = utilidadBruta - gastosParaUtilidadNeta - comisiones;
+    /* + despachos cobrados con la venta (sql/77): el costo de cada viaje ya
+       está restado como gasto "Envíos / Despachos"; sin sumar lo que pagó
+       el cliente, cada despacho aparecía como pérdida pura. Va aparte de
+       `ingresos` y de la utilidad bruta, que siguen siendo solo lo vendido. */
+    const utilidadNeta = utilidadBruta - gastosParaUtilidadNeta - comisiones + despachos.cobradoConVenta;
 
     /* Caja física: solo lo que se puede contar en billetes.
        Los gastos se asumen pagados en efectivo porque `compras` no
@@ -7355,7 +7401,8 @@ app.get('/api/balance', auth(true), async (req, res) => {
       .filter(g => g.afecta_saldo !== false)
       .reduce((a, g) => a + num(g.costo_total), 0);
     const flujoLiquido = (ingresos - ingresosEncargo + totalAbonosPeriodo) + totalInyecciones - gastosQueMuevenSaldo
-                       - (comisiones - comisionesEncargo + comisionesAbonosPeriodo);
+                       - (comisiones - comisionesEncargo + comisionesAbonosPeriodo)
+                       + despachos.cobradoConVenta;
 
     res.json({
       periodo: { desde, hasta },
@@ -7371,6 +7418,8 @@ app.get('/api/balance', auth(true), async (req, res) => {
       ticketPromedio: ventas.length ? ingresos / ventas.length : 0,
       ventasProductos,
       ventasServicios,
+      // Despachos del período (sql/77): cobrado, gastado y resultado, aparte del margen.
+      despachos,
       /* IVA informativo: `ivaRetenidoSinDte` es el IVA de las ventas sin
          DTE, que en este negocio se queda como utilidad. Va explícito
          para que la cifra esté a la vista y no escondida dentro del
@@ -7616,7 +7665,7 @@ app.get('/api/finanzas/utilidades', auth(true), async (req, res) => {
 
   try {
     const { data: ventasRaw } = await consultarConReintento(() => db.from('ventas')
-      .select('id, fecha, numero_orden, cliente, total, costo_total, comision_pos, tipo_dte, metodo_pago, metodo_pago_final, estado')
+      .select('id, fecha, numero_orden, cliente, total, costo_total, comision_pos, tipo_dte, metodo_pago, metodo_pago_final, estado, envio_cobrado')
       .gte('fecha', desde).lte('fecha', hasta).eq('estado', 'PAGADA').order('fecha'));
 
     const ventas = ventasRaw || [];
@@ -7674,7 +7723,10 @@ app.get('/api/finanzas/utilidades', auth(true), async (req, res) => {
     });
 
     // --- Utilidad neta con TODAS las capas descontadas ---
-    const utilidadNetaTotal = utilidadBruta - comisiones - iva.ivaAPagar - totalGastosOperativos;
+    /* + despachos cobrados con la venta (sql/77): mismo criterio que el
+       Balance, para que las dos vistas no discrepen. */
+    const despachosCobrados = ventas.reduce((a, v) => a + num(v.envio_cobrado), 0);
+    const utilidadNetaTotal = utilidadBruta - comisiones - iva.ivaAPagar - totalGastosOperativos + despachosCobrados;
 
     // Remanente acumulado al cierre del período (contexto para el informe)
     const { remanente: remanenteIva } = await calcularRemanenteIva(hasta);
@@ -7689,6 +7741,8 @@ app.get('/api/finanzas/utilidades', auth(true), async (req, res) => {
       costoVendido,
       utilidadBruta,
       margenBruto: ingresos > 0 ? (utilidadBruta / ingresos) * 100 : 0,
+      // Ingreso aparte del margen de lo vendido (sql/77); el frontend lo suma a la utilidad final.
+      despachosCobrados,
 
       // Capas descontables (el frontend decide cuáles aplicar)
       comisiones,
@@ -8145,7 +8199,7 @@ app.get('/api/finanzas/saldos', auth(true), async (req, res) => {
   try {
     // Solo ventas efectivamente cobradas (PAGADA) cuentan como dinero real
     const { data: ventasRaw } = await db.from('ventas')
-      .select('id, total, comision_pos, metodo_pago, metodo_pago_final, pago_mixto, estado, encargo_id')
+      .select('id, total, comision_pos, metodo_pago, metodo_pago_final, pago_mixto, estado, encargo_id, envio_cobrado')
       .eq('estado', 'PAGADA');
     // Las ventas de encargos se excluyen: su plata entra por los abonos,
     // más abajo (sql/46). Contarlas acá la sumaría dos veces.
@@ -8177,6 +8231,13 @@ app.get('/api/finanzas/saldos', auth(true), async (req, res) => {
         if (esEfectivo(m)) ventasEfectivo += num(v.total);
         else ventasBanco += num(v.total);
       }
+    });
+    // Despacho cobrado con la venta (sql/77): entró por el mismo medio de pago.
+    let despachosEfectivo = 0, despachosBanco = 0;
+    ventas.forEach(v => {
+      if (!(num(v.envio_cobrado) > 0)) return;
+      if (esEfectivo(v.metodo_pago_final || v.metodo_pago)) despachosEfectivo += num(v.envio_cobrado);
+      else despachosBanco += num(v.envio_cobrado);
     });
 
     // Comisiones del POS: salen del abono bancario (las cobra la máquina)
@@ -8238,9 +8299,9 @@ app.get('/api/finanzas/saldos', auth(true), async (req, res) => {
       comisionesAbonos += num(a.comision_pos);
     });
 
-    const efectivo = fondoInicial + ventasEfectivo + abonosEfectivo + inyEfectivo + traspAEfectivo + ajusteEfectivo
+    const efectivo = fondoInicial + ventasEfectivo + despachosEfectivo + abonosEfectivo + inyEfectivo + traspAEfectivo + ajusteEfectivo
                    - gastosEfectivo - traspDeEfectivo;
-    const banco = ventasBanco + abonosBanco + inyBanco + traspABanco + ajusteBanco
+    const banco = ventasBanco + despachosBanco + abonosBanco + inyBanco + traspABanco + ajusteBanco
                 - gastosBanco - comisiones - comisionesAbonos - traspDeBanco;
 
     // Compromisos fijos activos, para las alertas de cobertura
@@ -8257,6 +8318,7 @@ app.get('/api/finanzas/saldos', auth(true), async (req, res) => {
       detalle: {
         fondoInicial,
         ventasEfectivo, ventasBanco,
+        despachosEfectivo, despachosBanco,
         abonosEfectivo, abonosBanco,
         inyEfectivo, inyBanco,
         gastosEfectivo, gastosBanco,
@@ -11831,6 +11893,12 @@ app.post('/api/interno/registrar-venta-web', authSync, async (req, res) => {
       // vería mejor de lo que es.
       comision_pasarela: Math.max(0, num(req.body?.comision_pasarela)),
       pedido_web_numero: numeroPedido,
+      /* Despacho que el cliente pagó junto con el pedido (sql/77). NO entra
+         en `total` (que sigue siendo productos y servicios, para no mezclar
+         el margen de lo vendido con el despacho): es un ingreso aparte que
+         Finanzas suma y muestra por separado. Retiro en tienda = NULL. */
+      envio_cobrado: String(req.body?.tipo_entrega || '').toLowerCase() === 'despacho' && num(req.body?.envio_cobrado) > 0
+        ? Math.round(num(req.body.envio_cobrado)) : null,
     };
 
     const { data: venta, error } = await db.from('ventas').insert([cabecera]).select().single();

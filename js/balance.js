@@ -224,6 +224,28 @@ async function cargarBalance() {
   }
 }
 
+/* Despachos del período (sql/77): cuánto pagaron los clientes por envío,
+   cuánto costaron los viajes y la diferencia. Va aparte del margen de lo
+   vendido. La tarjeta se oculta si no hubo despachos. */
+function pintarDespachosBalance(d) {
+  const tarjeta = document.getElementById('tarjetaDespachosBalance');
+  if (!tarjeta) return;
+  if (!d || !d.cantidad) { tarjeta.hidden = true; return; }
+  tarjeta.hidden = false;
+  const set = (id, valor) => { const el = document.getElementById(id); if (el) el.textContent = valor; };
+  set('despachosCobrado', fmtCLP(d.cobrado));
+  set('despachosGastado', fmtCLP(d.gastado));
+  const res = document.getElementById('despachosResultado');
+  if (res) {
+    res.textContent = (d.resultado >= 0 ? '+' : '−') + fmtCLP(Math.abs(d.resultado));
+    res.style.color = d.resultado >= 0 ? 'var(--green)' : 'var(--red)';
+  }
+  const partes = [`${d.cantidad} despacho${d.cantidad === 1 ? '' : 's'}`];
+  if (d.sinViajeAnotado) partes.push(`⚠️ ${d.sinViajeAnotado} sin el costo del viaje anotado: el resultado todavía no cuenta ese gasto`);
+  if (d.resultado < 0 && !d.sinViajeAnotado) partes.push('la diferencia la pusiste tú');
+  set('despachosDetalle', partes.join(' · '));
+}
+
 function pintarBalance(b) {
   const set = (id, valor) => { const el = document.getElementById(id); if (el) el.textContent = valor; };
 
@@ -232,6 +254,7 @@ function pintarBalance(b) {
   // --- Estado de resultados ---
   set('kpiIngresos', fmtCLP(b.ingresos));
   set('kpiIngresosDetalle', `${b.cantidadVentas} venta(s) · ticket ${fmtCLP(b.ticketPromedio)}`);
+  pintarDespachosBalance(b.despachos);
 
   set('kpiUtilidadBruta', fmtCLP(b.utilidadBruta));
   set('kpiUtilidadBrutaDetalle', `Costo de lo vendido ${fmtCLP(b.costoVendido)} · margen ${b.margenBruto.toFixed(1)}%`);
@@ -249,9 +272,10 @@ function pintarBalance(b) {
     const positivo = b.utilidadNeta >= 0;
     tarjetaNeta.classList.toggle('salud-ok', positivo);
     tarjetaNeta.classList.toggle('salud-mal', !positivo);
-    set('kpiUtilidadNetaDetalle', positivo
+    const conDespachos = num(b.despachos?.cobradoConVenta) > 0 ? ` · incluye ${fmtCLP(b.despachos.cobradoConVenta)} de despachos cobrados` : '';
+    set('kpiUtilidadNetaDetalle', (positivo
       ? `✅ El negocio gana · margen neto ${b.margenNeto.toFixed(1)}%`
-      : `⚠️ Estás perdiendo dinero en el período · margen ${b.margenNeto.toFixed(1)}%`);
+      : `⚠️ Estás perdiendo dinero en el período · margen ${b.margenNeto.toFixed(1)}%`) + conDespachos);
   }
 
   // --- Caja ---
@@ -262,7 +286,7 @@ function pintarBalance(b) {
 
   set('flujoLiquido', fmtCLP(b.flujoLiquido));
   set('flujoLiquidoDetalle',
-    `Todas las ventas ${fmtCLP(b.ingresos)} + aportes ${fmtCLP(b.totalInyecciones)} − gastos y comisiones`);
+    `Todas las ventas ${fmtCLP(b.ingresos)}${num(b.despachos?.cobradoConVenta) > 0 ? ` + despachos cobrados ${fmtCLP(b.despachos.cobradoConVenta)}` : ''} + aportes ${fmtCLP(b.totalInyecciones)} − gastos y comisiones`);
 
   pintarArqueo(b);
   pintarMedios(b.porMedio);

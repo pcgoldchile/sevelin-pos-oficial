@@ -1734,6 +1734,18 @@
             </div>
           </div>
 
+          <!-- v104 (sql/77): despachos cobrados contra lo que costaron los viajes.
+               Aparte del margen de lo vendido. Oculta si no hubo despachos. -->
+          <div class="card" id="tarjetaDespachosBalance" hidden>
+            <div class="card-title">🚚 Despachos del período</div>
+            <div class="grid grid-3">
+              <div><div class="kpi-label">Cobrado a clientes</div><div class="kpi-value" id="despachosCobrado" style="font-size:1.25rem;">$0</div></div>
+              <div><div class="kpi-label">Gastado en viajes</div><div class="kpi-value" id="despachosGastado" style="font-size:1.25rem;">$0</div></div>
+              <div><div class="kpi-label">Resultado</div><div class="kpi-value" id="despachosResultado" style="font-size:1.25rem;">$0</div></div>
+            </div>
+            <p class="modal-hint" id="despachosDetalle" style="margin-top:8px;"></p>
+          </div>
+
           <!-- Punto de equilibrio -->
           <div class="card">
             <div class="card-title">🎯 Punto de equilibrio del mes</div>

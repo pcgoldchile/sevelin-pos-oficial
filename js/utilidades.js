@@ -210,8 +210,9 @@ function utilidadSegunCasillas(inf) {
   return {
     activas,
     descontado,
-    utilidad: inf.utilidadBruta - descontado,
-    margen: inf.ingresos > 0 ? ((inf.utilidadBruta - descontado) / inf.ingresos) * 100 : 0
+    // + despachos cobrados con la venta (sql/77): ingreso aparte del margen, mismo criterio que el Balance.
+    utilidad: inf.utilidadBruta + num(inf.despachosCobrados) - descontado,
+    margen: inf.ingresos > 0 ? ((inf.utilidadBruta + num(inf.despachosCobrados) - descontado) / inf.ingresos) * 100 : 0
   };
 }
 
@@ -249,6 +250,10 @@ function pintarUtilidades() {
     { etiqueta: 'Costo de lo vendido', detalle: 'Lo que costó comprar lo que se vendió (FIFO)', monto: -inf.costoVendido, tipo: 'resta' },
     { etiqueta: 'UTILIDAD BRUTA', detalle: `Margen ${inf.margenBruto.toFixed(1)}%`, monto: inf.utilidadBruta, tipo: 'subtotal' }
   ];
+  // Despachos cobrados con la venta (sql/77): se suman siempre; el costo de los viajes está en los gastos variables.
+  if (num(inf.despachosCobrados) > 0) {
+    filas.push({ etiqueta: 'Despachos cobrados', detalle: 'Lo que pagaron los clientes por el envío (aparte del margen)', monto: num(inf.despachosCobrados), tipo: 'suma' });
+  }
 
   UTIL_CAPAS.forEach(c => {
     const aplicada = activas.includes(c);
@@ -530,6 +535,8 @@ function exportarUtilidadesExcel() {
     ['Ingresos brutos', `${inf.cantidadVentas} ventas cobradas`, inf.ingresos, ''],
     ['Costo de lo vendido', 'Costo real de la mercadería vendida (FIFO)', -inf.costoVendido, 'Sí'],
     ['UTILIDAD BRUTA', `Margen ${inf.margenBruto.toFixed(1)}%`, inf.utilidadBruta, ''],
+    // Despachos cobrados con la venta (sql/77): la pantalla también los suma.
+    ...(num(inf.despachosCobrados) > 0 ? [['Despachos cobrados', 'Lo que pagaron los clientes por el envío', num(inf.despachosCobrados), '']] : []),
     []
   ];
 
@@ -729,7 +736,9 @@ function exportarUtilidadesPDF() {
   const cuerpo = [
     ['Ingresos brutos', `${inf.cantidadVentas} ventas cobradas`, fmtCLP(inf.ingresos), ''],
     ['Costo de lo vendido', 'Costo real de lo vendido (FIFO)', `- ${fmtCLP(inf.costoVendido)}`, 'Sí'],
-    ['UTILIDAD BRUTA', `Margen ${inf.margenBruto.toFixed(1)}%`, fmtCLP(inf.utilidadBruta), '']
+    ['UTILIDAD BRUTA', `Margen ${inf.margenBruto.toFixed(1)}%`, fmtCLP(inf.utilidadBruta), ''],
+    // Despachos cobrados con la venta (sql/77): la pantalla también los suma.
+    ...(num(inf.despachosCobrados) > 0 ? [['Despachos cobrados', 'Lo que pagaron los clientes por el envío', `+ ${fmtCLP(inf.despachosCobrados)}`, '']] : [])
   ];
 
   UTIL_CAPAS.forEach(c => {
