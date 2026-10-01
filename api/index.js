@@ -2048,6 +2048,19 @@ app.get('/api/productos/lotes-resumen', auth(true), async (req, res) => {
   res.json(porProducto);
 });
 
+/* Mayor costo conocido de cada producto (sql/78): ficha, última compra y
+   capas PEPS con unidades. Es el costo con que la lista de Productos pinta
+   el margen por menor y por mayor (v105); con el de la ficha solo, saldría
+   inflado cada vez que una compra llegó más cara. Solo admin: son costos. */
+app.get('/api/productos/costos-referencia', auth(true), async (req, res) => {
+  const { data, error } = await db.rpc('costos_referencia_productos');
+  if (error) return enviarErrorBD(res, error, 'GET /api/productos/costos-referencia');
+
+  const porProducto = {};
+  (data || []).forEach(f => { porProducto[f.producto_id] = num(f.costo_referencia); });
+  res.json(porProducto);
+});
+
 app.get('/api/productos/:id/lotes', auth(true), async (req, res) => {
   const { data, error } = await db.from('producto_lotes')
     .select('*')

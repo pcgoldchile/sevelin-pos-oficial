@@ -172,6 +172,8 @@ const API = {
     guardarEnUbicacion: (id, datos) => apiRequest(`/productos/${id}/ubicaciones`, { method: 'POST', body: datos }),
     quitarDeUbicacion: (id, ubicacionId) => apiRequest(`/productos/${id}/ubicaciones/${ubicacionId}`, { method: 'DELETE' }),
     margenSugerido: (id) => apiRequest(`/productos/${id}/margen-sugerido`, { silencioso: true }),
+    // sql/78: mayor costo conocido de cada producto, para el margen de la lista (v105)
+    costosReferencia: () => apiRequest('/productos/costos-referencia', { silencioso: true }),
     enCamino: () => apiRequest('/productos/en-camino', { silencioso: true }),
     /* sql/65 — facturas que el proveedor todavía no manda. `silencioso`
        como el sondeo de en-camino: es un poll de fondo, un fallo puntual no

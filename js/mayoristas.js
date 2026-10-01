@@ -221,7 +221,10 @@ function pintarProductosMayoristas() {
     const pm = Number(p.precio_mayorista) || 0;
     const normal = Math.min(Number(p.precio_unitario) || Infinity, Number(p.precio_web) || Infinity);
     const costo = Number(p.costo_referencia) || 0;
-    const margen = pm && costo ? Math.round((pm - costo) / pm * 100) : null;
+    // v105: las dos barras juntas (lineaMargen, js/productos.js), para comparar de un vistazo
+    const margenes = costo > 0
+      ? (Number.isFinite(normal) ? lineaMargen('Menor', normal, costo) : '') + (pm ? lineaMargen('Mayor', pm, costo) : '')
+      : '';
     const pocoStock = pm && Number(p.stock) < Number(p.mayorista_desde);
     return `<tr>
       <td><strong>${escHtml(p.nombre)}</strong>${p.publicado_web ? '' : ' <span class="badge">No publicado</span>'}
@@ -229,7 +232,7 @@ function pintarProductosMayoristas() {
       <td class="num">${Number.isFinite(normal) ? fmtCLP(normal) : '—'}</td>
       <td class="num">${pm ? `<strong>${fmtCLP(pm)}</strong>` : '—'}</td>
       <td class="num">${pm ? `${escHtml(String(p.mayorista_desde))} u.` : '—'}</td>
-      <td class="num">${margen === null ? '—' : `${margen}%`}</td>
+      <td class="col-margen">${margenes || '—'}</td>
       <td class="num">${p.precio_minimo ? fmtCLP(p.precio_minimo) : '—'}</td>
       <td class="num"${pocoStock ? ' style="color:var(--red);" title="Hay menos stock que la cantidad mínima: en la web no se muestra"' : ''}>${escHtml(String(p.stock ?? 0))}</td>
       <td style="text-align:right;"><button class="btn btn-outline btn-sm" type="button" data-may-editar="${Number(p.id)}">Editar</button></td>

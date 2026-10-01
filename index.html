@@ -2297,6 +2297,8 @@
             <option value="sin_sku">Ver: Sin SKU</option>
             <option value="sin_barcode">Ver: Sin Código de Barras</option>
             <option value="sin_costo">Ver: Sin Costo</option>
+            <option value="margen_asc" class="admin-only">Margen: Menor a Mayor</option>
+            <option value="margen_bajo" class="admin-only">Ver: Margen bajo 25%</option>
             <option value="sin_medidas">Ver: Sin Medidas</option>
             <option value="bajo_stock">Ver: Bajo Stock</option>
             <option value="con_sn">Ver: CON S/N</option>
@@ -2316,6 +2318,9 @@
           </div>
         </div>
 
+        <!-- v105: cuántos productos con stock caen en cada tramo de margen. Lo pinta js/productos.js. -->
+        <div class="margen-resumen admin-only" id="resumenMargenes"></div>
+
         <div class="table-wrapper">
           <table class="data-table tabla-grande">
             <thead>
@@ -2328,12 +2333,13 @@
                 <th>Nombre</th>
                 <th class="admin-only">Costo</th>
                 <th>Precio</th>
+                <th class="admin-only" title="(precio − costo) / precio, con el mayor costo conocido">Margen</th>
                 <th>Stock</th>
                 <th style="text-align:right;">Acciones</th>
               </tr>
             </thead>
             <tbody id="productosTableBody">
-              <tr class="empty-row"><td colspan="7">Cargando productos...</td></tr>
+              <tr class="empty-row"><td colspan="8">Cargando productos...</td></tr>
             </tbody>
           </table>
 
@@ -3140,7 +3146,7 @@
           </div></div>
           <div class="table-wrapper">
             <table class="data-table">
-              <thead><tr><th>Producto</th><th class="num">Normal</th><th class="num">Mayorista</th><th class="num">Desde</th><th class="num">Margen</th><th class="num">Mínimo</th><th class="num">Stock</th><th></th></tr></thead>
+              <thead><tr><th>Producto</th><th class="num">Normal</th><th class="num">Mayorista</th><th class="num">Desde</th><th>Margen por menor y por mayor</th><th class="num">Mínimo</th><th class="num">Stock</th><th></th></tr></thead>
               <tbody id="mayoristasProductosBody"><tr class="empty-row"><td colspan="8">Cargando…</td></tr></tbody>
             </table>
           </div>

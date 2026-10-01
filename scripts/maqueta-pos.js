@@ -262,6 +262,8 @@ app.get('/api/productos/:id/mayorista-minimo', (req, res) => {
   if (!p) return res.status(404).json({ error: 'Producto no encontrado' });
   res.json({ precio_minimo: minimoMaqueta(p), costo_referencia: costoRefMaqueta(p), piso_margen: PISO_MAQUETA });
 });
+// v105 (sql/78): mayor costo conocido de cada producto, para la columna Margen de Productos.
+app.get('/api/productos/costos-referencia', (_req, res) => res.json(Object.fromEntries(productos.map(p => [p.id, costoRefMaqueta(p)]))));
 
 // v104 (sql/77): una venta web con despacho cobrado, como la #245 real, para ver el Detalle de Venta.
 const ventaWebMaqueta = {

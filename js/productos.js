@@ -478,6 +478,13 @@ async function cargarProductos(forzar = false) {
       await precargarLotesVisibles(productsList);
     }
 
+    /* Mayor costo conocido de cada producto (sql/78), para la columna
+       Margen. Si falla, la tabla se pinta igual con el costo de la ficha. */
+    if (esAdmin()) {
+      try { costosReferenciaProductos = await API.productos.costosReferencia() || {}; }
+      catch (_) { costosReferenciaProductos = null; }
+    }
+
     handleBuscarProductoTabla();
     renderPanelBajoStock();
     refrescarListaMarcas();
@@ -526,6 +533,91 @@ function badgeStock(p) {
   if (stock <= 0) return `<span class="stock-badge stock-agotado">Agotado</span>`;
   if (stock <= limiteStock(p)) return `<span class="stock-badge stock-bajo">⚠️ ${stock}</span>`;
   return `<span class="stock-badge stock-ok">${stock}</span>`;
+}
+
+/* ============================================================
+   MARGEN A LA VISTA (v105, pendiente #44)
+   ------------------------------------------------------------
+   Cuánto deja cada producto al por menor y al por mayor, con una barra.
+   Margen = (precio − costo) / precio, los dos con IVA. El costo es el
+   MAYOR conocido (sql/78: ficha, última compra y capas PEPS): el de la
+   ficha no sube al registrar una compra más cara y daría un margen
+   inflado. Solo admin: el trabajador no recibe costos.
+   Colores: rojo bajo 15%, ámbar bajo 25%, verde desde 25%.
+   ============================================================ */
+let costosReferenciaProductos = null;   // { id: costo } de GET /productos/costos-referencia; null = no cargó
+
+function costoParaMargen(p) {
+  const ficha = Number(p.costo_unitario) || 0;
+  const referencia = Number(costosReferenciaProductos?.[p.id]) || 0;
+  return Math.max(ficha, referencia);
+}
+
+/* null cuando no se puede calcular (sin precio o sin costo cargado): un
+   producto sin costo NO deja 100%, deja "no se sabe". */
+function margenPorcentaje(precio, costo) {
+  const pr = Number(precio) || 0, c = Number(costo) || 0;
+  return pr > 0 && c > 0 ? (pr - c) / pr * 100 : null;
+}
+
+function margenMenorDe(p) {
+  return margenPorcentaje(p.precio_unitario, costoParaMargen(p));
+}
+
+function tonoMargen(pct) {
+  return pct < 15 ? 'rojo' : pct < 25 ? 'ambar' : 'verde';
+}
+
+/* Un bloque "Menor 31% $1.858" con su barra debajo (así la columna ocupa
+   poco ancho y las barras de todas las filas comparten escala). Lo usan la
+   lista de Productos y Página Web → Mayoristas. */
+function lineaMargen(etiqueta, precio, costo) {
+  const pct = margenPorcentaje(precio, costo);
+  if (pct === null) return '';
+  const ganancia = Number(precio) - Number(costo);
+  const ancho = Math.max(0, Math.min(100, pct));
+  return `
+    <div class="margen-linea margen-${tonoMargen(pct)}" title="${escHtml(etiqueta)}: precio ${fmtCLP(precio)} − costo ${fmtCLP(costo)} = ${fmtCLP(ganancia)} por unidad">
+      <span class="margen-texto">
+        <span class="margen-etq">${escHtml(etiqueta)}</span>
+        <b>${Math.round(pct)}%</b>
+        <small>${fmtCLP(ganancia)}</small>
+      </span>
+      <span class="margen-barra"><i style="width:${ancho.toFixed(0)}%"></i></span>
+    </div>`;
+}
+
+function celdaMargen(p) {
+  const costo = costoParaMargen(p);
+  if (!(costo > 0)) return '<span class="margen-sin-costo">sin costo</span>';
+  const mayorista = Number(p.precio_mayorista) > 0
+    ? lineaMargen(`Mayor ×${Number(p.mayorista_desde) || ''}`, p.precio_mayorista, costo)
+    : '';
+  return lineaMargen('Menor', p.precio_unitario, costo) + mayorista;
+}
+
+/* Resumen sobre la tabla: cuántos productos con stock caen en cada tramo. */
+function renderResumenMargenes() {
+  const caja = document.getElementById('resumenMargenes');
+  if (!caja) return;
+  if (!esAdmin()) { caja.innerHTML = ''; return; }
+
+  const conStock = productsList.filter(p => !p.stock_ilimitado && (Number(p.stock) || 0) > 0);
+  const tramos = { rojo: 0, ambar: 0, verde: 0, sinCosto: 0 };
+  conStock.forEach(p => {
+    const pct = margenMenorDe(p);
+    if (pct === null) tramos.sinCosto += 1; else tramos[tonoMargen(pct)] += 1;
+  });
+
+  caja.innerHTML = `
+    <span>Margen por menor de <strong>${conStock.length}</strong> producto(s) con stock:</span>
+    <span class="margen-chip margen-rojo"><i></i>${tramos.rojo} bajo 15%</span>
+    <span class="margen-chip margen-ambar"><i></i>${tramos.ambar} entre 15% y 25%</span>
+    <span class="margen-chip margen-verde"><i></i>${tramos.verde} desde 25%</span>
+    ${tramos.sinCosto ? `<span class="margen-chip"><i></i>${tramos.sinCosto} sin costo</span>` : ''}
+    <small>${costosReferenciaProductos
+      ? 'Con el mayor costo conocido (ficha, última compra o lotes).'
+      : '⚠️ No se pudo leer la última compra: se usa el costo de la ficha.'}</small>`;
 }
 
 function renderPanelBajoStock() {
@@ -829,6 +921,7 @@ function renderProductosTabla(items, origen) {
       </td>
       <td class="admin-only">${fmtCLP(p.costo_unitario)}</td>
       <td>${fmtCLP(p.precio_unitario)}</td>
+      <td class="admin-only col-margen">${esAdmin() ? celdaMargen(p) : ''}</td>
       <td>${badgeStock(p)}</td>
       <td>
         <div class="cell-actions">
@@ -916,6 +1009,15 @@ function handleBuscarProductoTabla() {
     case 'sin_costo':
       resultado = resultado.filter(p => !p.costo_unitario || Number(p.costo_unitario) === 0);
       break;
+    // v105: los que menos dejan primero; los sin costo quedan fuera (no se sabe)
+    case 'margen_asc':
+      resultado = resultado.filter(p => margenMenorDe(p) !== null)
+        .sort((a, b) => margenMenorDe(a) - margenMenorDe(b));
+      break;
+    case 'margen_bajo':
+      resultado = resultado.filter(p => { const m = margenMenorDe(p); return m !== null && m < 25; })
+        .sort((a, b) => margenMenorDe(a) - margenMenorDe(b));
+      break;
     case 'sin_medidas':
       resultado = resultado.filter(p => !Number(p.peso_kg) && !Number(p.alto_cm) && !Number(p.ancho_cm) && !Number(p.profundidad_cm));
       break;
@@ -940,6 +1042,7 @@ function handleBuscarProductoTabla() {
       resultado = resultado.slice().sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
   }
 
+  renderResumenMargenes();
   renderProductosTabla(resultado);
 }
 
