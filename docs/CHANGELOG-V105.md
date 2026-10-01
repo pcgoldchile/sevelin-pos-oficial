@@ -45,11 +45,29 @@ archivos publicados traen el cambio. **No probado:** la pantalla real con el PIN
   24 guardados, 0 avisos de la guardia, 24 sincronizaciones con 200 y la tienda con los mismos valores.
   El Caixun 24" IPS era el único con `precio_web` propio: se cambiaron los dos campos.
 
-## Propuesta sin aplicar
+## Propuesta del 990 y del Cyber: qué aprobó el dueño y qué se aplicó (01-10, noche)
 
-`docs/estudios-precios/2026-10-01-terminacion-990-y-cyber.md`: todo el catálogo a 990 bajando $10, 2 subidas,
-3 bajas, 9 mayoristas nuevos y el Cyber del 05 al 07-10 (15 ofertas, servicios con cupos y ganchos sin
-rebaja). Espera el OK del dueño.
+Propuesta completa en `docs/estudios-precios/2026-10-01-terminacion-990-y-cyber.md`.
+
+- **990 general, aplicado:** 129 productos pasaron de miles cerrados a 990 ($10 menos), de a uno. Con las
+  correcciones del dueño: pasta HY410 a **$4.990** (no $2.990), cable de red 5 m a **$4.990** (no $3.990: "sí
+  lo compran, solo que de olvidadizo no le pongo las ventas") y mouse 707775 a **$4.990**. El Samsung 22"
+  VGA/DVI queda en $59.990: su costo de $51.615 es real ("una compra que no me salió bien"). Los servicios y
+  el tornillo de $500 no se tocaron. Verificado: POS y tienda iguales en los 195 publicados, 0 avisos de la
+  guardia, 108 de 151 productos visibles en la tienda terminan en 990 (el resto son servicios).
+- **Ofertas del Cyber, cargadas:** 20 productos con `precio_oferta_web` del lunes 05-10 00:00 al miércoles
+  07-10 23:59 (hora de Chile; el fin se guarda como jueves 08 00:00). Empiezan y terminan solas.
+- **Sin decidir, NO aplicado:** las 2 subidas (Control Mando USB y Monitor HP V214a, que quedaron en $4.990
+  y $54.990 por la regla general), los 9 mayoristas nuevos (el dueño preguntó a qué se refieren), el Power
+  Bank LinkOn a $17.990 (deja 9,8%) y las rebajas de servicios con cupos.
+- **Descartado por ahora:** despacho gratis.
+- **Venta #245:** el viaje se pagó con efectivo de la caja. Quedó como lo deja el POS: gasto #26 en "Envíos /
+  Despachos" ($3.000, Efectivo), egreso #8 de la caja 11 (abierta desde el 28-09) y el viaje enlazado a los
+  dos. El correo de "pedido entregado" con la reseña salió (la tienda respondió `enviado: true`).
+
+> 🔴 **Las ventas registradas no están completas** (dicho por el dueño el 01-10): hay productos que se venden
+> y no se anotan. Un "sin ventas" de `consulta.sql` no prueba que un producto esté dormido; antes de proponer
+> bajar un precio por eso, preguntarle.
 
 ---
 
@@ -60,6 +78,12 @@ rebaja). Espera el OK del dueño.
 - **Arreglo:** en `/mayorista` el enlace de cada producto daba 404.
 - **Facebook (pendiente #40):** `NEXT_PUBLIC_FACEBOOK_URL` configurada en Vercel; los dos enlaces que dio el
   dueño llegan a la misma página (el corto redirige al largo).
+- **`/ofertas` y su franja** (commit `536c7c4`): la página lista lo que tiene oferta vigente; antes de que
+  empiecen anuncia la fecha y los productos al precio de hoy. La franja va arriba del encabezado y se enciende
+  y apaga sola: estado inicial desde el servidor y confirmación con `GET /api/ofertas/estado`. Probado en la
+  maqueta en sus cuatro estados (sin ofertas, por empezar, vigentes, terminadas) y en producción en "por
+  empezar". **No probado todavía: el estado "vigente" en producción**, que recién ocurre el lunes 05-10.
+- **Guía de mayoristas:** dice "Por ahora, solo boleta". El checkout sigue ofreciendo "Solicitar factura".
 
 ---
 

@@ -20,8 +20,16 @@ Detalle en `docs/CHANGELOG-V105.md`.
   (`GET /api/productos/costos-referencia`), no con el de la ficha.
 - **Cargados con OK del dueño:** 8 precios normales en 990 y 16 mayoristas; venta #245 entregada con su viaje.
 - **Tienda:** guía pública `/venta-mayorista` (sin precios mayoristas) y botón de Facebook en el pie.
-- **Esperando al dueño:** `docs/estudios-precios/2026-10-01-terminacion-990-y-cyber.md` (990 en todo el
-  catálogo, mayoristas nuevos y Cyber del 05 al 07-10). Nada aplicado.
+- **990 general aplicado** (129 productos, $10 menos; pasta HY410, cable de red 5 m y mouse 707775 a $4.990
+  por decisión del dueño). Servicios y tornillo de $500 sin tocar.
+- **Cyber del 05 al 07-10:** 20 ofertas cargadas con fecha (empiezan y terminan solas) y `/ofertas` con su
+  franja publicada en la tienda. Sin despacho gratis.
+- **Esperando al dueño** (propuesta en `docs/estudios-precios/2026-10-01-terminacion-990-y-cyber.md`): 9
+  mayoristas nuevos, 2 subidas, el Power Bank LinkOn en el Cyber y las rebajas de servicios con cupos.
+- **Venta #245:** gasto del viaje y egreso de caja anotados; correo de reseña enviado.
+
+> 🔴 Las ventas registradas no están completas (el dueño olvida anotar algunas): un "sin ventas" no prueba
+> que un producto esté dormido. Preguntar antes de proponer una baja por eso.
 
 > ⚠️ Trampas nuevas: bajar un precio normal bajo su mayorista lo desactiva (bajar primero el mayorista). Los
 > precios se cargan de a un producto, por el tope de 5 s de la sincronización. Los 8 productos que subieron

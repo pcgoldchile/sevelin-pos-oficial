@@ -1,5 +1,16 @@
 # Terminación 990, precios a rehacer y Cyber — 01-10-2026
 
+> **Estado al 01-10-2026 (noche), tras la respuesta del dueño:**
+> - ✅ **Aplicado:** 990 general ($10 menos) en 129 productos. Con sus correcciones: pasta HY410 **$4.990**,
+>   cable de red 5 m **$4.990** (sí se vende; no anota todas las ventas) y mouse 707775 **$4.990**. El costo
+>   del Samsung 22" VGA/DVI ($51.615) es real; queda en $59.990.
+> - ✅ **Aplicado:** 20 ofertas del Cyber (tabla de la sección 6, sin el LinkOn), del 05-10 al 07-10.
+> - ⏳ **Sin decidir:** las 2 subidas de la tabla A, los 9 mayoristas nuevos de la tabla D, el LinkOn a
+>   $17.990 y las rebajas de servicios.
+> - ❌ **Descartado por ahora:** despacho gratis. El ajuste del mayorista del cable de red ya no hace falta.
+>
+> Lo de abajo es la propuesta tal como se entregó; los "Hoy" son los precios de antes del 990.
+>
 > Hecha por Claude a pedido del dueño (tarea 3 del 01-10-2026). **Nada de esto está aplicado**: es para aprobar.
 > Datos: base del POS (solo lectura) al 01-10-2026 después de cargar los 8 precios y los 16 mayoristas
 > aprobados hoy; ventas del 03-08 al 01-10-2026 (60 días). Costo usado: el mayor entre la ficha, la
