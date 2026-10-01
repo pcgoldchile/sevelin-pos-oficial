@@ -12,13 +12,28 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 01-10-2026 (tarde) · v105, margen a la vista y precios aprobados cargados
+
+Detalle en `docs/CHANGELOG-V105.md`.
+- **v105 Margen por menor y por mayor** (sql/78, aplicada): columna con barra en Productos (solo admin),
+  resumen por tramo y las dos barras en Página Web → Mayoristas. Se calcula con el mayor costo conocido
+  (`GET /api/productos/costos-referencia`), no con el de la ficha.
+- **Cargados con OK del dueño:** 8 precios normales en 990 y 16 mayoristas; venta #245 entregada con su viaje.
+- **Tienda:** guía pública `/venta-mayorista` (sin precios mayoristas) y botón de Facebook en el pie.
+- **Esperando al dueño:** `docs/estudios-precios/2026-10-01-terminacion-990-y-cyber.md` (990 en todo el
+  catálogo, mayoristas nuevos y Cyber del 05 al 07-10). Nada aplicado.
+
+> ⚠️ Trampas nuevas: bajar un precio normal bajo su mayorista lo desactiva (bajar primero el mayorista). Los
+> precios se cargan de a un producto, por el tope de 5 s de la sincronización. Los 8 productos que subieron
+> el 01-10 no pueden ir al Cyber con el precio nuevo como "antes".
+
 ## 30-09 y 01-10-2026 · v103-v104, venta mayorista y despacho cobrado
 
 Detalle en `docs/CHANGELOG-V103.md`.
 - **v103 Venta mayorista, Fase 1** (sql/76 + supabase/39), publicada en POS y tienda. Precio por producto
   con cantidad mínima, pedido mínimo $100.000, cuenta aprobada a mano en Página Web → Mayoristas.
-  **Piso de 20% de margen que hace cumplir la base** sobre el mayor costo conocido. Falta cargar los
-  precios: propuesta en `docs/estudios-precios/2026-10-01-propuesta-precios.md`, esperando el OK del dueño.
+  **Piso de 20% de margen que hace cumplir la base** sobre el mayor costo conocido. Los 16 precios de
+  `docs/estudios-precios/2026-10-01-propuesta-precios.md` quedaron cargados el 01-10 (ver v105 arriba).
 - **v104 Despacho cobrado** (sql/77): `ventas.envio_cobrado`, aparte del total. Se ve en el Detalle de
   Venta y Finanzas lo suma en su propia tarjeta.
 - **Skill `/revisar-precios`**: revisa márgenes y propone precios; no cambia nada sin OK.
