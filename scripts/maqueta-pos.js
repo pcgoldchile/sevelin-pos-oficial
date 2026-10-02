@@ -157,6 +157,42 @@ app.put('/api/productos/:id/relacionados', (req, res) => {
   res.json({ id, relacionados_ids: ids });
 });
 
+// Botones de IA del editor de producto: respuestas fijas, sin llamar a Gemini. El corte del
+// título es el mismo del servidor real (separarTituloDeFicha); el SEO tarda 1,5 s a propósito,
+// para probar qué pasa si se cierra el editor antes de que llegue.
+const FICHA_IA_MAQUETA = [
+  'Memoria RAM ADATA Premier 8GB DDR4 3200 SO-DIMM',
+  '',
+  '✨ Memoria RAM ADATA Premier 8GB DDR4 3200 SO-DIMM es un módulo de memoria para portátiles compatibles, pensado para quien quiere mejorar la multitarea de su equipo.',
+  '',
+  '### ✨ Características principales',
+  '',
+  '✅ Capacidad de 8 GB en un solo módulo SO-DIMM',
+  '✅ Velocidad de 3200 MT/s',
+  '✅ Tipo de memoria DDR4',
+].join('\n');
+function separarTituloMaqueta(texto) {
+  const limpio = String(texto || '').trim();
+  const lineas = limpio.split('\n');
+  const primera = (lineas[0] || '').trim();
+  const pareceTitulo = primera && !/^[✨#>\-*✅⚠️]/u.test(primera) && primera.length <= 150;
+  return { titulo: pareceTitulo ? primera : '', cuerpo: pareceTitulo ? lineas.slice(1).join('\n').trim() : limpio };
+}
+app.post('/api/productos/generar-texto', (req, res) => {
+  if (!String(req.body?.datos || '').trim() && !String(req.body?.descripcion_html || '').trim()) {
+    return res.status(400).json({ error: 'Falta la información real del producto.' });
+  }
+  if (req.body.destino === 'facebook') return res.json({ destino: 'facebook', texto: '✨ NUEVA memoria de prueba (maqueta)', modelo: 'maqueta' });
+  res.json({ destino: 'ficha', ...separarTituloMaqueta(FICHA_IA_MAQUETA), modelo: 'maqueta', nombre_recibido: req.body.nombre || '' });
+});
+app.post('/api/productos/prompt-texto', (req, res) => res.json({ destino: req.body.destino, prompt: `PROMPT DE MAQUETA\nNombre actual: ${req.body.nombre || '(sin nombre)'}` }));
+app.post('/api/productos/separar-ficha', (req, res) => res.json(separarTituloMaqueta(req.body?.texto)));
+app.post('/api/productos/generar-seo', (req, res) => setTimeout(() => res.json({
+  meta_titulo: `${String(req.body?.nombre || '').slice(0, 45)} | SEO maqueta`,
+  meta_descripcion: 'Descripción SEO de prueba generada por la maqueta, a partir de la ficha del producto.',
+  modelo: 'maqueta',
+}), 1500));
+
 // Subir una foto de producto. Mismo tope de 1 MB que el servidor real; la foto queda en
 // memoria como data URL (no hay bucket) para poder ver el tamaño con que salió del lienzo.
 app.post('/api/productos/:id/imagen', (req, res) => {

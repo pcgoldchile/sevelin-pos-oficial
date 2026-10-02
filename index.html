@@ -3744,6 +3744,9 @@
       <div class="field" id="fichaGeneradaTituloFila" style="margin-top:14px; display:none;">
         <label for="fichaGeneradaTitulo">Nombre que propone la IA</label>
         <input type="text" id="fichaGeneradaTitulo" maxlength="200">
+        <label class="sn-toggle" style="width:fit-content; margin-top:8px;">
+          <input type="checkbox" id="fichaGeneradaUsarTitulo"> Usar como nombre del producto
+        </label>
         <p class="subtitle" id="fichaGeneradaTituloAviso">Se va a usar como Nombre del producto. Puedes corregirlo acá.</p>
       </div>
 
@@ -3753,6 +3756,13 @@
                   style="font-family:inherit; line-height:1.5;"></textarea>
         <p class="subtitle">Los <strong>###</strong> son títulos de sección y los <strong>✅</strong> son viñetas:
           se convierten al aplicarla, no se ven así en la tienda.</p>
+      </div>
+
+      <div style="margin-top:12px;">
+        <label class="sn-toggle" style="width:fit-content;">
+          <input type="checkbox" id="fichaGeneradaGenerarSeo"> ✨ Generar también el SEO para Google con IA
+        </label>
+        <p class="subtitle" id="fichaGeneradaSeoAviso">Título y descripción para Google, a partir de esta ficha. Queda para que lo revises antes de guardar.</p>
       </div>
 
       <div class="modal-foot">

@@ -12,6 +12,15 @@ let editingProductId = null;
 // Desarchivar del editor (ver abrirModalProducto) lo lee para saber qué
 // mostrar, porque un producto archivado ya no vive en productsList.
 let productoEnEdicionArchivado = false;
+// Ya está publicado en sevelin.cl con su nombre definitivo (no es borrador):
+// en ese caso la ficha de la IA no le cambia el nombre sin que se marque.
+let productoEnEdicionPublicado = false;
+// Sube cada vez que el editor abre o cierra un producto. Una respuesta de la
+// IA que llega tarde (Gemini puede tardar 30 s) se descarta si ya no calza:
+// si no, el SEO de un producto caería en el formulario del siguiente.
+let sesionEditorProducto = 0;
+// Ya se ofreció generar el SEO en esta edición: no se insiste.
+let seoIAOfrecido = false;
 let productosSeleccionados = new Set();
 let productosVisibles = [];   // última lista renderizada (para "seleccionar todo")
 
@@ -217,6 +226,9 @@ const elFichaGeneradaTexto = document.getElementById('fichaGeneradaTexto');
 const elFichaGeneradaTitulo = document.getElementById('fichaGeneradaTitulo');
 const elFichaGeneradaTituloFila = document.getElementById('fichaGeneradaTituloFila');
 const elFichaGeneradaTituloAviso = document.getElementById('fichaGeneradaTituloAviso');
+const elFichaGeneradaUsarTitulo = document.getElementById('fichaGeneradaUsarTitulo');
+const elFichaGeneradaGenerarSeo = document.getElementById('fichaGeneradaGenerarSeo');
+const elFichaGeneradaSeoAviso = document.getElementById('fichaGeneradaSeoAviso');
 let productoEnEdicionImagenUrls = [];
 // Fotos elegidas ANTES de que el producto tenga id (modo creación): quedan
 // acá como data URLs hasta que guardarProducto() cree el producto y recién
@@ -1314,6 +1326,8 @@ function initEditorDescripcion() {
      se ejecute siquiera cuando este código decide manejar el pegado él
      mismo. */
   contenedor.addEventListener('paste', e => {
+    // Recién cuando el pegado (el de Quill o el convertido de abajo) ya está en el editor
+    setTimeout(ofrecerSeoTrasPegarDescripcion, 300);
     if (!elToggleMarkdown || !elToggleMarkdown.checked) return; // pegado normal de Quill
     const texto = (e.clipboardData || window.clipboardData)?.getData('text/plain') || '';
     if (!texto.trim() || !pareceMarkdown(texto)) return; // no tiene pinta de Markdown, pegado normal
@@ -1357,18 +1371,32 @@ async function generarSeoConIA() {
   if (!descripcionHtml.trim()) { showToast('Escribe la Descripción primero', 'err'); return; }
   if (!nombre) { showToast('Escribe el nombre del producto primero', 'err'); return; }
 
+  const sesion = sesionEditorProducto;
   if (elBtnGenerarSeoIA) { elBtnGenerarSeoIA.disabled = true; elBtnGenerarSeoIA.textContent = '✨ Generando…'; }
   try {
     const resultado = await API.productos.generarSeo({ nombre, descripcion_html: descripcionHtml });
+    if (sesion !== sesionEditorProducto) return;   // el editor ya está en otro producto (o cerrado)
     if (elProdMetaTitulo) elProdMetaTitulo.value = resultado.meta_titulo || '';
     if (elProdMetaDescripcion) elProdMetaDescripcion.value = resultado.meta_descripcion || '';
     actualizarContadoresSeo();
     showToast('SEO generado — revísalo y guarda el producto', 'ok');
   } catch (err) {
-    showToast(err.message || 'No se pudo generar el SEO', 'err');
+    if (sesion === sesionEditorProducto) showToast(err.message || 'No se pudo generar el SEO', 'err');
   } finally {
-    if (elBtnGenerarSeoIA) { elBtnGenerarSeoIA.disabled = false; elBtnGenerarSeoIA.textContent = '✨ Generar con IA'; }
+    if (elBtnGenerarSeoIA) elBtnGenerarSeoIA.textContent = '✨ Generar con IA';
+    actualizarDisponibilidadSeoIA();
   }
+}
+
+/* El borrador que se crea solo al subir la primera foto se llama "Borrador
+   sin nombre — fecha" (crearBorradorProducto). Ese no es un nombre: para la
+   IA y para decidir si se usa el título propuesto, cuenta como vacío. */
+function nombreProvisorioDeProducto(nombre) {
+  return /^Borrador sin nombre/i.test(String(nombre || '').trim());
+}
+
+function hayContenidoSeo() {
+  return !!((elProdMetaTitulo?.value || '').trim() || (elProdMetaDescripcion?.value || '').trim());
 }
 
 /* ---------- Generar texto con IA: ficha de la tienda / post de Facebook ----------
@@ -1385,8 +1413,6 @@ async function generarTextoConIA(destino) {
   // de la Descripción/datos reales — exigirlo antes obligaba a subir hasta
   // arriba y escribirlo a mano solo para poder generar. Ver más abajo cómo
   // se completa el campo con la sugerencia.
-  const nombre = elProdNombre?.value.trim() || '';
-
   const datos = elProdDatosReales?.value.trim() || '';
   const descripcionHtml = elProdDescripcion?.value || '';
   if (!datos && !descripcionHtml.trim()) {
@@ -1403,16 +1429,7 @@ async function generarTextoConIA(destino) {
   const textoOriginal = boton?.textContent;
   if (boton) { boton.disabled = true; boton.textContent = '✨ Generando…'; }
   try {
-    const resultado = await API.productos.generarTexto({
-      destino,
-      nombre,
-      es_servicio: !!(elProdEsServicio && elProdEsServicio.checked),
-      marca: elProdMarca?.value.trim() || '',
-      condicion: elProdCondicion?.value || '',
-      categoria: elPopFotosCategoria?.selectedOptions?.[0]?.textContent?.trim() || '',
-      datos,
-      descripcion_html: descripcionHtml
-    });
+    const resultado = await API.productos.generarTexto(cuerpoParaPromptIA(destino));
 
     if (destino === 'facebook') {
       abrirModalTextoFacebook(resultado.texto || '');
@@ -1455,9 +1472,11 @@ let fichaGeneradaPegada = false;
    cuerpo que manda generarTextoConIA(), para que el prompt no pueda salir
    distinto según qué botón se apriete. */
 function cuerpoParaPromptIA(destino) {
+  const nombre = elProdNombre?.value.trim() || '';
   return {
     destino,
-    nombre: elProdNombre?.value.trim() || '',
+    // Un "Borrador sin nombre — fecha" no se le pasa a la IA como nombre actual.
+    nombre: nombreProvisorioDeProducto(nombre) ? '' : nombre,
     es_servicio: !!(elProdEsServicio && elProdEsServicio.checked),
     marca: elProdMarca?.value.trim() || '',
     condicion: elProdCondicion?.value || '',
@@ -1519,8 +1538,8 @@ async function copiarAlPortapapeles(texto) {
 function abrirPegarFichaIA() {
   fichaGeneradaPegada = true;
   if (elFichaGeneradaTexto) elFichaGeneradaTexto.value = '';
-  if (elFichaGeneradaTituloFila) elFichaGeneradaTituloFila.style.display = 'none';
-  if (elFichaGeneradaTitulo) elFichaGeneradaTitulo.value = '';
+  ofrecerTituloDeFicha('');
+  prepararOfertaSeoDeFicha();
   elModalFichaGenerada?.classList.add('show');
   setTimeout(() => elFichaGeneradaTexto?.focus(), 80);
 }
@@ -1541,12 +1560,7 @@ function engancharPegadoDeFicha() {
         const { titulo, cuerpo } = await API.productos.separarFicha(texto);
         if (!titulo) return;
         elFichaGeneradaTexto.value = cuerpo;
-        const ofrecer = !!(elProdNombre && !elProdNombre.value.trim());
-        if (elFichaGeneradaTituloFila) elFichaGeneradaTituloFila.style.display = ofrecer ? '' : 'none';
-        if (elFichaGeneradaTitulo) elFichaGeneradaTitulo.value = ofrecer ? titulo : '';
-        if (elFichaGeneradaTituloAviso && ofrecer) {
-          elFichaGeneradaTituloAviso.textContent = 'El producto todavía no tiene nombre, así que se va a usar este. Puedes corregirlo acá.';
-        }
+        ofrecerTituloDeFicha(titulo);
       } catch (err) {
         // Separar el título es una comodidad: si falla, la ficha pegada
         // sigue sirviendo entera. No vale interrumpir por esto.
@@ -1561,18 +1575,51 @@ function engancharPegadoDeFicha() {
    decida. Si descarta, el formulario queda exactamente como estaba. */
 function abrirModalFichaGenerada(cuerpoMarkdown, tituloPropuesto) {
   if (elFichaGeneradaTexto) elFichaGeneradaTexto.value = cuerpoMarkdown;
-
-  /* El título solo se ofrece si el campo Nombre está vacío: si el dueño ya
-     le puso nombre al producto, ese nombre manda — puede ser el que está
-     publicado en Marketplace o el que conoce el cliente. */
-  const ofrecerTitulo = !!(tituloPropuesto && elProdNombre && !elProdNombre.value.trim());
-  if (elFichaGeneradaTituloFila) elFichaGeneradaTituloFila.style.display = ofrecerTitulo ? '' : 'none';
-  if (elFichaGeneradaTitulo) elFichaGeneradaTitulo.value = ofrecerTitulo ? tituloPropuesto : '';
-  if (elFichaGeneradaTituloAviso && ofrecerTitulo) {
-    elFichaGeneradaTituloAviso.textContent = 'El producto todavía no tiene nombre, así que se va a usar este. Puedes corregirlo acá.';
-  }
-
+  ofrecerTituloDeFicha(tituloPropuesto);
+  prepararOfertaSeoDeFicha();
   elModalFichaGenerada?.classList.add('show');
+}
+
+/* El título que propone la IA se muestra SIEMPRE (dueño, 02-10-2026: perdía
+   tiempo copiándolo a mano de la descripción). Antes solo se ofrecía con el
+   Nombre vacío, y bastaba un nombre de paso o el "Borrador sin nombre" para
+   que se descartara sin mostrarlo.
+
+   La casilla viene marcada, salvo en un producto que ya está publicado en
+   sevelin.cl con su nombre: ese nombre puede ser el de Marketplace o el que
+   conoce el cliente, así que cambiarlo se decide marcando la casilla. */
+function ofrecerTituloDeFicha(tituloPropuesto) {
+  const titulo = String(tituloPropuesto || '').trim();
+  if (elFichaGeneradaTituloFila) elFichaGeneradaTituloFila.style.display = titulo ? '' : 'none';
+  if (elFichaGeneradaTitulo) elFichaGeneradaTitulo.value = titulo;
+  if (!titulo) return;
+
+  const actual = elProdNombre?.value.trim() || '';
+  const sinNombre = !actual || nombreProvisorioDeProducto(actual);
+  const mismo = actual === titulo;
+  if (elFichaGeneradaUsarTitulo) elFichaGeneradaUsarTitulo.checked = sinNombre || mismo || !productoEnEdicionPublicado;
+  if (elFichaGeneradaTituloAviso) {
+    elFichaGeneradaTituloAviso.textContent = sinNombre
+      ? 'El producto todavía no tiene nombre, así que se va a usar este. Puedes corregirlo acá.'
+      : mismo
+        ? 'Es el mismo nombre que ya tiene el producto.'
+        : productoEnEdicionPublicado
+          ? `Ya está publicado como "${actual}". Marca la casilla solo si quieres cambiarle el nombre.`
+          : `Reemplaza al nombre actual: "${actual}". Desmarca la casilla para dejar el que tiene.`;
+  }
+}
+
+/* "¿Genero también el SEO?": se pregunta acá mismo, en la ficha que ya está
+   revisando, en vez de abrir otra ventana después. Marcada si el producto no
+   tiene SEO; si ya tiene, hay que marcarla para reemplazarlo. */
+function prepararOfertaSeoDeFicha() {
+  const yaTiene = hayContenidoSeo();
+  if (elFichaGeneradaGenerarSeo) elFichaGeneradaGenerarSeo.checked = !yaTiene;
+  if (elFichaGeneradaSeoAviso) {
+    elFichaGeneradaSeoAviso.textContent = yaTiene
+      ? 'Este producto ya tiene SEO escrito. Marca la casilla para reemplazarlo con uno nuevo hecho desde esta ficha.'
+      : 'Título y descripción para Google, hechos desde esta ficha. Quedan en la tarjeta SEO para que los revises antes de guardar.';
+  }
 }
 
 function cerrarModalFichaGenerada() {
@@ -1589,17 +1636,48 @@ function aplicarFichaGenerada() {
 
   establecerDescripcion(convertirMarkdownAHtml(markdown));
 
-  const tituloElegido = (elFichaGeneradaTituloFila && elFichaGeneradaTituloFila.style.display !== 'none')
+  const tituloElegido = (elFichaGeneradaTituloFila && elFichaGeneradaTituloFila.style.display !== 'none'
+    && elFichaGeneradaUsarTitulo?.checked)
     ? (elFichaGeneradaTitulo?.value || '').trim()
     : '';
-  if (tituloElegido && elProdNombre && !elProdNombre.value.trim()) {
+  if (tituloElegido && elProdNombre) {
     elProdNombre.value = tituloElegido;
+    // Para que lo que mira el campo Nombre (aviso de "falta algo", duplicados) se entere
+    elProdNombre.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
+  const conSeo = !!elFichaGeneradaGenerarSeo?.checked;
+  seoIAOfrecido = true;   // ya se le preguntó en esta ventana, cualquiera sea la respuesta
+
   cerrarModalFichaGenerada();
+  const queFalta = conSeo ? 'Generando el SEO…' : 'Revisa y guarda el producto';
   showToast(tituloElegido
-    ? `Ficha aplicada — el nombre quedó como "${tituloElegido}". Revisa y guarda el producto`
-    : 'Ficha aplicada — revísala y guarda el producto', 'ok');
+    ? `Ficha aplicada — el nombre quedó como "${tituloElegido}". ${queFalta}`
+    : `Ficha aplicada. ${queFalta}`, 'ok');
+
+  if (conSeo) {
+    if (!(elProdNombre?.value || '').trim() || nombreProvisorioDeProducto(elProdNombre.value)) {
+      showToast('Ponle nombre al producto y después usa "Generar con IA" en la tarjeta SEO', 'err');
+      return;
+    }
+    generarSeoConIA();
+  }
+}
+
+/* "…o se detectó que puse una descripción" (dueño, 02-10-2026): al PEGAR una
+   descripción directo en el editor (sin pasar por la ficha de la IA), se
+   ofrece generar el SEO. Una sola vez por edición, solo si no tiene SEO y la
+   descripción ya tiene cuerpo: no por cada palabra que se pega. */
+function ofrecerSeoTrasPegarDescripcion() {
+  if (seoIAOfrecido || hayContenidoSeo()) return;
+  const texto = editorDescripcion ? editorDescripcion.getText().trim() : '';
+  if (texto.length < 200) return;
+  const nombre = elProdNombre?.value.trim() || '';
+  if (!nombre || nombreProvisorioDeProducto(nombre)) return;   // el SEO se arma con el nombre
+  seoIAOfrecido = true;
+  if (confirm('Pegaste una descripción. ¿Generar el SEO (título y descripción para Google) con IA?\n\nQueda en la tarjeta SEO para que lo revises antes de guardar.')) {
+    generarSeoConIA();
+  }
 }
 
 function abrirModalTextoFacebook(texto) {
@@ -1698,6 +1776,9 @@ function abrirModalProducto(producto = null) {
      si quedara pegado, el siguiente producto se generaría con las specs
      del anterior. Se limpia en los dos casos (crear y editar). */
   if (elProdDatosReales) elProdDatosReales.value = '';
+  sesionEditorProducto++;
+  seoIAOfrecido = false;
+  productoEnEdicionPublicado = !!(producto && producto.publicado_web && !producto.es_borrador);
 
   if (producto) {
     editingProductId = producto.id;
@@ -1926,6 +2007,7 @@ async function poblarSelectCategoriaWeb(nombreSeleccionado) {
 }
 
 function cerrarModalProducto() {
+  sesionEditorProducto++;
   elViewProductoEditor?.classList.remove('active');
   // v102: si se abrió desde Productos → Agotados, vuelve ahí (js/agotados-panel.js)
   if (!(typeof volverDelEditorAAgotados === 'function' && volverDelEditorAAgotados())) {
