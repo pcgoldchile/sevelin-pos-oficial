@@ -1,7 +1,11 @@
 # Venta mayorista, Fase 2 — propuesta de alcance (02-10-2026)
 
-> Hecha por Claude a pedido del dueño (pendiente #28). **Nada de esto está construido**: es para aprobar.
-> La Fase 1 está en `docs/CHANGELOG-V103.md`.
+> Hecha por Claude a pedido del dueño (pendiente #28). La Fase 1 está en `docs/CHANGELOG-V103.md`.
+>
+> **Estado al 02-10-2026 (tarde):** la pieza **B (lista de precios) está hecha** a pedido del dueño: PDF y
+> Excel en `/mayorista`, con todo el catálogo por categoría, y de paso el cotizador del carrito ya cotiza a
+> precio mayorista. Siguen **sin construir** y esperando su OK: A (precio en la ficha), C (informe de margen)
+> y D (tramos por cantidad).
 
 ## De dónde se parte (medido el 02-10-2026 en las dos bases)
 

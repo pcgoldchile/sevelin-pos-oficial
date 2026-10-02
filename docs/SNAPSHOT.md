@@ -12,6 +12,26 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 02-10-2026 (tarde) · v106, ficha de la IA con nombre y SEO, Cyber ampliado y lista mayorista
+
+Detalle en `docs/CHANGELOG-V106.md`.
+- **Ficha de la IA:** el título propuesto se muestra siempre y se usa como nombre (casilla marcada, salvo en un
+  producto ya publicado); casilla para generar el SEO en la misma ventana, y pregunta al pegar una descripción.
+- **Cyber:** se sumaron el Power Bank LinkOn ($17.990) y 7 servicios técnicos. Son 28 ofertas del 05 al 07-10.
+  La reserva del servicio ya la exige el checkout (día en que se trae el equipo); `/ofertas` lo explica.
+- **Factura:** "Solicitar factura" oculto en el checkout de la tienda (`FACTURA_HABILITADA = false`).
+- **Mayoristas:** lista de precios en PDF y Excel en `/mayorista`; el cotizador del carrito ya respeta el
+  precio mayorista. No se pudo probar en producción: no hay ninguna cuenta mayorista aprobada.
+- **Balanza Bluetooth en stock 0:** ajuste de conteo del dueño (no es merma). No usarla como gancho.
+- **Esperando al dueño** (pendientes #48, #28 y #50): `docs/estudios-precios/2026-10-02-ajustes-menor-y-mayor.md`
+  (8 subidas y 16 mayoristas), el resto de la Fase 2 mayorista y qué más automatizar al crear un producto.
+
+> 🔴 Hallazgo de precios: en accesorios no está barato en general. Monitores son el 35% de la venta con 8,8%
+> de margen real, y hay rebajas de mostrador en productos de marca que dejan 2% o venden bajo el costo.
+
+> ⚠️ Trampa nueva: un producto con oferta cargada no puede subir su precio normal hasta que la oferta termine
+> (el "antes" tiene que ser real). Y para subir un precio normal que tiene mayorista: primero el normal.
+
 ## 02-10-2026 · fotos hasta 1600 px, Chilexpress con tildes y propuesta de la Fase 2 mayorista
 
 - **Fotos de producto de 1000 a 1600 px** (pendiente #14, `js/productos.js`: `ladoLienzoFoto`). El lienzo
