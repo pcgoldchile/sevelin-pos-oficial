@@ -20,7 +20,7 @@ const productos = [
 ].map(p => ({ archivado: false, stock_ilimitado: false, es_servicio: false, publicado_web: true, created_at: '2026-09-01T12:00:00Z', ...p }));
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '6mb' }));   // mismo tope que el servidor real (las fotos viajan en base64)
 const sinManejar = new Set();
 
 app.post('/api/login', (req, res) => {
@@ -155,6 +155,19 @@ app.put('/api/productos/:id/relacionados', (req, res) => {
   if (ids.some(n => !productos.find(x => x.id === n))) return res.status(400).json({ error: 'Alguno de los productos no existe o está archivado' });
   p.relacionados_ids = ids;
   res.json({ id, relacionados_ids: ids });
+});
+
+// Subir una foto de producto. Mismo tope de 1 MB que el servidor real; la foto queda en
+// memoria como data URL (no hay bucket) para poder ver el tamaño con que salió del lienzo.
+app.post('/api/productos/:id/imagen', (req, res) => {
+  const p = productos.find(x => x.id === Number(req.params.id));
+  if (!p) return res.status(404).json({ error: 'Producto no encontrado' });
+  const base64 = String(req.body?.imagen_base64 || '');
+  if (!base64) return res.status(400).json({ error: 'Falta la imagen' });
+  const bytes = Buffer.from(base64.includes(',') ? base64.split(',')[1] : base64, 'base64').length;
+  if (bytes > 1024 * 1024) return res.status(413).json({ error: 'La imagen supera 1 MB. El navegador debería haberla comprimido antes de subirla.' });
+  p.imagen_urls = [...p.imagen_urls, base64];
+  res.status(201).json({ id: p.id, imagen_urls: p.imagen_urls });
 });
 
 // v102: Productos → Agotados. Los productos de la maqueta con stock 0 (294 y 157), uno con

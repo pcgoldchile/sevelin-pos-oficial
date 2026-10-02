@@ -2249,10 +2249,27 @@ async function guardarProducto() {
 }
 
 // ---------- Fotos de producto (e-commerce Fase 0) ----------
-const FOTO_LADO_PX = 1000;
+/* Lado del lienzo cuadrado (pendiente #14, 02-10-2026). Google cuenta una
+   foto como de "alta resolución" sobre 1024 px, y con todo guardado a 1000
+   Merchant Center marcaba 0%. El lienzo sigue al lado mayor de la foto
+   original, entre 1000 y 1600: una foto chica NO se estira a 1600 (sería
+   resolución falsa y más peso: la tienda sirve la foto tal cual se guarda),
+   y una grande no pasa de 1600. */
+const FOTO_LADO_MIN_PX = 1000;
+const FOTO_LADO_MAX_PX = 1600;
 const FOTO_CALIDAD_INICIAL = 0.85;
 const FOTO_CALIDAD_MINIMA = 0.5;
-const FOTO_OBJETIVO_BYTES = 150 * 1024;
+// Peso objetivo por megapíxel: los ~150 KB de siempre a 1000×1000, y hasta
+// ~384 KB a 1600×1600 (misma calidad por píxel, no la misma foto más borrosa).
+const FOTO_OBJETIVO_BYTES_POR_MP = 150 * 1024;
+// El servidor rechaza sobre 1 MB. Una imagen con muchísimo detalle puede
+// pasarse a 1600 px incluso con la calidad mínima: esa se rehace a 1000 px.
+const FOTO_MAXIMO_BYTES = 900 * 1024;
+
+function ladoLienzoFoto(img) {
+  const ladoMayor = Math.max(img.width || 0, img.height || 0);
+  return Math.round(Math.min(FOTO_LADO_MAX_PX, Math.max(FOTO_LADO_MIN_PX, ladoMayor)));
+}
 
 // Fuente activa de fotos: en edición son las ya subidas (API real); en
 // creación (sin id todavía) son las que están en memoria esperando a que
@@ -2485,7 +2502,7 @@ async function moverFotoProducto(idx, direccion) {
 }
 
 /* Lee los archivos elegidos, uno por uno, y los deja listos en el mismo
-   pipeline de siempre (dibujar sobre 1000x1000 + comprimir a webp). Con el
+   pipeline de siempre (dibujar sobre un lienzo cuadrado + comprimir a webp). Con el
    producto ya guardado, cada foto se sube de inmediato; sin guardar
    todavía, quedan en fotosNuevasStaged y se suben recién cuando
    guardarProducto() cree el producto y tenga un id real. */
@@ -2555,13 +2572,13 @@ async function procesarArchivosFoto(archivos) {
   if (ignorados > 0) showToast(`${ignorados} archivo(s) ignorado(s) por no ser imágenes`, 'err');
 }
 
-/* Lee UN archivo, lo dibuja centrado sobre un lienzo 1000x1000 con fondo
-   blanco (sin deformar ni recortar), y lo exporta a webp bajando la
-   calidad hasta acercarse a ~150KB — pieza reusada por procesarArchivosFoto
-   para cada archivo de la tanda. */
+/* Lee UN archivo, lo dibuja centrado sobre un lienzo cuadrado con fondo
+   blanco (sin deformar ni recortar; de 1000 a 1600 px, ver ladoLienzoFoto),
+   y lo exporta a webp bajando la calidad hasta acercarse al peso objetivo —
+   pieza reusada por procesarArchivosFoto para cada archivo de la tanda. */
 async function procesarUnaFoto(archivo) {
   const bitmap = await cargarBitmapDeArchivo(archivo);
-  // Recorte opcional ANTES de centrar en el lienzo 1000×1000 — una foto
+  // Recorte opcional ANTES de centrar en el lienzo cuadrado — una foto
   // con mucho espacio vacío alrededor (caso real: foto de catálogo del
   // proveedor) quedaba con el producto chico y rodeado de blanco. "Usar
   // imagen completa" salta este paso y sigue igual que antes.
@@ -2770,27 +2787,34 @@ function cargarBitmapDeArchivo(archivo) {
   });
 }
 
-function dibujarYComprimirFoto(img) {
+function dibujarYComprimirFoto(img, ladoForzado) {
   const canvas = elProdFotoCanvas || document.createElement('canvas');
-  canvas.width = FOTO_LADO_PX;
-  canvas.height = FOTO_LADO_PX;
+  const lado = ladoForzado || ladoLienzoFoto(img);
+  canvas.width = lado;
+  canvas.height = lado;
   const ctx = canvas.getContext('2d');
 
   ctx.fillStyle = '#FFFFFF';
-  ctx.fillRect(0, 0, FOTO_LADO_PX, FOTO_LADO_PX);
+  ctx.fillRect(0, 0, lado, lado);
 
   // "Contain": mantiene proporción, centrada, sin recortar ni deformar
-  const escala = Math.min(FOTO_LADO_PX / img.width, FOTO_LADO_PX / img.height);
+  const escala = Math.min(lado / img.width, lado / img.height);
   const w = img.width * escala;
   const h = img.height * escala;
-  ctx.drawImage(img, (FOTO_LADO_PX - w) / 2, (FOTO_LADO_PX - h) / 2, w, h);
+  ctx.drawImage(img, (lado - w) / 2, (lado - h) / 2, w, h);
+
+  const objetivoBytes = FOTO_OBJETIVO_BYTES_POR_MP * (lado * lado) / 1e6;
 
   return new Promise((resolve, reject) => {
     const intentar = (calidad) => {
       canvas.toBlob((blob) => {
         if (!blob) { reject(new Error('No se pudo generar la imagen')); return; }
-        if (blob.size > FOTO_OBJETIVO_BYTES && calidad > FOTO_CALIDAD_MINIMA) {
+        if (blob.size > objetivoBytes && calidad > FOTO_CALIDAD_MINIMA) {
           intentar(Math.round((calidad - 0.1) * 100) / 100);
+          return;
+        }
+        if (blob.size > FOTO_MAXIMO_BYTES && lado > FOTO_LADO_MIN_PX) {
+          dibujarYComprimirFoto(img, FOTO_LADO_MIN_PX).then(resolve, reject);
           return;
         }
         blobADataUrl(blob).then(resolve, reject);
@@ -3839,7 +3863,7 @@ async function borrarIngresoProducto(id) {
    ------------------------------------------------------------
    DOS PROBLEMAS REALES, la misma causa:
      1. Las fotos se guardan en WEBP e Instagram no acepta ese formato.
-     2. Se guardan en 1:1 (1000×1000), y al subirlas a un feed en 4:5
+     2. Se guardan en 1:1 (cuadradas), y al subirlas a un feed en 4:5
         Instagram las recorta por los lados.
 
    POR QUÉ NO SE ARREGLA CAMBIANDO CÓMO SE GUARDAN

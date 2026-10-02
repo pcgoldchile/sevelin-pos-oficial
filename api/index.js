@@ -3824,9 +3824,10 @@ app.put('/api/productos/:id', auth(true), async (req, res) => {
 });
 
 const BUCKET_IMAGENES_PRODUCTO = 'productos-imagenes';
-const MAX_BYTES_IMAGEN_PRODUCTO = 1 * 1024 * 1024; // el Canvas del front apunta a ~100-150KB; 1MB es margen generoso
+const MAX_BYTES_IMAGEN_PRODUCTO = 1 * 1024 * 1024; // el Canvas del front apunta a ~150KB (1000 px) y hasta ~384KB (1600 px); 1MB es margen generoso
 
-/* Sube una foto ya procesada por el Canvas del front (1000x1000, webp) al
+/* Sube una foto ya procesada por el Canvas del front (cuadrada, de 1000 a
+   1600 px, webp — ver ladoLienzoFoto en js/productos.js) al
    bucket público `productos-imagenes` (ver docs/README-BUCKET-IMAGENES.md)
    y la agrega a productos.imagen_urls. El navegador nunca ve la llave de
    Supabase: solo manda el webp en base64 y el backend sube con
