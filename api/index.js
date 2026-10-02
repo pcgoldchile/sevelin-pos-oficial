@@ -13495,6 +13495,17 @@ async function construirFeedCatalogo() {
         omitidos.push({ sku: p.sku, nombre: p.nombre, motivo: 'es un servicio: Google Merchant Center solo acepta productos físicos' });
         continue;
       }
+      /* Los PEDIDOS POR ENCARGO tampoco (dueño, 02-10-2026).
+         No están en la tienda y su precio es referencial hasta confirmar con
+         el proveedor, así que en sevelin.cl ya no se pagan en línea: se
+         cotizan por WhatsApp. Un feed de compras anuncia un precio al que se
+         puede comprar AHORA en la página de destino; mandar un precio
+         referencial sin botón de compra es lo que Google desaprueba por
+         "precio que no coincide" y cuenta contra toda la cuenta. */
+      if (p.es_pedido_encargo) {
+        omitidos.push({ sku: p.sku, nombre: p.nombre, motivo: 'por encargo: precio referencial, no se paga en línea (se cotiza por WhatsApp)' });
+        continue;
+      }
       const imagenes = Array.isArray(p.imagen_urls) ? p.imagen_urls.filter(Boolean) : [];
       if (!imagenes.length) {
         omitidos.push({ sku: p.sku, nombre: p.nombre, motivo: 'sin foto (Meta y Google rechazan productos sin imagen)' });
@@ -13505,10 +13516,8 @@ async function construirFeedCatalogo() {
         continue;
       }
 
-      /* Disponibilidad. Un pedido por encargo no tiene stock propio y no
-         por eso está agotado: se declara como pedido especial, que es lo
-         que las dos plataformas entienden por "in stock" con demora. */
-      const hayStock = p.es_pedido_encargo || num(p.stock_web) > 0;
+      // Disponibilidad (los encargos ya quedaron fuera más arriba).
+      const hayStock = num(p.stock_web) > 0;
       const marcaProducto = posible && posible.marca ? String(posible.marca).trim() : '';
 
       /* SIN STOCK NO PUEDE IR AL FEED, aunque Meta y Google acepten
@@ -13563,14 +13572,8 @@ async function construirFeedCatalogo() {
         availability: hayStock ? 'in stock' : 'out of stock',
         condition: posible && posible.condicion === 'reacondicionado' ? 'refurbished' : 'new',
         price: `${Math.round(num(p.precio_web))} CLP`,
-        /* CADA PRODUCTO A SU RUTA (23-09-2026).
-           Los pedidos por encargo NO viven en /productos: esa ficha los
-           rechaza a propósito (notFound), así que sus 18 filas del feed
-           llevaban a un 404 en Google y en Meta. Es el mismo error que se
-           arregló el 22-09 en el sitemap de la tienda; el feed tenía su
-           propia copia y quedó fuera de aquel arreglo.
-           Los `por_llegar` SÍ van a /productos: la ficha los muestra. */
-        link: `${sitio}${p.es_pedido_encargo ? '/pedidos-por-encargo' : '/productos'}/${encodeURIComponent(p.sku)}`,
+        // Los `por_llegar` SÍ van a /productos: la ficha los muestra.
+        link: `${sitio}/productos/${encodeURIComponent(p.sku)}`,
         image_link: imagenes[0],
         // Meta acepta hasta 20 adicionales separadas por coma.
         additional_image_link: imagenes.slice(1, 21).join(','),
@@ -13583,7 +13586,7 @@ async function construirFeedCatalogo() {
            sin eso Google rechaza las filas de marca conocida sin código. */
         brand: (marcaProducto || 'Sevelin'),
         product_type: [p.categoria, p.subcategoria].filter(Boolean).join(' > '),
-        quantity_to_sell_on_facebook: p.es_pedido_encargo ? '' : Math.max(0, Math.round(num(p.stock_web))),
+        quantity_to_sell_on_facebook: Math.max(0, Math.round(num(p.stock_web))),
         identifier_exists: 'no',
         shipping: envioFeedPorPeso(p.peso_kg),
         ...ofertaParaFeed(p)
