@@ -23,8 +23,14 @@ Detalle en `docs/CHANGELOG-V106.md`.
 - **Mayoristas:** lista de precios en PDF y Excel en `/mayorista`; el cotizador del carrito ya respeta el
   precio mayorista. No se pudo probar en producción: no hay ninguna cuenta mayorista aprobada.
 - **Balanza Bluetooth en stock 0:** ajuste de conteo del dueño (no es merma). No usarla como gancho.
-- **Esperando al dueño** (pendientes #48, #28 y #50): `docs/estudios-precios/2026-10-02-ajustes-menor-y-mayor.md`
-  (8 subidas y 16 mayoristas), el resto de la Fase 2 mayorista y qué más automatizar al crear un producto.
+- **Esperando al dueño** (pendiente #48): `docs/estudios-precios/2026-10-02-ajustes-menor-y-mayor.md`
+  (8 subidas y 16 mayoristas). No respondió todavía.
+- **Cierre del 02-10 (noche), pedidos nuevos del dueño, todos en la tabla:** #51 precios de los
+  reacondicionados para mayoristas y Cyber (urgente, antes del 05-10); #52 los encargos se pueden pagar directo
+  en la tienda y no debe ser así (urgente); #53 control de encargos en el POS; #54 automatizaciones del editor
+  y aviso de margen en la caja (aprobadas); #55 auditoría periódica de precios; #56 y #57 portada y carruseles
+  de la ficha; #58 Claude Pro en gastos fijos. La Fase 2 mayorista sigue (#28).
+  **El prompt para abrir la próxima sesión está en `docs/PROMPT-SIGUIENTE-SESION.md`.**
 
 > 🔴 Hallazgo de precios: en accesorios no está barato en general. Monitores son el 35% de la venta con 8,8%
 > de margen real, y hay rebajas de mostrador en productos de marca que dejan 2% o venden bajo el costo.
