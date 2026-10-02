@@ -12,6 +12,25 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 02-10-2026 · fotos hasta 1600 px, Chilexpress con tildes y propuesta de la Fase 2 mayorista
+
+- **Fotos de producto de 1000 a 1600 px** (pendiente #14, `js/productos.js`: `ladoLienzoFoto`). El lienzo
+  sigue al lado mayor de la foto original; una foto chica no se estira. Peso objetivo por megapíxel (unos
+  150 KB a 1000 px, hasta unos 384 KB a 1600 px). Solo fotos nuevas. Probado en la maqueta con imágenes
+  generadas; **no probado con una foto real del celular**. La tienda lleva `max-image-preview:large`.
+- **Chilexpress no cotizaba a 89 de las 346 comunas** (pendiente #24): todas las que llevan tilde, diéresis
+  o ñ. Arreglado en la tienda y verificado en producción. Detalle en el SNAPSHOT de sevelin-tienda.
+- **Venta mayorista, Fase 2:** propuesta de alcance en `docs/PROPUESTA-MAYORISTA-FASE-2.md`, sin construir.
+  Dato medido: 0 cuentas mayoristas y 0 ventas a precio mayorista. Espera tres decisiones del dueño.
+- **Pendiente #48 sigue sin decidir:** las respuestas del dueño llegaron en blanco; no se aplicó ningún precio.
+- **Cyber (revisión previa):** las 20 ofertas siguen cargadas con sus fechas. ⚠️ La Balanza Bluetooth, el
+  gancho principal, quedó en stock 0 el 02-10 a las 11:48 sin venta registrada. Falta el chequeo del lunes
+  05-10 (pendiente #49) y el del jueves 08-10.
+- Maqueta del POS: ahora simula la subida de fotos con el mismo tope de 1 MB del servidor.
+
+> ⚠️ Trampa nueva: probando un endpoint de la tienda con `curl` desde la consola de Windows, las tildes del
+> cuerpo llegan rotas y parece que el servidor falla. Escribirlas escapadas (`ó`) o usar un archivo.
+
 ## 01-10-2026 (tarde) · v105, margen a la vista y precios aprobados cargados
 
 Detalle en `docs/CHANGELOG-V105.md`.
