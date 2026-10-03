@@ -66,10 +66,24 @@ function metodoPagaComision(metodo) {
   return METODOS_CON_COMISION.includes(String(metodo || '').trim());
 }
 
-function calcularComisionPos(metodo, total) {
+/* Segunda máquina de tarjetas: Banchile Pagos (sql/79, v108). Espejo de
+   api/index.js: débito 0,6% + 0,0015 UF y crédito 1,53% + 0,0018 UF, con IVA
+   (lo que Banchile descuenta del abono). */
+const NOMBRE_MAQUINA_TARJETA = { TUU: 'TUU', BANCHILE: 'Banco de Chile' };
+const UF_REFERENCIA_COMISION = 41082;
+const TARIFA_BANCHILE = {
+  'Tarjeta Débito': { tasa: 0.006, fijoUf: 0.0015 },
+  'Tarjeta Crédito': { tasa: 0.0153, fijoUf: 0.0018 }
+};
+
+function calcularComisionPos(metodo, total, maquina) {
   if (!metodoPagaComision(metodo)) return 0;
   const monto = Number(total) || 0;
   if (monto <= 0) return 0;
+  if (maquina === 'BANCHILE') {
+    const tarifa = TARIFA_BANCHILE[String(metodo).trim()];
+    return Math.round((monto * tarifa.tasa + tarifa.fijoUf * UF_REFERENCIA_COMISION) * 1.19);
+  }
   return Math.round(monto * COMISION_POS_TASA + COMISION_POS_FIJO);
 }
 
@@ -85,7 +99,7 @@ function comisionDeVenta(venta) {
   const metodo = venta.metodo_pago_final || venta.metodo_pago;
   const pendiente = venta.estado === 'PENDIENTE';
   if (pendiente) return 0;
-  return calcularComisionPos(metodo, venta.total);
+  return calcularComisionPos(metodo, venta.total, venta.maquina_tarjeta);
 }
 
 function setSyncBadge(type, msg) {

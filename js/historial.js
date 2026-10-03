@@ -1236,7 +1236,7 @@ function pagarVentaPendiente(id) {
     metodos: ['Efectivo', 'Tarjeta Débito', 'Tarjeta Crédito', 'Transferencia', 'Mixto'],
     textoConfirmar: '✅ Registrar Pago',
     onConfirmar: async (metodo, datos) => {
-      await API.ventas.registrarPago(venta.id, metodo, datos?.pagos || null);
+      await API.ventas.registrarPago(venta.id, metodo, datos?.pagos || null, datos?.maquina || null);
 
       // El documento tributario se emite al cobrar, así que se guarda aquí
       const dte = datos?.tipoDte || 'SIN DTE';
@@ -1872,6 +1872,7 @@ function renderDetalleVenta(venta) {
         Utilidad ${hayDescuento ? `tras descuento ${fmtCLP(venta.utilidad)} (bruta ${fmtCLP(utilidadBruta)})` : fmtCLP(venta.utilidad)}
       </p>` : ''}
     ${bloqueDespachoDetalle(venta)}
+    ${typeof bloqueDocumentoVenta === 'function' ? bloqueDocumentoVenta(venta) : ''}
     <div class="row-actions" style="justify-content:flex-end; margin-top:16px;">
       <button class="btn btn-gold" id="btnReimprimirDesdeDetalle">🖨️ Reimprimir Ticket</button>
     </div>

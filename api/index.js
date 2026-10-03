@@ -369,12 +369,44 @@ function metodoPagaComision(metodo) {
   return METODOS_CON_COMISION.includes(String(metodo || '').trim());
 }
 
+/* SEGUNDA MÁQUINA: BANCHILE PAGOS (sql/79, v108)
+   ------------------------------------------------------------
+   Contrato del 16-09-2026, canal presencial, tarjetas nacionales:
+     · Débito:  0,6%  + 0,0015 UF, más IVA
+     · Crédito: 1,53% + 0,0018 UF, más IVA
+   Se guarda CON IVA: es lo que Banchile descuenta del abono (cláusula 9.3
+   del contrato), o sea lo que de verdad no llega a la cuenta.
+   La UF del contrato es la del último día de cada mes; acá va una de
+   referencia (03-10-2026). Cada $1.000 que se mueva la UF cambia la comisión
+   en $2 por transacción: revisarla un par de veces al año basta.
+   Tarjetas extranjeras (2,79% + 0,0099 UF) y prepago (1,08% + 0,0014 UF) no
+   tienen medio de pago propio en el POS: se cobran como débito o crédito.
+   Espejo en js/config.js (solo para previsualizar). */
+const MAQUINAS_TARJETA = ['TUU', 'BANCHILE'];
+const UF_REFERENCIA_COMISION = 41082;
+const IVA_COMISION_BANCHILE = 1.19;
+const TARIFA_BANCHILE = {
+  'Tarjeta Débito': { tasa: 0.006, fijoUf: 0.0015 },
+  'Tarjeta Crédito': { tasa: 0.0153, fijoUf: 0.0018 }
+};
+
+/* Devuelve 'TUU', 'BANCHILE' o null (no vino o no se reconoce). */
+function maquinaTarjetaValida(valor) {
+  const v = String(valor || '').trim().toUpperCase();
+  return MAQUINAS_TARJETA.includes(v) ? v : null;
+}
+
 /* Devuelve la comisión en pesos, redondeada (el peso chileno no tiene
-   decimales). Una venta en $0 no paga el cargo fijo. */
-function calcularComisionPos(metodo, total) {
+   decimales). Una venta en $0 no paga el cargo fijo. Sin máquina indicada
+   (o una que no se reconoce) se cobra como TUU, que es la de siempre. */
+function calcularComisionPos(metodo, total, maquina) {
   if (!metodoPagaComision(metodo)) return 0;
   const monto = num(total);
   if (monto <= 0) return 0;
+  if (maquinaTarjetaValida(maquina) === 'BANCHILE') {
+    const tarifa = TARIFA_BANCHILE[String(metodo).trim()];
+    return Math.round((monto * tarifa.tasa + tarifa.fijoUf * UF_REFERENCIA_COMISION) * IVA_COMISION_BANCHILE);
+  }
   return Math.round(monto * COMISION_POS_TASA + COMISION_POS_FIJO);
 }
 
@@ -388,12 +420,13 @@ function calcularComisionPos(metodo, total) {
    Cobrarla sobre el total de la venta sería inflar el gasto; ignorarla
    sería perderla. Por eso el desglose se guarda en venta_pagos. */
 function comisionDePagos(pagos) {
-  return (pagos || []).reduce((a, p) => a + calcularComisionPos(p.metodo, p.monto), 0);
+  return (pagos || []).reduce((a, p) => a + calcularComisionPos(p.metodo, p.monto, p.maquina_tarjeta), 0);
 }
 
 /* Valida y normaliza el desglose que manda el POS. Devuelve null si no
-   es un pago mixto legítimo, para caer al flujo de un solo medio. */
-function normalizarPagos(lista, totalVenta) {
+   es un pago mixto legítimo, para caer al flujo de un solo medio.
+   `maquina` (sql/79) es la máquina por la que pasaron las partes con tarjeta. */
+function normalizarPagos(lista, totalVenta, maquina) {
   if (!Array.isArray(lista) || lista.length < 2) return null;
 
   const pagos = lista
@@ -410,7 +443,16 @@ function normalizarPagos(lista, totalVenta) {
     throw new Error(`El desglose de pagos suma ${suma} y la venta es ${totalVenta}`);
   }
 
-  return pagos.map(p => ({ ...p, comision: calcularComisionPos(p.metodo, p.monto) }));
+  return pagos.map(p => {
+    const maquinaParte = maquinaDePago(p.metodo, maquina);
+    return { ...p, comision: calcularComisionPos(p.metodo, p.monto, maquinaParte), maquina_tarjeta: maquinaParte };
+  });
+}
+
+/* La máquina que se guarda con un pago: solo si fue con tarjeta. Sin
+   indicarla es TUU, la de siempre. */
+function maquinaDePago(metodo, maquina) {
+  return metodoPagaComision(metodo) ? (maquinaTarjetaValida(maquina) || 'TUU') : null;
 }
 
 /* La comisión se cobra según cómo se pagó DE VERDAD: una venta que quedó
@@ -419,7 +461,14 @@ function normalizarPagos(lista, totalVenta) {
 function comisionDeVenta(venta) {
   if (!venta) return 0;
   const metodo = venta.metodo_pago_final || venta.metodo_pago;
-  return calcularComisionPos(metodo, venta.total);
+  return calcularComisionPos(metodo, venta.total, venta.maquina_tarjeta);
+}
+
+/* N° de boleta, factura o comprobante (sql/79). Texto corto y sin espacios
+   repetidos; vacío = sin número. */
+function folioDteValido(valor) {
+  const texto = String(valor ?? '').trim().replace(/\s+/g, ' ');
+  return texto ? texto.slice(0, 30) : null;
 }
 
 /* El DTE es tributario: si llega algo no reconocido, se guarda 'SIN DTE'
@@ -4569,6 +4618,134 @@ app.get('/api/ventas/envios-pendientes', auth(), async (req, res) => {
 });
 
 /* ============================================================
+   N° DE BOLETA O FACTURA Y MÁQUINA DE TARJETAS (sql/79, v108)
+   ------------------------------------------------------------
+   El N° del documento es opcional: se puede anotar al vender (ventana
+   "Venta registrada") o después, desde el Historial. El POS no emite nada
+   ni entra al SII: solo anota el número que el dueño ya emitió.
+
+   "Sin N°" se cuenta desde el día en que existe el campo: pedir el número de
+   las ventas anteriores sería una lista que nunca se vacía.
+   Estas dos rutas van ANTES de GET /api/ventas/:id para que "sin-folio" no
+   se lea como un id.
+   ============================================================ */
+const FOLIO_DTE_DESDE = '2026-10-03';
+
+app.get('/api/ventas/sin-folio', auth(true), async (req, res) => {
+  const { data, error } = await db.from('ventas')
+    .select('id, numero_orden, fecha, hora, cliente, total, envio_cobrado, metodo_pago, metodo_pago_final, tipo_dte, maquina_tarjeta')
+    .eq('estado', 'PAGADA')
+    .gte('fecha', FOLIO_DTE_DESDE)
+    .is('dte_folio', null)
+    .order('vendida_en', { ascending: false })
+    .limit(500);
+  if (error) return enviarErrorBD(res, error, 'GET /api/ventas/sin-folio');
+  res.json({ desde: FOLIO_DTE_DESDE, ventas: data || [] });
+});
+
+/* Anota (o corrige) el N° del documento de una venta, con su tipo.
+   · Trabajador: solo en una venta de HOY que todavía no tiene número (es el
+     paso final del cobro que acaba de hacer).
+   · Admin: cualquier venta, y también puede borrarlo.
+   El cambio de tipo de documento queda en auditoria_dte, igual que en
+   POST /api/ventas/:id/dte. */
+app.post('/api/ventas/:id/folio', auth(), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return enviarError(res, 400, 'Venta inválida');
+  const esAdmin = req.usuario?.rol === 'admin';
+  const folio = folioDteValido(req.body?.dte_folio);
+
+  const { data: venta, error: errVenta } = await db.from('ventas')
+    .select('id, numero_orden, fecha, estado, tipo_dte, dte_folio').eq('id', id).maybeSingle();
+  if (errVenta) return enviarErrorBD(res, errVenta, 'POST /api/ventas/:id/folio');
+  if (!venta) return enviarError(res, 404, 'Venta no encontrada');
+  if (venta.estado === 'ANULADA') return enviarError(res, 409, 'Esa venta está anulada: no lleva N° de documento');
+
+  if (!esAdmin) {
+    if (!folio) return enviarError(res, 400, 'Escribe el N° del documento');
+    if (venta.dte_folio) return enviarError(res, 403, 'Esa venta ya tiene N° de documento: lo corrige el administrador');
+    if (String(venta.fecha) !== fechaHoyChile()) {
+      return enviarError(res, 403, 'El N° de una venta de otro día lo anota el administrador');
+    }
+  }
+
+  const tipo = req.body?.tipo_dte !== undefined ? tipoDteValido(req.body.tipo_dte) : (venta.tipo_dte || 'SIN DTE');
+  if (folio && tipo === 'SIN DTE') return enviarError(res, 400, 'Indica si el N° es de una boleta o de una factura');
+
+  /* El mismo N° en otra venta con el mismo tipo casi siempre es un error de
+     tipeo. Se avisa una vez; `repetido: true` lo deja pasar (dos máquinas
+     pueden coincidir en el N° de comprobante). */
+  if (folio && !req.body?.repetido) {
+    const { data: otra, error: errOtra } = await db.from('ventas')
+      .select('id, numero_orden').eq('dte_folio', folio).eq('tipo_dte', tipo)
+      .neq('id', id).neq('estado', 'ANULADA').limit(1);
+    if (errOtra) return enviarErrorBD(res, errOtra, 'POST /api/ventas/:id/folio');
+    if ((otra || []).length) {
+      const orden = String(otra[0].numero_orden ?? otra[0].id).padStart(5, '0');
+      return res.status(409).json({
+        error: `Ese N° ya está anotado en la orden #${orden}. Revisa si lo escribiste bien.`,
+        codigo: 'folio_repetido'
+      });
+    }
+  }
+
+  const { data, error } = await db.from('ventas')
+    .update({ dte_folio: folio, tipo_dte: tipo }).eq('id', id).select().single();
+  if (error) return enviarErrorBD(res, error, 'POST /api/ventas/:id/folio');
+
+  if ((venta.tipo_dte || 'SIN DTE') !== tipo) {
+    const { error: errAudit } = await db.from('auditoria_dte').insert([{
+      venta_id: id, tipo_anterior: venta.tipo_dte || null, tipo_nuevo: tipo, rol: req.usuario?.rol || null
+    }]);
+    if (errAudit) console.error('[AUDITORÍA DTE] no se pudo registrar el cambio:', errAudit.message);
+  }
+
+  res.json(limpiarParaRol(data, req.usuario.rol));
+});
+
+/* Corrige por cuál máquina pasó la tarjeta de una venta ya cobrada y
+   recalcula su comisión. Solo admin: mueve la utilidad neta de esa venta.
+   En un pago mixto se recalcula cada parte con tarjeta. */
+app.post('/api/ventas/:id/maquina', auth(true), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return enviarError(res, 400, 'Venta inválida');
+  const maquina = maquinaTarjetaValida(req.body?.maquina_tarjeta);
+  if (!maquina) return enviarError(res, 400, 'Indica la máquina: TUU o Banco de Chile');
+
+  const { data: venta, error: errVenta } = await db.from('ventas')
+    .select('id, estado, total, metodo_pago, metodo_pago_final, pago_mixto').eq('id', id).maybeSingle();
+  if (errVenta) return enviarErrorBD(res, errVenta, 'POST /api/ventas/:id/maquina');
+  if (!venta) return enviarError(res, 404, 'Venta no encontrada');
+  if (venta.estado !== 'PAGADA') return enviarError(res, 409, 'Solo se cambia la máquina de una venta pagada');
+
+  let comision;
+  if (venta.pago_mixto) {
+    const { data: partes, error: errPartes } = await db.from('venta_pagos')
+      .select('id, metodo, monto').eq('venta_id', id);
+    if (errPartes) return enviarErrorBD(res, errPartes, 'POST /api/ventas/:id/maquina');
+    const conTarjeta = (partes || []).filter(p => metodoPagaComision(p.metodo));
+    if (!conTarjeta.length) return enviarError(res, 409, 'Esta venta no se pagó con tarjeta');
+    comision = 0;
+    for (const p of conTarjeta) {
+      const comisionParte = calcularComisionPos(p.metodo, p.monto, maquina);
+      comision += comisionParte;
+      const { error: errParte } = await db.from('venta_pagos')
+        .update({ comision: comisionParte, maquina_tarjeta: maquina }).eq('id', p.id);
+      if (errParte) return enviarErrorBD(res, errParte, 'POST /api/ventas/:id/maquina');
+    }
+  } else {
+    const metodo = venta.metodo_pago_final || venta.metodo_pago;
+    if (!metodoPagaComision(metodo)) return enviarError(res, 409, 'Esta venta no se pagó con tarjeta');
+    comision = calcularComisionPos(metodo, venta.total, maquina);
+  }
+
+  const { data, error } = await db.from('ventas')
+    .update({ maquina_tarjeta: maquina, comision_pos: comision }).eq('id', id).select().single();
+  if (error) return enviarErrorBD(res, error, 'POST /api/ventas/:id/maquina');
+  res.json(limpiarParaRol(data, req.usuario.rol));
+});
+
+/* ============================================================
    EDITAR LOS DATOS DEL DESPACHO — EXIGE PIN DE ADMINISTRADOR
    ------------------------------------------------------------
    Separado de PUT /api/ventas/:id/envio (que solo mueve el estado y el
@@ -4773,15 +4950,21 @@ app.post('/api/ventas', auth(), async (req, res) => {
 
     /* Pago mixto: el cliente cubrió la venta con más de un medio.
        Se valida contra el total ANTES de escribir nada. */
-    const pagosMixtos = esPendiente ? null : normalizarPagos(req.body?.pagos, totales.total);
+    // Máquina de tarjetas (sql/79): TUU si no viene. Solo cuenta si hubo tarjeta.
+    const maquinaPedida = maquinaTarjetaValida(req.body?.maquina_tarjeta);
+    const pagosMixtos = esPendiente ? null : normalizarPagos(req.body?.pagos, totales.total, maquinaPedida);
+    const maquinaTarjeta = esPendiente ? null
+      : (pagosMixtos
+        ? (pagosMixtos.find(p => p.maquina_tarjeta)?.maquina_tarjeta || null)
+        : maquinaDePago(metodoPago, maquinaPedida));
 
-    /* Comisión del POS Tuu. Una venta PENDIENTE todavía no pasó por la
-       máquina, así que nace en 0: se calcula cuando se registre el pago.
-       Si hay desglose, la comisión sale de sumar la de cada parte con
-       tarjeta, no del total de la venta. */
+    /* Comisión de la máquina de tarjetas. Una venta PENDIENTE todavía no
+       pasó por la máquina, así que nace en 0: se calcula cuando se registre
+       el pago. Si hay desglose, la comisión sale de sumar la de cada parte
+       con tarjeta, no del total de la venta. */
     const comisionPos = esPendiente
       ? 0
-      : (pagosMixtos ? comisionDePagos(pagosMixtos) : calcularComisionPos(metodoPago, totales.total));
+      : (pagosMixtos ? comisionDePagos(pagosMixtos) : calcularComisionPos(metodoPago, totales.total, maquinaTarjeta));
 
     const fecha = req.body?.fecha || new Date().toISOString().slice(0, 10);
     const hora = horaValida(req.body?.hora) || horaChileActual();
@@ -4812,6 +4995,7 @@ app.post('/api/ventas', auth(), async (req, res) => {
       descuento_tipo: totales.descuento_monto > 0 ? descuentoTipo : null,
       descuento_valor: totales.descuento_monto > 0 ? descuentoValor : 0,
       comision_pos: comisionPos,
+      maquina_tarjeta: maquinaTarjeta,
       pago_mixto: !!pagosMixtos,
       impreso: false,
       // --- Despacho / logística (migración 17) ---
@@ -5224,7 +5408,7 @@ app.put('/api/ventas/:id', auth(true), exigirPinAdmin, async (req, res) => {
        le aplican los cambios de esta edición. */
     if (cambios.metodo_pago !== undefined || cambios.total !== undefined) {
       const { data: actual } = await db.from('ventas')
-        .select('total, metodo_pago, metodo_pago_final, estado').eq('id', id).maybeSingle();
+        .select('total, metodo_pago, metodo_pago_final, estado, maquina_tarjeta').eq('id', id).maybeSingle();
 
       const totalFinal = cambios.total !== undefined ? cambios.total : num(actual?.total);
       const metodoFinal = cambios.metodo_pago !== undefined
@@ -5233,7 +5417,11 @@ app.put('/api/ventas/:id', auth(true), exigirPinAdmin, async (req, res) => {
 
       // Una venta que sigue PENDIENTE no ha pasado por la máquina todavía
       const sigueePendiente = (actual?.estado === 'PENDIENTE') && cambios.metodo_pago === undefined;
-      cambios.comision_pos = sigueePendiente ? 0 : calcularComisionPos(metodoFinal, totalFinal);
+      // sql/79: la comisión es la de la máquina con que se cobró esta venta
+      cambios.comision_pos = sigueePendiente ? 0 : calcularComisionPos(metodoFinal, totalFinal, actual?.maquina_tarjeta);
+      if (cambios.metodo_pago !== undefined) {
+        cambios.maquina_tarjeta = sigueePendiente ? null : maquinaDePago(metodoFinal, actual?.maquina_tarjeta);
+      }
     }
 
     const { data, error } = await db.from('ventas').update(cambios).eq('id', id).select().single();
@@ -6325,8 +6513,9 @@ app.post('/api/ventas/:id/pago', auth(), async (req, res) => {
 
      También acepta pago mixto al cobrar: un cliente puede llegar a pagar
      una venta pendiente con efectivo más tarjeta. */
+  const maquinaPedida = maquinaTarjetaValida(req.body?.maquina_tarjeta);   // sql/79
   let pagosMixtos = null;
-  try { pagosMixtos = normalizarPagos(req.body?.pagos, venta.total); }
+  try { pagosMixtos = normalizarPagos(req.body?.pagos, venta.total, maquinaPedida); }
   catch (e) { return enviarError(res, 400, e.message); }
 
   if (pagosMixtos) {
@@ -6336,13 +6525,18 @@ app.post('/api/ventas/:id/pago', auth(), async (req, res) => {
     if (errPagos) console.error('[PAGO MIXTO] desglose no guardado:', errPagos.message);
   }
 
+  const maquinaTarjeta = pagosMixtos
+    ? (pagosMixtos.find(p => p.maquina_tarjeta)?.maquina_tarjeta || null)
+    : maquinaDePago(metodo, maquinaPedida);
+
   const { data, error } = await db.from('ventas')
     .update({
       estado: 'PAGADA',
       metodo_pago_final: pagosMixtos ? 'Mixto' : metodo,
       pago_mixto: !!pagosMixtos,
       fecha_pago: new Date().toISOString(),
-      comision_pos: pagosMixtos ? comisionDePagos(pagosMixtos) : calcularComisionPos(metodo, venta.total)
+      maquina_tarjeta: maquinaTarjeta,
+      comision_pos: pagosMixtos ? comisionDePagos(pagosMixtos) : calcularComisionPos(metodo, venta.total, maquinaTarjeta)
     })
     .eq('id', req.params.id)
     .select()

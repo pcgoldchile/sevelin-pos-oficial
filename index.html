@@ -2069,6 +2069,8 @@
             <button class="btn btn-outline btn-sm" id="btnExportarHistorialPDF">🧾 Exportar PDF</button>
             <input type="file" id="inputImportarVentas" accept=".csv,.xlsx,.xls,.json" style="display:none;">
             <button class="btn btn-outline btn-sm" id="btnImportarVentas">📥 Importar Registros (JSON/CSV)</button>
+            <!-- sql/79 (v108): ventas desde el 03-10-2026 sin N° de boleta o factura -->
+            <button class="btn btn-outline btn-sm" id="btnFoliosPendientes">🧾 Sin N° de documento</button>
           </div>
           <div class="toolbar-group">
             <button class="btn btn-red btn-sm" id="btnEliminarPorPeriodo">🗓️ Eliminar por Período</button>
@@ -5114,6 +5116,16 @@
         <strong id="pagoTotal">$0</strong>
       </div>
 
+      <!-- sql/79 (v108): por cuál máquina pasa la tarjeta. Cada una cobra una
+           comisión distinta; se recuerda la última usada en este equipo. -->
+      <div class="pago-maquina" id="pagoMaquinaBox">
+        <span class="pago-maquina-titulo">Máquina de tarjetas</span>
+        <div class="pago-maquina-botones" role="group" aria-label="Máquina de tarjetas">
+          <button type="button" class="entrega-tipo-btn pago-maquina-btn" data-maquina="TUU">TUU</button>
+          <button type="button" class="entrega-tipo-btn pago-maquina-btn" data-maquina="BANCHILE">Banco de Chile</button>
+        </div>
+      </div>
+
       <div class="pago-metodos" id="pagoMetodos"></div>
 
       <!-- Calculadora de vuelto: aparece solo con Efectivo -->
@@ -5227,6 +5239,20 @@
         están en el carrito.
       </p>
       <p class="modal-hint" id="ventaExitosaAviso">¿Deseas imprimir el ticket de 58 mm?</p>
+      <!-- sql/79 (v108): N° de la boleta o factura, opcional. Si se deja vacío,
+           la venta queda en Historial → "Sin N° de documento" para después. -->
+      <div class="folio-venta" id="ventaExitosaFolioBox" style="display:none;">
+        <label for="ventaExitosaFolio">N° de boleta o factura <span class="folio-opcional">(opcional)</span></label>
+        <div class="folio-fila">
+          <select id="ventaExitosaFolioTipo" class="hist-select" aria-label="Tipo de documento">
+            <option value="BOLETA">Boleta</option>
+            <option value="FACTURA">Factura</option>
+          </select>
+          <input type="text" id="ventaExitosaFolio" class="campo-pos" maxlength="30" autocomplete="off" inputmode="numeric" placeholder="Ej: 1234">
+          <button type="button" class="btn btn-outline btn-sm" id="btnGuardarFolioVenta">Guardar</button>
+        </div>
+        <small class="folio-aviso" id="ventaExitosaFolioAviso"></small>
+      </div>
       <label class="sn-toggle" style="width:fit-content; margin:12px auto;">
         <input type="checkbox" id="chkQrResena"> Incluir QR de reseña de Google
       </label>
@@ -5461,6 +5487,18 @@
       <div id="detalleVentaContent" style="margin: 18px 0;"></div>
       <div class="modal-foot">
         <button class="btn btn-ghost" id="btnCerrarDetalleVenta">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: VENTAS SIN N° DE DOCUMENTO (sql/79, v108) -->
+  <div id="modalFoliosPendientes" class="modal-overlay">
+    <div class="modal-box" style="max-width: 760px;">
+      <h2>Ventas sin N° de boleta o factura</h2>
+      <p class="modal-hint" id="foliosPendientesHint">Anota el número del documento que emitiste. Es opcional: lo que no llenes queda acá.</p>
+      <div id="foliosPendientesLista" class="folios-lista"></div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCerrarFoliosPendientes" data-cerrar-modal>Cerrar</button>
       </div>
     </div>
   </div>
@@ -7247,6 +7285,7 @@
   <script src="js/agotados-panel.js"></script>   <!-- v102: Productos → Agotados; usa fechaCortaAviso (notificaciones.js) al pintar -->
   <script src="js/historial.js"></script>
   <script src="js/devoluciones.js"></script>   <!-- después de historial.js: su botón vive en las filas del historial y llama a cargarHistorial() -->
+  <script src="js/folios.js"></script>   <!-- v108 (sql/79): N° de boleta o factura y máquina de tarjetas; usa metodoDeVenta de historial.js -->
   <script src="js/escaner.js"></script>
   <script src="js/etiquetas.js"></script>
   <script src="js/compras.js"></script>

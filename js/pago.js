@@ -9,8 +9,9 @@
 
 const METODOS_PAGO = [
   { valor: 'Efectivo', icono: '💵', desc: 'Se calcula el vuelto' },
-  { valor: 'Tarjeta Débito', icono: '💳', desc: 'Paga comisión del POS Tuu' },
-  { valor: 'Tarjeta Crédito', icono: '🏦', desc: 'Paga comisión del POS Tuu' },
+  // La descripción de las tarjetas la arma renderMetodosPago() según la máquina elegida
+  { valor: 'Tarjeta Débito', icono: '💳', desc: 'Paga comisión de la máquina', tarjeta: true },
+  { valor: 'Tarjeta Crédito', icono: '🏦', desc: 'Paga comisión de la máquina', tarjeta: true },
   { valor: 'Transferencia', icono: '📲', desc: 'Sin comisión' },
   { valor: 'Por Pagar', icono: '⏳', desc: 'Queda pendiente de cobro' },
   { valor: 'Mixto', icono: '🧩', desc: 'Repartir entre varios medios', mixto: true }
@@ -27,6 +28,53 @@ let partesPagoMixto = [];
 let configPago = null;
 let metodoPagoElegido = null;
 let tipoDteElegido = 'SIN DTE';   // por defecto, como pidió el negocio
+
+/* MÁQUINA DE TARJETAS (sql/79, v108). Hay dos: TUU y Banco de Chile
+   (Banchile Pagos), con comisiones distintas. Se elige arriba de los medios
+   de pago y se recuerda en este equipo, porque casi siempre se usa la misma.
+   La comisión real la calcula el servidor con la máquina que se mande. */
+const CLAVE_MAQUINA_TARJETA = 'pos_maquina_tarjeta';
+let maquinaTarjetaElegida = leerMaquinaTarjeta();
+
+function leerMaquinaTarjeta() {
+  try {
+    return localStorage.getItem(CLAVE_MAQUINA_TARJETA) === 'BANCHILE' ? 'BANCHILE' : 'TUU';
+  } catch (_) { return 'TUU'; }
+}
+
+function elegirMaquinaTarjeta(maquina) {
+  maquinaTarjetaElegida = maquina === 'BANCHILE' ? 'BANCHILE' : 'TUU';
+  try { localStorage.setItem(CLAVE_MAQUINA_TARJETA, maquinaTarjetaElegida); } catch (_) {}
+  renderMaquinaTarjeta();
+  /* Solo cambia el texto de las tarjetas: repintar los botones borraría lo
+     que ya está elegido o resaltado con el teclado. */
+  elPagoMetodos?.querySelectorAll('[data-desc-tarjeta]').forEach(el => {
+    el.textContent = descripcionTarjeta(el.dataset.descTarjeta);
+  });
+}
+
+/* "Máquina TUU · comisión $223". La comisión es dato de margen: en pesos
+   solo la ve el admin (el servidor tampoco se la entrega al trabajador). */
+function descripcionTarjeta(metodo) {
+  const total = Number(configPago?.total) || 0;
+  const maquina = NOMBRE_MAQUINA_TARJETA[maquinaTarjetaElegida] || 'TUU';
+  return esAdmin() && total > 0
+    ? `Máquina ${maquina} · comisión ${fmtCLP(calcularComisionPos(metodo, total, maquinaTarjetaElegida))}`
+    : `Por la máquina ${maquina}`;
+}
+
+function renderMaquinaTarjeta() {
+  const caja = document.getElementById('pagoMaquinaBox');
+  if (!caja) return;
+  const permitidos = configPago?.metodos || METODOS_PAGO.map(m => m.valor);
+  const hayTarjeta = METODOS_PAGO.some(m => (m.tarjeta || m.mixto) && permitidos.includes(m.valor));
+  caja.style.display = hayTarjeta ? '' : 'none';
+  caja.querySelectorAll('[data-maquina]').forEach(b => {
+    const activa = b.dataset.maquina === maquinaTarjetaElegida;
+    b.classList.toggle('activo', activa);
+    b.setAttribute('aria-pressed', activa ? 'true' : 'false');
+  });
+}
 
 const elModalPago = document.getElementById('modalPago');
 const elPagoTitulo = document.getElementById('pagoTitulo');
@@ -81,6 +129,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (elBtnAgregarParte) elBtnAgregarParte.addEventListener('click', () => agregarPartePago());
   if (elModalPago) elModalPago.addEventListener('click', (e) => { if (e.target === elModalPago) cerrarSelectorPago(); });
+
+  document.querySelectorAll('#pagoMaquinaBox [data-maquina]').forEach(b => {
+    b.addEventListener('click', () => elegirMaquinaTarjeta(b.dataset.maquina));
+  });
 });
 
 /**
@@ -113,6 +165,7 @@ function abrirSelectorPago(opciones) {
   if (elPagoDteBox) elPagoDteBox.style.display = 'none';
   elegirTipoDte('SIN DTE');
 
+  renderMaquinaTarjeta();
   renderMetodosPago();
   if (elModalPago) elModalPago.classList.add('show');
 
@@ -140,7 +193,7 @@ function renderMetodosPago() {
         <span class="metodo-icono">${m.icono}</span>
         <span class="metodo-texto">
           <strong>${m.valor}</strong>
-          <small>${m.desc || ''}</small>
+          <small${m.tarjeta ? ` data-desc-tarjeta="${m.valor}"` : ''}>${escHtml(m.tarjeta ? descripcionTarjeta(m.valor) : (m.desc || ''))}</small>
         </span>
         <span class="metodo-marca"></span>
       </button>
@@ -353,6 +406,8 @@ function datosPagoActuales() {
     montoRecibido: recibido,
     vuelto: metodoPagoElegido === 'Efectivo' ? Math.max(recibido - total, 0) : 0,
     tipoDte: tipoDteElegido,
+    // sql/79: el servidor la usa solo si hubo tarjeta (sola o dentro de un mixto)
+    maquina: maquinaTarjetaElegida,
     // Solo va cuando el usuario eligió Mixto; el servidor lo revalida
     pagos: metodoPagoElegido === 'Mixto'
       ? partesPagoMixto.filter(p => (Number(p.monto) || 0) > 0)

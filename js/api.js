@@ -235,9 +235,13 @@ const API = {
     itemsDeVentas: (ids) =>
       apiRequest(`/ventas/items/por-ventas?ids=${encodeURIComponent((ids || []).join(','))}`),
     // `pagos` solo se manda en cobros mixtos; el backend lo revalida
-    registrarPago: (id, metodo, pagos) => apiRequest(`/ventas/${id}/pago`, {
-      method: 'POST', body: { metodo_pago_final: metodo, pagos: pagos || null }
+    registrarPago: (id, metodo, pagos, maquina) => apiRequest(`/ventas/${id}/pago`, {
+      method: 'POST', body: { metodo_pago_final: metodo, pagos: pagos || null, maquina_tarjeta: maquina || null }
     }),
+    // sql/79 (v108): N° de boleta o factura (opcional) y máquina de tarjetas.
+    sinFolio: () => apiRequest('/ventas/sin-folio'),
+    guardarFolio: (id, datos) => apiRequest(`/ventas/${id}/folio`, { method: 'POST', body: datos }),
+    cambiarMaquina: (id, maquina) => apiRequest(`/ventas/${id}/maquina`, { method: 'POST', body: { maquina_tarjeta: maquina } }),
     // Cambia solo el tipo de DTE (edición rápida desde el Historial)
     cambiarDTE: (id, tipo) => apiRequest(`/ventas/${id}/dte`, { method: 'POST', body: { tipo_dte: tipo } }),
     // Actualiza estado de envío y número de seguimiento (logística)

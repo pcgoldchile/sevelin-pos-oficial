@@ -1086,6 +1086,8 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
        backend lo revalida contra el total y calcula la comisión sobre
        cada parte con tarjeta por separado. */
     pagos: datosPago.pagos || null,
+    // sql/79: por cuál máquina pasó la tarjeta (el servidor la ignora si no hubo tarjeta)
+    maquina_tarjeta: datosPago.maquina || null,
     // Vincula la venta al turno de caja abierto, para el arqueo (punto 4)
     caja_id: (typeof cajaActivaActual !== 'undefined' && cajaActivaActual) ? cajaActivaActual.id : null,
     /* Datos de entrega (punto 3): retiro/despacho, dirección, notas,
@@ -1162,6 +1164,9 @@ function mostrarModalVentaExitosa(venta, datosPago = {}, hayParte2 = false) {
       ? 'No suma a los totales hasta que la cobres desde el Historial.'
       : '¿Deseas imprimir el ticket de 58 mm de esta venta?';
   }
+
+  // sql/79: campo opcional para anotar el N° de boleta o factura (js/folios.js)
+  if (typeof prepararFolioVentaExitosa === 'function') prepararFolioVentaExitosa(venta);
 
   if (elModalVentaExitosa) elModalVentaExitosa.classList.add('show');
 

@@ -25,6 +25,7 @@ const sinManejar = new Set();
 
 app.post('/api/login', (req, res) => {
   const rol = String(req.body?.pin || '') === 'trabajador' ? 'trabajador' : 'admin';
+  app.locals.rolMaqueta = rol;
   res.json({ token: 'token-maqueta', rol, negocio: 'Sevelin', expiraEn: '12h' });
 });
 app.get('/api/me', (_req, res) => res.json({ rol: 'admin', negocio: 'Sevelin' }));
@@ -350,10 +351,96 @@ const itemsVentaWebMaqueta = [
   { id: 3, venta_id: 245, nombre: 'Tarjeta de Memoria Kingston Canvas Select Plus 128GB', cantidad: 1, precio_unitario: 22000, costo_unitario: 19046, subtotal: 22000 },
 ];
 let envioVentaWebMaqueta = null;
-app.get('/api/ventas', (_req, res) => res.json([ventaWebMaqueta]));
-app.get('/api/ventas/:id', (req, res) => (Number(req.params.id) === 245
-  ? res.json({ ...ventaWebMaqueta, items: itemsVentaWebMaqueta, envio: envioVentaWebMaqueta })
-  : res.status(404).json({ error: 'Venta no encontrada' })));
+
+// v108 (sql/79): ventas en memoria para probar la máquina de tarjetas y el N° de boleta o factura.
+// La comisión imita a la del servidor real (TUU: 0,79% + $65; Banco de Chile: débito 0,6% + 0,0015 UF
+// y crédito 1,53% + 0,0018 UF, con IVA). La que vale es la de api/index.js.
+const conTarjetaMaqueta = (m) => m === 'Tarjeta Débito' || m === 'Tarjeta Crédito';
+const comisionMaqueta = (metodo, monto, maquina) => {
+  if (!conTarjetaMaqueta(metodo) || !(monto > 0)) return 0;
+  if (maquina !== 'BANCHILE') return Math.round(monto * 0.0079 + 65);
+  const [tasa, fijoUf] = metodo === 'Tarjeta Crédito' ? [0.0153, 0.0018] : [0.006, 0.0015];
+  return Math.round((monto * tasa + fijoUf * 41082) * 1.19);
+};
+const ventasMaqueta = [
+  ventaWebMaqueta,
+  { id: 235, numero_orden: 235, fecha: '2026-09-26', hora: '20:47', cliente: null, metodo_pago: 'Tarjeta Débito', metodo_pago_final: 'Tarjeta Débito',
+    estado: 'PAGADA', total: 120000, costo_total: 92990, utilidad: 27010, tipo_dte: 'BOLETA', comision_pos: 1013, maquina_tarjeta: null, dte_folio: null,
+    tipo_entrega: 'retiro', estado_envio: 'entregado', descuento_monto: 0 },
+  { id: 250, numero_orden: 250, fecha: hoyMaqueta(), hora: '11:05', cliente: 'María <b>Pérez</b>', metodo_pago: 'Efectivo', metodo_pago_final: 'Efectivo',
+    estado: 'PAGADA', total: 8000, costo_total: 5000, utilidad: 3000, tipo_dte: 'SIN DTE', comision_pos: 0, maquina_tarjeta: null, dte_folio: null,
+    tipo_entrega: 'retiro', estado_envio: 'entregado', descuento_monto: 0 },
+];
+const itemsMaqueta = {
+  245: itemsVentaWebMaqueta,
+  235: [{ id: 10, venta_id: 235, nombre: 'Monitor Gamer MSI MAG 255F E20 24.5"', cantidad: 1, precio_unitario: 120000, costo_unitario: 92990, subtotal: 120000 }],
+  250: [{ id: 11, venta_id: 250, nombre: 'Combo Teclado y Mouse RGB AB-D335', cantidad: 1, precio_unitario: 8000, costo_unitario: 5000, subtotal: 8000 }],
+};
+
+app.get('/api/ventas', (_req, res) => res.json([...ventasMaqueta].sort((a, b) => b.id - a.id)));
+app.get('/api/ventas/envios-pendientes', (_req, res) => res.json([]));
+app.get('/api/ventas/sin-folio', (_req, res) => res.json({
+  desde: '2026-10-03',
+  ventas: ventasMaqueta.filter(v => v.estado === 'PAGADA' && v.fecha >= '2026-10-03' && !v.dte_folio).sort((a, b) => b.id - a.id),
+}));
+app.get('/api/ventas/:id', (req, res) => {
+  const v = ventasMaqueta.find(x => x.id === Number(req.params.id));
+  if (!v) return res.status(404).json({ error: 'Venta no encontrada' });
+  res.json({ ...v, items: itemsMaqueta[v.id] || [], envio: v.id === 245 ? envioVentaWebMaqueta : null });
+});
+app.post('/api/ventas', (req, res) => {
+  const b = req.body || {};
+  const items = (b.items || []).map((it, i) => ({ id: Date.now() + i, nombre: it.nombre, cantidad: it.cantidad, precio_unitario: it.precio_unitario,
+    costo_unitario: it.costo_unitario || 0, subtotal: it.precio_unitario * it.cantidad, serial_number: it.serial_number || null }));
+  const total = items.reduce((a, it) => a + it.subtotal, 0);
+  const pendiente = b.metodo_pago === 'Por Pagar';
+  const partes = !pendiente && Array.isArray(b.pagos) && b.pagos.length >= 2 ? b.pagos : null;
+  const maquina = b.maquina_tarjeta === 'BANCHILE' ? 'BANCHILE' : 'TUU';
+  const huboTarjeta = !pendiente && (partes ? partes.some(p => conTarjetaMaqueta(p.metodo)) : conTarjetaMaqueta(b.metodo_pago));
+  const id = Math.max(...ventasMaqueta.map(v => v.id)) + 1;
+  const venta = { id, numero_orden: id, fecha: b.fecha || hoyMaqueta(), hora: b.hora || '12:00', cliente: b.cliente || null,
+    metodo_pago: partes ? 'Mixto' : b.metodo_pago, metodo_pago_final: pendiente ? null : (partes ? 'Mixto' : b.metodo_pago), pago_mixto: !!partes,
+    estado: pendiente ? 'PENDIENTE' : 'PAGADA', total, costo_total: items.reduce((a, it) => a + it.costo_unitario * it.cantidad, 0), utilidad: 0,
+    tipo_dte: ['BOLETA', 'FACTURA'].includes(b.tipo_dte) ? b.tipo_dte : 'SIN DTE', dte_folio: null, maquina_tarjeta: huboTarjeta ? maquina : null,
+    comision_pos: pendiente ? 0 : (partes ? partes.reduce((a, p) => a + comisionMaqueta(p.metodo, Number(p.monto), maquina), 0) : comisionMaqueta(b.metodo_pago, total, maquina)),
+    tipo_entrega: b.tipo_entrega || 'retiro', estado_envio: 'entregado', descuento_monto: 0 };
+  venta.utilidad = total - venta.costo_total;
+  ventasMaqueta.push(venta);
+  itemsMaqueta[id] = items;
+  res.status(201).json({ ...venta, items });
+});
+app.post('/api/ventas/:id/pago', (req, res) => {
+  const v = ventasMaqueta.find(x => x.id === Number(req.params.id));
+  if (!v) return res.status(404).json({ error: 'Venta no encontrada' });
+  const metodo = req.body.metodo_pago_final;
+  const maquina = req.body.maquina_tarjeta === 'BANCHILE' ? 'BANCHILE' : 'TUU';
+  Object.assign(v, { estado: 'PAGADA', metodo_pago_final: metodo, maquina_tarjeta: conTarjetaMaqueta(metodo) ? maquina : null, comision_pos: comisionMaqueta(metodo, v.total, maquina) });
+  res.json(v);
+});
+app.post('/api/ventas/:id/folio', (req, res) => {
+  const v = ventasMaqueta.find(x => x.id === Number(req.params.id));
+  if (!v) return res.status(404).json({ error: 'Venta no encontrada' });
+  const folio = String(req.body.dte_folio ?? '').trim().slice(0, 30) || null;
+  if (app.locals.rolMaqueta === 'trabajador') {   // el último que entró: imita lo que el servidor le deja hacer a cada rol
+    if (!folio) return res.status(400).json({ error: 'Escribe el N° del documento' });
+    if (v.dte_folio) return res.status(403).json({ error: 'Esa venta ya tiene N° de documento: lo corrige el administrador' });
+    if (v.fecha !== hoyMaqueta()) return res.status(403).json({ error: 'El N° de una venta de otro día lo anota el administrador' });
+  }
+  const tipo = ['BOLETA', 'FACTURA'].includes(req.body.tipo_dte) ? req.body.tipo_dte : v.tipo_dte;
+  if (folio && tipo === 'SIN DTE') return res.status(400).json({ error: 'Indica si el N° es de una boleta o de una factura' });
+  const otra = folio && !req.body.repetido && ventasMaqueta.find(x => x.id !== v.id && x.dte_folio === folio && x.tipo_dte === tipo);
+  if (otra) return res.status(409).json({ error: `Ese N° ya está anotado en la orden #${String(otra.numero_orden).padStart(5, '0')}. Revisa si lo escribiste bien.`, codigo: 'folio_repetido' });
+  Object.assign(v, { dte_folio: folio, tipo_dte: tipo });
+  res.json(v);
+});
+app.post('/api/ventas/:id/maquina', (req, res) => {
+  const v = ventasMaqueta.find(x => x.id === Number(req.params.id));
+  if (!v) return res.status(404).json({ error: 'Venta no encontrada' });
+  if (!['TUU', 'BANCHILE'].includes(req.body.maquina_tarjeta)) return res.status(400).json({ error: 'Indica la máquina: TUU o Banco de Chile' });
+  if (!conTarjetaMaqueta(v.metodo_pago_final)) return res.status(409).json({ error: 'Esta venta no se pagó con tarjeta' });
+  Object.assign(v, { maquina_tarjeta: req.body.maquina_tarjeta, comision_pos: comisionMaqueta(v.metodo_pago_final, v.total, req.body.maquina_tarjeta) });
+  res.json(v);
+});
 app.put('/api/ventas/:id/despacho', (req, res) => {
   const e = req.body.envio || {};
   envioVentaWebMaqueta = { repartidor: e.repartidor || 'indrive', costo: Number(e.costo) || 0, cobrado_cliente: e.cobrado_cliente ?? null, km: e.km || null, sector: e.sector || null, duracion_min: e.duracion_min || null, metodo_pago: 'Efectivo' };
