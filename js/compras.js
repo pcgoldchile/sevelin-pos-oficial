@@ -555,6 +555,20 @@ function abrirModalCompra(compra = null, campoFoco = null) {
   }, 120);
 }
 
+/* Abre "Registrar Gasto" ya llenado (v118): lo usa la ficha del producto
+   después de una compra de mercadería, para no escribir dos veces el monto
+   ni olvidar el gasto. La factura, el IVA y el medio de pago los completa
+   el dueño: por eso se abre el formulario y no se guarda nada solo. */
+async function abrirGastoPrellenado({ monto, descripcion, proveedor } = {}) {
+  if (!clasificacionesList.length) await cargarClasificaciones();
+  abrirModalCompra(null);
+  if (elCompraCosto) elCompraCosto.value = Math.round(num(monto)) || '';
+  if (elCompraDescripcion) elCompraDescripcion.value = descripcion || '';
+  if (elCompraProveedor) elCompraProveedor.value = proveedor || '';
+  const mercaderia = [...(elCompraClasificacion?.options || [])].find(o => /mercader/i.test(o.value));
+  if (mercaderia && elCompraClasificacion) elCompraClasificacion.value = mercaderia.value;
+}
+
 function cerrarModalCompra() {
   if (elModalCompra) elModalCompra.classList.remove('show');
   editandoCompraId = null;

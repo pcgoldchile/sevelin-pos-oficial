@@ -789,8 +789,12 @@ async function frenoLogin(req, res, next) {
 /* OFERTA WEB (sql/71, v100). Reglas de negocio que el CHECK de la base no
    puede ver porque dependen del precio normal y de la hora actual. `actual`
    es la fila guardada (al editar), para lo que el body no traiga. Devuelve
-   el mensaje de error o null. */
-function validarOfertaWeb(p, actual = {}) {
+   el mensaje de error o null.
+   `terminadaSinTocarPasa` (v118): la ficha manda SIEMPRE la oferta, aunque
+   nadie la toque. Sin esto, un producto con una oferta ya terminada no se
+   podía guardar (ni para corregir el precio) hasta borrarle la oferta. Solo
+   lo usa el guardado de la ficha; encender una oferta sigue exigiendo fecha. */
+function validarOfertaWeb(p, actual = {}, { terminadaSinTocarPasa = false } = {}) {
   if (p.precio_oferta_web === undefined) return null;   // no se tocó la oferta
   if (p.precio_oferta_web === null) return null;        // se quitó: siempre válido
   const valor = k => (p[k] !== undefined ? p[k] : actual[k]);
@@ -805,7 +809,15 @@ function validarOfertaWeb(p, actual = {}) {
   const hasta = Date.parse(valor('oferta_hasta') || '');
   if (!Number.isFinite(desde) || !Number.isFinite(hasta)) return 'Indica cuándo empieza y cuándo termina la oferta';
   if (hasta <= desde) return 'La oferta tiene que terminar después de empezar';
-  if (hasta <= Date.now()) return 'Esa oferta ya terminó: revisa la fecha de fin';
+  if (hasta <= Date.now()) {
+    // Al minuto: el formulario (datetime-local) no guarda segundos.
+    const minuto = t => Math.floor(t / 60000);
+    const sinTocar = terminadaSinTocarPasa
+      && num(actual.precio_oferta_web) === num(p.precio_oferta_web)
+      && minuto(Date.parse(actual.oferta_desde || '')) === minuto(desde)
+      && minuto(Date.parse(actual.oferta_hasta || '')) === minuto(hasta);
+    if (!sinTocar) return 'Esa oferta ya terminó: revisa la fecha de fin';
+  }
   return null;
 }
 
@@ -3263,6 +3275,102 @@ app.post('/api/productos/:id/ingresos', auth(true), async (req, res) => {
    El orden importa: primero la capa, después el stock. Si la capa falla,
    el stock no se movió y no queda inventario sin costo que lo explique.
    ============================================================ */
+/* Lo que una compra le hace a un producto, en un solo lugar: lo usan el
+   formulario de compras y la corrección de stock "las compré" (v118).
+   `producto` trae id, stock, usa_lotes, stock_ilimitado y costo_unitario.
+   Lanza el error de la base si algo falla. */
+async function registrarCompraDeProducto(producto, datos, opciones = {}) {
+  const id = Number(producto.id);
+  /* Mercadería en camino (sql/59): comprada pero todavía no está. No
+     suma stock — sumarlo diría que la tienes y se podría vender algo que
+     no existe. En su lugar el producto queda "por llegar" en sevelin.cl,
+     que es reservable con tope. */
+  const enCamino = opciones.enCamino === true;
+  const sumarStock = !enCamino && opciones.sumarStock !== false && !producto.stock_ilimitado;
+
+  /* La capa PEPS se crea solo si la mercadería YA está. Crearla mientras
+     viaja dejaría unidades consumibles que no existen, y una venta
+     tomaría el costo de algo que todavía no llega. Cuando llega, la crea
+     PUT /api/ingresos/:id/recibida. */
+  let lote = null;
+  if (producto.usa_lotes && !enCamino) {
+    const { data, error } = await db.from('producto_lotes').insert([{
+      producto_id: id,
+      cantidad: datos.cantidad,
+      cantidad_inicial: datos.cantidad,
+      costo_unitario: datos.costo_unitario,
+      referencia: datos.referencia
+    }]).select().single();
+    if (error) throw error;
+    lote = data;
+  }
+
+  const { data: ingreso, error: errI } = await db.from('ingresos_mercaderia').insert([{
+    ...datos,
+    producto_id: id,
+    estado: 'confirmado',
+    en_camino: enCamino,
+    creado_por: opciones.usuario || null
+  }]).select('*').single();
+  if (errI) throw errI;
+
+  const cambios = {};
+  let stockNuevo = num(producto.stock);
+  if (sumarStock) {
+    stockNuevo = num(producto.stock) + datos.cantidad;
+    cambios.stock = stockNuevo;
+    cambios.stock_actualizado_en = new Date().toISOString();
+  }
+  /* Solo se rellena si estaba en CERO. Pisar un costo ya cargado con el
+     de la última compra cambiaría el margen de todo el catálogo sin que
+     nadie lo pida; para eso están los lotes. */
+  const costoRellenado = num(producto.costo_unitario) === 0 && datos.costo_unitario > 0;
+  if (costoRellenado) cambios.costo_unitario = datos.costo_unitario;
+
+  /* Precio de venta escrito junto a la compra (v118). Ya viene validado
+     por rechazoPrecioDeVenta(); null = no se toca. */
+  if (opciones.precioVenta) cambios.precio_unitario = opciones.precioVenta;
+
+  if (enCamino) {
+    cambios.por_llegar = true;
+    cambios.stock_por_llegar = Math.max(0, Math.round(num(opciones.stockPorLlegar) || datos.cantidad));
+    const eta = String(opciones.fechaLlegada || '').trim();
+    cambios.fecha_llegada_estimada = /^\d{4}-\d{2}-\d{2}$/.test(eta) ? eta : null;
+  }
+
+  if (Object.keys(cambios).length) {
+    const { error: errU } = await db.from('productos').update(cambios).eq('id', id);
+    if (errU) throw errU;
+  }
+
+  return {
+    ingreso,
+    lote,
+    stock_nuevo: stockNuevo,
+    stock_sumado: sumarStock,
+    en_camino: enCamino,
+    costo_rellenado: costoRellenado ? datos.costo_unitario : null,
+    precio_nuevo: opciones.precioVenta || null
+  };
+}
+
+/* Cambiar el precio normal desde una compra (v118) pasa por las mismas
+   reglas que la ficha: tiene que seguir por encima de la oferta web y del
+   precio mayorista. `costoNuevo` es el costo que la compra le va a dejar
+   al producto si lo tenía en $0. Devuelve el mensaje de error o null. */
+async function rechazoPrecioDeVenta(producto, precioNuevo, costoNuevo = null) {
+  const clp = n => '$' + Math.round(Number(n)).toLocaleString('es-CL');
+  const oferta = num(producto.precio_oferta_web);
+  if (oferta > 0 && !(num(producto.precio_web) > 0) && precioNuevo <= oferta) {
+    return `El precio de venta (${clp(precioNuevo)}) tiene que ser mayor que el precio de oferta web (${clp(oferta)}). Corrige o quita la oferta en la ficha antes.`;
+  }
+  return validarPrecioMayorista(
+    { precio_unitario: precioNuevo, ...(costoNuevo ? { costo_unitario: costoNuevo } : {}) }, producto, producto.id);
+}
+
+const CAMPOS_PRODUCTO_COMPRA = 'id, nombre, stock, usa_lotes, stock_ilimitado, costo_unitario, precio_unitario, precio_web, ' +
+  'precio_oferta_web, precio_mayorista, mayorista_desde, precio_mayorista_2, mayorista_desde_2, es_servicio, es_pedido_encargo, precio_a_consultar';
+
 app.post('/api/productos/:id/compras', auth(true), async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id) || id <= 0) return enviarError(res, 400, 'Producto inválido');
@@ -3272,76 +3380,35 @@ app.post('/api/productos/:id/compras', auth(true), async (req, res) => {
 
   try {
     const { data: producto, error: errP } = await db.from('productos')
-      .select('id, nombre, stock, usa_lotes, stock_ilimitado, costo_unitario').eq('id', id).maybeSingle();
+      .select(CAMPOS_PRODUCTO_COMPRA).eq('id', id).maybeSingle();
     if (errP) throw errP;
     if (!producto) return enviarError(res, 404, 'Producto no encontrado');
 
-    /* Mercadería en camino (sql/59): comprada pero todavía no está. No
-       suma stock — sumarlo diría que la tienes y se podría vender algo que
-       no existe. En su lugar el producto queda "por llegar" en sevelin.cl,
-       que es reservable con tope. */
-    const enCamino = req.body?.en_camino === true;
-    const sumarStock = !enCamino && req.body?.sumar_stock !== false && !producto.stock_ilimitado;
-
-    /* La capa PEPS se crea solo si la mercadería YA está. Crearla mientras
-       viaja dejaría unidades consumibles que no existen, y una venta
-       tomaría el costo de algo que todavía no llega. Cuando llega, la crea
-       PUT /api/ingresos/:id/recibida. */
-    let lote = null;
-    if (producto.usa_lotes && !enCamino) {
-      const { data, error } = await db.from('producto_lotes').insert([{
-        producto_id: id,
-        cantidad: datos.cantidad,
-        cantidad_inicial: datos.cantidad,
-        costo_unitario: datos.costo_unitario,
-        referencia: datos.referencia
-      }]).select().single();
-      if (error) throw error;
-      lote = data;
+    /* Precio de venta (v118): opcional. Si viene y es distinto del que
+       tiene el producto, se valida ANTES de escribir nada: una compra a
+       medio registrar por un precio rechazado sería peor que no registrarla. */
+    let precioVenta = null;
+    const precioCrudo = req.body?.precio_venta;
+    if (precioCrudo !== undefined && precioCrudo !== null && String(precioCrudo).trim() !== '') {
+      const v = Math.round(num(precioCrudo));
+      if (!(v > 0)) return enviarError(res, 400, 'El precio de venta tiene que ser mayor a 0');
+      if (v !== Math.round(num(producto.precio_unitario))) {
+        const seRellenaCosto = num(producto.costo_unitario) === 0 && datos.costo_unitario > 0;
+        const rechazo = await rechazoPrecioDeVenta(producto, v, seRellenaCosto ? datos.costo_unitario : null);
+        if (rechazo) return enviarError(res, 400, rechazo);
+        precioVenta = v;
+      }
     }
 
-    const { data: ingreso, error: errI } = await db.from('ingresos_mercaderia').insert([{
-      ...datos,
-      producto_id: id,
-      estado: 'confirmado',
-      en_camino: enCamino,
-      creado_por: req.usuario?.usuario || req.usuario?.rol || null
-    }]).select('*').single();
-    if (errI) throw errI;
-
-    const cambios = {};
-    let stockNuevo = num(producto.stock);
-    if (sumarStock) {
-      stockNuevo = num(producto.stock) + datos.cantidad;
-      cambios.stock = stockNuevo;
-      cambios.stock_actualizado_en = new Date().toISOString();
-    }
-    /* Solo se rellena si estaba en CERO. Pisar un costo ya cargado con el
-       de la última compra cambiaría el margen de todo el catálogo sin que
-       nadie lo pida; para eso están los lotes. */
-    const costoRellenado = num(producto.costo_unitario) === 0 && datos.costo_unitario > 0;
-    if (costoRellenado) cambios.costo_unitario = datos.costo_unitario;
-
-    if (enCamino) {
-      cambios.por_llegar = true;
-      cambios.stock_por_llegar = Math.max(0, Math.round(num(req.body?.stock_por_llegar) || datos.cantidad));
-      const eta = String(req.body?.fecha_llegada_estimada || '').trim();
-      cambios.fecha_llegada_estimada = /^\d{4}-\d{2}-\d{2}$/.test(eta) ? eta : null;
-    }
-
-    if (Object.keys(cambios).length) {
-      const { error: errU } = await db.from('productos').update(cambios).eq('id', id);
-      if (errU) throw errU;
-    }
-
-    res.status(201).json({
-      ingreso,
-      lote,
-      stock_nuevo: stockNuevo,
-      stock_sumado: sumarStock,
-      en_camino: enCamino,
-      costo_rellenado: costoRellenado ? datos.costo_unitario : null
+    const resultado = await registrarCompraDeProducto(producto, datos, {
+      enCamino: req.body?.en_camino === true,
+      sumarStock: req.body?.sumar_stock !== false,
+      stockPorLlegar: req.body?.stock_por_llegar,
+      fechaLlegada: req.body?.fecha_llegada_estimada,
+      precioVenta,
+      usuario: req.usuario?.usuario || req.usuario?.rol || null
     });
+    res.status(201).json(resultado);
   } catch (error) {
     return enviarErrorBD(res, error, 'POST /api/productos/:id/compras');
   }
@@ -3556,8 +3623,9 @@ app.delete('/api/ingresos/:id', auth(true), async (req, res) => {
    nunca se va a inventar.
 
    NO todo aumento de stock es una compra. Esto se llama SOLO desde:
-     · PUT /api/productos/:id  cuando el stock sube  → 'reposicion'
      · POST /api/productos     si nace con stock     → 'alta'
+       (la ficha ya no manda stock, v118: queda para la importación y
+       Tiendanube. 'reposicion' era el PUT, que ya no cambia el stock.)
      · POST /api/productos/:id/lotes (capa PEPS)     → 'lote'
    Y a propósito NO desde: anular una venta (devuelve stock), corregir
    las líneas de una venta (es un ajuste) ni la importación por CSV (100
@@ -4261,9 +4329,9 @@ app.put('/api/productos/:id', auth(true), async (req, res) => {
   // Oferta web (sql/71): lo que el body no traiga se completa con lo guardado.
   if (producto.precio_oferta_web !== undefined) {
     const { data: actualOferta } = await db.from('productos')
-      .select('precio_web, precio_unitario, precio_a_consultar, oferta_desde, oferta_hasta')
+      .select('precio_web, precio_unitario, precio_a_consultar, precio_oferta_web, oferta_desde, oferta_hasta')
       .eq('id', req.params.id).maybeSingle();
-    const errOferta = validarOfertaWeb(producto, actualOferta || {});
+    const errOferta = validarOfertaWeb(producto, actualOferta || {}, { terminadaSinTocarPasa: true });
     if (errOferta) return enviarError(res, 400, errOferta);
   }
 
@@ -4279,26 +4347,20 @@ app.put('/api/productos/:id', auth(true), async (req, res) => {
     return enviarErrorBD(res, e, 'PUT /api/productos/:id (mayorista)');
   }
 
-  /* Se lee el stock ANTERIOR antes de escribir: es la única forma de
-     saber si esta edición fue una reposición (sql/57). Una consulta más
-     por edición de producto, que es una operación poco frecuente. */
-  const { data: antes } = await db.from('productos')
-    .select('stock, stock_ilimitado').eq('id', req.params.id).maybeSingle();
+  /* EL STOCK NO SE CAMBIA DESDE LA FICHA (v118, sql/84).
+     ------------------------------------------------------------
+     El formulario mandaba siempre el stock que tenía a la vista al abrirlo.
+     Dos problemas: una venta hecha mientras la ficha estaba abierta se
+     "deshacía" al guardar (el stock volvía al número viejo), y cualquier
+     edición podía cambiar el inventario sin dejar rastro de por qué.
+     Ahora el stock sube con una compra (POST /api/productos/:id/compras) y
+     se corrige solo con POST /api/productos/:id/ajuste-stock, que pide la
+     clave del dueño y pregunta el motivo. Acá se ignora lo que venga. */
+  delete producto.stock;
+  delete producto.stock_actualizado_en;
 
   const { data, error } = await db.from('productos').update(producto).eq('id', req.params.id).select().single();
   if (error) return enviarErrorBD(res, error);
-
-  /* El stock subió = repuso. OJO: esto NO se dispara al anular una venta
-     ni al corregir sus líneas — esos caminos actualizan el stock por su
-     cuenta y no pasan por acá, que es justamente lo que se quiere. */
-  const subio = num(data?.stock) - num(antes?.stock);
-  if (antes && !data?.stock_ilimitado && subio > 0) {
-    await crearBorradorIngreso({
-      productoId: data.id, cantidad: subio, costoUnitario: data.costo_unitario,
-      origen: 'reposicion', stockAntes: num(antes.stock), stockDespues: num(data.stock),
-      usuario: req.usuario?.usuario || req.usuario?.rol
-    });
-  }
   res.json(data);
 });
 
@@ -12022,6 +12084,68 @@ app.get('/api/mermas', auth(true), async (req, res) => {
   res.json(data || []);
 });
 
+/* Da de baja unidades como merma: descuenta el stock, anota el gasto de
+   pérdida y deja el registro. Lo usan POST /api/mermas y la corrección de
+   stock (v118). `item` es la fila ya leída del producto o repuesto.
+   Con costo por lotes (PEPS) la pérdida se valoriza con las capas que
+   realmente salen (fifo_consumir): antes la merma bajaba el stock sin tocar
+   las capas, y el producto quedaba con más unidades en capas que en stock. */
+async function registrarMerma({ tipo, item, cantidad, observacion }) {
+  const esProducto = tipo === 'PRODUCTO';
+  const tabla = esProducto ? 'productos' : 'repuestos';
+  const nombre = esProducto ? item.nombre : `${item.area} · ${item.categoria} · ${item.modelo}`;
+
+  // Ambas tablas guardan el costo en 'costo_unitario'
+  let costoUnitario = num(item.costo_unitario);
+  let costoTotal = costoUnitario * cantidad;
+  if (esProducto && item.usa_lotes) {
+    const { data: capas, error: errCapas } = await db.rpc('fifo_consumir', { p_producto_id: item.id, p_cantidad: cantidad });
+    if (errCapas) throw new Error(errCapas.message);
+    costoTotal = (capas || []).reduce((a, c) => a + num(c.cantidad) * num(c.costo_unitario), 0);
+    costoUnitario = cantidad > 0 ? costoTotal / cantidad : costoUnitario;
+  }
+
+  // 1) Se descuenta el stock
+  const stockRestante = num(item.stock) - cantidad;
+  const { error: errStock } = await db.from(tabla)
+    .update({ stock: stockRestante, stock_actualizado_en: new Date().toISOString() })
+    .eq('id', item.id);
+  if (errStock) throw new Error(errStock.message);
+
+  // 2) Gasto automático. Se asegura que la clasificación exista, por si
+  //    el script 08 no se ha ejecutado o alguien la desactivó.
+  await db.from('compra_clasificaciones')
+    .upsert([{ nombre: CLASIFICACION_MERMA, descripcion: 'Stock dado de baja por daño, robo o vencimiento', activo: true }],
+            { onConflict: 'nombre', ignoreDuplicates: true });
+
+  const detalle = `Merma de ${cantidad} × ${nombre} — ${observacion}`;
+  const { data: gasto, error: errGasto } = await db.from('compras').insert([{
+    fecha: new Date().toISOString(),
+    proveedor: 'Ajuste interno de inventario',
+    clasificacion: CLASIFICACION_MERMA,
+    costo_total: costoTotal,
+    descripcion: detalle,
+    origen: 'MERMA'
+  }]).select().single();
+  if (errGasto) throw new Error(errGasto.message);
+
+  // 3) Registro de la merma
+  const { data: merma, error: errMerma } = await db.from('mermas').insert([{
+    tipo,
+    producto_id: esProducto ? item.id : null,
+    repuesto_id: esProducto ? null : item.id,
+    nombre,
+    cantidad,
+    costo_unitario: costoUnitario,
+    costo_total: costoTotal,
+    observacion,
+    compra_id: gasto.id
+  }]).select().single();
+  if (errMerma) throw new Error(errMerma.message);
+
+  return { merma, gasto, nombre, costo_unitario: costoUnitario, costo_total: costoTotal, stock_restante: stockRestante };
+}
+
 app.post('/api/mermas', auth(true), async (req, res) => {
   const tipo = String(req.body?.tipo || '').trim().toUpperCase();
   const cantidad = num(req.body?.cantidad);
@@ -12052,54 +12176,157 @@ app.post('/api/mermas', auth(true), async (req, res) => {
       return enviarError(res, 400, `No hay stock suficiente: solo quedan ${item.stock} unidad(es) de "${nombre}".`);
     }
 
-    // Ambas tablas guardan el costo en 'costo_unitario'
-    const costoUnitario = num(item.costo_unitario);
-    const costoTotal = costoUnitario * cantidad;
-
-    // 1) Se descuenta el stock
-    const { error: errStock } = await db.from(tabla)
-      .update({ stock: num(item.stock) - cantidad, stock_actualizado_en: new Date().toISOString() })
-      .eq('id', itemId);
-    if (errStock) throw new Error(errStock.message);
-
-    // 2) Gasto automático. Se asegura que la clasificación exista, por si
-    //    el script 08 no se ha ejecutado o alguien la desactivó.
-    await db.from('compra_clasificaciones')
-      .upsert([{ nombre: CLASIFICACION_MERMA, descripcion: 'Stock dado de baja por daño, robo o vencimiento', activo: true }],
-              { onConflict: 'nombre', ignoreDuplicates: true });
-
-    const detalle = `Merma de ${cantidad} × ${nombre} — ${observacion}`;
-    const { data: gasto, error: errGasto } = await db.from('compras').insert([{
-      fecha: new Date().toISOString(),
-      proveedor: 'Ajuste interno de inventario',
-      clasificacion: CLASIFICACION_MERMA,
-      costo_total: costoTotal,
-      descripcion: detalle,
-      origen: 'MERMA'
-    }]).select().single();
-    if (errGasto) throw new Error(errGasto.message);
-
-    // 3) Registro de la merma
-    const { data: merma, error: errMerma } = await db.from('mermas').insert([{
-      tipo,
-      producto_id: esProducto ? itemId : null,
-      repuesto_id: esProducto ? null : itemId,
-      nombre,
-      cantidad,
-      costo_unitario: costoUnitario,
-      costo_total: costoTotal,
-      observacion,
-      compra_id: gasto.id
-    }]).select().single();
-    if (errMerma) throw new Error(errMerma.message);
+    const { merma, gasto, stock_restante } = await registrarMerma({ tipo, item, cantidad, observacion });
 
     res.status(201).json({
       ...merma,
-      stock_restante: num(item.stock) - cantidad,
+      stock_restante,
       gasto_registrado: { id: gasto.id, clasificacion: gasto.clasificacion, costo_total: gasto.costo_total }
     });
   } catch (err) {
     enviarError(res, 500, err.message || 'No se pudo registrar la merma');
+  }
+});
+
+/* ============================================================
+   CORRECCIÓN DE STOCK CON CLAVE DEL DUEÑO (v118, sql/84)
+   ------------------------------------------------------------
+   Pedido del dueño (03-10-2026): cambiar el stock actual pide permiso y
+   pregunta por qué. Es la ÚNICA forma de corregir el número a mano: la
+   ficha del producto ya no lo cambia (ver PUT /api/productos/:id).
+
+     Hay MENOS de lo que dice el sistema:
+       danado   → merma: pérdida al costo en Finanzas
+       perdido  → merma: pérdida al costo en Finanzas
+       conteo   → solo corrige el número
+     Hay MÁS:
+       compra   → queda como compra (historial, capa PEPS si aplica); el
+                  gasto en Finanzas se anota aparte, con su factura y medio
+                  de pago, desde el formulario de Gastos
+       conteo   → solo corrige el número
+
+   `stock_visto` es el stock que tenía a la vista quien corrige: si mientras
+   tanto se vendió una unidad, se rechaza en vez de pisar esa venta.
+   Cada corrección queda en ajustes_stock. exigirPinAdmin: la clave se
+   valida en el servidor, con el mismo freno de intentos que el login.
+   ============================================================ */
+const MOTIVOS_AJUSTE_BAJA = ['danado', 'perdido', 'conteo'];
+const MOTIVOS_AJUSTE_ALZA = ['compra', 'conteo'];
+const TEXTO_MOTIVO_AJUSTE = { danado: 'Se dañó', perdido: 'Se perdió o lo robaron', conteo: 'Estaba mal contado', compra: 'Compra' };
+
+app.get('/api/productos/:id/ajustes-stock', auth(true), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return enviarError(res, 400, 'Producto inválido');
+  const { data, error } = await db.from('ajustes_stock')
+    .select('*').eq('producto_id', id).order('creado_en', { ascending: false }).limit(30);
+  if (error) return enviarErrorBD(res, error, 'ajustes de stock');
+  res.json(data || []);
+});
+
+app.post('/api/productos/:id/ajuste-stock', auth(true), exigirPinAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return enviarError(res, 400, 'Producto inválido');
+
+  const stockNuevo = Number(req.body?.stock_nuevo);
+  if (req.body?.stock_nuevo === '' || req.body?.stock_nuevo == null || !Number.isInteger(stockNuevo) || stockNuevo < 0 || stockNuevo > 1000000) {
+    return enviarError(res, 400, 'Indica cuántas unidades hay de verdad (un número entero, 0 o más)');
+  }
+  const motivo = String(req.body?.motivo || '').trim().toLowerCase();
+  const nota = String(req.body?.nota || '').trim();
+  if (nota.length > 300) return enviarError(res, 400, 'La nota no puede pasar de 300 caracteres');
+  const usuario = req.usuario?.usuario || req.usuario?.rol || 'admin';
+
+  try {
+    const { data: producto, error: errP } = await db.from('productos')
+      .select(CAMPOS_PRODUCTO_COMPRA).eq('id', id).maybeSingle();
+    if (errP) throw errP;
+    if (!producto) return enviarError(res, 404, 'Producto no encontrado');
+    if (producto.stock_ilimitado) {
+      return enviarError(res, 400, `"${producto.nombre}" está marcado como stock ilimitado: no tiene inventario que corregir.`);
+    }
+
+    const stockActual = num(producto.stock);
+    const visto = req.body?.stock_visto;
+    if (visto !== undefined && visto !== null && String(visto) !== '' && num(visto) !== stockActual) {
+      return enviarError(res, 409,
+        `El stock cambió mientras lo corregías: ahora el sistema dice ${stockActual}. Revisa y vuelve a intentarlo.`,
+        { stock_actual: stockActual });
+    }
+    const diferencia = stockNuevo - stockActual;
+    if (diferencia === 0) return enviarError(res, 400, 'El stock ya es ese: no hay nada que corregir');
+
+    const registro = {
+      producto_id: id, stock_antes: stockActual, stock_despues: stockNuevo,
+      motivo, nota: nota || null, creado_por: usuario
+    };
+    const respuesta = { stock_antes: stockActual, stock_nuevo: stockNuevo, diferencia, motivo };
+    const ahora = new Date().toISOString();
+
+    if (diferencia < 0) {
+      const unidades = -diferencia;
+      if (!MOTIVOS_AJUSTE_BAJA.includes(motivo)) {
+        return enviarError(res, 400, 'Indica por qué hay menos: se dañó, se perdió o estaba mal contado');
+      }
+      if (motivo === 'conteo') {
+        // Con PEPS las capas tienen que seguir sumando lo mismo que el stock.
+        if (producto.usa_lotes) {
+          const { error: errCapas } = await db.rpc('fifo_consumir', { p_producto_id: id, p_cantidad: unidades });
+          if (errCapas) throw errCapas;
+        }
+        const { error: errU } = await db.from('productos')
+          .update({ stock: stockNuevo, stock_actualizado_en: ahora }).eq('id', id);
+        if (errU) throw errU;
+      } else {
+        const observacion = `${TEXTO_MOTIVO_AJUSTE[motivo]}${nota ? ' — ' + nota : ''} (corrección de stock)`;
+        const r = await registrarMerma({ tipo: 'PRODUCTO', item: producto, cantidad: unidades, observacion });
+        registro.merma_id = r.merma.id;
+        registro.costo_unitario = r.costo_unitario;
+        registro.costo_total = r.costo_total;
+        respuesta.perdida = r.costo_total;
+      }
+    } else {
+      if (!MOTIVOS_AJUSTE_ALZA.includes(motivo)) {
+        return enviarError(res, 400, 'Indica por qué hay más: las compraste o estaba mal contado');
+      }
+      if (motivo === 'compra') {
+        const { datos, error: errVal } = sanearIngreso({
+          fecha_compra: req.body?.fecha_compra, cantidad: diferencia,
+          costo_unitario: req.body?.costo_unitario, proveedor: req.body?.proveedor,
+          nota: nota || 'Cargada desde una corrección de stock'
+        });
+        if (errVal) return enviarError(res, 400, errVal);
+        const r = await registrarCompraDeProducto(producto, datos, { usuario });
+        registro.ingreso_id = r.ingreso.id;
+        registro.costo_unitario = datos.costo_unitario;
+        registro.costo_total = datos.costo_unitario * diferencia;
+        respuesta.compra = { id: r.ingreso.id, costo_unitario: datos.costo_unitario, costo_total: registro.costo_total, proveedor: datos.proveedor };
+        respuesta.costo_rellenado = r.costo_rellenado;
+        respuesta.lote = !!r.lote;
+      } else {
+        // Con PEPS, las unidades que aparecen necesitan una capa: se valorizan al costo de la ficha.
+        if (producto.usa_lotes) {
+          const { error: errL } = await db.from('producto_lotes').insert([{
+            producto_id: id, cantidad: diferencia, cantidad_inicial: diferencia,
+            costo_unitario: num(producto.costo_unitario), referencia: 'Corrección de stock (estaba mal contado)'
+          }]);
+          if (errL) throw errL;
+        }
+        const { error: errU } = await db.from('productos')
+          .update({ stock: stockNuevo, stock_actualizado_en: ahora }).eq('id', id);
+        if (errU) throw errU;
+      }
+    }
+
+    /* El registro va al final: si fallara, el stock ya quedó corregido y
+       repetir la corrección lo movería dos veces. Se avisa y no se rechaza. */
+    const { error: errReg } = await db.from('ajustes_stock').insert([registro]);
+    if (errReg) {
+      console.error('[STOCK] la corrección se aplicó pero no quedó en ajustes_stock:', errReg.message);
+      respuesta.aviso = 'El stock se corrigió, pero no se pudo guardar el registro de la corrección.';
+    }
+    res.json(respuesta);
+  } catch (error) {
+    return enviarErrorBD(res, error, 'POST /api/productos/:id/ajuste-stock');
   }
 });
 

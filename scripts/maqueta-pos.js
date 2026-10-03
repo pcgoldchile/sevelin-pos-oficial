@@ -682,6 +682,76 @@ app.post('/api/productos/precio-sugerido', (req, res) => {
     mayorista_motivo: mayorista ? null : `Sobre $${base.toLocaleString('es-CL')} no cabe una rebaja real: el piso mayorista (20% de margen) es $${piso.toLocaleString('es-CL')}` });
 });
 
+// v118: crear y editar productos, compras y corrección de stock (sql/84), en memoria.
+// La clave de prueba para corregir el stock es cualquiera menos "0000" (así se prueba el rechazo).
+const ingresosMaqueta = {};   // producto_id → compras
+const ajustesMaqueta = {};    // producto_id → correcciones de stock
+let sigIngreso = 1;
+const productoMaqueta = (id) => productos.find(p => p.id === Number(id));
+app.post('/api/productos', (req, res) => {
+  const p = { id: Math.max(...productos.map(x => x.id)) + 1, archivado: false, stock_ilimitado: false, es_servicio: false, imagen_urls: [],
+    created_at: new Date().toISOString(), ...req.body, stock: Number(req.body.stock) || 0 };
+  productos.push(p);
+  res.status(201).json(p);
+});
+app.put('/api/productos/:id', (req, res) => {
+  const p = productoMaqueta(req.params.id);
+  if (!p) return res.status(404).json({ error: 'Producto no encontrado' });
+  const { stock, ...resto } = req.body;   // como el servidor real: la ficha no cambia el stock
+  Object.assign(p, resto);
+  res.json(p);
+});
+app.get('/api/productos/:id/ingresos', (req, res) => res.json(ingresosMaqueta[req.params.id] || []));
+app.post('/api/productos/:id/compras', (req, res) => {
+  const p = productoMaqueta(req.params.id);
+  if (!p) return res.status(404).json({ error: 'Producto no encontrado' });
+  const b = req.body, cantidad = Number(b.cantidad) || 0, costo = Math.round(Number(b.costo_unitario) || 0);
+  if (cantidad <= 0) return res.status(400).json({ error: 'La cantidad comprada debe ser mayor a 0' });
+  const precio = Number(b.precio_venta) || 0;
+  if (precio && p.precio_mayorista && precio <= p.precio_mayorista) return res.status(400).json({ error: 'El precio mayorista tiene que ser menor que el precio normal' });
+  const ingreso = { id: sigIngreso++, producto_id: p.id, fecha_compra: b.fecha_compra, cantidad, costo_unitario: costo, proveedor: b.proveedor || null,
+    devolucion_hasta: b.devolucion_hasta || null, referencia: b.referencia || null, estado: 'confirmado', en_camino: !!b.en_camino };
+  (ingresosMaqueta[p.id] = ingresosMaqueta[p.id] || []).unshift(ingreso);
+  const sumar = !b.en_camino && b.sumar_stock !== false && !p.stock_ilimitado;
+  if (sumar) p.stock += cantidad;
+  const costoRellenado = !p.costo_unitario && costo > 0 ? costo : null;
+  if (costoRellenado) p.costo_unitario = costo;
+  const precioNuevo = precio && precio !== p.precio_unitario ? precio : null;
+  if (precioNuevo) p.precio_unitario = precioNuevo;
+  res.status(201).json({ ingreso, lote: null, stock_nuevo: p.stock, stock_sumado: sumar, en_camino: !!b.en_camino, costo_rellenado: costoRellenado, precio_nuevo: precioNuevo });
+});
+app.get('/api/productos/:id/ajustes-stock', (req, res) => res.json(ajustesMaqueta[req.params.id] || []));
+app.post('/api/productos/:id/ajuste-stock', (req, res) => {
+  const p = productoMaqueta(req.params.id);
+  if (!p) return res.status(404).json({ error: 'Producto no encontrado' });
+  const b = req.body;
+  if (!b.pin) return res.status(403).json({ error: 'Esta acción requiere confirmar el PIN de administrador' });
+  if (b.pin === '0000') return res.status(403).json({ error: 'PIN de administrador incorrecto' });
+  const nuevo = Number(b.stock_nuevo);
+  if (b.stock_visto != null && Number(b.stock_visto) !== p.stock) return res.status(409).json({ error: `El stock cambió mientras lo corregías: ahora el sistema dice ${p.stock}. Revisa y vuelve a intentarlo.`, stock_actual: p.stock });
+  const dif = nuevo - p.stock;
+  const r = { stock_antes: p.stock, stock_nuevo: nuevo, diferencia: dif, motivo: b.motivo };
+  const registro = { id: Date.now(), producto_id: p.id, stock_antes: p.stock, stock_despues: nuevo, motivo: b.motivo, nota: b.nota || null,
+    costo_total: null, merma_id: null, creado_por: 'admin', creado_en: new Date().toISOString() };
+  if (dif < 0 && b.motivo !== 'conteo') { r.perdida = -dif * (p.costo_unitario || 0); registro.costo_total = r.perdida; registro.merma_id = 1; }
+  if (dif > 0 && b.motivo === 'compra') {
+    const costo = Math.round(Number(b.costo_unitario) || 0);
+    const ingreso = { id: sigIngreso++, producto_id: p.id, fecha_compra: b.fecha_compra, cantidad: dif, costo_unitario: costo, proveedor: null, devolucion_hasta: null, estado: 'confirmado', en_camino: false };
+    (ingresosMaqueta[p.id] = ingresosMaqueta[p.id] || []).unshift(ingreso);
+    r.compra = { id: ingreso.id, costo_unitario: costo, costo_total: costo * dif, proveedor: null };
+  }
+  p.stock = nuevo;
+  (ajustesMaqueta[p.id] = ajustesMaqueta[p.id] || []).unshift(registro);
+  res.json(r);
+});
+const gastosMaqueta = [];
+app.get('/api/compras/clasificaciones', (_req, res) => res.json([
+  { id: 1, nombre: 'Gastos Operativos (Servicios, Arriendo, Sueldos, etc.)', activo: true },
+  { id: 2, nombre: 'Mercadería / Productos para Reventa', activo: true },
+]));
+app.post('/api/compras', (req, res) => { const g = { id: gastosMaqueta.length + 1, ...req.body }; gastosMaqueta.push(g); res.status(201).json(g); });
+app.get('/api/compras', (_req, res) => res.json(gastosMaqueta));
+
 app.use('/api', (req, res) => {
   const clave = `${req.method} ${req.path}`;
   if (!sinManejar.has(clave)) { sinManejar.add(clave); console.log('[maqueta] sin datos:', clave); }

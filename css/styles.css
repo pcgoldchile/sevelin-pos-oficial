@@ -4871,3 +4871,28 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
 .basico-descripcion { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); border-radius: var(--radius-sm); }
 .basico-descripcion-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
 .basico-descripcion-head h3 { font-size: 15px; margin: 0; }
+
+/* ============================================================
+   PRECIO, STOCK Y COMPRAS (v118) — una sola tarjeta en la ficha
+   ============================================================ */
+.precio-bloque { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+.precio-bloque-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.precio-bloque-head h3 { font-size: 15px; margin: 0; }
+.stock-actual-fila { display: flex; gap: 8px; align-items: stretch; }
+.stock-actual-fila input { flex: 1; min-width: 0; }
+.stock-actual-fila input[readonly] { background: var(--surface-soft); color: var(--text-100); font-weight: 700; cursor: default; }
+.stock-actual-fila .btn { white-space: nowrap; }
+.compra-mas { margin-top: 10px; border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; }
+.compra-mas > summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-300); }
+.compra-mas[open] > summary { color: var(--text-100); margin-bottom: 4px; }
+.compra-aviso-gasto { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--gold); border-radius: 10px; color: var(--text-100); }
+/* Corregir stock: los motivos como botones grandes, uno por línea */
+.ajuste-motivos { display: flex; flex-direction: column; gap: 8px; }
+.ajuste-motivo { text-align: left; padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-800); color: var(--text-100); cursor: pointer; font-size: 13px; }
+.ajuste-motivo strong { display: block; font-size: 14px; }
+.ajuste-motivo small { color: var(--text-muted); }
+.ajuste-motivo:hover { border-color: var(--border-strong); }
+.ajuste-motivo.activo { border-color: var(--green); background: rgba(34,197,94,.10); }
+.ajuste-fila { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; padding: 6px 2px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.ajuste-fila:last-child { border-bottom: none; }
+.ajuste-fila small { color: var(--text-muted); }

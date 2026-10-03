@@ -37,7 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (b.dataset.ofertaAccion === 'cancelar-fecha') { ofertaPidiendoFecha = null; pintarOfertas(); }
     else if (b.dataset.ofertaAccion === 'confirmar-fecha') {
       const valor = document.getElementById('ofertaHastaNueva')?.value;
-      if (!valor) return showToast('Elige hasta cuándo dura la oferta', 'error');
+      if (!valor) return showToast('Elige hasta cuándo dura la oferta', 'err');
       cambiarOferta(id, { encender: true, hasta: new Date(valor).toISOString() });
     }
   });
@@ -155,10 +155,10 @@ async function cambiarOferta(id, datos) {
     ofertaPidiendoFecha = null;
     showToast(!datos.encender ? 'Oferta apagada: la tienda vuelve al precio normal'
       : nueva.estado === 'programada' ? `Encendida: empieza ${fechaOfertaLegible(nueva.oferta_desde)}`
-      : `✔ Oferta a la vista hasta ${fechaOfertaLegible(nueva.oferta_hasta)}`, 'success');
+      : `✔ Oferta a la vista hasta ${fechaOfertaLegible(nueva.oferta_hasta)}`, 'ok');
   } catch (err) {
     if (err.necesita_fecha) ofertaPidiendoFecha = id;
-    showToast(err.message || 'No se pudo cambiar la oferta', 'error');
+    showToast(err.message || 'No se pudo cambiar la oferta', 'err');
   }
   await actualizarAvisoOfertas();
   pintarOfertas();
@@ -170,9 +170,9 @@ async function cambiarTodasLasOfertas(encender) {
     const aviso = encender
       ? `${r.cambiadas} oferta(s) encendida(s)` + (r.sin_fecha ? ` · ${r.sin_fecha} ya terminaron: enciéndelas una por una con fecha nueva` : '')
       : `${r.cambiadas} oferta(s) apagada(s): la tienda vuelve al precio normal`;
-    showToast(aviso, r.sin_fecha ? 'info' : 'success');
+    showToast(aviso, r.sin_fecha ? '' : 'ok');
   } catch (err) {
-    showToast(err.message || 'No se pudieron cambiar las ofertas', 'error');
+    showToast(err.message || 'No se pudieron cambiar las ofertas', 'err');
   }
   await actualizarAvisoOfertas();
   pintarOfertas();

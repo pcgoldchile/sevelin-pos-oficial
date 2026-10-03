@@ -2388,16 +2388,24 @@ async function guardarProducto() {
   const payload = construirPayloadProducto();
   if (!payload) { showToast('El nombre del producto es obligatorio', 'err'); return; }
 
+  /* v118: el stock ya no se escribe en la ficha, se carga con una compra. Si
+     hay una escrita y sin registrar, se registra junto con el producto (el
+     botón dice "Guardar y registrar compra"). Se valida ANTES de guardar. */
+  const compra = compraDelFormulario();
+  if (compra?.error) { showToast(compra.error, 'err'); return; }
+
   if (elBtnGuardarProducto) elBtnGuardarProducto.disabled = true;
 
   try {
     let mensaje;
+    let idGuardado = editingProductId;
     if (editingProductId) {
       await API.productos.actualizar(editingProductId, payload);
       mensaje = 'Producto actualizado';
     } else {
       const creado = await API.productos.crear(payload);
       mensaje = 'Producto creado';
+      idGuardado = creado?.id || null;
 
       // Recién con el id real se pueden subir las fotos elegidas antes de
       // guardar (ver manejarSeleccionFotoProducto) — se suben en el mismo
@@ -2417,6 +2425,27 @@ async function guardarProducto() {
         if (subidas < totalFotos) {
           mensaje += ` (${subidas}/${totalFotos} fotos subidas — reintenta el resto editando el producto)`;
         }
+      }
+    }
+
+    if (compra && idGuardado) {
+      try {
+        const r = await API.productos.crearCompra(idGuardado, compra.datos);
+        mensaje += r?.stock_sumado ? ` · compra registrada (stock ${num(r.stock_nuevo)})` : ' · compra registrada';
+      } catch (errCompra) {
+        /* El producto quedó guardado y la compra no. La ficha se queda
+           abierta, ya como producto existente, para reintentar la compra
+           con "Registrar compra" sin crear el producto dos veces. */
+        if (!editingProductId) {
+          editingProductId = idGuardado;
+          if (elProdEditId) elProdEditId.value = idGuardado;
+          if (elProductoFormTitle) elProductoFormTitle.textContent = 'Editar Producto';
+          if (typeof actualizarBotonCorregirStock === 'function') actualizarBotonCorregirStock();
+        }
+        productosBorradoresCache = null;
+        cargarProductos(true);
+        showToast(`El producto se guardó, pero la compra no se registró: ${errCompra.message || 'error'}`, 'err');
+        return;
       }
     }
 
@@ -2844,7 +2873,8 @@ async function crearBorradorProducto() {
 
   editingProductId = creado.id;
   if (elProdEditId) elProdEditId.value = creado.id;
-  cargarIngresosProducto();   // ya tiene id: puede recibir compras (sql/56)
+  // Ya tiene id: puede recibir compras (sql/56). Sin borrar la compra que esté escrita (v118).
+  cargarIngresosProducto({ conservarFormulario: true });
   if (elProductoFormTitle) elProductoFormTitle.textContent = 'Editar Producto (borrador)';
   // Mismo criterio que abrirModalProducto: exportar/archivar solo tienen
   // sentido sobre un producto que ya existe de verdad — y este, apenas se
@@ -3701,6 +3731,28 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('prodPorLlegar')?.addEventListener('change', alternarIngresoEnCamino);
   document.getElementById('ingCosto')?.addEventListener('input', proponerPrecioDeVenta);
+  /* v118: "Precio de venta" de la compra y "Precio Unit." son el mismo dato
+     escrito en dos lugares: se mantienen iguales para que nunca se contradigan. */
+  document.getElementById('ingPrecioVenta')?.addEventListener('input', (e) => {
+    const elPrecio = document.getElementById('prodPrecio');
+    if (elPrecio && elPrecio.value !== e.target.value) {
+      elPrecio.value = e.target.value;
+      elPrecio.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  });
+  document.getElementById('prodPrecio')?.addEventListener('input', (e) => {
+    const elVenta = document.getElementById('ingPrecioVenta');
+    if (elVenta && elVenta.value !== e.target.value) elVenta.value = e.target.value;
+  });
+  document.getElementById('ingCantidad')?.addEventListener('input', actualizarTextoGuardarProducto);
+  document.getElementById('ingAvisoGasto')?.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-anotar-gasto]');
+    if (b) {
+      abrirGastoPrellenado({ monto: Number(b.dataset.monto), descripcion: b.dataset.descripcion, proveedor: b.dataset.proveedor });
+      return;
+    }
+    if (e.target.closest('[data-cerrar-aviso-gasto]')) document.getElementById('ingAvisoGasto').innerHTML = '';
+  });
   document.getElementById('ingProveedor')?.addEventListener('input', proponerPlazoDevolucion);
   document.getElementById('ingProveedor')?.addEventListener('change', proponerPlazoDevolucion);
   document.getElementById('ingFecha')?.addEventListener('change', proponerPlazoDevolucion);
@@ -3852,21 +3904,32 @@ function diasEntreISO(desde, hasta) {
 
 /* La sección solo tiene sentido con un producto ya guardado: una compra
    necesita a qué producto colgarse. */
-async function cargarIngresosProducto() {
+/* `conservarFormulario` (v118): recarga las listas sin borrar una compra que
+   esté escrita y sin registrar. Lo usan el borrador que se crea solo al
+   agregar la primera foto y la corrección de stock. */
+async function cargarIngresosProducto({ conservarFormulario = false } = {}) {
   const cont = document.getElementById('ingresosLista');
   const card = document.getElementById('cardComprasProducto');
   if (!cont || !card) return;
+  const limpiar = () => {
+    if (conservarFormulario) return;
+    limpiarFormularioIngreso();
+    // El aviso "¿anotaste el gasto?" es de la compra recién hecha: no pasa a otro producto.
+    const aviso = document.getElementById('ingAvisoGasto');
+    if (aviso) aviso.innerHTML = '';
+  };
 
   /* Al crear un producto la tarjeta se ve, pero sin historial: el formulario
      avisa que hay que guardar primero. Antes se escondía entera, y el dueño
      no llegaba a enterarse de que existía. */
+  if (typeof cargarAjustesStockProducto === 'function') cargarAjustesStockProducto();   // v118 (sql/84)
   if (!editingProductId) {
     ingresosDelProducto = [];
-    limpiarFormularioIngreso();
-    cont.innerHTML = '<p class="modal-hint">Guarda el producto y después registra sus compras acá.</p>';
+    limpiar();
+    cont.innerHTML = '<p class="modal-hint">Producto nuevo: llena la compra de arriba y aprieta <strong>Guardar Producto</strong>. Se registran juntos y el stock sube solo.</p>';
     return;
   }
-  limpiarFormularioIngreso();
+  limpiar();
   cont.innerHTML = '<p class="modal-hint">Cargando compras…</p>';
   try {
     ingresosDelProducto = await API.productos.listarIngresos(editingProductId) || [];
@@ -3883,6 +3946,8 @@ function alternarIngresoEnCamino() {
   const enCamino = !!document.getElementById('prodPorLlegar')?.checked;
   const bloque = document.getElementById('bloqueIngPorLlegar');
   if (bloque) bloque.style.display = enCamino ? 'block' : 'none';
+  // Vive dentro de "Más datos de la compra" (v118): marcada, tiene que verse.
+  if (enCamino) document.getElementById('ingMasDatos')?.setAttribute('open', '');
 
   const sumar = document.getElementById('ingSumarStock');
   const item = document.getElementById('itemIngSumarStock');
@@ -3910,6 +3975,7 @@ function limpiarFormularioIngreso() {
   set('ingDevolucion', '');
   set('ingProveedor', '');
   set('ingReferencia', '');
+  set('ingPrecioVenta', document.getElementById('prodPrecio')?.value || '');
   set('ingFacturaEsperada', '');
   const factura = document.getElementById('ingFacturaPendiente');
   if (factura) factura.checked = false;
@@ -3918,6 +3984,7 @@ function limpiarFormularioIngreso() {
   if (sumar) sumar.checked = true;
   // Y si el producto está marcado como "todavía no llega", manda eso
   alternarIngresoEnCamino();
+  actualizarTextoGuardarProducto();
 }
 
 function pintarIngresosProducto() {
@@ -3974,25 +4041,23 @@ function fechaCorta(iso) {
   return a && m && d ? `${d}-${m}-${a}` : '—';
 }
 
-async function agregarIngresoProducto() {
-  if (!editingProductId) {
-    showToast('Guarda el producto primero, después registra sus compras', 'err');
-    return;
-  }
-  const fecha = (document.getElementById('ingFecha')?.value || '').trim();
+/* Lo escrito en el formulario de compra (v118). Devuelve null si no hay
+   ninguna compra escrita (sin unidades), { error } si está a medias, o
+   { datos } listo para POST /api/productos/:id/compras. Lo usan el botón
+   "Registrar compra" y "Guardar Producto", que registra la compra pendiente. */
+function compraDelFormulario() {
   const cantidad = Number(document.getElementById('ingCantidad')?.value) || 0;
-  if (!fecha) { showToast('Indica la fecha de la compra', 'err'); return; }
-  if (cantidad <= 0) { showToast('Indica cuántas unidades compraste', 'err'); return; }
-
-  const btn = document.getElementById('btnAgregarIngreso');
-  if (btn) btn.disabled = true;
-  try {
-    /* Una sola llamada hace las tres cosas que implica una compra: historial,
-       stock y capa PEPS si el producto la usa (21-09-2026). */
-    const r = await API.productos.crearCompra(editingProductId, {
+  if (cantidad <= 0) return null;
+  const fecha = (document.getElementById('ingFecha')?.value || '').trim();
+  if (!fecha) return { error: 'Indica la fecha de la compra' };
+  const precioVenta = (document.getElementById('ingPrecioVenta')?.value || '').trim();
+  return {
+    datos: {
       fecha_compra: fecha,
       cantidad,
       costo_unitario: Number(document.getElementById('ingCosto')?.value) || 0,
+      // v118: si es distinto del precio actual, el servidor actualiza el producto
+      ...(precioVenta && Number(precioVenta) > 0 ? { precio_venta: Number(precioVenta) } : {}),
       devolucion_hasta: (document.getElementById('ingDevolucion')?.value || '').trim() || null,
       proveedor: (document.getElementById('ingProveedor')?.value || '').trim() || null,
       referencia: (document.getElementById('ingReferencia')?.value || '').trim() || null,
@@ -4003,34 +4068,83 @@ async function agregarIngresoProducto() {
       en_camino: !!document.getElementById('prodPorLlegar')?.checked,
       stock_por_llegar: Number(document.getElementById('prodStockPorLlegar')?.value) || 0,
       fecha_llegada_estimada: (document.getElementById('prodFechaLlegada')?.value || '').trim() || null
-    });
-
-    const partes = ['Compra registrada'];
-    if (r?.en_camino) partes.push('queda en camino, sin sumar stock');
-    if (r?.stock_sumado) partes.push(`stock: ${num(r.stock_nuevo)}`);
-    if (r?.lote) partes.push('capa PEPS creada');
-    showToast(partes.join(' · '), 'ok');
-    // El costo se rellenó solo: conviene decirlo, no dejarlo pasar callado
-    if (r?.costo_rellenado) {
-      setTimeout(() => showToast(`Le cargué el costo al producto: ${fmtCLP(r.costo_rellenado)} (estaba en $0)`, 'ok'), 1800);
     }
+  };
+}
 
-    ingresosDelProducto = await API.productos.listarIngresos(editingProductId) || [];
-    pintarIngresosProducto();
-    limpiarFormularioIngreso();
+/* "Guardar Producto" también registra la compra que esté escrita: el botón
+   lo dice, para que no sea una sorpresa. */
+function actualizarTextoGuardarProducto() {
+  if (!elBtnGuardarProducto) return;
+  const hayCompra = (Number(document.getElementById('ingCantidad')?.value) || 0) > 0;
+  elBtnGuardarProducto.textContent = hayCompra ? 'Guardar y registrar compra' : 'Guardar Producto';
+}
 
-    // El stock y el costo del formulario tienen que reflejar lo que quedó
-    if (r?.stock_sumado) {
-      const elStock = document.getElementById('prodStock');
-      if (elStock) elStock.value = num(r.stock_nuevo);
-    }
-    if (r?.costo_rellenado) {
-      const elCosto = document.getElementById('prodCosto');
-      if (elCosto) elCosto.value = num(r.costo_rellenado);
-    }
-    if (r?.lote && typeof cargarLotesDelProducto === 'function') await cargarLotesDelProducto(editingProductId);
-    if (typeof cargarProductos === 'function') cargarProductos(true);
-    if (typeof revisarCompletitudProducto === 'function') revisarCompletitudProducto();
+/* Una compra de mercadería no anota el gasto en Finanzas: el gasto lleva
+   factura, IVA y medio de pago. Se ofrece abrir ese formulario ya llenado. */
+function ofrecerGastoDeCompra({ unidades, costoUnitario, proveedor }) {
+  const aviso = document.getElementById('ingAvisoGasto');
+  if (!aviso) return;
+  const total = Math.round(num(unidades) * num(costoUnitario));
+  if (!(total > 0)) { aviso.innerHTML = ''; return; }
+  const nombre = (elProdNombre?.value || '').trim();
+  aviso.innerHTML = `<span class="compra-aviso-gasto">
+    💸 Esta compra son <strong>${fmtCLP(total)}</strong> (${num(unidades)} × ${fmtCLP(costoUnitario)}). ¿Ya anotaste el gasto en Finanzas?
+    <button type="button" class="btn btn-primary btn-sm" data-anotar-gasto="1" data-monto="${total}"
+            data-descripcion="${escHtml(`Compra de ${num(unidades)} × ${nombre}`)}" data-proveedor="${escHtml(proveedor || '')}">Anotar el gasto</button>
+    <button type="button" class="btn btn-ghost btn-sm" data-cerrar-aviso-gasto="1">Ya está anotado</button>
+  </span>`;
+}
+
+/* Lo que cambia en pantalla después de una compra registrada. */
+async function reflejarCompraRegistrada(r, datos) {
+  const partes = ['Compra registrada'];
+  if (r?.en_camino) partes.push('queda en camino, sin sumar stock');
+  if (r?.stock_sumado) partes.push(`stock: ${num(r.stock_nuevo)}`);
+  if (r?.precio_nuevo) partes.push(`precio: ${fmtCLP(r.precio_nuevo)}`);
+  if (r?.lote) partes.push('capa PEPS creada');
+  showToast(partes.join(' · '), 'ok');
+  // El costo se rellenó solo: conviene decirlo, no dejarlo pasar callado
+  if (r?.costo_rellenado) {
+    setTimeout(() => showToast(`Le cargué el costo al producto: ${fmtCLP(r.costo_rellenado)} (estaba en $0)`, 'ok'), 1800);
+  }
+
+  ingresosDelProducto = await API.productos.listarIngresos(editingProductId) || [];
+  pintarIngresosProducto();
+
+  // El stock, el costo y el precio del formulario tienen que reflejar lo que quedó
+  if (r?.stock_sumado) {
+    const elStock = document.getElementById('prodStock');
+    if (elStock) { elStock.value = num(r.stock_nuevo); elStock.dispatchEvent(new Event('input', { bubbles: true })); }
+  }
+  if (r?.costo_rellenado) {
+    const elCosto = document.getElementById('prodCosto');
+    if (elCosto) elCosto.value = num(r.costo_rellenado);
+  }
+  limpiarFormularioIngreso();
+  ofrecerGastoDeCompra({ unidades: datos.cantidad, costoUnitario: datos.costo_unitario, proveedor: datos.proveedor });
+
+  if (r?.lote && typeof cargarLotesDelProducto === 'function') await cargarLotesDelProducto(editingProductId);
+  if (typeof cargarProductos === 'function') cargarProductos(true);
+  if (typeof revisarCompletitudProducto === 'function') revisarCompletitudProducto();
+}
+
+async function agregarIngresoProducto() {
+  const compra = compraDelFormulario();
+  if (!compra) { showToast('Indica cuántas unidades compraste', 'err'); return; }
+  if (compra.error) { showToast(compra.error, 'err'); return; }
+  if (!editingProductId) {
+    showToast('Producto nuevo: aprieta "Guardar y registrar compra" y se registran juntos', 'err');
+    return;
+  }
+
+  const btn = document.getElementById('btnAgregarIngreso');
+  if (btn) btn.disabled = true;
+  try {
+    /* Una sola llamada hace todo lo que implica una compra: historial,
+       stock, precio de venta y capa PEPS si el producto la usa. */
+    const r = await API.productos.crearCompra(editingProductId, compra.datos);
+    await reflejarCompraRegistrada(r, compra.datos);
   } catch (err) {
     showToast(err.message || 'No se pudo registrar la compra', 'err');
   } finally {
