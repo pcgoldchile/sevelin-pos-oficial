@@ -1093,6 +1093,9 @@ let margenCarrito = { firma: '', lineas: [], minimo: 15 };
 let margenTemporizador = null;
 let margenPeticion = 0;
 let revisandoMargenParaCobrar = false;
+/* v112: permiso del dueño para cobrar ESTE carrito bajo el precio mínimo
+   (lo entrega POST /api/pos/autorizar-margen). Solo lo usa el trabajador. */
+let autorizacionMargen = null;
 
 // Todo lo que cambia el margen de una línea: producto, cantidad, precio, tipo y descuento
 function firmaMargenCarrito() {
@@ -1184,6 +1187,13 @@ function pedirConfirmacionMargen(bajas) {
   return new Promise((resolve) => {
     document.getElementById('modalMargenBajo')?.remove();
     const admin = esAdmin();
+    // Lo que se autoriza es exactamente este carrito: si cambia, el permiso deja de servir.
+    const d = obtenerDescuentoActual();
+    const carritoAutorizado = {
+      items: cart.map(i => ({ producto_id: i.producto_id, cantidad: i.cantidad, precio_unitario: i.precio_unitario })),
+      descuento_tipo: d.tipo,
+      descuento_valor: d.valor
+    };
     const filas = bajas.map(({ linea, item }) => {
       const detalle = linea.margen_pct !== undefined
         ? `${fmtCLP(linea.precio_real)} c/u${linea.precio_real !== item.precio_unitario ? ' tras el descuento' : ''} · ${textoMargenLinea(linea)} · mínimo ${fmtCLP(linea.precio_minimo)}`
@@ -1198,24 +1208,58 @@ function pedirConfirmacionMargen(bajas) {
         <h2 id="margenBajoTitulo">⚠ Precio bajo el mínimo</h2>
         <p class="modal-hint">${admin
           ? `Con estos precios, ${bajas.length === 1 ? 'esta línea deja' : 'estas líneas dejan'} menos de ${margenCarrito.minimo}% de margen:`
-          : `${bajas.length === 1 ? 'Este producto queda' : 'Estos productos quedan'} bajo el precio mínimo:`}</p>
+          : (bajas.length ? `${bajas.length === 1 ? 'Este producto queda' : 'Estos productos quedan'} bajo el precio mínimo:` : 'En esta venta hay productos bajo el precio mínimo.')}</p>
         <ul class="margen-bajo-lista">${filas}</ul>
-        <p class="modal-hint">Si es una rebaja acordada, puedes cobrar igual. Si no, vuelve y corrige el precio o el descuento.</p>
+        ${admin
+          ? '<p class="modal-hint">Si es una rebaja acordada, puedes cobrar igual. Si no, vuelve y corrige el precio o el descuento.</p>'
+          : `<p class="modal-hint">Para cobrar bajo el precio mínimo se necesita la clave del dueño. Si no, vuelve y corrige el precio o el descuento.</p>
+        <div class="field">
+          <label for="margenBajoClave">🔑 Clave del dueño</label>
+          <input type="password" id="margenBajoClave" inputmode="numeric" autocomplete="off" placeholder="••••">
+        </div>
+        <p class="modal-hint" data-margen-error role="alert" style="display:none; color:var(--red);"></p>`}
         <div class="modal-foot">
           <button type="button" class="btn btn-ghost" data-cerrar-modal>Volver y corregir</button>
-          <button type="button" class="btn btn-primary" data-margen-cobrar>Cobrar igual</button>
+          <button type="button" class="btn btn-primary" data-margen-cobrar>${admin ? 'Cobrar igual' : 'Autorizar y cobrar'}</button>
         </div>
       </div>`;
     document.body.appendChild(cont);
 
     const cerrar = (seguir) => { cont.remove(); resolve(seguir); };
+    const campoClave = cont.querySelector('#margenBajoClave');
+    const elError = cont.querySelector('[data-margen-error]');
+    const btnCobrar = cont.querySelector('[data-margen-cobrar]');
+    const mostrarError = (texto) => { if (elError) { elError.textContent = texto; elError.style.display = texto ? '' : 'none'; } };
+
+    // Trabajador: el servidor comprueba la clave y entrega el permiso para este carrito.
+    const autorizarConClave = async () => {
+      const pin = campoClave.value.trim();
+      if (!pin) { mostrarError('Escribe la clave del dueño.'); campoClave.focus(); return; }
+      btnCobrar.disabled = true;
+      mostrarError('');
+      try {
+        const r = await API.ventas.autorizarMargen({ pin, ...carritoAutorizado });
+        if (!r?.autorizacion) throw new Error('No se pudo obtener el permiso. Intenta de nuevo.');
+        autorizacionMargen = r.autorizacion;
+        cerrar(true);
+      } catch (err) {
+        mostrarError(err.message || 'No se pudo comprobar la clave');
+        campoClave.value = '';
+        campoClave.focus();
+      } finally {
+        btnCobrar.disabled = false;
+      }
+    };
+
     // Esc lo resuelve atajos.js pulsando el botón data-cerrar-modal
     cont.addEventListener('click', (e) => {
       if (e.target === cont || e.target.closest('[data-cerrar-modal]')) cerrar(false);
-      else if (e.target.closest('[data-margen-cobrar]')) cerrar(true);
+      else if (e.target.closest('[data-margen-cobrar]')) { if (admin) cerrar(true); else autorizarConClave(); }
     });
-    // El foco parte en "Volver": un Enter apurado no confirma la rebaja sin leer
-    setTimeout(() => cont.querySelector('[data-cerrar-modal]')?.focus(), 50);
+    campoClave?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); autorizarConClave(); } });
+    // El foco parte en "Volver": un Enter apurado no confirma la rebaja sin leer.
+    // Con el trabajador parte en la clave, que es lo único que se puede hacer para seguir.
+    setTimeout(() => (campoClave || cont.querySelector('[data-cerrar-modal]'))?.focus(), 50);
   });
 }
 
@@ -1237,6 +1281,7 @@ async function abrirModalPago() {
   // v109: aviso de margen. Un segundo clic mientras se consulta no abre dos cobros.
   if (revisandoMargenParaCobrar) return;
   revisandoMargenParaCobrar = true;
+  autorizacionMargen = null;
   let seguir;
   try { seguir = await confirmarMargenAntesDeCobrar(); }
   finally { revisandoMargenParaCobrar = false; }
@@ -1274,8 +1319,10 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
       : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
   }
 
-  const venta = await API.ventas.crear({
+  const registrar = () => API.ventas.crear({
     clave_idempotencia: claveCobroEnCurso,
+    // v112: permiso del dueño si el trabajador cobra bajo el precio mínimo
+    autorizacion_margen: autorizacionMargen,
     fecha: elPosFecha?.value || todayISO(),
     hora: horaPersonalizada,
     tipo_dte: datosPago.tipoDte || 'SIN DTE',
@@ -1305,8 +1352,23 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
     items: cart
   });
 
+  let venta;
+  try {
+    venta = await registrar();
+  } catch (err) {
+    /* El servidor frenó la venta porque hay precios bajo el mínimo y no venía
+       el permiso (el aviso de fondo no alcanzó a llegar antes de cobrar): se
+       pide la clave acá y se reintenta una vez. */
+    if (!err?.requiere_clave_margen) throw err;
+    await revisarMargenCarrito();
+    const conPermiso = await pedirConfirmacionMargen(lineasBajoMargen());
+    if (!conPermiso) throw new Error('No se cobró: falta la clave del dueño o corregir el precio');
+    venta = await registrar();
+  }
+
   ultimaVentaRegistrada = venta;
   claveCobroEnCurso = null;
+  autorizacionMargen = null;
   showToast(venta.estado === 'PENDIENTE' ? 'Venta registrada como PENDIENTE de pago'
     : venta.ya_registrada ? 'La venta ya había quedado registrada: no se duplicó' : 'Venta registrada con éxito', 'ok');
   // El envío nunca anula la venta; si algo de su registro falló, se avisa aparte

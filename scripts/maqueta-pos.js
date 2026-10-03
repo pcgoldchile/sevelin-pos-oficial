@@ -577,7 +577,12 @@ app.post('/api/pos/margen-carrito', (req, res) => {
     return app.locals.rolMaqueta === 'trabajador' ? { bajo }
       : { bajo, margen_pct: Math.round(margen * 1000) / 10, precio_minimo: Math.ceil(costo / 0.85), precio_real: Math.round(real) };
   });
-  res.json({ minimo_pct: 15, bajo_minimo: lineas.filter(l => l.bajo).length, lineas });
+  res.json({ minimo_pct: 15, bajo_minimo: lineas.filter(l => l.bajo).length, requiere_clave: app.locals.rolMaqueta === 'trabajador', lineas });
+});
+// v112: clave del dueño para que el trabajador cobre bajo el mínimo. En la maqueta, "mala" falla y cualquier otra sirve.
+app.post('/api/pos/autorizar-margen', (req, res) => {
+  if (String(req.body?.pin || '') === 'mala') return res.status(403).json({ error: 'PIN de administrador incorrecto' });
+  res.json({ autorizacion: 'permiso-de-maqueta' });
 });
 // Categorías de ejemplo, para que el editor de producto pueda elegir una (el precio sugerido depende de ella).
 app.get('/api/productos/categorias', (_req, res) => res.json([
