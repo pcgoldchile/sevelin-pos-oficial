@@ -12,6 +12,35 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 02-10-2026 (noche) · v107, encargos solo por cotización, Fase 2 mayorista y carruseles
+
+Detalle en `docs/CHANGELOG-V107.md`.
+
+**Publicado:**
+- **#52 Encargos:** ya no se pagan en sevelin.cl.
+  - La ficha dice "Precio referencial" y trae el botón "Cotizar por encargo por WhatsApp".
+  - No entran al carrito, y el checkout y el cotizador los rechazan en el servidor (verificado en producción:
+    409 y ningún pedido creado).
+  - Los 18 encargos salieron del feed de Google y Meta.
+- **#28 Fase 2 mayorista:**
+  - "Tu precio mayorista" en la ficha, solo para cuenta aprobada.
+  - Informe "Ventas a precio mayorista" en Página Web → Mayoristas (hoy vacío: 0 ventas mayoristas).
+- **#56 y #57:** lámina "Servicio técnico en Arica" en la portada, y carruseles con flechas en la ficha
+  ("También te puede interesar" pasa de 4 a 12 productos).
+
+**Esperando al dueño:**
+- **#51**, antes del lunes 05-10: precios de los reacondicionados para el Cyber y por mayor, en
+  `docs/estudios-precios/2026-10-02-reacondicionados-mayor-y-cyber.md`.
+- **#53 y #54:** alcances propuestos en `docs/PROPUESTA-ENCARGOS-Y-EDITOR.md`.
+- **#48, #55 y #58:** las respuestas llegaron en blanco y no se aplicó nada. Se retiró la subida del HP V214a.
+- **#49:** el chequeo del Cyber es el lunes 05-10, y el del jueves 08-10.
+
+> 🔴 Reacondicionados: $868.190 parados ($736.200 en monitores). Los 19" tienen visitas sobre la mediana y 0 ventas
+> anotadas; la web hizo 2 pedidos pagados desde el 07-09. El precio del Cyber hay que llevarlo a Marketplace.
+
+> ⚠️ Trampas nuevas: `pendientes.detalle` tiene tope de 2000 letras (y `nota_cierre` de 1000). Con el panel
+> del navegador oculto no corren `requestAnimationFrame`, `ResizeObserver`, el evento `scroll` ni las animaciones.
+
 ## 02-10-2026 (tarde) · v106, ficha de la IA con nombre y SEO, Cyber ampliado y lista mayorista
 
 Detalle en `docs/CHANGELOG-V106.md`.
