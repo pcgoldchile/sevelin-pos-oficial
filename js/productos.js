@@ -1459,7 +1459,7 @@ async function generarTextoConIA(destino) {
        Markdown tal cual lo devolvió la IA, para revisarlo (y corregirlo)
        antes de que reemplace la Descripción. */
     fichaGeneradaPegada = false;
-    abrirModalFichaGenerada(resultado.cuerpo || '', resultado.titulo || '');
+    abrirModalFichaGenerada(resultado.cuerpo || '', resultado.titulo || '', resultado.sugerencias);
   } catch (err) {
     showToast(err.message || 'No se pudo generar el texto', 'err');
   } finally {
@@ -1558,6 +1558,7 @@ function abrirPegarFichaIA() {
   fichaGeneradaPegada = true;
   if (elFichaGeneradaTexto) elFichaGeneradaTexto.value = '';
   ofrecerTituloDeFicha('');
+  ofrecerSugerenciasDeFicha(null);
   prepararOfertaSeoDeFicha();
   elModalFichaGenerada?.classList.add('show');
   setTimeout(() => elFichaGeneradaTexto?.focus(), 80);
@@ -1576,8 +1577,10 @@ function engancharPegadoDeFicha() {
       const texto = (elFichaGeneradaTexto?.value || '').trim();
       if (!texto) return;
       try {
-        const { titulo, cuerpo } = await API.productos.separarFicha(texto);
-        if (!titulo) return;
+        const { titulo, cuerpo, sugerencias } = await API.productos.separarFicha(texto, cuerpoParaPromptIA('ficha'));
+        ofrecerSugerenciasDeFicha(sugerencias);
+        // Sin título, igual se saca del cuadro el bloque de marca, categoría y condición.
+        if (!titulo) { if (cuerpo && cuerpo !== texto) elFichaGeneradaTexto.value = cuerpo; return; }
         elFichaGeneradaTexto.value = cuerpo;
         ofrecerTituloDeFicha(titulo);
       } catch (err) {
@@ -1592,11 +1595,90 @@ function engancharPegadoDeFicha() {
 /* ---------- Previsualización de la ficha generada ----------
    Se guarda el Markdown crudo y el título propuesto hasta que el dueño
    decida. Si descarta, el formulario queda exactamente como estaba. */
-function abrirModalFichaGenerada(cuerpoMarkdown, tituloPropuesto) {
+function abrirModalFichaGenerada(cuerpoMarkdown, tituloPropuesto, sugerencias) {
   if (elFichaGeneradaTexto) elFichaGeneradaTexto.value = cuerpoMarkdown;
   ofrecerTituloDeFicha(tituloPropuesto);
+  ofrecerSugerenciasDeFicha(sugerencias);
   prepararOfertaSeoDeFicha();
   elModalFichaGenerada?.classList.add('show');
+}
+
+/* v113 (pendiente #54, pieza D): marca, categoría y condición que propone la
+   IA, ya validadas por el servidor (la marca aparece en lo que pegó el dueño,
+   la categoría es de su lista y la condición es una de las dos del POS).
+   Solo se ofrece lo que CAMBIA algo del formulario. La casilla viene marcada
+   si el campo está vacío; si ya tiene un valor, hay que marcarla para
+   reemplazarlo. Nada se aplica hasta "Usar esta ficha". */
+let sugerenciasFichaIA = [];
+
+function ofrecerSugerenciasDeFicha(sugerencias) {
+  const caja = document.getElementById('fichaGeneradaSugerencias');
+  const lista = document.getElementById('fichaGeneradaSugerenciasLista');
+  sugerenciasFichaIA = [];
+  if (!caja || !lista) return;
+  const s = sugerencias || {};
+
+  const marcaActual = elProdMarca?.value.trim() || '';
+  if (s.marca && s.marca.toLowerCase() !== marcaActual.toLowerCase()) {
+    sugerenciasFichaIA.push({
+      clave: 'marca', marcada: !marcaActual,
+      texto: `Marca: ${s.marca}`,
+      detalle: marcaActual ? `Hoy dice "${marcaActual}".` : 'El producto no tiene marca.',
+      aplicar: () => { if (elProdMarca) { elProdMarca.value = s.marca; elProdMarca.dispatchEvent(new Event('input', { bubbles: true })); } }
+    });
+  }
+
+  const c = s.categoria;
+  const catActual = elPopFotosCategoria?.value || '';
+  const subActual = elPopFotosSubcategoria?.value || '';
+  const existe = c && [...(elPopFotosCategoria?.options || [])].some(o => String(o.value) === String(c.categoria_id));
+  if (existe && (String(c.categoria_id) !== String(catActual) || String(c.subcategoria_id || '') !== String(subActual))) {
+    const textoActual = [elPopFotosCategoria?.selectedOptions?.[0]?.textContent, subActual ? elPopFotosSubcategoria?.selectedOptions?.[0]?.textContent : '']
+      .map(t => String(t || '').trim()).filter(Boolean).join(' > ');
+    sugerenciasFichaIA.push({
+      clave: 'categoria', marcada: !catActual,
+      texto: `Categoría: ${c.texto}`,
+      detalle: catActual ? `Hoy está en "${textoActual}".` : 'El producto no tiene categoría.',
+      aplicar: () => {
+        elPopFotosCategoria.value = String(c.categoria_id);
+        poblarSubcategoriasEditor(c.categoria_id, c.subcategoria_id || '');
+        aplicarSeleccionCategoria();
+      }
+    });
+  }
+
+  const condActual = elProdCondicion?.value || '';
+  if (s.condicion && s.condicion !== condActual && [...(elProdCondicion?.options || [])].some(o => o.value === s.condicion)) {
+    sugerenciasFichaIA.push({
+      clave: 'condicion',
+      // "Reacondicionado" sobre un producto marcado como nuevo importa (no se vende como nuevo): viene marcada.
+      // Al revés (pasar a "nuevo" algo marcado reacondicionado) lo decide el dueño.
+      marcada: s.condicion === 'reacondicionado',
+      texto: `Condición: ${s.condicion === 'reacondicionado' ? 'Reacondicionado' : 'Nuevo'}`,
+      detalle: `Hoy dice "${condActual === 'reacondicionado' ? 'Reacondicionado' : 'Nuevo'}".`,
+      aplicar: () => { elProdCondicion.value = s.condicion; elProdCondicion.dispatchEvent(new Event('change', { bubbles: true })); }
+    });
+  }
+
+  caja.style.display = sugerenciasFichaIA.length ? '' : 'none';
+  lista.innerHTML = sugerenciasFichaIA.map((g, i) => `
+    <label class="sn-toggle" style="width:fit-content; max-width:100%;">
+      <input type="checkbox" data-sugerencia-ia="${i}" ${g.marcada ? 'checked' : ''}>
+      <span><strong>${escHtml(g.texto)}</strong> <small style="color:var(--text-muted);">${escHtml(g.detalle)}</small></span>
+    </label>`).join('');
+}
+
+/* Aplica al formulario las sugerencias que quedaron marcadas. Devuelve sus nombres. */
+function aplicarSugerenciasDeFicha() {
+  const aplicadas = [];
+  document.querySelectorAll('#fichaGeneradaSugerenciasLista [data-sugerencia-ia]').forEach(casilla => {
+    const g = sugerenciasFichaIA[Number(casilla.dataset.sugerenciaIa)];
+    if (!g || !casilla.checked) return;
+    try { g.aplicar(); aplicadas.push(g.clave); }
+    catch (err) { console.error('No se pudo aplicar la sugerencia de la IA:', g.clave, err.message || err); }
+  });
+  sugerenciasFichaIA = [];
+  return aplicadas;
 }
 
 /* El título que propone la IA se muestra SIEMPRE (dueño, 02-10-2026: perdía
@@ -1665,14 +1747,19 @@ function aplicarFichaGenerada() {
     elProdNombre.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
+  // v113: marca, categoría y condición propuestas por la IA (solo las marcadas)
+  const nombresSugerencia = { marca: 'marca', categoria: 'categoría', condicion: 'condición' };
+  const aplicadas = aplicarSugerenciasDeFicha().map(k => nombresSugerencia[k]);
+  const tambien = aplicadas.length ? ` También: ${aplicadas.join(', ')}.` : '';
+
   const conSeo = !!elFichaGeneradaGenerarSeo?.checked;
   seoIAOfrecido = true;   // ya se le preguntó en esta ventana, cualquiera sea la respuesta
 
   cerrarModalFichaGenerada();
   const queFalta = conSeo ? 'Generando el SEO…' : 'Revisa y guarda el producto';
   showToast(tituloElegido
-    ? `Ficha aplicada — el nombre quedó como "${tituloElegido}". ${queFalta}`
-    : `Ficha aplicada. ${queFalta}`, 'ok');
+    ? `Ficha aplicada — el nombre quedó como "${tituloElegido}".${tambien} ${queFalta}`
+    : `Ficha aplicada.${tambien} ${queFalta}`, 'ok');
 
   if (conSeo) {
     if (!(elProdNombre?.value || '').trim() || nombreProvisorioDeProducto(elProdNombre.value)) {

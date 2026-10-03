@@ -185,10 +185,20 @@ app.post('/api/productos/generar-texto', (req, res) => {
     return res.status(400).json({ error: 'Falta la información real del producto.' });
   }
   if (req.body.destino === 'facebook') return res.json({ destino: 'facebook', texto: '✨ NUEVA memoria de prueba (maqueta)', modelo: 'maqueta' });
-  res.json({ destino: 'ficha', ...separarTituloMaqueta(FICHA_IA_MAQUETA), modelo: 'maqueta', nombre_recibido: req.body.nombre || '' });
+  res.json({ destino: 'ficha', ...separarTituloMaqueta(FICHA_IA_MAQUETA), sugerencias: SUGERENCIAS_IA_MAQUETA, modelo: 'maqueta', nombre_recibido: req.body.nombre || '' });
 });
+// v113 (#54 pieza D): marca, categoría y condición que "propone la IA" en la maqueta (ids de /api/productos/categorias).
+const SUGERENCIAS_IA_MAQUETA = {
+  marca: 'Kingston',
+  categoria: { categoria_id: 'c2', subcategoria_id: 'c2a', categoria: 'Componentes PC', subcategoria: 'Fuentes de poder', texto: 'Componentes PC > Fuentes de poder' },
+  condicion: 'reacondicionado',
+};
 app.post('/api/productos/prompt-texto', (req, res) => res.json({ destino: req.body.destino, prompt: `PROMPT DE MAQUETA\nNombre actual: ${req.body.nombre || '(sin nombre)'}` }));
-app.post('/api/productos/separar-ficha', (req, res) => res.json(separarTituloMaqueta(req.body?.texto)));
+app.post('/api/productos/separar-ficha', (req, res) => {
+    const texto = String(req.body?.texto || '');
+    const corte = texto.indexOf('---DATOS---');
+    res.json({ ...separarTituloMaqueta(corte >= 0 ? texto.slice(0, corte).trim() : texto), sugerencias: corte >= 0 ? SUGERENCIAS_IA_MAQUETA : {} });
+});
 app.post('/api/productos/generar-seo', (req, res) => setTimeout(() => res.json({
   meta_titulo: `${String(req.body?.nombre || '').slice(0, 45)} | SEO maqueta`,
   meta_descripcion: 'Descripción SEO de prueba generada por la maqueta, a partir de la ficha del producto.',
@@ -264,6 +274,9 @@ app.put('/api/textos/preguntas_diagnostico', (req, res) => {
 
 // v103: venta mayorista (sql/76 + supabase/39). Dos productos con precio mayorista, uno
 // desactivado solo por la base (subió el costo), y cuentas en los cuatro estados.
+// v113 (#54 pieza C): 291 y 98 son de la misma categoría que el 104 y ya tienen complementos.
+Object.assign(productos.find(p => p.id === 291), { relacionados_ids: [126, 98] });
+Object.assign(productos.find(p => p.id === 98), { relacionados_ids: [126, 144] });
 // El 104 lleva además el segundo escalón (sql/81, v111): $3.200 desde 10 u.
 Object.assign(productos.find(p => p.id === 104), { precio_mayorista: 3500, mayorista_desde: 5, precio_mayorista_2: 3200, mayorista_desde_2: 10 });
 Object.assign(productos.find(p => p.id === 126), { precio_mayorista: 7000, mayorista_desde: 3 });

@@ -25,9 +25,11 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();   // Enter no debe enviar el formulario del producto
     document.querySelector('#prodComplementosSugerencias [data-agregar-complemento]')?.click();
   });
-  document.getElementById('prodComplementosSugerencias')?.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-agregar-complemento]');
-    if (b) agregarComplemento(Number(b.dataset.agregarComplemento));
+  ['prodComplementosSugerencias', 'prodComplementosPorCategoria'].forEach(id => {
+    document.getElementById(id)?.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-agregar-complemento]');
+      if (b) agregarComplemento(Number(b.dataset.agregarComplemento));
+    });
   });
   document.getElementById('prodComplementosLista')?.addEventListener('click', (e) => {
     const b = e.target.closest('[data-complemento-accion]');
@@ -55,11 +57,65 @@ function pintarComplementosProducto(producto) {
   pintarListaComplementos();
 }
 
+/* v113 (pendiente #54, pieza C): complementos sugeridos según la categoría.
+   Sin IA: se cuentan los complementos que YA usan los demás productos de la
+   misma categoría (primero los de la misma subcategoría) y se proponen los
+   más repetidos. Solo propone: cada uno se agrega con su clic. */
+const MAX_SUGERIDOS_CATEGORIA = 6;
+
+function complementosSugeridosPorCategoria(productoId) {
+  const todos = typeof productsList !== 'undefined' ? productsList : [];
+  const actual = todos.find(p => Number(p.id) === Number(productoId));
+  const categoria = String(actual?.categoria_web || '').trim();
+  if (!actual || !categoria) return { categoria: '', hermanos: 0, sugeridos: [] };
+
+  const hermanos = todos.filter(p => Number(p.id) !== Number(productoId) && !p.archivado
+    && String(p.categoria_web || '').trim() === categoria
+    && Array.isArray(p.relacionados_ids) && p.relacionados_ids.length);
+  const subcategoria = String(actual.subcategoria_web || '').trim();
+
+  const votos = new Map();   // id del complemento → { usan, mismaSub }
+  for (const h of hermanos) {
+    const mismaSub = !!subcategoria && String(h.subcategoria_web || '').trim() === subcategoria;
+    for (const id of new Set(h.relacionados_ids.map(Number))) {
+      const v = votos.get(id) || { usan: 0, mismaSub: 0 };
+      v.usan += 1;
+      if (mismaSub) v.mismaSub += 1;
+      votos.set(id, v);
+    }
+  }
+
+  const sugeridos = [...votos.entries()]
+    .map(([id, v]) => ({ producto: todos.find(p => Number(p.id) === id), ...v }))
+    .filter(s => s.producto && !s.producto.archivado
+      && Number(s.producto.id) !== Number(productoId) && !complementosIds.includes(Number(s.producto.id)))
+    // Solo lo que hoy saldría en la tienda: publicado y con stock.
+    .filter(s => s.producto.publicado_web !== false && (s.producto.stock_ilimitado || Number(s.producto.stock) > 0))
+    .sort((a, b) => (b.mismaSub - a.mismaSub) || (b.usan - a.usan) || String(a.producto.nombre).localeCompare(String(b.producto.nombre)))
+    .slice(0, MAX_SUGERIDOS_CATEGORIA);
+  return { categoria, hermanos: hermanos.length, sugeridos };
+}
+
+function pintarSugeridosPorCategoria() {
+  const cont = document.getElementById('prodComplementosPorCategoria');
+  if (!cont) return;
+  if (!complementosDeProducto || complementosIds.length >= MAX_COMPLEMENTOS_POS) { cont.innerHTML = ''; return; }
+  const { categoria, hermanos, sugeridos } = complementosSugeridosPorCategoria(complementosDeProducto);
+  if (!sugeridos.length) { cont.innerHTML = ''; return; }
+  cont.innerHTML = `
+    <p class="modal-hint" style="margin:8px 0 2px;">💡 Sugeridos: lo que ya usan otros productos de <strong>${escHtml(categoria)}</strong>. Toca los que quieras agregar.</p>
+    ${sugeridos.map(s => `
+      <button type="button" class="complemento-sugerencia" data-agregar-complemento="${s.producto.id}">
+        ➕ ${escHtml(s.producto.nombre)} <small>${fmtCLP(s.producto.precio_unitario)} · lo ${s.usan === 1 ? 'usa 1' : `usan ${s.usan}`} de ${hermanos}</small>
+      </button>`).join('')}`;
+}
+
 function productoComplementoPorId(id) {
   return (typeof productsList !== 'undefined' ? productsList : []).find(p => Number(p.id) === Number(id)) || null;
 }
 
 function pintarListaComplementos() {
+  pintarSugeridosPorCategoria();
   const cont = document.getElementById('prodComplementosLista');
   if (!cont) return;
   if (!complementosDeProducto) {

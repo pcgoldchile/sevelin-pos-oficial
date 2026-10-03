@@ -3077,6 +3077,8 @@
               Salen en este orden y solo los que tengan stock. Máximo 12. Se guarda al instante.
             </p>
             <div id="prodComplementosLista" class="complementos-lista"></div>
+            <!-- v113 (#54 pieza C): lo que ya usan como complemento los productos de la misma categoría. -->
+            <div id="prodComplementosPorCategoria" class="complementos-sugerencias"></div>
             <div class="field" style="margin-top:10px;">
               <label for="prodComplementosBuscar">Agregar producto</label>
               <input type="text" id="prodComplementosBuscar" placeholder="Escribe el nombre o SKU…" autocomplete="off">
@@ -3837,6 +3839,14 @@
                   style="font-family:inherit; line-height:1.5;"></textarea>
         <p class="subtitle">Los <strong>###</strong> son títulos de sección y los <strong>✅</strong> son viñetas:
           se convierten al aplicarla, no se ven así en la tienda.</p>
+      </div>
+
+      <!-- v113 (#54 pieza D): marca, categoría y condición que propone la IA. Cada una con su casilla;
+           se llena desde js/productos.js y queda oculto si no hay nada que proponer. -->
+      <div id="fichaGeneradaSugerencias" style="margin-top:12px; display:none;">
+        <label style="display:block; margin-bottom:6px;">La IA también propone</label>
+        <div id="fichaGeneradaSugerenciasLista" style="display:flex; flex-direction:column; gap:6px;"></div>
+        <p class="subtitle">Se aplican al formulario solo las que dejes marcadas. El peso, las medidas y la garantía no se tocan.</p>
       </div>
 
       <div style="margin-top:12px;">

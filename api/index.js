@@ -1828,7 +1828,101 @@ const DESTINOS_TEXTO_IA = ['ficha', 'facebook'];
    dejarían de ser la misma — y ese es justo el tipo de diferencia que
    nadie nota hasta que una de las dos empieza a inventar cosas.
    ============================================================ */
-function armarPromptTexto(body) {
+/* ---------- Marca, categoría y condición propuestas por la IA (v113, pendiente #54 pieza D) ----------
+   La ficha de un PRODUCTO termina con un bloque de tres líneas que el POS
+   separa y ofrece con casillas (nunca se aplica solo). Las tres reglas, que
+   se hacen cumplir en el SERVIDOR al leer la respuesta (un modelo puede no
+   obedecer el prompt):
+     · Marca: solo si aparece escrita en la información que entregó el dueño.
+     · Categoría: solo una de SU lista real (producto_categorias), tal cual.
+     · Condición: nuevo o reacondicionado, los dos valores que maneja el POS.
+   La garantía no se le pregunta a la IA: es regla del dueño.
+   Los servicios técnicos no llevan este bloque. */
+const MARCA_DATOS_FICHA = '---DATOS---';
+const CONDICIONES_PRODUCTO = ['nuevo', 'reacondicionado'];
+
+// (sinTildes() est\u00e1 m\u00e1s abajo, junto al precio sugerido: min\u00fasculas y sin tildes.)
+
+/* La lista real de categorías, como "Padre > Hija" (y el padre solo). */
+async function categoriasParaFichaIA() {
+  const { data, error } = await db.from('producto_categorias')
+    .select('id, nombre, parent_id, orden').order('orden', { ascending: true }).order('nombre', { ascending: true });
+  if (error) {
+    console.error('[IA] No se pudieron leer las categorías; la ficha sale sin proponer categoría:', error.message);
+    return [];
+  }
+  const lista = data || [];
+  const raices = lista.filter(c => !c.parent_id);
+  const opciones = [];
+  for (const r of raices) {
+    opciones.push({ texto: r.nombre, categoria_id: r.id, subcategoria_id: null, categoria: r.nombre, subcategoria: null });
+    for (const h of lista.filter(c => String(c.parent_id) === String(r.id))) {
+      opciones.push({ texto: `${r.nombre} > ${h.nombre}`, categoria_id: r.id, subcategoria_id: h.id, categoria: r.nombre, subcategoria: h.nombre });
+    }
+  }
+  return opciones;
+}
+
+function instruccionDatosFichaIA(categorias) {
+  const lista = (categorias || []).map(c => `- ${c.texto}`).join('\n');
+  return `
+
+ÚNICA EXCEPCIÓN a "la respuesta contiene únicamente la ficha": después de la ficha, en una línea aparte, escribe exactamente ${MARCA_DATOS_FICHA} y debajo estas tres líneas, sin nada más:
+MARCA: [la marca del producto, SOLO si aparece escrita en la información que te entregué; si no aparece, escribe: no indicada]
+CATEGORÍA: [${lista ? 'elige UNA opción de la lista de abajo y cópiala tal cual; si ninguna calza, escribe: ninguna' : 'ninguna'}]
+CONDICIÓN: [nuevo o reacondicionado. Escribe reacondicionado solo si la información dice que es reacondicionado, usado, de segunda mano o abierto; si no lo dice, escribe: nuevo]
+${lista ? `\nLista de categorías de la tienda (no inventes otras):\n${lista}` : ''}`;
+}
+
+/* Separa el bloque de datos del final de la ficha y valida cada sugerencia.
+   `fuentes`: los textos que entregó el dueño (para comprobar la marca).
+   Devuelve { texto (la ficha sin el bloque), sugerencias }. */
+function separarDatosDeFicha(textoCompleto, fuentes, categorias) {
+  const completo = String(textoCompleto || '');
+  const corte = completo.search(/^[ \t]*-{2,}[ \t]*DATOS[ \t]*-{2,}[ \t]*$/im);
+  if (corte < 0) return { texto: completo.trim(), sugerencias: {} };
+
+  const bloque = completo.slice(corte);
+  const valor = (etiqueta) => {
+    const m = bloque.match(new RegExp(`^[ \\t*]*${etiqueta}[ \\t*]*:[ \\t*]*(.+)$`, 'im'));
+    return m ? m[1].replace(/[\[\]*]/g, '').trim() : '';
+  };
+  const sugerencias = {};
+
+  // Marca: tiene que estar escrita en lo que entregó el dueño.
+  const marca = valor('MARCA');
+  const fuente = sinTildes((fuentes || []).join('\n'));
+  if (marca && marca.length <= 40 && !/^(no indicada|ninguna|sin marca|generic[ao]|n\/?a|-)$/i.test(sinTildes(marca))
+      && fuente.includes(sinTildes(marca))) {
+    sugerencias.marca = marca;
+  }
+
+  // Categoría: tiene que ser una de la lista real.
+  const categoria = sinTildes(valor('CATEGOR[IÍ]A')).replace(/\s*>\s*/g, ' > ');
+  const opcion = categoria && (categorias || []).find(c => sinTildes(c.texto).replace(/\s*>\s*/g, ' > ') === categoria);
+  if (opcion) {
+    sugerencias.categoria = {
+      categoria_id: opcion.categoria_id, subcategoria_id: opcion.subcategoria_id,
+      categoria: opcion.categoria, subcategoria: opcion.subcategoria, texto: opcion.texto
+    };
+  }
+
+  // Condición: uno de los dos valores del POS. "Reacondicionado" solo si el dueño lo dijo.
+  const condicion = sinTildes(valor('CONDICI[OÓ]N'));
+  if (CONDICIONES_PRODUCTO.includes(condicion)) {
+    const loDice = /reacondicionad|usad[oa]|segunda mano|refurbish|open ?box|abiert[oa]|seminuev/.test(fuente);
+    if (condicion === 'nuevo' || loDice) sugerencias.condicion = condicion;
+  }
+
+  return { texto: completo.slice(0, corte).trim(), sugerencias };
+}
+
+/* Los textos del dueño contra los que se comprueba la marca. */
+function fuentesDeFichaIA(body) {
+  return [body?.nombre, body?.marca, body?.datos, textoPlanoParaPrompt(body?.descripcion_html)].map(t => String(t || ''));
+}
+
+function armarPromptTexto(body, categorias = []) {
   const destino = String(body?.destino || '').trim().toLowerCase();
   if (!DESTINOS_TEXTO_IA.includes(destino)) {
     return { error: 'Destino inválido: tiene que ser "ficha" o "facebook".' };
@@ -1874,10 +1968,13 @@ function armarPromptTexto(body) {
     ? PROMPT_FACEBOOK
     : (esServicio ? PROMPT_FICHA_SERVICIO : PROMPT_FICHA_PRODUCTO);
 
+  // Solo la ficha de un producto pide marca, categoría y condición (v113).
+  const pideDatos = destino === 'ficha' && !esServicio;
   return {
     destino,
     esServicio,
-    prompt: `${base}\n\nInformación real del ${esServicio ? 'servicio' : 'producto'}:\n${contexto}`
+    pideDatos,
+    prompt: `${base}${pideDatos ? instruccionDatosFichaIA(categorias) : ''}\n\nInformación real del ${esServicio ? 'servicio' : 'producto'}:\n${contexto}`
   };
 }
 
@@ -1913,8 +2010,8 @@ function separarTituloDeFicha(texto) {
    El prompt se arma en el SERVIDOR igual que siempre (son regla de
    negocio: qué se puede decir de un producto y qué no). Acá solo se
    entrega armado en vez de mandárselo a Google. */
-app.post('/api/productos/prompt-texto', auth(true), (req, res) => {
-  const { prompt, destino, error } = armarPromptTexto(req.body);
+app.post('/api/productos/prompt-texto', auth(true), async (req, res) => {
+  const { prompt, destino, error } = armarPromptTexto(req.body, await categoriasParaFichaIA());
   if (error) return enviarError(res, 400, error);
   res.json({ destino, prompt });
 });
@@ -1923,15 +2020,19 @@ app.post('/api/productos/prompt-texto', auth(true), (req, res) => {
    el MISMO corte de título que le haría a la respuesta de la API, para
    que la previsualización y el "Usar esta ficha" funcionen igual por los
    dos caminos. No guarda nada: sigue decidiendo él en el modal. */
-app.post('/api/productos/separar-ficha', auth(true), (req, res) => {
+app.post('/api/productos/separar-ficha', auth(true), async (req, res) => {
   const texto = String(req.body?.texto || '').trim();
   if (!texto) return enviarError(res, 400, 'Pega primero la respuesta de la IA.');
-  res.json(separarTituloDeFicha(texto));
+  // v113: el bloque de marca, categoría y condición. `contexto` es lo que el
+  // dueño tiene en el formulario (para comprobar que la marca no es inventada).
+  const datos = separarDatosDeFicha(texto, fuentesDeFichaIA(req.body?.contexto), await categoriasParaFichaIA());
+  res.json({ ...separarTituloDeFicha(datos.texto), sugerencias: datos.sugerencias });
 });
 
 
 app.post('/api/productos/generar-texto', auth(true), async (req, res) => {
-  const { prompt, destino, error } = armarPromptTexto(req.body);
+  const categoriasIA = await categoriasParaFichaIA();
+  const { prompt, destino, error } = armarPromptTexto(req.body, categoriasIA);
   if (error) return enviarError(res, 400, error);
 
   try {
@@ -1952,7 +2053,8 @@ app.post('/api/productos/generar-texto', auth(true), async (req, res) => {
     }
 
     // El mismo corte que se le hace a una respuesta pegada a mano
-    return res.json({ destino, ...separarTituloDeFicha(limpio), modelo });
+    const datos = separarDatosDeFicha(limpio, fuentesDeFichaIA(req.body), categoriasIA);
+    return res.json({ destino, ...separarTituloDeFicha(datos.texto), sugerencias: datos.sugerencias, modelo });
   } catch (err) {
     return responderFalloGemini(res, err, `generar-texto:${destino}`,
       'Mientras tanto puedes pegar el prompt en Gemini a mano, como antes.');
