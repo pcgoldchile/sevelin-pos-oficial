@@ -2421,7 +2421,7 @@
 
         <!-- ---------- Información básica ---------- -->
         <div class="card card-plegable" data-seccion="basico">
-          <div class="card-head"><div><h2>Información básica</h2></div><span class="estado-seccion" data-estado="basico"></span></div>
+          <div class="card-head"><div><h2>Información básica y descripción</h2></div><span class="estado-seccion" data-estado="basico"></span></div>
 
           <div class="grid grid-2">
             <div class="field">
@@ -2460,6 +2460,97 @@
                    placeholder="Kingston, MSI, HP… — vacío si es genérico">
             <datalist id="listaMarcas"></datalist>
             <small class="fila-meta">Quien fabrica el producto. Un cargador <em>para</em> HP no es marca HP: eso es genérico.</small>
+          </div>
+
+          <!-- v117 (dueño, 03-10-2026): la Descripción vivía en su propia tarjeta al final
+               de la página y había que bajar hasta allá en cada producto. Ahora va acá,
+               junto al nombre. Conserva data-seccion="descripcion" para que el aviso de
+               "le falta algo" (js/completitud.js) siga encontrándola. -->
+          <div class="basico-descripcion" data-seccion="descripcion">
+            <div class="basico-descripcion-head"><h3>Descripción</h3><span class="estado-seccion" data-estado="descripcion"></span></div>
+            <div class="field">
+              <p class="subtitle" style="margin-bottom:6px;">Esta es la ÚNICA descripción del producto — se usa tal cual en la ficha de la tienda web (sevelin.cl) cuando el producto está publicado.</p>
+              <!-- Editor de texto enriquecido (Quill, ver <head>): negrita,
+                   cursiva, listas, links. #prodDescripcion pasa a ser un
+                   <textarea> OCULTO que guarda el HTML resultante — todo el
+                   resto del código (guardarProducto, abrirModalProducto) lo
+                   sigue leyendo/escribiendo por su .value de siempre, así
+                   que no hace falta tocar nada más que sepa de este campo.
+                   initEditorDescripcion() en productos.js mantiene ambos
+                   sincronizados. -->
+              <!-- Al pegar texto con sintaxis Markdown (respuestas de Gemini/
+                   ChatGPT: **negrita**, ### títulos, - listas, [link](url))
+                   se convierte a HTML real ANTES de insertarlo en Quill — sin
+                   esto quedaba pegado tal cual, con los símbolos a la vista y
+                   los links duplicados (texto + URL entre paréntesis, ver
+                   convertirMarkdownAHtml() en productos.js). El toggle queda
+                   guardado en localStorage: se recuerda entre sesiones, y
+                   apagarlo vuelve al pegado normal de Quill (por si algún día
+                   se pega algo que ya trae HTML real, no Markdown). -->
+              <label class="toggle-markdown-pegado" style="display:flex; align-items:center; gap:6px; margin-bottom:6px; font-size:12.5px; color:var(--ink-2, #9aa4b2); cursor:pointer;">
+                <input type="checkbox" id="prodDescripcionMarkdownToggle" checked>
+                ✨ Convertir Markdown al pegar (Gemini, ChatGPT, etc.)
+              </label>
+              <!-- Quill inserta su barra de herramientas como HERMANA del
+                   contenedor (dentro de este padre), no adentro de él — por
+                   eso el wrapper .editor-descripcion envuelve a los dos en
+                   vez de ir en el mismo div que #prodDescripcionEditor. -->
+              <div class="editor-descripcion">
+                <div id="prodDescripcionEditor"></div>
+              </div>
+              <textarea id="prodDescripcion" style="display:none"></textarea>
+            </div>
+
+            <!-- ---------- Generar texto con IA (ficha web / Facebook) ----------
+                 Los prompts oficiales viven en el SERVIDOR (api/index.js:
+                 PROMPT_FICHA_PRODUCTO / PROMPT_FICHA_SERVICIO / PROMPT_FACEBOOK),
+                 no acá — son regla de negocio (qué se puede decir de un producto
+                 y qué no), y así se corrigen en un solo lugar.
+
+                 El cuadro de "información real" NO es opcional por capricho: los
+                 tres prompts prohíben inventar specs, así que el servidor rechaza
+                 la llamada si no hay ni datos pegados ni Descripción ya escrita.
+                 Un modelo al que solo se le da el nombre rellena con
+                 características plausibles que nadie verificó. -->
+            <div class="field" style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">
+              <label>Información real del producto (para la IA)</label>
+              <textarea id="prodDatosReales" rows="4"
+                        placeholder="Pega acá las specs del proveedor, lo que dice la caja, o lo que sepas de verdad del producto. La IA no inventa: solo usa esto."></textarea>
+              <p class="subtitle">No se guarda en la base — es solo el material que se le pasa a la IA.
+                Si el producto ya tiene Descripción escrita, también se usa como fuente.</p>
+              <!-- DOS CAMINOS PARA LO MISMO (dueño, 22-09-2026).
+                   El de la izquierda llama a Gemini por API: un clic, pero
+                   depende de que Google tenga cola libre — el día que está
+                   saturado tarda 35-70 s o no responde.
+                   El de la derecha copia el MISMO prompt para pegarlo en la
+                   web de Gemini/ChatGPT/Claude, que responde en segundos y
+                   nunca se satura. El prompt es idéntico: lo arma el
+                   servidor en los dos casos. -->
+              <div class="ia-dos-caminos">
+                <div class="ia-camino">
+                  <span class="ia-camino-titulo">Automático (a veces lento)</span>
+                  <button type="button" class="btn btn-outline btn-sm" id="btnGenerarFichaIA">
+                    🛒 Generar ficha para la tienda
+                  </button>
+                  <button type="button" class="btn btn-outline btn-sm" id="btnGenerarFacebookIA">
+                    📣 Generar publicación para Facebook
+                  </button>
+                </div>
+                <div class="ia-camino ia-camino-manual">
+                  <span class="ia-camino-titulo">A mano (siempre funciona, más rápido)</span>
+                  <button type="button" class="btn btn-primary btn-sm" id="btnCopiarPromptFicha">
+                    📋 Copiar prompt de la ficha
+                  </button>
+                  <button type="button" class="btn btn-outline btn-sm" id="btnCopiarPromptFacebook">
+                    📋 Copiar prompt de Facebook
+                  </button>
+                  <button type="button" class="btn btn-outline btn-sm" id="btnPegarFichaIA">
+                    📥 Pegar la ficha que te dio la IA
+                  </button>
+                </div>
+              </div>
+              <p class="subtitle" id="prodTextoIAAviso">La ficha reemplaza la Descripción de arriba (revísala antes de guardar). La de Facebook se abre aparte, con botón para copiar.</p>
+            </div>
           </div>
 
           <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--border);">
@@ -2803,94 +2894,6 @@
             <p class="subtitle">El peso y el tamaño deciden cuánto cuesta cada despacho, así que se
               guardan por separado y con nombre. <strong>El botón "Guardar" de abajo no toca las
               medidas</strong> — solo este las registra.</p>
-          </div>
-        </div>
-
-        <!-- ---------- Descripción ---------- -->
-        <div class="card card-plegable" data-seccion="descripcion">
-          <div class="card-head"><div><h2>Descripción</h2></div><span class="estado-seccion" data-estado="descripcion"></span></div>
-          <div class="field">
-            <p class="subtitle" style="margin-bottom:6px;">Esta es la ÚNICA descripción del producto — se usa tal cual en la ficha de la tienda web (sevelin.cl) cuando el producto está publicado.</p>
-            <!-- Editor de texto enriquecido (Quill, ver <head>): negrita,
-                 cursiva, listas, links. #prodDescripcion pasa a ser un
-                 <textarea> OCULTO que guarda el HTML resultante — todo el
-                 resto del código (guardarProducto, abrirModalProducto) lo
-                 sigue leyendo/escribiendo por su .value de siempre, así
-                 que no hace falta tocar nada más que sepa de este campo.
-                 initEditorDescripcion() en productos.js mantiene ambos
-                 sincronizados. -->
-            <!-- Al pegar texto con sintaxis Markdown (respuestas de Gemini/
-                 ChatGPT: **negrita**, ### títulos, - listas, [link](url))
-                 se convierte a HTML real ANTES de insertarlo en Quill — sin
-                 esto quedaba pegado tal cual, con los símbolos a la vista y
-                 los links duplicados (texto + URL entre paréntesis, ver
-                 convertirMarkdownAHtml() en productos.js). El toggle queda
-                 guardado en localStorage: se recuerda entre sesiones, y
-                 apagarlo vuelve al pegado normal de Quill (por si algún día
-                 se pega algo que ya trae HTML real, no Markdown). -->
-            <label class="toggle-markdown-pegado" style="display:flex; align-items:center; gap:6px; margin-bottom:6px; font-size:12.5px; color:var(--ink-2, #9aa4b2); cursor:pointer;">
-              <input type="checkbox" id="prodDescripcionMarkdownToggle" checked>
-              ✨ Convertir Markdown al pegar (Gemini, ChatGPT, etc.)
-            </label>
-            <!-- Quill inserta su barra de herramientas como HERMANA del
-                 contenedor (dentro de este padre), no adentro de él — por
-                 eso el wrapper .editor-descripcion envuelve a los dos en
-                 vez de ir en el mismo div que #prodDescripcionEditor. -->
-            <div class="editor-descripcion">
-              <div id="prodDescripcionEditor"></div>
-            </div>
-            <textarea id="prodDescripcion" style="display:none"></textarea>
-          </div>
-
-          <!-- ---------- Generar texto con IA (ficha web / Facebook) ----------
-               Los prompts oficiales viven en el SERVIDOR (api/index.js:
-               PROMPT_FICHA_PRODUCTO / PROMPT_FICHA_SERVICIO / PROMPT_FACEBOOK),
-               no acá — son regla de negocio (qué se puede decir de un producto
-               y qué no), y así se corrigen en un solo lugar.
-
-               El cuadro de "información real" NO es opcional por capricho: los
-               tres prompts prohíben inventar specs, así que el servidor rechaza
-               la llamada si no hay ni datos pegados ni Descripción ya escrita.
-               Un modelo al que solo se le da el nombre rellena con
-               características plausibles que nadie verificó. -->
-          <div class="field" style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">
-            <label>Información real del producto (para la IA)</label>
-            <textarea id="prodDatosReales" rows="4"
-                      placeholder="Pega acá las specs del proveedor, lo que dice la caja, o lo que sepas de verdad del producto. La IA no inventa: solo usa esto."></textarea>
-            <p class="subtitle">No se guarda en la base — es solo el material que se le pasa a la IA.
-              Si el producto ya tiene Descripción escrita, también se usa como fuente.</p>
-            <!-- DOS CAMINOS PARA LO MISMO (dueño, 22-09-2026).
-                 El de la izquierda llama a Gemini por API: un clic, pero
-                 depende de que Google tenga cola libre — el día que está
-                 saturado tarda 35-70 s o no responde.
-                 El de la derecha copia el MISMO prompt para pegarlo en la
-                 web de Gemini/ChatGPT/Claude, que responde en segundos y
-                 nunca se satura. El prompt es idéntico: lo arma el
-                 servidor en los dos casos. -->
-            <div class="ia-dos-caminos">
-              <div class="ia-camino">
-                <span class="ia-camino-titulo">Automático (a veces lento)</span>
-                <button type="button" class="btn btn-outline btn-sm" id="btnGenerarFichaIA">
-                  🛒 Generar ficha para la tienda
-                </button>
-                <button type="button" class="btn btn-outline btn-sm" id="btnGenerarFacebookIA">
-                  📣 Generar publicación para Facebook
-                </button>
-              </div>
-              <div class="ia-camino ia-camino-manual">
-                <span class="ia-camino-titulo">A mano (siempre funciona, más rápido)</span>
-                <button type="button" class="btn btn-primary btn-sm" id="btnCopiarPromptFicha">
-                  📋 Copiar prompt de la ficha
-                </button>
-                <button type="button" class="btn btn-outline btn-sm" id="btnCopiarPromptFacebook">
-                  📋 Copiar prompt de Facebook
-                </button>
-                <button type="button" class="btn btn-outline btn-sm" id="btnPegarFichaIA">
-                  📥 Pegar la ficha que te dio la IA
-                </button>
-              </div>
-            </div>
-            <p class="subtitle" id="prodTextoIAAviso">La ficha reemplaza la Descripción de arriba (revísala antes de guardar). La de Facebook se abre aparte, con botón para copiar.</p>
           </div>
         </div>
 

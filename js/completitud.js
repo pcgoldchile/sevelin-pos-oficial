@@ -173,6 +173,8 @@ function irASeccion(seccion, foco) {
   const card = document.querySelector(`#view-producto-editor [data-seccion="${seccion}"]`);
   if (!card) return;
   card.classList.remove('plegada');
+  // La Descripción vive dentro de la tarjeta básica (v117): hay que abrir también a la que la contiene.
+  card.closest('.card-plegable')?.classList.remove('plegada');
   card.scrollIntoView({ behavior: 'smooth', block: 'center' });
   card.classList.add('seccion-destacada');
   setTimeout(() => card.classList.remove('seccion-destacada'), 1600);

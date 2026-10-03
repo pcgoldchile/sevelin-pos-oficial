@@ -4866,3 +4866,8 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
     .modal-box.modal-sm.entrega-ancha { max-width: 460px; }
     .entrega-columnas { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Descripción dentro de "Información básica" (v117) */
+.basico-descripcion { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); border-radius: var(--radius-sm); }
+.basico-descripcion-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.basico-descripcion-head h3 { font-size: 15px; margin: 0; }

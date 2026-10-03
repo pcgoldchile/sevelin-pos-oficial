@@ -12,6 +12,21 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 03-10-2026 (madrugada del 04) · v116 y v117, ofertas con interruptor, popup de entrega y descripción a la mano
+
+Detalle en `docs/CHANGELOG-V116.md`.
+
+**Publicado:** **v116** (POS `9602208`, tienda `a0d7667`, `sql/83` aplicada): chip "Ofertas" para encender y apagar cada
+oferta web sin perder precio ni fechas; la tienda muestra el precio normal tachado, el de oferta en ámbar y "Ahorras $X".
+**v117** (POS `fc2b0c8` y el commit siguiente): popup de entrega en dos columnas con "Ya entregado", y la Descripción
+dentro de "Información básica".
+
+**Sin probar de punta a punta:** una oferta apagada viajando de verdad a la tienda, y el diseño nuevo en producción (no
+hay ofertas vigentes hasta el 05-10).
+
+**Anotado en la tabla:** #66 (stock y compras en una sola sección, con permiso de admin para ajustar) y #67 (asistente
+para crear productos).
+
 ## 03-10-2026 (noche) · v115, comisión de TUU con IVA, correcciones y Google Shopping
 
 Detalle en `docs/CHANGELOG-V115.md`.
