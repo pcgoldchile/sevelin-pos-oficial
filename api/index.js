@@ -12281,6 +12281,125 @@ app.put('/api/pos/mayoristas/ajustes', auth(true), async (req, res) => {
   }
 });
 
+/* ============================================================
+   GET /api/pos/mayoristas/informe?dias=90 — Página Web → Mayoristas
+   ------------------------------------------------------------
+   Fase 2 mayorista (pendiente #28): cuánto se vendió a precio mayorista,
+   con qué margen y cuánto se rebajó frente al precio normal, por producto.
+   Sale de la marca `venta_items.precio_tipo` (sql/76), que ponen la caja y
+   la tienda. Solo admin: lleva costos.
+
+   TRES CUIDADOS
+   - Solo ventas PAGADAS: una venta anulada sale del informe, igual que de
+     Finanzas. Una devolución parcial no toca `venta_items`, así que se le
+     descuentan a cada línea las unidades de `devolucion_items`.
+   - El costo es el que quedó guardado en la línea al vender (PEPS), no el
+     de hoy: el margen es el que de verdad dejó esa venta.
+   - "Rebaja frente al normal" compara con el precio normal DE HOY, porque
+     la línea no guarda el normal del día de la venta. Si el precio normal
+     cambió después, ese número es una aproximación, y la pantalla lo dice.
+   ============================================================ */
+const PERIODOS_INFORME_MAYORISTA = [30, 90, 180, 365];
+
+app.get('/api/pos/mayoristas/informe', auth(true), async (req, res) => {
+  const dias = PERIODOS_INFORME_MAYORISTA.includes(Number(req.query.dias)) ? Number(req.query.dias) : 90;
+  const hasta = fechaHoyChile();
+  const desde = new Date(Date.parse(`${hasta}T12:00:00Z`) - dias * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const vacio = { ventas: 0, unidades: 0, vendido: 0, costo: 0, utilidad: 0, margen: null, rebaja: 0 };
+
+  try {
+    const { data: lineas, error } = await db.from('venta_items')
+      .select('id, venta_id, producto_id, nombre, cantidad, costo_unitario, precio_unitario')
+      .eq('precio_tipo', 'MAYORISTA');
+    if (error) throw error;
+
+    const idsVenta = [...new Set((lineas || []).map(l => l.venta_id).filter(Boolean))];
+    if (!idsVenta.length) {
+      return res.json({ dias, desde, hasta, total: vacio, por_canal: { web: 0, caja: 0 }, productos: [], ventas: [] });
+    }
+
+    const idsProducto = [...new Set(lineas.map(l => l.producto_id).filter(Boolean))];
+    const [ventas, devueltos, productos] = await Promise.all([
+      db.from('ventas').select('id, fecha, numero_orden, cliente, pedido_web_numero')
+        .in('id', idsVenta).eq('estado', 'PAGADA').gte('fecha', desde),
+      db.from('devolucion_items').select('venta_item_id, cantidad').in('venta_item_id', lineas.map(l => l.id)),
+      idsProducto.length
+        ? db.from('productos').select('id, nombre, precio_unitario, precio_web').in('id', idsProducto)
+        : Promise.resolve({ data: [], error: null })
+    ]);
+    for (const r of [ventas, devueltos, productos]) if (r.error) throw r.error;
+
+    const ventaPorId = new Map((ventas.data || []).map(v => [v.id, v]));
+    const devueltoPorLinea = new Map();
+    (devueltos.data || []).forEach(d => {
+      devueltoPorLinea.set(d.venta_item_id, (devueltoPorLinea.get(d.venta_item_id) || 0) + num(d.cantidad));
+    });
+    const productoPorId = new Map((productos.data || []).map(p => [p.id, p]));
+
+    const porProducto = new Map();
+    const porVenta = new Map();
+    for (const l of lineas) {
+      const venta = ventaPorId.get(l.venta_id);
+      if (!venta) continue;                       // anulada, o fuera del período
+      const unidades = num(l.cantidad) - (devueltoPorLinea.get(l.id) || 0);
+      if (unidades <= 0) continue;                // la línea se devolvió entera
+      const precio = num(l.precio_unitario);
+      const vendido = precio * unidades;
+      const costo = num(l.costo_unitario) * unidades;
+
+      const prod = l.producto_id ? productoPorId.get(l.producto_id) : null;
+      // Mismo "normal" que usa el panel: el menor entre el precio de caja y el de la web.
+      const normales = prod ? [num(prod.precio_unitario), num(prod.precio_web)].filter(n => n > 0) : [];
+      const normalHoy = normales.length ? Math.min(...normales) : null;
+      const rebaja = normalHoy !== null ? Math.max(0, normalHoy - precio) * unidades : 0;
+
+      const clave = l.producto_id ? `p${l.producto_id}` : `n${l.nombre}`;
+      const fila = porProducto.get(clave) || {
+        producto_id: l.producto_id || null, nombre: prod?.nombre || l.nombre,
+        unidades: 0, vendido: 0, costo: 0, rebaja: 0, precio_normal_hoy: normalHoy, ventas: new Set()
+      };
+      fila.unidades += unidades; fila.vendido += vendido; fila.costo += costo; fila.rebaja += rebaja;
+      fila.ventas.add(l.venta_id);
+      porProducto.set(clave, fila);
+
+      const v = porVenta.get(l.venta_id) || {
+        id: venta.id, fecha: venta.fecha, numero_orden: venta.numero_orden || null, cliente: venta.cliente || null,
+        canal: venta.pedido_web_numero ? 'web' : 'caja', unidades: 0, vendido: 0
+      };
+      v.unidades += unidades; v.vendido += vendido;
+      porVenta.set(l.venta_id, v);
+    }
+
+    const margenDe = (vendido, costo) => (vendido > 0 ? Math.round(((vendido - costo) / vendido) * 1000) / 10 : null);
+    const filas = [...porProducto.values()].map(f => ({
+      producto_id: f.producto_id, nombre: f.nombre, ventas: f.ventas.size, unidades: f.unidades,
+      vendido: f.vendido, costo: f.costo, utilidad: f.vendido - f.costo, margen: margenDe(f.vendido, f.costo),
+      precio_promedio: f.unidades > 0 ? Math.round(f.vendido / f.unidades) : 0,
+      precio_normal_hoy: f.precio_normal_hoy, rebaja: f.rebaja
+    })).sort((a, b) => b.vendido - a.vendido);
+
+    const listaVentas = [...porVenta.values()].sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)) || b.id - a.id);
+    const suma = campo => filas.reduce((acc, f) => acc + f[campo], 0);
+    const vendido = suma('vendido');
+    const costo = suma('costo');
+
+    res.json({
+      dias, desde, hasta,
+      total: listaVentas.length
+        ? { ventas: listaVentas.length, unidades: suma('unidades'), vendido, costo, utilidad: vendido - costo, margen: margenDe(vendido, costo), rebaja: suma('rebaja') }
+        : vacio,
+      por_canal: {
+        web: listaVentas.filter(v => v.canal === 'web').length,
+        caja: listaVentas.filter(v => v.canal === 'caja').length
+      },
+      productos: filas,
+      ventas: listaVentas.slice(0, 30)
+    });
+  } catch (e) {
+    return enviarErrorBD(res, e, 'GET /api/pos/mayoristas/informe');
+  }
+});
+
 // Para el editor de producto: el mínimo que acepta el piso, con la última compra incluida.
 app.get('/api/productos/:id/mayorista-minimo', auth(true), async (req, res) => {
   const id = Number(req.params.id);

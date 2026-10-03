@@ -55,6 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
     pintarCuentasMayoristas();
   });
   document.getElementById('btnRecargarMayoristas')?.addEventListener('click', () => cargarMayoristas());
+  document.getElementById('mayoristasInformeDias')?.addEventListener('change', () => cargarInformeMayorista());
   document.getElementById('btnGuardarPedidoMinimo')?.addEventListener('click', guardarPedidoMinimoMayorista);
   document.getElementById('mayoristasLista')?.addEventListener('click', (e) => {
     const b = e.target.closest('[data-may-accion]');
@@ -105,6 +106,8 @@ async function actualizarAvisoMayoristas() {
 async function cargarMayoristas() {
   const lista = document.getElementById('mayoristasLista');
   if (lista && !mayoristasCache) lista.innerHTML = '<p class="modal-hint">Cargando…</p>';
+  // Aparte: si el informe falla, las cuentas y los precios se ven igual.
+  cargarInformeMayorista();
   try {
     mayoristasCache = await API.mayoristas.listar();
     pintarCuentasMayoristas();
@@ -239,6 +242,67 @@ function pintarProductosMayoristas() {
     </tr>`;
   };
   body.innerHTML = [...desactivados, ...activos].map(fila).join('');
+}
+
+/* ---------- Informe: lo vendido a precio mayorista (Fase 2, pendiente #28) ---------- */
+async function cargarInformeMayorista() {
+  const cuerpo = document.getElementById('mayoristasInformeProductosBody');
+  if (!cuerpo) return;
+  const dias = Number(document.getElementById('mayoristasInformeDias')?.value) || 90;
+  try {
+    pintarInformeMayorista(await API.mayoristas.informe(dias));
+  } catch (err) {
+    console.error('Error al cargar el informe mayorista:', err.message || err);
+    cuerpo.innerHTML = `<tr class="empty-row"><td colspan="9" style="color:var(--red);">${escHtml(err.message || 'No se pudo cargar el informe')}</td></tr>`;
+  }
+}
+
+function pintarInformeMayorista(informe) {
+  const t = informe?.total || {};
+  const texto = (id, valor) => { const el = document.getElementById(id); if (el) el.textContent = valor; };
+  const pct = m => (m === null || m === undefined ? '—' : `${String(m).replace('.', ',')}%`);
+
+  texto('kpiMayoristaVendido', fmtCLP(t.vendido || 0));
+  texto('kpiMayoristaVendidoDetalle', t.ventas
+    ? `${t.ventas} venta${t.ventas === 1 ? '' : 's'} · ${t.unidades} unidad${t.unidades === 1 ? '' : 'es'} · ${informe.por_canal?.web || 0} en la web y ${informe.por_canal?.caja || 0} en la caja`
+    : 'Sin ventas a precio mayorista en el período');
+  texto('kpiMayoristaMargen', pct(t.margen));
+  texto('kpiMayoristaMargenDetalle', t.ventas ? `Utilidad ${fmtCLP(t.utilidad || 0)}, con el costo de cada venta` : 'Con el costo de cada venta');
+  texto('kpiMayoristaRebaja', fmtCLP(t.rebaja || 0));
+  texto('mayoristasInformeResumen',
+    `Del ${fechaCorta(informe?.desde)} al ${fechaCorta(informe?.hasta)}. Lo vendido a precio mayorista en la caja y en sevelin.cl, con el margen que de verdad dejó. ` +
+    'La rebaja se compara con el precio normal de hoy: si el precio cambió después de la venta, es una aproximación.');
+
+  const productos = document.getElementById('mayoristasInformeProductosBody');
+  if (productos) {
+    productos.innerHTML = (informe?.productos || []).length
+      ? informe.productos.map(p => `<tr>
+          <td><strong>${escHtml(p.nombre)}</strong></td>
+          <td class="num">${escHtml(String(p.ventas))}</td>
+          <td class="num">${escHtml(String(p.unidades))}</td>
+          <td class="num">${fmtCLP(p.precio_promedio)}</td>
+          <td class="num">${p.precio_normal_hoy ? fmtCLP(p.precio_normal_hoy) : '—'}</td>
+          <td class="num">${fmtCLP(p.vendido)}</td>
+          <td class="num">${fmtCLP(p.utilidad)}</td>
+          <td class="num"${p.margen !== null && p.margen < 20 ? ' style="color:var(--red);" title="Bajo el piso de 20%"' : ''}>${pct(p.margen)}</td>
+          <td class="num">${fmtCLP(p.rebaja)}</td>
+        </tr>`).join('')
+      : '<tr class="empty-row"><td colspan="9">Todavía no hay ventas a precio mayorista en este período.</td></tr>';
+  }
+
+  const ventas = document.getElementById('mayoristasInformeVentasBody');
+  if (ventas) {
+    ventas.innerHTML = (informe?.ventas || []).length
+      ? informe.ventas.map(v => `<tr>
+          <td>${escHtml(fechaCorta(v.fecha))}</td>
+          <td>${escHtml(v.numero_orden ? String(v.numero_orden) : `#${v.id}`)}</td>
+          <td>${escHtml(v.cliente || '—')}</td>
+          <td>${v.canal === 'web' ? '🌐 sevelin.cl' : '🏪 Caja'}</td>
+          <td class="num">${escHtml(String(v.unidades))}</td>
+          <td class="num">${fmtCLP(v.vendido)}</td>
+        </tr>`).join('')
+      : '<tr class="empty-row"><td colspan="6">—</td></tr>';
+  }
 }
 
 async function abrirEditorDesdeMayoristas(id) {

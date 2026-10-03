@@ -289,6 +289,29 @@ app.get('/api/pos/mayoristas/avisos', (_req, res) => res.json({
   por_aprobar: cuentasMayoristas.filter(c => c.estado === 'PENDIENTE').length,
   desactivados: productos.filter(p => p.mayorista_aviso && !p.precio_mayorista).length,
 }));
+// Informe de ventas a precio mayorista (Fase 2). Con 30 días responde vacío, para ver ese estado.
+app.get('/api/pos/mayoristas/informe', (req, res) => {
+  const dias = [30, 90, 180, 365].includes(Number(req.query.dias)) ? Number(req.query.dias) : 90;
+  const base = { dias, desde: '2026-07-04', hasta: '2026-10-02' };
+  if (dias === 30) {
+    return res.json({ ...base, desde: '2026-09-02', total: { ventas: 0, unidades: 0, vendido: 0, costo: 0, utilidad: 0, margen: null, rebaja: 0 },
+      por_canal: { web: 0, caja: 0 }, productos: [], ventas: [] });
+  }
+  res.json({
+    ...base,
+    total: { ventas: 2, unidades: 18, vendido: 141000, costo: 104400, utilidad: 36600, margen: 26, rebaja: 23820 },
+    por_canal: { web: 1, caja: 1 },
+    productos: [
+      { producto_id: 162, nombre: 'Batería Externa Power Bank Master-G 30.000 mAh 22.5W', ventas: 1, unidades: 4, vendido: 104000, costo: 69936, utilidad: 34064, margen: 32.8, precio_promedio: 26000, precio_normal_hoy: 29990, rebaja: 15960 },
+      { producto_id: 104, nombre: 'Adaptador HDMI a VGA', ventas: 2, unidades: 10, vendido: 34000, costo: 31264, utilidad: 2736, margen: 8, precio_promedio: 3400, precio_normal_hoy: 3990, rebaja: 5900 },
+      { producto_id: null, nombre: 'Cable <b>escrito a mano</b>', ventas: 1, unidades: 4, vendido: 3000, costo: 3200, utilidad: -200, margen: -6.7, precio_promedio: 750, precio_normal_hoy: null, rebaja: 1960 },
+    ],
+    ventas: [
+      { id: 251, fecha: '2026-09-30', numero_orden: 'WEB-000014', cliente: 'María <Taller>', canal: 'web', unidades: 9, vendido: 121000 },
+      { id: 248, fecha: '2026-09-21', numero_orden: null, cliente: null, canal: 'caja', unidades: 9, vendido: 20000 },
+    ],
+  });
+});
 app.post('/api/pos/mayoristas/:userId/estado', (req, res) => {
   const c = cuentasMayoristas.find(x => x.user_id === req.params.userId);
   if (!c) return res.status(404).json({ error: 'Cuenta no encontrada' });

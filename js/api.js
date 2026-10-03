@@ -438,7 +438,8 @@ const API = {
     cambiarEstado: (userId, estado, nota) =>
       apiRequest(`/pos/mayoristas/${encodeURIComponent(userId)}/estado`, { method: 'POST', body: { estado, nota } }),
     guardarPedidoMinimo: (pedido_minimo) =>
-      apiRequest('/pos/mayoristas/ajustes', { method: 'PUT', body: { pedido_minimo } })
+      apiRequest('/pos/mayoristas/ajustes', { method: 'PUT', body: { pedido_minimo } }),
+    informe: (dias) => apiRequest(`/pos/mayoristas/informe?dias=${encodeURIComponent(dias)}`)
   },
 
   cotizacionesWeb: {

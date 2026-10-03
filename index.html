@@ -3151,6 +3151,55 @@
             </table>
           </div>
         </div>
+
+        <!-- Fase 2 (pendiente #28): lo vendido a precio mayorista y su margen real.
+             GET /api/pos/mayoristas/informe; lo pinta js/mayoristas.js. -->
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>📊 Ventas a precio mayorista</h2>
+              <p class="subtitle" id="mayoristasInformeResumen">Lo vendido a precio mayorista en la caja y en sevelin.cl, con el margen que de verdad dejó.</p>
+            </div>
+            <div class="toolbar-group">
+              <select id="mayoristasInformeDias" class="hist-select" title="Período">
+                <option value="30">Últimos 30 días</option>
+                <option value="90" selected>Últimos 90 días</option>
+                <option value="180">Últimos 6 meses</option>
+                <option value="365">Último año</option>
+              </select>
+            </div>
+          </div>
+          <div class="kpi-grid">
+            <div class="kpi-card kpi-blue">
+              <div class="kpi-label">🤝 Vendido a precio mayorista</div>
+              <div class="kpi-value" id="kpiMayoristaVendido">$0</div>
+              <div class="kpi-foot" id="kpiMayoristaVendidoDetalle">—</div>
+            </div>
+            <div class="kpi-card kpi-green">
+              <div class="kpi-label">📈 Margen real</div>
+              <div class="kpi-value" id="kpiMayoristaMargen">—</div>
+              <div class="kpi-foot" id="kpiMayoristaMargenDetalle">Con el costo de cada venta</div>
+            </div>
+            <div class="kpi-card kpi-red">
+              <div class="kpi-label">🏷️ Rebaja frente al precio normal</div>
+              <div class="kpi-value" id="kpiMayoristaRebaja">$0</div>
+              <div class="kpi-foot">Comparado con el precio normal de hoy</div>
+            </div>
+          </div>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead><tr><th>Producto</th><th class="num">Ventas</th><th class="num">Unidades</th><th class="num">Precio prom.</th><th class="num">Normal hoy</th><th class="num">Vendido</th><th class="num">Utilidad</th><th class="num">Margen</th><th class="num">Rebaja</th></tr></thead>
+              <tbody id="mayoristasInformeProductosBody"><tr class="empty-row"><td colspan="9">Cargando…</td></tr></tbody>
+            </table>
+          </div>
+          <h3 style="margin:16px 0 8px;font-size:14px;">Últimas ventas con precio mayorista</h3>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead><tr><th>Fecha</th><th>Venta</th><th>Cliente</th><th>Canal</th><th class="num">Unidades</th><th class="num">A precio mayorista</th></tr></thead>
+              <tbody id="mayoristasInformeVentasBody"><tr class="empty-row"><td colspan="6">Cargando…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       <!-- ============================================================
