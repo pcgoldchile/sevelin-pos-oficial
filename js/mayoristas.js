@@ -222,6 +222,7 @@ function pintarProductosMayoristas() {
   }
   const fila = p => {
     const pm = Number(p.precio_mayorista) || 0;
+    const pm2 = Number(p.precio_mayorista_2) || 0;   // segundo escalón (sql/81)
     const normal = Math.min(Number(p.precio_unitario) || Infinity, Number(p.precio_web) || Infinity);
     const costo = Number(p.costo_referencia) || 0;
     // v105: las dos barras juntas (lineaMargen, js/productos.js), para comparar de un vistazo
@@ -234,7 +235,8 @@ function pintarProductosMayoristas() {
         ${p.mayorista_aviso && !pm ? `<br><small style="color:var(--red);">⚠️ ${escHtml(p.mayorista_aviso)}</small>` : ''}</td>
       <td class="num">${Number.isFinite(normal) ? fmtCLP(normal) : '—'}</td>
       <td class="num">${pm ? `<strong>${fmtCLP(pm)}</strong>` : '—'}</td>
-      <td class="num">${pm ? `${escHtml(String(p.mayorista_desde))} u.` : '—'}</td>
+      <td class="num">${pm ? `${escHtml(String(p.mayorista_desde))} u.` : '—'}${pm && pm2
+        ? `<br><small title="Segundo escalón">${fmtCLP(pm2)} desde ${escHtml(String(p.mayorista_desde_2))} u.</small>` : ''}</td>
       <td class="col-margen">${margenes || '—'}</td>
       <td class="num">${p.precio_minimo ? fmtCLP(p.precio_minimo) : '—'}</td>
       <td class="num"${pocoStock ? ' style="color:var(--red);" title="Hay menos stock que la cantidad mínima: en la web no se muestra"' : ''}>${escHtml(String(p.stock ?? 0))}</td>

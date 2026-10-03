@@ -148,6 +148,9 @@ function actualizarResumenOfertaWeb() {
    se muestra para no tener que adivinarlo. */
 const elProdPrecioMayorista = document.getElementById('prodPrecioMayorista');
 const elProdMayoristaDesde = document.getElementById('prodMayoristaDesde');
+// Segundo escalón (sql/81, v111): opcional, más barato y desde más unidades.
+const elProdPrecioMayorista2 = document.getElementById('prodPrecioMayorista2');
+const elProdMayoristaDesde2 = document.getElementById('prodMayoristaDesde2');
 const elProdMayoristaResumen = document.getElementById('prodMayoristaResumen');
 const elProdMayoristaAviso = document.getElementById('prodMayoristaAviso');
 const TEXTO_MAYORISTA_VACIO = elProdMayoristaResumen?.textContent || '';
@@ -172,6 +175,19 @@ function actualizarResumenMayorista() {
     const margen = Math.round((precio - costo) / precio * 100);
     const dcto = Number.isFinite(normal) ? Math.round((normal - precio) / normal * 100) : 0;
     texto = `✅ ${fmtCLP(precio)} desde ${desde} u. (−${dcto}% del normal) · margen ${margen}% sobre costo ${fmtCLP(costo)} · mínimo ${fmtCLP(minimo)}`;
+    // Segundo escalón: mismas reglas que valida el servidor, para no adivinar.
+    const precio2 = Number(elProdPrecioMayorista2?.value) || 0;
+    const desde2 = Number(elProdMayoristaDesde2?.value) || 0;
+    if (precio2 || desde2) {
+      if (!precio2) { texto = '⚠️ Al segundo escalón le falta el precio.'; error = true; }
+      else if (!(desde2 > desde)) { texto = `⚠️ El segundo escalón tiene que partir desde más de ${desde} unidades.`; error = true; }
+      else if (precio2 >= precio) { texto = `⚠️ El segundo precio tiene que ser menor que el primero (${fmtCLP(precio)}).`; error = true; }
+      else if (precio2 < minimo) { texto = `⚠️ El mínimo es ${fmtCLP(minimo)}: el segundo precio deja menos de ${Math.round(piso * 100)}% de margen.`; error = true; }
+      else {
+        const margen2 = Math.round((precio2 - costo) / precio2 * 100);
+        texto += ` · y ${fmtCLP(precio2)} desde ${desde2} u. (margen ${margen2}%)`;
+      }
+    }
   }
   elProdMayoristaResumen.textContent = texto;
   elProdMayoristaResumen.style.color = error ? 'var(--red)' : 'var(--green)';
@@ -288,7 +304,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Oferta web (sql/71): el resumen se recalcula con cualquier campo que la afecte.
   [elProdPrecioOfertaWeb, elProdOfertaDesde, elProdOfertaHasta, elProdPrecioWeb, elProdPrecio]
     .forEach(el => el?.addEventListener('input', actualizarResumenOfertaWeb));
-  [elProdPrecioMayorista, elProdMayoristaDesde, elProdCosto, elProdPrecio, elProdPrecioWeb]
+  [elProdPrecioMayorista, elProdMayoristaDesde, elProdPrecioMayorista2, elProdMayoristaDesde2, elProdCosto, elProdPrecio, elProdPrecioWeb]
     .forEach(el => el?.addEventListener('input', actualizarResumenMayorista));
   setupProductosEventListeners();
 });
@@ -605,7 +621,10 @@ function celdaMargen(p) {
   const mayorista = Number(p.precio_mayorista) > 0
     ? lineaMargen(`Mayor ×${Number(p.mayorista_desde) || ''}`, p.precio_mayorista, costo)
     : '';
-  return lineaMargen('Menor', p.precio_unitario, costo) + mayorista;
+  const mayorista2 = Number(p.precio_mayorista) > 0 && Number(p.precio_mayorista_2) > 0
+    ? lineaMargen(`Mayor ×${Number(p.mayorista_desde_2) || ''}`, p.precio_mayorista_2, costo)
+    : '';
+  return lineaMargen('Menor', p.precio_unitario, costo) + mayorista + mayorista2;
 }
 
 /* Resumen sobre la tabla: cuántos productos con stock caen en cada tramo. */
@@ -1828,6 +1847,8 @@ function abrirModalProducto(producto = null) {
     actualizarResumenOfertaWeb();
     if (elProdPrecioMayorista) elProdPrecioMayorista.value = producto.precio_mayorista ?? '';
     if (elProdMayoristaDesde) elProdMayoristaDesde.value = producto.mayorista_desde ?? '';
+    if (elProdPrecioMayorista2) elProdPrecioMayorista2.value = producto.precio_mayorista_2 ?? '';
+    if (elProdMayoristaDesde2) elProdMayoristaDesde2.value = producto.mayorista_desde_2 ?? '';
     pintarAvisoMayorista(producto);
     cargarMinimoMayoristaEditor(producto.id);
     if (elProdStockUmbralWeb) elProdStockUmbralWeb.value = producto.stock_umbral_web ?? '';
@@ -1894,6 +1915,8 @@ function abrirModalProducto(producto = null) {
     actualizarResumenOfertaWeb();
     if (elProdPrecioMayorista) elProdPrecioMayorista.value = '';
     if (elProdMayoristaDesde) elProdMayoristaDesde.value = '';
+    if (elProdPrecioMayorista2) elProdPrecioMayorista2.value = '';
+    if (elProdMayoristaDesde2) elProdMayoristaDesde2.value = '';
     pintarAvisoMayorista(null);
     cargarMinimoMayoristaEditor(null);
     if (elProdStockUmbralWeb) elProdStockUmbralWeb.value = '';
@@ -2125,6 +2148,9 @@ function construirPayloadProducto() {
     // Venta mayorista (sql/76). Sin precio, el servidor borra la cantidad.
     precio_mayorista: elProdPrecioMayorista?.value.trim() ? Number(elProdPrecioMayorista.value) : null,
     mayorista_desde: elProdMayoristaDesde?.value.trim() ? Number(elProdMayoristaDesde.value) : null,
+    // Segundo escalón (sql/81). Sin precio, el servidor borra también su cantidad.
+    precio_mayorista_2: elProdPrecioMayorista2?.value.trim() ? Number(elProdPrecioMayorista2.value) : null,
+    mayorista_desde_2: elProdMayoristaDesde2?.value.trim() ? Number(elProdMayoristaDesde2.value) : null,
     categoria_web,
     categoria_id,
     subcategoria_web,

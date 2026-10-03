@@ -2505,6 +2505,17 @@
               <input type="number" id="prodMayoristaDesde" min="2" step="1" placeholder="Ej: 3">
             </div>
           </div>
+          <!-- v111 (sql/81): segundo escalón, opcional. Más barato y desde más unidades que el primero. -->
+          <div class="grid grid-2" id="gridProdMayorista2" style="margin-top:8px;">
+            <div class="field">
+              <label for="prodPrecioMayorista2">🤝 Segundo precio mayorista (opcional)</label>
+              <input type="number" id="prodPrecioMayorista2" min="0" step="1" placeholder="Más bajo que el primero">
+            </div>
+            <div class="field">
+              <label for="prodMayoristaDesde2">Desde (unidades)</label>
+              <input type="number" id="prodMayoristaDesde2" min="3" step="1" placeholder="Ej: 10">
+            </div>
+          </div>
           <p class="modal-hint" id="prodMayoristaResumen">Por unidad, desde esa cantidad del mismo producto. Nunca por debajo del piso de margen (la base lo desactiva sola si una compra sube el costo).</p>
           <div id="prodMayoristaAviso" class="callout-warning" style="display:none;"></div>
 

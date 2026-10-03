@@ -433,7 +433,8 @@ function agregarItemAlCarrito() {
      línea nace marcada; si no, nace normal y la caja ofrece aplicarlo cuando
      la cantidad alcance (ver renderCart). */
   const precioMayorista = producto ? (Number(producto.precio_mayorista) || null) : null;
-  const esPrecioMayorista = !!precioMayorista && precio === precioMayorista;
+  const precioMayorista2 = producto ? (Number(producto.precio_mayorista_2) || null) : null;
+  const esPrecioMayorista = (!!precioMayorista && precio === precioMayorista) || (!!precioMayorista2 && precio === precioMayorista2);
   // El mismo producto sin S/N y al mismo precio suma a su línea en vez de repetirla
   // (una línea ya pasada a mayorista también recibe las unidades a precio normal).
   const igual = producto && !numeroSerie && cart.find(i =>
@@ -443,6 +444,7 @@ function agregarItemAlCarrito() {
 
   if (igual) {
     igual.cantidad += cantidad;
+    ajustarEscalonMayorista(igual);
     igual.subtotal = igual.precio_unitario * igual.cantidad;
     showToast(`${igual.nombre} x${igual.cantidad}`, 'ok');
   } else {
@@ -462,6 +464,9 @@ function agregarItemAlCarrito() {
       precio_normal: esPrecioMayorista ? (Number(producto.precio_unitario) || precio) : precio,
       precio_mayorista: precioMayorista,
       mayorista_desde: producto ? (Number(producto.mayorista_desde) || null) : null,
+      // Segundo escalón (sql/81): más barato desde más unidades.
+      precio_mayorista_2: producto ? (Number(producto.precio_mayorista_2) || null) : null,
+      mayorista_desde_2: producto ? (Number(producto.mayorista_desde_2) || null) : null,
       // Solo para el carrito (fotos y el "+" que pide S/N); normalizarItems() los descarta
       requiere_sn: !!producto?.requiere_sn,
       imagen_urls: producto ? (producto.imagen_urls || []).filter(Boolean) : []
@@ -552,31 +557,57 @@ function pedirNumeroSerie(producto) {
    En el local decide quien vende: la caja solo muestra el precio mayorista
    del producto y, cuando la cantidad alcanza, un botón para aplicarlo. La
    línea queda marcada MAYORISTA (venta_items.precio_tipo) para medirla. */
+/* El precio mayorista que le toca a esa cantidad: el del segundo escalón
+   (sql/81) si llega a su cantidad, y si no el del primero. */
+function precioMayoristaParaCantidad(item, cantidad) {
+  const pm2 = Number(item.precio_mayorista_2) || 0;
+  const desde2 = Number(item.mayorista_desde_2) || 0;
+  return pm2 && desde2 && cantidad >= desde2 ? pm2 : (Number(item.precio_mayorista) || 0);
+}
+
 function detalleMayoristaLinea(item, idx) {
   const pm = Number(item.precio_mayorista) || 0;
   const desde = Number(item.mayorista_desde) || 0;
   if (!pm || !desde) return '';
+  const pm2 = Number(item.precio_mayorista_2) || 0;
+  const desde2 = Number(item.mayorista_desde_2) || 0;
+  const escalon2 = pm2 && desde2 ? ` · ${fmtCLP(pm2)} desde ${desde2} u.` : '';
   if (item.precio_tipo === 'MAYORISTA') {
-    return ` · <span class="cart-mayorista activo">🤝 Mayorista</span>
+    const falta = escalon2 && item.cantidad < desde2 ? ` <span class="cart-mayorista">(${fmtCLP(pm2)} desde ${desde2} u.)</span>` : '';
+    return ` · <span class="cart-mayorista activo">🤝 Mayorista</span>${falta}
       <button type="button" class="cart-mayorista-btn" data-mayorista-quitar="${idx}" title="Volver al precio normal (${fmtCLP(item.precio_normal)})">quitar</button>`;
   }
-  if (item.cantidad >= desde && pm < item.precio_unitario) {
+  const paraEstaCantidad = precioMayoristaParaCantidad(item, item.cantidad);
+  if (item.cantidad >= desde && paraEstaCantidad < item.precio_unitario) {
     return ` · <button type="button" class="cart-mayorista-btn" data-mayorista-aplicar="${idx}"
-      title="Llevan ${item.cantidad}: el precio mayorista corre desde ${desde} unidades">🤝 Aplicar mayorista ${fmtCLP(pm)} c/u</button>`;
+      title="Llevan ${item.cantidad}: el precio mayorista corre desde ${desde} unidades">🤝 Aplicar mayorista ${fmtCLP(paraEstaCantidad)} c/u</button>`;
   }
-  return ` · <span class="cart-mayorista">Mayorista ${fmtCLP(pm)} desde ${desde} u.</span>`;
+  return ` · <span class="cart-mayorista">Mayorista ${fmtCLP(pm)} desde ${desde} u.${escalon2}</span>`;
 }
 
 function aplicarPrecioMayoristaLinea(linea, aplicar) {
   if (aplicar) {
-    linea.precio_normal = linea.precio_unitario;
-    linea.precio_unitario = Number(linea.precio_mayorista);
+    // Una línea que ya va a precio mayorista conserva su precio normal original.
+    if (linea.precio_tipo !== 'MAYORISTA') linea.precio_normal = linea.precio_unitario;
+    linea.precio_unitario = precioMayoristaParaCantidad(linea, linea.cantidad);
     linea.precio_tipo = 'MAYORISTA';
   } else {
     linea.precio_unitario = Number(linea.precio_normal) || linea.precio_unitario;
     linea.precio_tipo = 'NORMAL';
   }
   linea.subtotal = linea.precio_unitario * linea.cantidad;
+}
+
+/* Al cambiar la cantidad de una línea mayorista, su precio sigue al escalón
+   que le toca (sube o baja entre el primero y el segundo). */
+function ajustarEscalonMayorista(linea) {
+  if (linea.precio_tipo !== 'MAYORISTA' || !(Number(linea.precio_mayorista) > 0)) return;
+  if (linea.cantidad < Number(linea.mayorista_desde)) return;
+  const precio = precioMayoristaParaCantidad(linea, linea.cantidad);
+  if (precio === linea.precio_unitario) return;
+  showToast(`${linea.cantidad} u.: precio mayorista ${fmtCLP(precio)} c/u`, '');
+  linea.precio_unitario = precio;
+  linea.subtotal = precio * linea.cantidad;
 }
 
 function alternarMayoristaLinea(idx, aplicar) {
@@ -617,6 +648,7 @@ async function cambiarCantidadCarrito(idx, delta) {
     linea.cantidad += 1;
   }
 
+  cart.forEach(ajustarEscalonMayorista);
   cart.forEach(i => { i.subtotal = i.precio_unitario * i.cantidad; });
   renderCart();
   if (delta > 0) avisoStockCarrito(linea.producto_id);

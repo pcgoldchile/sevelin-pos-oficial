@@ -264,7 +264,8 @@ app.put('/api/textos/preguntas_diagnostico', (req, res) => {
 
 // v103: venta mayorista (sql/76 + supabase/39). Dos productos con precio mayorista, uno
 // desactivado solo por la base (subió el costo), y cuentas en los cuatro estados.
-Object.assign(productos.find(p => p.id === 104), { precio_mayorista: 3500, mayorista_desde: 5 });
+// El 104 lleva además el segundo escalón (sql/81, v111): $3.200 desde 10 u.
+Object.assign(productos.find(p => p.id === 104), { precio_mayorista: 3500, mayorista_desde: 5, precio_mayorista_2: 3200, mayorista_desde_2: 10 });
 Object.assign(productos.find(p => p.id === 126), { precio_mayorista: 7000, mayorista_desde: 3 });
 Object.assign(productos.find(p => p.id === 100), { mayorista_aviso: 'Se desactivó el mayorista de $5.200 (5 u.): Con el costo de $4.228, el mayorista mínimo es $5.285 (piso de 20% de margen)', mayorista_aviso_en: '2026-09-30T18:00:00Z' });
 const PISO_MAQUETA = 0.2;
@@ -569,7 +570,8 @@ app.post('/api/pos/margen-carrito', (req, res) => {
     const costo = p ? costoRefMaqueta(p) : 0;
     const real = Number(it.precio_unitario) * factor;
     if (!p || p.es_servicio || p.stock_ilimitado || !(costo > 0) || !(real > 0)) return { bajo: false };
-    if (it.precio_tipo === 'MAYORISTA' && p.precio_mayorista && Number(it.precio_unitario) >= p.precio_mayorista) return { bajo: false };
+    const precioEscalon = p.precio_mayorista_2 && Number(it.cantidad) >= p.mayorista_desde_2 ? p.precio_mayorista_2 : p.precio_mayorista;
+    if (it.precio_tipo === 'MAYORISTA' && p.precio_mayorista && Number(it.precio_unitario) >= precioEscalon) return { bajo: false };
     const margen = (real - costo) / real;
     const bajo = margen < 0.15 - 1e-9;
     return app.locals.rolMaqueta === 'trabajador' ? { bajo }

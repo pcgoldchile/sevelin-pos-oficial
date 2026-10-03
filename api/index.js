@@ -810,8 +810,9 @@ function validarOfertaWeb(p, actual = {}) {
    y desactivarlo en silencio. `actual` es la fila guardada (al editar).
    Devuelve el mensaje de error o null. */
 async function validarPrecioMayorista(p, actual = {}, productoId = null) {
-  const toca = ['precio_mayorista', 'mayorista_desde', 'costo_unitario', 'precio_unitario', 'precio_web',
-    'es_servicio', 'stock_ilimitado', 'es_pedido_encargo', 'precio_a_consultar'].some(k => p[k] !== undefined);
+  const toca = ['precio_mayorista', 'mayorista_desde', 'precio_mayorista_2', 'mayorista_desde_2', 'costo_unitario',
+    'precio_unitario', 'precio_web', 'es_servicio', 'stock_ilimitado', 'es_pedido_encargo', 'precio_a_consultar']
+    .some(k => p[k] !== undefined);
   if (!toca) return null;
   const valor = k => (p[k] !== undefined ? p[k] : actual[k]);
   const precio = num(valor('precio_mayorista'));
@@ -839,6 +840,22 @@ async function validarPrecioMayorista(p, actual = {}, productoId = null) {
   if (error) throw new Error(error.message);
   if (precio < num(minimo)) {
     return `Con el costo de este producto el precio mayorista mínimo es ${clp(minimo)} (el piso de margen mayorista, contando la última compra). No se puede vender más barato.`;
+  }
+
+  /* Segundo escalón (sql/81): opcional, más barato y desde más unidades que
+     el primero, con el mismo piso. */
+  const precio2 = num(valor('precio_mayorista_2'));
+  if (precio2 > 0) {
+    const desde2 = num(valor('mayorista_desde_2'));
+    if (!Number.isInteger(desde2) || desde2 <= desde || desde2 > 1000) {
+      return `El segundo escalón tiene que partir desde más unidades que el primero (más de ${desde})`;
+    }
+    if (!(precio2 < precio)) {
+      return `El precio del segundo escalón (${clp(precio2)}) tiene que ser menor que el del primero (${clp(precio)})`;
+    }
+    if (precio2 < num(minimo)) {
+      return `Con el costo de este producto el precio mayorista mínimo es ${clp(minimo)}: el segundo escalón (${clp(precio2)}) queda por debajo.`;
+    }
   }
   return null;
 }
@@ -979,6 +996,8 @@ const CAMPOS_PRODUCTO = [
   // Venta mayorista (sql/76): se valida aparte en validarPrecioMayorista()
   // (necesita el costo de la última compra), y la base la vuelve a revisar.
   'precio_mayorista', 'mayorista_desde',
+  // Segundo escalón mayorista (sql/81): mismo validador.
+  'precio_mayorista_2', 'mayorista_desde_2',
   // categoria_id (Fase "Página Web → Categorías"): FK interna del POS, no se
   // sincroniza a la tienda (el trigger solo usa categoria_web). stock_umbral_web:
   // NULL = usa el default de la tienda (+5); ver sql/23-categorias-web-y-umbral-stock.sql.
@@ -1139,6 +1158,21 @@ function sanearProducto(body = {}) {
   if (p.mayorista_desde !== undefined && p.mayorista_desde !== null) {
     const d = Math.round(num(p.mayorista_desde));
     p.mayorista_desde = d > 0 ? d : null;
+  }
+  /* Segundo escalón (sql/81): van los dos o ninguno, y sin primer escalón no
+     hay segundo. */
+  if (p.precio_mayorista === null) {
+    p.precio_mayorista_2 = null;
+    p.mayorista_desde_2 = null;
+  }
+  if (p.precio_mayorista_2 !== undefined) {
+    const v = Math.round(num(p.precio_mayorista_2));
+    p.precio_mayorista_2 = v > 0 ? v : null;
+    if (!p.precio_mayorista_2) p.mayorista_desde_2 = null;
+  }
+  if (p.mayorista_desde_2 !== undefined && p.mayorista_desde_2 !== null) {
+    const d = Math.round(num(p.mayorista_desde_2));
+    p.mayorista_desde_2 = d > 0 ? d : null;
   }
   // Etiqueta destacada: solo una de las 3 opciones válidas o NULL — cualquier
   // otra cosa (manipulación directa del payload) se descarta en vez de
@@ -2147,7 +2181,7 @@ app.post('/api/pos/margen-carrito', auth(), async (req, res) => {
 
   const [productosR, costosR] = await Promise.all([
     db.from('productos')
-      .select('id, es_servicio, stock_ilimitado, categoria_web, precio_mayorista, mayorista_desde').in('id', ids),
+      .select('id, es_servicio, stock_ilimitado, categoria_web, precio_mayorista, mayorista_desde, precio_mayorista_2, mayorista_desde_2').in('id', ids),
     db.rpc('costos_referencia_productos')
   ]);
   if (productosR.error) return enviarErrorBD(res, productosR.error, 'POST /api/pos/margen-carrito');
@@ -2166,8 +2200,11 @@ app.post('/api/pos/margen-carrito', auth(), async (req, res) => {
   respuesta(lineas.map(l => {
     const p = l.producto_id ? productos.get(l.producto_id) : null;
     if (!p || p.es_servicio || p.stock_ilimitado || p.categoria_web === 'Servicios Técnicos') return { bajo: false };
+    // Con dos escalones (sql/81), el precio que vale es el de la cantidad que se lleva.
+    const enEscalon2 = num(p.precio_mayorista_2) > 0 && l.cantidad >= num(p.mayorista_desde_2);
+    const precioEscalon = enEscalon2 ? num(p.precio_mayorista_2) : num(p.precio_mayorista);
     const esMayoristaReal = l.mayorista && num(p.precio_mayorista) > 0
-      && l.precio >= num(p.precio_mayorista) && l.cantidad >= num(p.mayorista_desde);
+      && l.precio >= precioEscalon && l.cantidad >= num(p.mayorista_desde);
     if (esMayoristaReal) return { bajo: false };
     const costo = costos.get(l.producto_id) || 0;
     const precioReal = l.precio * factor;
@@ -4059,7 +4096,7 @@ app.put('/api/productos/:id', auth(true), async (req, res) => {
   // Venta mayorista (sql/76): mismo criterio, lo que falte sale de lo guardado.
   try {
     const { data: actualMayorista, error: errActual } = await db.from('productos')
-      .select('precio_mayorista, mayorista_desde, costo_unitario, precio_unitario, precio_web, es_servicio, stock_ilimitado, es_pedido_encargo, precio_a_consultar')
+      .select('precio_mayorista, mayorista_desde, precio_mayorista_2, mayorista_desde_2, costo_unitario, precio_unitario, precio_web, es_servicio, stock_ilimitado, es_pedido_encargo, precio_a_consultar')
       .eq('id', req.params.id).maybeSingle();
     if (errActual) throw errActual;
     const errMayorista = await validarPrecioMayorista(producto, actualMayorista || {}, req.params.id);
@@ -12777,7 +12814,7 @@ app.get('/api/pos/mayoristas', auth(true), async (req, res) => {
       consultarConReintento(() => dbWeb.from('cuentas_mayoristas').select('*').order('solicitado_en', { ascending: false })),
       consultarConReintento(() => dbWeb.from('ajustes_mayorista').select('pedido_minimo, actualizado_en, actualizado_por').eq('id', 1).maybeSingle()),
       db.from('productos')
-        .select('id, nombre, sku, stock, costo_unitario, precio_unitario, precio_web, precio_mayorista, mayorista_desde, mayorista_aviso, mayorista_aviso_en, publicado_web, imagen_urls')
+        .select('id, nombre, sku, stock, costo_unitario, precio_unitario, precio_web, precio_mayorista, mayorista_desde, precio_mayorista_2, mayorista_desde_2, mayorista_aviso, mayorista_aviso_en, publicado_web, imagen_urls')
         .or('precio_mayorista.not.is.null,mayorista_aviso.not.is.null')
         .eq('archivado', false)
         .order('nombre'),
@@ -13172,9 +13209,9 @@ app.get('/api/salud-sistema/catalogo-web', auth(true), async (req, res) => {
   try {
     const [respPos, respWeb, respMay] = await Promise.all([
       db.from('productos')
-        .select('id, nombre, sku, precio_unitario, publicado_web, archivado, es_borrador, stock_actualizado_en, precio_mayorista, mayorista_desde'),
+        .select('id, nombre, sku, precio_unitario, publicado_web, archivado, es_borrador, stock_actualizado_en, precio_mayorista, mayorista_desde, precio_mayorista_2, mayorista_desde_2'),
       dbWeb.from('productos_web').select('producto_pos_id, publicado_web'),
-      dbWeb.from('precios_mayoristas').select('producto_pos_id, precio_mayorista, desde_cantidad')
+      dbWeb.from('precios_mayoristas').select('producto_pos_id, precio_mayorista, desde_cantidad, precio_mayorista_2, desde_cantidad_2')
     ]);
     if (respPos.error) throw new Error(respPos.error.message);
     if (respWeb.error) throw new Error(respWeb.error.message);
@@ -13241,6 +13278,14 @@ app.get('/api/salud-sistema/catalogo-web', auth(true), async (req, res) => {
       } else if (num(w.precio_mayorista) !== pm || Number(w.desde_cantidad) !== Number(p.mayorista_desde)) {
         const masBarato = num(w.precio_mayorista) < pm || Number(w.desde_cantidad) < Number(p.mayorista_desde);
         const motivo = `Mayorista distinto: la web dice ${clp(w.precio_mayorista)} desde ${w.desde_cantidad} u. y el POS ${clp(pm)} desde ${p.mayorista_desde} u.`;
+        if (masBarato) sobrantes.push({ id, nombre: p.nombre, reenviable: true, motivo });
+        else faltantes.push({ id, nombre: p.nombre, sku: p.sku || null, precio: num(p.precio_unitario), motivo, actualizado_en: p.stock_actualizado_en });
+      } else if (num(w.precio_mayorista_2) !== num(p.precio_mayorista_2) || num(w.desde_cantidad_2) !== num(p.mayorista_desde_2)) {
+        // Segundo escalón (sql/81 → supabase/40). Grave si la web cobra menos, o si conserva uno que el POS ya quitó.
+        const pm2 = num(p.precio_mayorista_2), w2 = num(w.precio_mayorista_2);
+        const texto = (precio, desde) => (precio ? `${clp(precio)} desde ${desde} u.` : 'ninguno');
+        const motivo = `Segundo escalón mayorista distinto: la web dice ${texto(w2, w.desde_cantidad_2)} y el POS ${texto(pm2, p.mayorista_desde_2)}`;
+        const masBarato = w2 > 0 && (!pm2 || w2 < pm2 || num(w.desde_cantidad_2) < num(p.mayorista_desde_2));
         if (masBarato) sobrantes.push({ id, nombre: p.nombre, reenviable: true, motivo });
         else faltantes.push({ id, nombre: p.nombre, sku: p.sku || null, precio: num(p.precio_unitario), motivo, actualizado_en: p.stock_actualizado_en });
       }
