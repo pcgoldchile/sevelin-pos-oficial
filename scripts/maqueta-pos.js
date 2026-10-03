@@ -744,6 +744,11 @@ app.post('/api/productos/:id/ajuste-stock', (req, res) => {
   (ajustesMaqueta[p.id] = ajustesMaqueta[p.id] || []).unshift(registro);
   res.json(r);
 });
+// v119: la IA sugiere complementos (acá, dos productos fijos con stock, tras una espera corta).
+app.post('/api/productos/:id/sugerir-complementos', (req, res) => setTimeout(() => res.json({
+  sugeridos: productos.filter(p => p.id !== Number(req.params.id) && p.stock > 0).slice(0, 2).map(p => ({ id: p.id, nombre: p.nombre, precio_unitario: p.precio_unitario })),
+  modelo: 'maqueta'
+}), 400));
 const gastosMaqueta = [];
 app.get('/api/compras/clasificaciones', (_req, res) => res.json([
   { id: 1, nombre: 'Gastos Operativos (Servicios, Arriendo, Sueldos, etc.)', activo: true },

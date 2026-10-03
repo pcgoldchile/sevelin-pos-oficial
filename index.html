@@ -2398,8 +2398,15 @@
           <button class="btn btn-primary" id="btnGuardarProducto">Guardar Producto</button>
         </div>
       </div>
-      <p class="modal-hint">Las medidas y la descripción usan el mismo formato del CSV de Tiendanube.</p>
+      <p class="modal-hint editor-nota-csv">Las medidas y la descripción usan el mismo formato del CSV de Tiendanube.</p>
       <input type="hidden" id="prodEditId">
+
+      <!-- v119: asistente paso a paso. Solo se ve en modo guiado (js/asistente-producto.js). -->
+      <div class="asistente-barra" id="asistenteBarra" hidden>
+        <div class="asistente-pasos" id="asistentePasos"></div>
+        <strong id="asistenteTitulo">—</strong>
+        <p class="modal-hint" id="asistenteAyuda"></p>
+      </div>
 
       <!-- Qué le falta a ESTE producto. Se calcula en vivo sobre el formulario
            con las mismas reglas del servidor (GET /api/productos/reglas), así
@@ -2512,8 +2519,8 @@
                  la llamada si no hay ni datos pegados ni Descripción ya escrita.
                  Un modelo al que solo se le da el nombre rellena con
                  características plausibles que nadie verificó. -->
-            <div class="field" style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">
-              <label>Información real del producto (para la IA)</label>
+            <div class="field bloque-ia-producto" id="bloqueIAProducto" style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">
+              <label for="prodDatosReales">Información real del producto (para la IA)</label>
               <textarea id="prodDatosReales" rows="4"
                         placeholder="Pega acá las specs del proveedor, lo que dice la caja, o lo que sepas de verdad del producto. La IA no inventa: solo usa esto."></textarea>
               <p class="subtitle">No se guarda en la base — es solo el material que se le pasa a la IA.
@@ -3115,12 +3122,25 @@
             <div id="prodComplementosLista" class="complementos-lista"></div>
             <!-- v113 (#54 pieza C): lo que ya usan como complemento los productos de la misma categoría. -->
             <div id="prodComplementosPorCategoria" class="complementos-sugerencias"></div>
+            <!-- v119: la IA elige complementos entre los productos del catálogo. Propone; cada uno se agrega con su clic. -->
+            <div style="margin-top:8px;">
+              <button type="button" class="btn btn-outline btn-sm" id="btnComplementosIA">✨ Sugerir con IA</button>
+            </div>
+            <div id="prodComplementosIA" class="complementos-sugerencias"></div>
             <div class="field" style="margin-top:10px;">
               <label for="prodComplementosBuscar">Agregar producto</label>
               <input type="text" id="prodComplementosBuscar" placeholder="Escribe el nombre o SKU…" autocomplete="off">
             </div>
             <div id="prodComplementosSugerencias" class="complementos-sugerencias"></div>
           </div>
+        </div>
+      </div>
+
+      <div class="asistente-nav" id="asistenteNav" hidden>
+        <button type="button" class="btn btn-ghost btn-sm" id="btnAsistenteSalir" title="Sale del paso a paso sin perder nada">📋 Ver la ficha completa</button>
+        <div class="asistente-nav-botones">
+          <button type="button" class="btn btn-outline" id="btnAsistenteAtras">← Atrás</button>
+          <button type="button" class="btn btn-primary" id="btnAsistenteSiguiente">Siguiente →</button>
         </div>
       </div>
     </section>
@@ -5369,7 +5389,13 @@
       <h2>Nuevo producto</h2>
       <p class="modal-hint">Elige cómo quieres cargarlo.</p>
 
-      <div class="grid grid-2" style="margin-top:16px;">
+      <!-- v119: la misma ficha, una sección a la vez (js/asistente-producto.js). -->
+      <button class="btn btn-primary modo-alta-btn modo-alta-guiada" id="btnAltaGuiada" type="button" style="margin-top:16px; width:100%;">
+        🪄 Paso a paso con IA (recomendado)<br>
+        <small>Una cosa a la vez: ficha con IA, precio y stock, fotos, garantía, tienda y medidas.</small>
+      </button>
+
+      <div class="grid grid-2" style="margin-top:12px;">
         <button class="btn btn-outline modo-alta-btn" id="btnAltaManual" type="button">
           ✍️ Carga Manual<br>
           <small>Formulario completo, campo por campo.</small>
@@ -7475,6 +7501,7 @@
   <script src="js/lotes.js"></script>
   <script src="js/productos.js"></script>
   <script src="js/stock-ajuste.js"></script>   <!-- v118 (sql/84): después de productos.js, usa editingProductId y cargarIngresosProducto -->
+  <script src="js/asistente-producto.js"></script>   <!-- v119: después de productos.js y stock-ajuste.js -->
   <script src="js/complementos.js"></script>   <!-- v102: después de productos.js, usa productsList -->
   <script src="js/precio-sugerido.js"></script>   <!-- v109: después de productos.js, usa resolverCategoriaWebYSubcategoria y editingProductId -->
   <script src="js/agotados-panel.js"></script>   <!-- v102: Productos → Agotados; usa fechaCortaAviso (notificaciones.js) al pintar -->

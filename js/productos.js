@@ -1877,6 +1877,8 @@ function establecerDescripcion(valor) {
 function abrirModalProducto(producto = null) {
   if (!elViewProductoEditor) return;
   if (!esAdmin()) { showToast('Solo el administrador puede editar productos', 'err'); return; }
+  // v119: la ficha se abre siempre completa; el paso a paso lo enciende iniciarAsistenteProducto().
+  if (typeof terminarAsistenteProducto === 'function') terminarAsistenteProducto();
 
   /* El material para la IA es de un solo uso y no se guarda en la base —
      si quedara pegado, el siguiente producto se generaría con las specs
@@ -2126,6 +2128,7 @@ async function poblarSelectCategoriaWeb(nombreSeleccionado) {
 }
 
 function cerrarModalProducto() {
+  if (typeof terminarAsistenteProducto === 'function') terminarAsistenteProducto();   // v119
   sesionEditorProducto++;
   elViewProductoEditor?.classList.remove('active');
   // v102: si se abrió desde Productos → Agotados, vuelve ahí (js/agotados-panel.js)
@@ -2853,7 +2856,9 @@ async function procesarUnaFoto(archivo) {
    esto pasa de fondo mientras se sigue completando el formulario. Sin
    nombre todavía, usa uno provisorio con la fecha; el aviso deja
    clarísimo que hay que completarlo y no es el guardado final. */
-async function crearBorradorProducto() {
+/* `silencioso` (v119): el asistente paso a paso crea el borrador al pasar del
+   primer paso y ya lo explica él; el aviso de las fotos ahí confundiría. */
+async function crearBorradorProducto({ silencioso = false } = {}) {
   if (!(elProdNombre?.value || '').trim() && elProdNombre) {
     elProdNombre.value = `Borrador sin nombre — ${new Date().toLocaleString('es-CL')}`;
   }
@@ -2886,7 +2891,7 @@ async function crearBorradorProducto() {
     productoEnEdicionArchivado = false;
   }
 
-  showToast('Producto creado como borrador para no perder tus fotos — complétalo y presiona "Guardar Producto" cuando termines.', 'ok');
+  if (!silencioso) showToast('Producto creado como borrador para no perder tus fotos — complétalo y presiona "Guardar Producto" cuando termines.', 'ok');
 }
 
 /* ---------- Recortar foto (opcional) ----------

@@ -25,7 +25,8 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();   // Enter no debe enviar el formulario del producto
     document.querySelector('#prodComplementosSugerencias [data-agregar-complemento]')?.click();
   });
-  ['prodComplementosSugerencias', 'prodComplementosPorCategoria'].forEach(id => {
+  document.getElementById('btnComplementosIA')?.addEventListener('click', sugerirComplementosConIA);
+  ['prodComplementosSugerencias', 'prodComplementosPorCategoria', 'prodComplementosIA'].forEach(id => {
     document.getElementById(id)?.addEventListener('click', (e) => {
       const b = e.target.closest('[data-agregar-complemento]');
       if (b) agregarComplemento(Number(b.dataset.agregarComplemento));
@@ -54,7 +55,40 @@ function pintarComplementosProducto(producto) {
   if (buscar) { buscar.value = ''; buscar.disabled = !complementosDeProducto; }
   const sug = document.getElementById('prodComplementosSugerencias');
   if (sug) sug.innerHTML = '';
+  // v119: las sugerencias de la IA son del producto anterior; el botón pide uno ya guardado.
+  const ia = document.getElementById('prodComplementosIA');
+  if (ia) ia.innerHTML = '';
+  const btnIA = document.getElementById('btnComplementosIA');
+  if (btnIA) { btnIA.disabled = !complementosDeProducto; btnIA.title = complementosDeProducto ? '' : 'Guarda el producto primero'; }
   pintarListaComplementos();
+}
+
+/* v119 (dueño, 03-10-2026): "que el complementa tu compra sea automatizado por
+   IA también". La IA elige entre los productos publicados y con stock (el
+   servidor descarta cualquier id que no exista). Solo propone: cada uno se
+   agrega con su clic, igual que los sugeridos por categoría. */
+async function sugerirComplementosConIA() {
+  const cont = document.getElementById('prodComplementosIA');
+  const btn = document.getElementById('btnComplementosIA');
+  if (!cont || !complementosDeProducto) { showToast('Guarda el producto primero', 'err'); return; }
+  const productoId = complementosDeProducto;
+  if (btn) { btn.disabled = true; btn.textContent = '✨ Buscando…'; }
+  try {
+    const r = await API.productos.sugerirComplementos(productoId);
+    if (productoId !== complementosDeProducto) return;   // se abrió otro producto mientras tanto
+    const sugeridos = (r?.sugeridos || []).filter(s => !complementosIds.includes(Number(s.id)));
+    cont.innerHTML = sugeridos.length
+      ? `<p class="modal-hint" style="margin:8px 0 2px;">✨ Sugeridos por la IA entre tus productos con stock. Toca los que quieras agregar.</p>
+         ${sugeridos.map(s => `
+           <button type="button" class="complemento-sugerencia" data-agregar-complemento="${Number(s.id)}">
+             ➕ ${escHtml(s.nombre)} <small>${fmtCLP(s.precio_unitario)}</small>
+           </button>`).join('')}`
+      : `<p class="modal-hint" style="margin:8px 0 2px;">${escHtml(r?.motivo || 'La IA no encontró complementos claros entre tus productos con stock.')}</p>`;
+  } catch (err) {
+    showToast(err.message || 'No se pudieron sugerir complementos', 'err');
+  } finally {
+    if (btn) { btn.disabled = !complementosDeProducto; btn.textContent = '✨ Sugerir con IA'; }
+  }
 }
 
 /* v113 (pendiente #54, pieza C): complementos sugeridos según la categoría.
@@ -181,6 +215,7 @@ function agregarComplemento(id) {
   const buscar = document.getElementById('prodComplementosBuscar');
   if (buscar) buscar.value = '';
   document.getElementById('prodComplementosSugerencias').innerHTML = '';
+  document.querySelector(`#prodComplementosIA [data-agregar-complemento="${Number(id)}"]`)?.remove();
   guardarComplementos([...complementosIds, id]);
 }
 

@@ -1704,6 +1704,88 @@ Reglas:
 });
 
 
+/* Complementos con IA (v119, pedido del dueño 03-10-2026: "que el complementa
+   tu compra sea automatizado por IA también").
+   La IA ELIGE entre productos que ya existen en el catálogo; no inventa
+   nada: recibe una lista numerada con id, nombre y categoría de lo que hoy
+   saldría en la tienda (publicado y con stock) y devuelve ids. El servidor
+   descarta cualquier id que no esté en esa lista. No guarda: el dueño
+   agrega los que quiera (PUT /api/productos/:id/relacionados). */
+const MAX_COMPLEMENTOS_IA = 6;
+const MAX_CANDIDATOS_COMPLEMENTOS_IA = 160;
+
+app.post('/api/productos/:id/sugerir-complementos', auth(true), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return enviarError(res, 400, 'Producto inválido');
+
+  let producto, candidatos;
+  try {
+    const { data, error } = await db.from('productos')
+      .select('id, nombre, categoria_web, subcategoria_web, relacionados_ids, es_servicio').eq('id', id).maybeSingle();
+    if (error) throw error;
+    if (!data) return enviarError(res, 404, 'Producto no encontrado');
+    producto = data;
+
+    const { data: lista, error: errL } = await db.from('productos')
+      .select('id, nombre, categoria_web, subcategoria_web, precio_unitario, stock, stock_ilimitado, publicado_web, archivado, es_borrador, es_servicio')
+      .eq('archivado', false).eq('publicado_web', true).limit(1000);
+    if (errL) throw errL;
+    const yaTiene = new Set((Array.isArray(producto.relacionados_ids) ? producto.relacionados_ids : []).map(Number));
+    candidatos = (lista || [])
+      .filter(p => Number(p.id) !== id && !p.es_borrador && !p.es_servicio && !yaTiene.has(Number(p.id)))
+      .filter(p => p.stock_ilimitado || num(p.stock) > 0)
+      .slice(0, MAX_CANDIDATOS_COMPLEMENTOS_IA);
+  } catch (e) {
+    return enviarErrorBD(res, e, 'sugerir-complementos');
+  }
+  if (!candidatos.length) return res.json({ sugeridos: [], motivo: 'No hay otros productos publicados y con stock para sugerir.' });
+
+  const linea = p => `${p.id} | ${String(p.nombre).slice(0, 90)} | ${[p.categoria_web, p.subcategoria_web].filter(Boolean).join(' > ') || 'sin categoría'}`;
+  const prompt = `Eres el vendedor de Sevelin, una tienda de electrónica y computación en Arica, Chile.
+Un cliente está mirando este producto:
+
+${String(producto.nombre).slice(0, 160)} (categoría: ${[producto.categoria_web, producto.subcategoria_web].filter(Boolean).join(' > ') || 'sin categoría'})
+
+De la lista de abajo, elige hasta ${MAX_COMPLEMENTOS_IA} productos que tenga sentido ofrecerle PARA USAR JUNTO con ese: accesorios,
+cables, adaptadores, consumibles, limpieza o lo que necesita para instalarlo o aprovecharlo.
+
+Reglas:
+- Solo puedes elegir ids que aparezcan en la lista. No inventes ids ni productos.
+- NO elijas sustitutos: otro producto del mismo tipo que reemplaza al que está mirando no es un complemento.
+- Si un producto no es compatible o no tiene relación clara, no lo elijas. Es mejor devolver pocos, o ninguno, que rellenar.
+- Ordénalos del más útil al menos útil.
+
+Lista (id | nombre | categoría):
+${candidatos.map(linea).join('\n')}`;
+
+  try {
+    const { texto, modelo } = await pedirAGemini(prompt, {
+      temperature: 0.2,
+      responseMimeType: 'application/json',
+      responseSchema: { type: 'OBJECT', properties: { ids: { type: 'ARRAY', items: { type: 'INTEGER' } } }, required: ['ids'] }
+    });
+    let resultado = null;
+    try { resultado = JSON.parse(texto); } catch { resultado = null; }
+    if (!resultado || !Array.isArray(resultado.ids)) {
+      return enviarError(res, 502, 'Google devolvió una respuesta ilegible. Intenta de nuevo, o agrégalos a mano.');
+    }
+    const porId = new Map(candidatos.map(p => [Number(p.id), p]));
+    const vistos = new Set();
+    const sugeridos = [];
+    for (const crudo of resultado.ids) {
+      const p = porId.get(Number(crudo));
+      if (!p || vistos.has(Number(p.id))) continue;   // un id que no estaba en la lista se descarta
+      vistos.add(Number(p.id));
+      sugeridos.push({ id: p.id, nombre: p.nombre, precio_unitario: num(p.precio_unitario) });
+      if (sugeridos.length >= MAX_COMPLEMENTOS_IA) break;
+    }
+    res.json({ sugeridos, modelo });
+  } catch (err) {
+    return responderFalloGemini(res, err, 'sugerir-complementos', 'Los complementos se pueden agregar a mano.');
+  }
+});
+
+
 /* ---------- Generar texto con IA: ficha de la tienda y post de Facebook ----------
    Son los prompts oficiales que el dueño venía pegando a mano en Gemini
    (ver docs/, memoria del proyecto). Viven acá, en el servidor, por dos

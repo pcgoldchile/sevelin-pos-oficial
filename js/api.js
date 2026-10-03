@@ -170,6 +170,8 @@ const API = {
     // v118 (sql/84) — corregir el stock a mano: pide la clave del dueño y el motivo
     ajustarStock: (id, datos) => apiRequest(`/productos/${id}/ajuste-stock`, { method: 'POST', body: datos }),
     listarAjustesStock: (id) => apiRequest(`/productos/${id}/ajustes-stock`, { silencioso: true }),
+    // v119 — la IA elige complementos entre los productos del catálogo (no guarda)
+    sugerirComplementos: (id) => apiRequest(`/productos/${id}/sugerir-complementos`, { method: 'POST', body: {} }),
     // La mercadería en camino llegó: sube el stock y apaga "por llegar"
     compraRecibida: (ingresoId) => apiRequest(`/ingresos/${ingresoId}/recibida`, { method: 'PUT' }),
 
