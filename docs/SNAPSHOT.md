@@ -12,6 +12,36 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 03-10-2026 (noche) · v115, comisión de TUU con IVA, correcciones y Google Shopping
+
+Detalle en `docs/CHANGELOG-V115.md`.
+
+**Publicado:** **v115** (POS `108a386`): la comisión de TUU se guarda con IVA de aquí en adelante ($1.205 en $120.000, antes
+$1.013). Las ventas ya anotadas no se recalculan. Verificado en producción.
+
+**Corregido en la base con OK del dueño:**
+- **#60:** órdenes #235 y #249 cobradas con la máquina del Banco de Chile (comisión $930 cada una).
+- **#58:** Claude Pro en Gastos Fijos, $20.207 (cargo real de la cartola).
+- **#61:** Adaptador USB WiFi 6 en stock 0, en el POS y en la tienda.
+
+**Esperando al dueño:**
+- **#28:** OK a la lista del segundo precio por mayor (15 productos, `docs/estudios-precios/2026-10-03-segundo-escalon-mayorista.md`).
+- **#61:** cambiar el producto de la venta #250 (crear primero el que entregó).
+- **#60:** consultar al Banco de Chile por el arriendo de la máquina (todavía no se lo cobran; sigue estimado en $19.555).
+- **#62** (14-10): punto de retiro. Con cifras nuevas: la agencia de Mercado Libre es la única con monto publicado
+  (unos $200.000 al mes en promedio); Caja Vecina paga cerca de $60 por transacción.
+
+**Queda para Claude (lunes 05-10):** #49, que las ofertas del Cyber se encendieron (y el jueves 08-10 que volvieron al
+precio normal), y #65, leer el informe de la primera auditoría semanal de precios (corre a las 09:38).
+
+> 🔴 Google Shopping está sano: 158 productos aprobados y 104 clics en 28 días. "sevelin" no muestra los productos porque
+> Shopping busca productos y no tiendas (lo lee como "selenio"); Tecno Más sale con su nombre porque paga anuncios. Los
+> productos de Sevelin sí aparecen al buscar el producto ("monitor 19 reacondicionado" muestra 5).
+
+> ⚠️ Trampas nuevas: la comisión de TUU de las ventas anteriores al 03-10 está sin IVA; `stock_actualizado_en` lo pone la
+> API y no un trigger; Google relee el catálogo una vez al día, así que un precio nuevo tarda hasta 24 horas en verse; un
+> precio se confirma con la lista concreta a la vista.
+
 ## 03-10-2026 (tarde) · v111 a v114, escalones mayoristas, clave del dueño, IA del editor y cambio de producto
 
 Detalle en `docs/CHANGELOG-V114.md`.
