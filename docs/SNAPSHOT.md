@@ -12,6 +12,40 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 03-10-2026 · v108 a v110, máquina del Banco de Chile, aviso de margen y Encargos
+
+Detalle en `docs/CHANGELOG-V110.md`.
+
+**Publicado (POS; la tienda no cambió de código):**
+- **v108** (sql/79): la caja pregunta la máquina de tarjetas (TUU o Banco de Chile) y la comisión sale según la máquina;
+  N° de boleta o factura opcional al vender, en el Detalle de Venta y en Historial → "Sin N° de documento".
+- **v109** (#54, piezas A y B): aviso en la caja bajo 15% de margen (confirma al cobrar, no bloquea) y precio sugerido en
+  990 con su mayorista al escribir el costo, según la tabla de márgenes objetivo aprobada.
+- **v110** (#53, sql/80): **Encargos es un módulo del menú** (salió de Servicio Técnico), con etapas del proveedor, aviso
+  "N encargos en proceso" y entradas desde Agotados y desde la caja.
+
+**Datos cargados con OK del dueño:**
+- **#51:** precios del Cyber de los reacondicionados y 2 mayoristas. Son 31 ofertas (05 al 07-10) y 18 mayoristas.
+- **#58:** Claude Pro en Gastos Fijos, $19.700 **estimado** (falta el cargo real de la cartola).
+- **#55:** auditoría de precios programada todos los lunes 09:38 (tarea de la app de Claude, solo lectura).
+
+**Esperando al dueño (respondió "no entendí"; las preguntas quedaron reescritas en simple en la tabla):**
+- **#48:** subir 7 precios al público, y precio por mayor a 16 productos más.
+- **#28:** escalones por cantidad en el precio por mayor (recomendado: esperar).
+- **#54:** si el trabajador necesita su clave para vender bajo el mínimo, y Facebook en la misma pasada de la IA.
+- **#60 (nuevo):** corregir la máquina de la venta de $120.000 (orden #235 o #249) y revisar el contrato de Banchile.
+
+**Queda para Claude:** #49, el chequeo del Cyber el lunes 05-10 y el jueves 08-10. Sin construir del #54: piezas C y D.
+
+> 🔴 Banchile Pagos (contrato del 16-09): débito 0,6% + 0,0015 UF y crédito 1,53% + 0,0018 UF, más IVA; arriendo de la
+> máquina 0,4 UF + IVA al mes (unos $19.550). En débito ahorra cerca de 0,2% frente a TUU; en crédito cuesta el doble.
+> Pueden terminar el servicio tras 7 días sin transacciones. El comprobante de tarjeta vale como boleta (SII, Res. 176 de
+> 2020): no se emite además una boleta por esa venta. No se verificó si el 0,79% + $65 de TUU lleva IVA aparte.
+
+> ⚠️ Trampas nuevas: una ruta fija de Express va antes de la que lleva `:id`; la tarifa de Banchile vive en
+> `api/index.js` y en `js/config.js`; la maqueta responde `/api/me` siempre como admin; un encargo con abonos no se
+> cancela (devolver abonos no tiene flujo todavía).
+
 ## 02-10-2026 (noche) · v107, encargos solo por cotización, Fase 2 mayorista y carruseles
 
 Detalle en `docs/CHANGELOG-V107.md`.

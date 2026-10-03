@@ -2,7 +2,8 @@
 
 > Hecha por Claude a pedido del dueño (pendiente #51: "precios excelentes para los reacondicionados, para
 > mayoristas y para el Cyber; me preocupa que los monitores reacondicionados casi no se han vendido").
-> **Nada de esto está aplicado**: es para aprobar.
+> **APLICADO el 03-10-2026 con el OK del dueño** (monitores de 19" a $34.990; ViewSonic, gabinete, HP V214a y Samsung
+> como se propone abajo; los dos mayoristas a $37.000). Cargado de a un producto y verificado en la base de la tienda.
 > Datos: base del POS y base de la tienda (solo lectura) al 02-10-2026. Costo usado: el mayor entre la ficha,
 > la última compra y los lotes con unidades. Margen = (precio − costo) / precio, los dos con IVA.
 > Recordatorio: no todas las ventas están anotadas; "vendidos" es un piso, no el total.

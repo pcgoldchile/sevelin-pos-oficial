@@ -1,6 +1,9 @@
 # Propuestas de alcance: control de encargos (#53) y automatizaciones del editor (#54) — 02-10-2026
 
-> Hechas por Claude a pedido del dueño. **Nada de esto está construido**: es para que elijas el alcance.
+> Hechas por Claude a pedido del dueño.
+> **Estado al 03-10-2026:** construidos y publicados el #53 (v110: Encargos como módulo propio, con etapas) y las piezas
+> A y B del #54 (v109: aviso de margen en la caja y precio sugerido en 990). Faltan las piezas C y D del #54. Ver
+> `docs/CHANGELOG-V110.md`. Lo de abajo es la propuesta original.
 > Datos medidos en la base del POS (solo lectura) el 02-10-2026.
 
 ---
