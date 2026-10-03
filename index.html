@@ -271,6 +271,10 @@
       <button id="btnPendientes" class="btn-notificaciones btn-facturas btn-pendientes admin-only" title="Pendientes del dueño y de Claude" hidden>
         <span class="chip-punto" aria-hidden="true"></span><span id="textoPendientes">Pendientes</span>
       </button>
+      <!-- v116 (sql/83): interruptor de las ofertas web. Visible siempre para admin. -->
+      <button id="btnOfertas" class="btn-notificaciones btn-facturas btn-ofertas admin-only" title="Encender y apagar las ofertas de la tienda web" hidden>
+        <span class="chip-punto" aria-hidden="true"></span><span id="textoOfertas">Ofertas</span>
+      </button>
       <button id="btnSeguimientoDev" class="btn-notificaciones btn-seg-dev admin-only" title="Productos devueltos con seguimiento pendiente" hidden>
         <span class="chip-punto" aria-hidden="true"></span><span id="textoSeguimientoDev">Seguimiento</span>
       </button>
@@ -7123,6 +7127,23 @@
   </div>
 
   <!-- PENDIENTES DEL DUEÑO Y DE CLAUDE (v101, sql/72) -->
+  <!-- v116 (sql/83): interruptor de ofertas web. Lo llena js/ofertas.js. -->
+  <div id="modalOfertas" class="modal-overlay">
+    <div class="modal-box" style="max-width:760px;">
+      <h2>🏷️ Ofertas de la tienda web</h2>
+      <p class="modal-hint" id="ofertasResumen">—</p>
+      <div class="pendientes-filtros">
+        <button type="button" class="btn btn-sm btn-primary" id="btnOfertasEncenderTodas">Encender todas</button>
+        <button type="button" class="btn btn-sm btn-outline" id="btnOfertasApagarTodas">Apagar todas</button>
+      </div>
+      <div id="ofertasLista" style="max-height:56vh; overflow:auto;"></div>
+      <p class="modal-hint">Solo cambia el precio en sevelin.cl; en el local se cobra el precio normal. El precio de oferta y sus fechas se cargan en la ficha del producto (Tienda web → Oferta web). La tienda tarda hasta un minuto en reflejar el cambio.</p>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCerrarOfertas" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modalPendientes" class="modal-overlay">
     <div class="modal-box" style="max-width:760px;">
       <h2>📋 Pendientes</h2>
@@ -7378,6 +7399,7 @@
   <script src="js/pagina-web.js"></script>   <!-- después de pedidos-web.js: envuelve su vista en el subtab "pedidos" -->
   <script src="js/notificaciones.js"></script>
   <script src="js/pendientes.js"></script>   <!-- v101: después de notificaciones.js, reutiliza fechaCortaAviso -->
+  <script src="js/ofertas.js"></script>   <!-- v116 (sql/83): interruptor de ofertas web -->
   <script src="js/completitud.js"></script>
   <script src="js/ubicaciones.js"></script>   <!-- usa API.pedidosWeb (js/api.js) y activarVista (js/config.js), ya cargados antes -->
   <script src="js/garantias.js"></script>

@@ -182,6 +182,10 @@ const API = {
        como el sondeo de en-camino: es un poll de fondo, un fallo puntual no
        debe interrumpir con un toast. */
     facturasPendientes: () => apiRequest('/productos/facturas-pendientes', { silencioso: true }),
+    // v116 (sql/83) — interruptor de ofertas web
+    ofertas: () => apiRequest('/ofertas', { silencioso: true }),
+    cambiarOferta: (id, datos) => apiRequest(`/ofertas/${id}`, { method: 'PATCH', body: datos }),
+    cambiarTodasLasOfertas: (encender) => apiRequest('/ofertas/todas', { method: 'POST', body: { encender } }),
     facturaRecibida: (ingresoId, referencia) =>
       apiRequest(`/ingresos/${ingresoId}/factura`, { method: 'PUT', body: { referencia } }),
 

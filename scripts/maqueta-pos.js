@@ -122,6 +122,38 @@ let pendientes = [
   { id: 6, titulo: 'Privacidad 1.5: cookies en palabras simples', estado: 'hecho', hecho_por: 'claude', nota_cierre: 'Publicado y verificado en sevelin.cl/privacidad.', cerrado_en: new Date().toISOString() },
 ].map(p => ({ ...basePend, ...p }));
 let sigPend = 7;
+// v116: ofertas web (sql/83), en memoria. Una vigente, una programada, una apagada y una terminada.
+const enHoras = (h) => new Date(Date.now() + h * 3600000).toISOString();
+let ofertasMaqueta = [
+  { id: 1, nombre: 'Mouse gamer RGB 7200 DPI', precio_normal: 12990, precio_oferta: 9990, oferta_desde: enHoras(-24), oferta_hasta: enHoras(72), pausada: false, publicado_web: true },
+  { id: 2, nombre: 'Teclado mecánico TKL switch rojo', precio_normal: 29990, precio_oferta: 24990, oferta_desde: enHoras(40), oferta_hasta: enHoras(112), pausada: false, publicado_web: true },
+  { id: 3, nombre: 'Soplador eléctrico a batería Mini Jet Turbo con luz LED', precio_normal: 19990, precio_oferta: 14990, oferta_desde: enHoras(-24), oferta_hasta: enHoras(72), pausada: true, publicado_web: true },
+  { id: 4, nombre: 'Audífonos Bluetooth con micrófono', precio_normal: 15990, precio_oferta: 11990, oferta_desde: enHoras(-200), oferta_hasta: enHoras(-30), pausada: false, publicado_web: false },
+];
+const estadoOfertaMaqueta = (o) => o.pausada ? 'apagada' : Date.parse(o.oferta_hasta) <= Date.now() ? 'terminada' : Date.parse(o.oferta_desde) > Date.now() ? 'programada' : 'vigente';
+const ofertaConEstado = (o) => ({ ...o, estado: estadoOfertaMaqueta(o) });
+app.get('/api/ofertas', (_req, res) => res.json({ ofertas: ofertasMaqueta.map(ofertaConEstado) }));
+app.post('/api/ofertas/todas', (req, res) => {
+  let cambiadas = 0, sin_fecha = 0;
+  for (const o of ofertasMaqueta) {
+    if (req.body.encender) {
+      if (!o.pausada) continue;
+      if (Date.parse(o.oferta_hasta) <= Date.now()) { sin_fecha++; continue; }
+      o.pausada = false; cambiadas++;
+    } else if (!o.pausada) { o.pausada = true; cambiadas++; }
+  }
+  res.json({ cambiadas, sin_fecha });
+});
+app.patch('/api/ofertas/:id', (req, res) => {
+  const o = ofertasMaqueta.find(x => x.id === Number(req.params.id));
+  if (!o) return res.status(404).json({ error: 'Ese producto no existe' });
+  if (!req.body.encender) { o.pausada = true; return res.json(ofertaConEstado(o)); }
+  const hasta = req.body.hasta || o.oferta_hasta;
+  if (Date.parse(hasta) <= Date.now()) return res.status(400).json({ error: 'Esa oferta ya terminó: elige hasta cuándo dura para encenderla', necesita_fecha: true });
+  Object.assign(o, { pausada: false, oferta_hasta: hasta }, req.body.empezar_ya ? { oferta_desde: new Date().toISOString() } : {});
+  res.json(ofertaConEstado(o));
+});
+
 app.get('/api/pendientes', (_req, res) => res.json({
   hoy: hoyMaqueta(),
   abiertos: pendientes.filter(p => ['pendiente', 'postergado'].includes(p.estado)),

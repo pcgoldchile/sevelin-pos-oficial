@@ -4830,3 +4830,26 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
 .encargo-pedido .modal-hint { margin: 4px 0 0; }
 .encargo-pedido .modal-hint:empty { display: none; }
 .maquina-abono { margin-top: 6px; }
+
+/* ============================================================
+   OFERTAS WEB (v116, sql/83) — interruptor por producto
+   ============================================================ */
+.btn-ofertas[hidden] { display: none; }
+.btn-ofertas { color: var(--text-300); border-color: var(--border-strong); background: transparent; }
+.btn-ofertas.ofertas-activas { color: var(--green); }
+.oferta-fila { align-items: center; }
+.oferta-fila.oferta-apagada .oferta-precios b { color: var(--text-300); }
+.oferta-precios { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font-size: 13px; }
+.oferta-precios s { color: var(--text-muted); }
+.oferta-precios b { color: var(--green); font-size: 15px; }
+.oferta-pct { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--tint-red); color: var(--red); }
+.oferta-interruptor { position: relative; display: inline-flex; flex-shrink: 0; cursor: pointer; }
+.oferta-interruptor input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.oferta-pista { width: 46px; height: 26px; border-radius: 999px; background: var(--surface-strong, var(--surface-soft)); border: 1px solid var(--border-strong); transition: background .15s; position: relative; }
+.oferta-pista::after { content: ''; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: var(--text-300); transition: transform .15s, background .15s; }
+.oferta-interruptor input:checked + .oferta-pista { background: var(--green); border-color: var(--green); }
+.oferta-interruptor input:checked + .oferta-pista::after { transform: translateX(20px); background: #fff; }
+.oferta-interruptor input:focus-visible + .oferta-pista { outline: 2px solid var(--blue, #3b82f6); outline-offset: 2px; }
+.oferta-interruptor input:disabled + .oferta-pista { opacity: .45; }
+.oferta-fecha { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; font-size: 13px; }
+.oferta-fecha input { width: auto; min-width: 200px; }

@@ -10150,6 +10150,105 @@ app.patch('/api/pendientes/:id', auth(true), async (req, res) => {
 });
 
 /* ============================================================
+   INTERRUPTOR DE OFERTAS WEB (v116, sql/83)
+   ------------------------------------------------------------
+   Chip "Ofertas" del encabezado: el dueño enciende y apaga cada oferta web
+   sin entrar a la ficha y sin perder el precio ni las fechas cargadas.
+   Apagada = oferta_pausada; la tienda la recibe como "sin oferta".
+   Encendida sigue mandando la fecha (opción B del dueño): empieza y termina
+   sola. Si la fecha de fin ya pasó, encender exige una nueva.
+   ============================================================ */
+const OFERTAS_CAMPOS = 'id, nombre, sku, precio_unitario, precio_web, precio_oferta_web, oferta_desde, oferta_hasta, oferta_pausada, precio_a_consultar, publicado_web, stock, stock_ilimitado';
+
+function estadoOfertaWeb(p, ahora = Date.now()) {
+  const normal = num(p.precio_web) || num(p.precio_unitario);
+  if (p.precio_a_consultar || !(num(p.precio_oferta_web) < normal)) return 'invalida';
+  if (p.oferta_pausada) return 'apagada';
+  const desde = Date.parse(p.oferta_desde || ''), hasta = Date.parse(p.oferta_hasta || '');
+  if (!Number.isFinite(desde) || !Number.isFinite(hasta) || hasta <= ahora) return 'terminada';
+  return desde > ahora ? 'programada' : 'vigente';
+}
+
+function ofertaParaPanel(p, ahora = Date.now()) {
+  return {
+    id: p.id, nombre: p.nombre, sku: p.sku,
+    precio_normal: num(p.precio_web) || num(p.precio_unitario),
+    precio_oferta: num(p.precio_oferta_web),
+    oferta_desde: p.oferta_desde, oferta_hasta: p.oferta_hasta,
+    pausada: !!p.oferta_pausada, publicado_web: !!p.publicado_web,
+    estado: estadoOfertaWeb(p, ahora)
+  };
+}
+
+app.get('/api/ofertas', auth(true), async (req, res) => {
+  const { data, error } = await db.from('productos').select(OFERTAS_CAMPOS)
+    .not('precio_oferta_web', 'is', null).eq('archivado', false)
+    .order('nombre', { ascending: true }).limit(500);
+  if (error) return enviarErrorBD(res, error, 'ofertas');
+  const ahora = Date.now();
+  res.json({ ofertas: (data || []).map(p => ofertaParaPanel(p, ahora)) });
+});
+
+/* Va ANTES de /api/ofertas/:id para que "todas" no entre como un :id. */
+app.post('/api/ofertas/todas', auth(true), async (req, res) => {
+  const encender = req.body?.encender === true;
+  if (!encender && req.body?.encender !== false) return enviarError(res, 400, 'Indica si se encienden o se apagan');
+  const { data, error } = await db.from('productos').select(OFERTAS_CAMPOS)
+    .not('precio_oferta_web', 'is', null).eq('archivado', false).limit(500);
+  if (error) return enviarErrorBD(res, error, 'ofertas');
+
+  const ahora = Date.now();
+  let ids, sinFecha = 0;
+  if (encender) {
+    // Solo las que pueden quedar a la vista: las terminadas necesitan fecha nueva, una por una.
+    const apagadas = (data || []).filter(p => p.oferta_pausada);
+    const listas = apagadas.filter(p => estadoOfertaWeb({ ...p, oferta_pausada: false }, ahora) !== 'terminada'
+      && estadoOfertaWeb({ ...p, oferta_pausada: false }, ahora) !== 'invalida');
+    sinFecha = apagadas.length - listas.length;
+    ids = listas.map(p => p.id);
+  } else {
+    ids = (data || []).filter(p => !p.oferta_pausada).map(p => p.id);
+  }
+  if (ids.length) {
+    const { error: errUp } = await db.from('productos').update({ oferta_pausada: !encender }).in('id', ids);
+    if (errUp) return enviarErrorBD(res, errUp, 'ofertas (todas)');
+  }
+  res.json({ cambiadas: ids.length, sin_fecha: sinFecha });
+});
+
+app.patch('/api/ofertas/:id', auth(true), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return enviarError(res, 400, 'Producto inválido');
+  const encender = req.body?.encender === true;
+  if (!encender && req.body?.encender !== false) return enviarError(res, 400, 'Indica si se enciende o se apaga');
+
+  const { data: actual, error: errLeer } = await db.from('productos').select(OFERTAS_CAMPOS).eq('id', id).maybeSingle();
+  if (errLeer) return enviarErrorBD(res, errLeer, 'leer oferta');
+  if (!actual) return enviarError(res, 404, 'Ese producto no existe');
+  if (actual.precio_oferta_web == null) return enviarError(res, 400, 'Ese producto no tiene precio de oferta: cárgalo en su ficha');
+
+  let cambios = { oferta_pausada: true };
+  if (encender) {
+    cambios = { oferta_pausada: false };
+    if (req.body?.hasta !== undefined && req.body.hasta !== null && req.body.hasta !== '') {
+      const hasta = Date.parse(req.body.hasta);
+      if (!Number.isFinite(hasta)) return enviarError(res, 400, 'La fecha de término no es válida');
+      cambios.oferta_hasta = new Date(hasta).toISOString();
+    }
+    if (req.body?.empezar_ya === true) cambios.oferta_desde = new Date().toISOString();
+    // Mismas reglas que al guardar la ficha: menor que el normal, con fin a futuro.
+    const err = validarOfertaWeb({ precio_oferta_web: num(actual.precio_oferta_web), ...cambios }, actual);
+    if (err) {
+      const terminada = /ya terminó/.test(err);
+      return enviarError(res, 400, terminada ? 'Esa oferta ya terminó: elige hasta cuándo dura para encenderla' : err, { necesita_fecha: terminada });
+    }
+  }
+  const { data, error } = await db.from('productos').update(cambios).eq('id', id).select(OFERTAS_CAMPOS).single();
+  if (error) return enviarErrorBD(res, error, 'cambiar oferta');
+  res.json(ofertaParaPanel(data));
+});
+
+/* ============================================================
    AJUSTES MANUALES DE SALDO (req. 3)
    ------------------------------------------------------------
    Corrige el saldo de un canal cuando la realidad no cuadra con lo
