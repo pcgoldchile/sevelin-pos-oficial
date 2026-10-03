@@ -389,8 +389,11 @@ const ventasMaqueta = [
 const itemsMaqueta = {
   245: itemsVentaWebMaqueta,
   235: [{ id: 10, venta_id: 235, nombre: 'Monitor Gamer MSI MAG 255F E20 24.5"', cantidad: 1, precio_unitario: 120000, costo_unitario: 92990, subtotal: 120000 }],
-  250: [{ id: 11, venta_id: 250, nombre: 'Combo Teclado y Mouse RGB AB-D335', cantidad: 1, precio_unitario: 8000, costo_unitario: 5000, subtotal: 8000 }],
+  250: [{ id: 11, venta_id: 250, producto_id: 126, sku: 'combo-teclado-y-mouse-rgb-pel2q', nombre: 'Combo Teclado y Mouse RGB AB-D335', cantidad: 1, precio_unitario: 8000, costo_unitario: 5000, subtotal: 8000 }],
 };
+// v114 (sql/82): cambiar el producto de una venta. Imita lo que hace api/index.js (que es el que vale):
+// mismo precio, sale el nuevo del stock, el original vuelve solo si se indica, y queda el registro.
+const cambiosProductoMaqueta = [];
 
 app.get('/api/ventas', (_req, res) => res.json([...ventasMaqueta].sort((a, b) => b.id - a.id)));
 app.get('/api/ventas/envios-pendientes', (_req, res) => res.json([]));
@@ -401,7 +404,27 @@ app.get('/api/ventas/sin-folio', (_req, res) => res.json({
 app.get('/api/ventas/:id', (req, res) => {
   const v = ventasMaqueta.find(x => x.id === Number(req.params.id));
   if (!v) return res.status(404).json({ error: 'Venta no encontrada' });
-  res.json({ ...v, items: itemsMaqueta[v.id] || [], envio: v.id === 245 ? envioVentaWebMaqueta : null });
+  res.json({ ...v, items: itemsMaqueta[v.id] || [], envio: v.id === 245 ? envioVentaWebMaqueta : null,
+    cambios_producto: cambiosProductoMaqueta.filter(c => c.venta_id === v.id) });
+});
+app.post('/api/ventas/:id/cambiar-producto', (req, res) => {
+  const v = ventasMaqueta.find(x => x.id === Number(req.params.id));
+  const linea = (itemsMaqueta[v?.id] || []).find(i => i.id === Number(req.body?.venta_item_id));
+  const nuevo = productos.find(p => p.id === Number(req.body?.producto_nuevo_id));
+  if (!v || !linea) return res.status(404).json({ error: 'Ese producto no es de esta venta' });
+  if (!nuevo) return res.status(404).json({ error: 'El producto elegido no existe o está archivado' });
+  if (typeof req.body?.original_vuelve_stock !== 'boolean') return res.status(400).json({ error: 'Indica si el producto original vuelve al stock o no' });
+  if (nuevo.stock < linea.cantidad) return res.status(409).json({ error: `No hay stock suficiente de "${nuevo.nombre}": hay ${nuevo.stock} y se necesita ${linea.cantidad}` });
+  const original = productos.find(p => p.id === linea.producto_id);
+  cambiosProductoMaqueta.push({ id: cambiosProductoMaqueta.length + 1, venta_id: v.id, venta_item_id: linea.id, cantidad: linea.cantidad,
+    nombre_anterior: linea.nombre, costo_anterior: linea.costo_unitario, original_vuelve_stock: req.body.original_vuelve_stock,
+    nombre_nuevo: nuevo.nombre, costo_nuevo: nuevo.costo_unitario, motivo: req.body.motivo || null, creado_en: new Date().toISOString() });
+  nuevo.stock -= linea.cantidad;
+  if (original && req.body.original_vuelve_stock) original.stock += linea.cantidad;
+  const diferencia = (nuevo.costo_unitario - linea.costo_unitario) * linea.cantidad;
+  Object.assign(linea, { producto_id: nuevo.id, nombre: nuevo.nombre, sku: nuevo.sku, costo_unitario: nuevo.costo_unitario, serial_number: req.body.serial_number || null });
+  v.costo_total += diferencia; v.utilidad -= diferencia;
+  res.json({ ...v, items: itemsMaqueta[v.id], aviso: null });
 });
 app.post('/api/ventas', (req, res) => {
   const b = req.body || {};

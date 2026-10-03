@@ -5298,11 +5298,205 @@ app.get('/api/ventas/:id', auth(), async (req, res) => {
     ...calcularEstadoGarantia(venta.fecha, it.meses_garantia)
   }));
 
+  /* Cambios de producto de esta venta (sql/82, v114). Un fallo al leerlos no
+     tumba el detalle. El trabajador no recibe los costos. */
+  let cambiosProducto = [];
+  {
+    const { data, error: errCambios } = await db.from('venta_cambios_producto')
+      .select('*').eq('venta_id', req.params.id).order('id');
+    if (errCambios) console.error('[VENTAS] no se pudieron leer los cambios de producto:', errCambios.message);
+    else cambiosProducto = (data || []).map(c => {
+      if (req.usuario.rol === 'admin') return c;
+      const { costo_anterior, costo_nuevo, ...visible } = c;
+      return visible;
+    });
+  }
+
   res.json({
     ...limpiarParaRol(venta, req.usuario.rol),
     items: limpiarLista(itemsConGarantia, req.usuario.rol),
-    envio
+    envio,
+    cambios_producto: cambiosProducto
   });
+});
+
+/* ============================================================
+   CAMBIAR EL PRODUCTO DE UNA VENTA (v114, sql/82)
+   ------------------------------------------------------------
+   Pedido del dueño (03-10-2026): la web vendió un producto que en la tienda
+   no estaba y él entregó otro al mismo precio. "Necesito que yo pueda
+   cambiar el producto desde la interfaz del POS."
+
+   · Se cambia UNA línea, entera, por un producto del catálogo.
+   · El precio, el subtotal y el total NO cambian: no se toca la caja, la
+     comisión ni el documento. Con otro precio, es devolución + venta nueva.
+   · El producto nuevo sale del stock acá (por capas PEPS si las usa) y su
+     costo pasa a ser el de la línea: se recalculan costo y utilidad.
+   · El producto original vuelve al stock SOLO si el dueño lo indica
+     (`original_vuelve_stock`, obligatorio): puede no haber existido nunca.
+   · La línea conserva su id (garantías y devoluciones siguen calzando) y el
+     cambio queda escrito en venta_cambios_producto.
+   · Solo admin: cambia el costo y la utilidad de una venta ya hecha.
+
+   EL ORDEN IMPORTA (no hay transacción): primero se descuenta el producto
+   nuevo —si no hay stock, falla sin haber tocado nada—, después se escribe
+   la línea —si falla, se devuelve ese stock— y recién entonces se mueve el
+   original. Lo que falle desde ahí se avisa: la venta ya quedó bien.
+   ============================================================ */
+app.post('/api/ventas/:id/cambiar-producto', auth(true), async (req, res) => {
+  const ventaId = Number(req.params.id);
+  const itemId = Number(req.body?.venta_item_id);
+  const nuevoId = Number(req.body?.producto_nuevo_id);
+  if (!Number.isInteger(ventaId) || ventaId <= 0) return enviarError(res, 400, 'Venta inválida');
+  if (!Number.isInteger(itemId) || itemId <= 0) return enviarError(res, 400, 'Indica qué producto de la venta se cambia');
+  if (!Number.isInteger(nuevoId) || nuevoId <= 0) return enviarError(res, 400, 'Elige el producto que se entregó');
+  if (typeof req.body?.original_vuelve_stock !== 'boolean') {
+    return enviarError(res, 400, 'Indica si el producto original vuelve al stock o no');
+  }
+  const vuelve = req.body.original_vuelve_stock;
+  const serieNueva = String(req.body?.serial_number || '').trim().slice(0, 120) || null;
+  const motivo = String(req.body?.motivo || '').trim().slice(0, 300) || null;
+
+  try {
+    const [ventaR, lineaR, nuevoR] = await Promise.all([
+      db.from('ventas').select('id, numero_orden, estado, total, costo_total, utilidad').eq('id', ventaId).maybeSingle(),
+      db.from('venta_items').select('*').eq('id', itemId).eq('venta_id', ventaId).maybeSingle(),
+      db.from('productos')
+        .select('id, nombre, sku, costo_unitario, stock, usa_lotes, stock_ilimitado, es_servicio, archivado, condicion, meses_garantia')
+        .eq('id', nuevoId).maybeSingle()
+    ]);
+    if (ventaR.error) throw new Error(ventaR.error.message);
+    if (lineaR.error) throw new Error(lineaR.error.message);
+    if (nuevoR.error) throw new Error(nuevoR.error.message);
+    const venta = ventaR.data, linea = lineaR.data, nuevo = nuevoR.data;
+
+    if (!venta) return enviarError(res, 404, 'Venta no encontrada');
+    if (venta.estado === 'ANULADA') return enviarError(res, 409, 'Esta venta está anulada: no se le puede cambiar un producto');
+    if (!linea) return enviarError(res, 404, 'Ese producto no es de esta venta');
+    if (linea.repuesto_id || linea.ot_repuesto_id) return enviarError(res, 409, 'Los repuestos de taller no se cambian desde acá');
+    if (!linea.producto_id || linea.es_servicio) {
+      return enviarError(res, 409, 'Solo se cambia un producto del catálogo (no un servicio ni una línea escrita a mano)');
+    }
+    if (!nuevo || nuevo.archivado) return enviarError(res, 404, 'El producto elegido no existe o está archivado');
+    if (nuevo.es_servicio) return enviarError(res, 409, 'El reemplazo tiene que ser un producto, no un servicio');
+    if (Number(nuevo.id) === Number(linea.producto_id)) return enviarError(res, 409, 'Es el mismo producto que ya tiene la venta');
+
+    const devuelto = (await devueltoPorLinea(ventaId)).get(linea.id) || 0;
+    if (devuelto > 0) return enviarError(res, 409, 'Ese producto ya tiene una devolución registrada: no se puede cambiar');
+
+    const cantidad = Math.max(1, Math.round(num(linea.cantidad) || 1));
+    if (!nuevo.stock_ilimitado && num(nuevo.stock) < cantidad) {
+      return enviarError(res, 409, `No hay stock suficiente de "${nuevo.nombre}": hay ${num(nuevo.stock)} y se ${cantidad === 1 ? 'necesita 1' : `necesitan ${cantidad}`}`);
+    }
+
+    /* 1. Sale el producto nuevo, por el mismo camino que una venta: sin lotes
+       (atómico), con lotes (PEPS, fija el costo real) y el respaldo. */
+    const salida = { producto_id: nuevo.id, sku: nuevo.sku || null, cantidad, costo_unitario: num(nuevo.costo_unitario) };
+    const descontados = await descontarStockNoLotes([salida]);
+    if (descontados.has(Number(nuevo.id))) salida._stockAtomico = true;
+    const { consumos } = await aplicarCostosFifo([salida]);
+    await ajustarStock([salida], -1);
+    const costoNuevo = num(salida.costo_unitario);
+
+    /* 2. La línea pasa a ser del producto nuevo. Mismo id, mismo precio. */
+    const { data: lineaNueva, error: errLinea } = await db.from('venta_items').update({
+      producto_id: nuevo.id,
+      nombre: nuevo.nombre,
+      sku: nuevo.sku || null,
+      costo_unitario: costoNuevo,
+      serial_number: serieNueva,
+      condicion: nuevo.condicion || null,
+      meses_garantia: nuevo.meses_garantia ?? 6,
+      // El precio mayorista era del producto original, no de este.
+      precio_tipo: 'NORMAL'
+    }).eq('id', linea.id).select().maybeSingle();
+
+    if (errLinea || !lineaNueva) {
+      // No se pudo escribir la línea: el producto nuevo vuelve a su stock y a sus capas.
+      for (const c of consumos) {
+        for (const capa of (c.capas || [])) {
+          if (capa.lote_id) await db.rpc('fifo_devolver', { p_lote_id: capa.lote_id, p_cantidad: num(capa.cantidad) });
+        }
+      }
+      if (!nuevo.stock_ilimitado) {
+        const { data: p } = await db.from('productos').select('stock').eq('id', nuevo.id).maybeSingle();
+        if (p) await db.from('productos').update({ stock: num(p.stock) + cantidad, stock_actualizado_en: new Date().toISOString() }).eq('id', nuevo.id);
+      }
+      throw new Error(errLinea?.message || 'No se pudo actualizar la línea de la venta');
+    }
+
+    /* 3. El producto original. Desde acá un fallo no deshace el cambio: se avisa. */
+    const avisos = [];
+    try {
+      if (vuelve) {
+        await devolverLotesDeLinea(linea.id, cantidad);   // a sus capas, si las usa
+        const { data: original, error: errOrig } = await db.from('productos')
+          .select('id, stock, stock_ilimitado').eq('id', linea.producto_id).maybeSingle();
+        if (errOrig) throw new Error(errOrig.message);
+        if (original && !original.stock_ilimitado) {
+          const { error: errStock } = await db.from('productos')
+            .update({ stock: num(original.stock) + cantidad, stock_actualizado_en: new Date().toISOString() })
+            .eq('id', original.id);
+          if (errStock) throw new Error(errStock.message);
+        } else if (!original) {
+          avisos.push('El producto original ya no existe en el catálogo: no se pudo devolver al stock.');
+        }
+      } else {
+        // No vuelve: sus capas quedan consumidas, pero ya no son de esta línea.
+        const { error: errLibro } = await db.from('venta_item_lotes').delete().eq('venta_item_id', linea.id);
+        if (errLibro) throw new Error(errLibro.message);
+      }
+    } catch (e) {
+      console.error('[CAMBIO DE PRODUCTO] no se pudo ajustar el producto original:', e.message);
+      avisos.push(`El cambio quedó hecho, pero no se pudo ${vuelve ? 'devolver el producto original al stock' : 'cerrar el registro de lotes del producto original'}: revísalo a mano.`);
+    }
+
+    // Libro de capas del producto nuevo (después de limpiar el del original: comparten la línea).
+    if (consumos.length) await registrarConsumoLotes(ventaId, [lineaNueva], consumos);
+
+    /* 4. Costo y utilidad de la venta: se ajusta la diferencia de esta línea
+       (no se recalcula desde cero: una devolución parcial de otra línea ya
+       rebajó la cabecera). El total no cambia. */
+    const diferencia = (costoNuevo - num(linea.costo_unitario)) * cantidad;
+    const { data: ventaNueva, error: errVenta } = await db.from('ventas')
+      .update({ costo_total: num(venta.costo_total) + diferencia, utilidad: num(venta.utilidad) - diferencia })
+      .eq('id', ventaId).select().maybeSingle();
+    if (errVenta || !ventaNueva) {
+      console.error('[CAMBIO DE PRODUCTO] no se pudo actualizar el costo de la venta:', errVenta?.message);
+      avisos.push('El producto se cambió, pero el costo y la utilidad de la venta no se actualizaron. Vuelve a abrir la venta y avísale a quien mantiene el sistema.');
+    }
+
+    /* 5. El registro del cambio. */
+    const { error: errRegistro } = await db.from('venta_cambios_producto').insert([{
+      venta_id: ventaId,
+      venta_item_id: linea.id,
+      cantidad,
+      producto_anterior_id: linea.producto_id,
+      nombre_anterior: linea.nombre,
+      sku_anterior: linea.sku || null,
+      costo_anterior: num(linea.costo_unitario),
+      serie_anterior: linea.serial_number || null,
+      original_vuelve_stock: vuelve,
+      producto_nuevo_id: nuevo.id,
+      nombre_nuevo: nuevo.nombre,
+      sku_nuevo: nuevo.sku || null,
+      costo_nuevo: costoNuevo,
+      serie_nueva: serieNueva,
+      motivo,
+      creado_por: req.usuario?.rol || 'admin'
+    }]);
+    if (errRegistro) {
+      console.error('[CAMBIO DE PRODUCTO] no se pudo guardar el registro:', errRegistro.message);
+      avisos.push('El cambio quedó hecho, pero no se pudo guardar su registro.');
+    }
+
+    const { data: items } = await db.from('venta_items').select('*').eq('venta_id', ventaId).order('id');
+    res.json({ ...(ventaNueva || venta), items: items || [], aviso: avisos.join(' ') || null });
+  } catch (err) {
+    const mensaje = err.message || 'No se pudo cambiar el producto';
+    if (esErrorTransitorio(mensaje)) return enviarErrorBD(res, err, 'POST /api/ventas/:id/cambiar-producto');
+    enviarError(res, 400, mensaje);
+  }
 });
 
 /* Clave de cobro (sql/50): la genera el POS y la repite en los reintentos

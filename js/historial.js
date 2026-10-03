@@ -1806,7 +1806,7 @@ function renderDetalleVenta(venta) {
 
   const filas = filasCalc.map(({ it, descuentoItem, totalItem, utilidadItem }) => `
     <tr>
-      <td style="padding:8px 0;">${it.cantidad}x ${escHtml(it.nombre)}${it.serial_number ? '<br><small style="color:var(--text-muted);">S/N: ' + escHtml(it.serial_number) + '</small>' : ''}</td>
+      <td style="padding:8px 0;">${it.cantidad}x ${escHtml(it.nombre)}${it.serial_number ? '<br><small style="color:var(--text-muted);">S/N: ' + escHtml(it.serial_number) + '</small>' : ''}${typeof botonCambiarProducto === 'function' ? botonCambiarProducto(venta, it) : ''}</td>
       ${hayDescuento ? `
       <td style="text-align:right; padding:8px 0; color:var(--text-muted); text-decoration:line-through; white-space:nowrap;">${fmtCLP(it.subtotal)}</td>
       <td style="text-align:right; padding:8px 0; color:var(--red); white-space:nowrap;">-${fmtCLP(descuentoItem)}</td>
@@ -1843,6 +1843,7 @@ function renderDetalleVenta(venta) {
       <thead>${cabecera}</thead>
       <tbody>${filas}</tbody>
     </table>
+    ${typeof bloqueCambiosProducto === 'function' ? bloqueCambiosProducto(venta) : ''}
     <div style="border-top:1px solid var(--border); margin-top:12px; padding-top:12px;">
       ${hayDescuento ? `
       <div style="display:flex; justify-content:space-between; font-size:14px; color:var(--text-muted); margin-bottom:4px;">
@@ -1886,6 +1887,8 @@ function renderDetalleVenta(venta) {
     cerrarDetalleVenta();
     abrirEditorDespacho(venta);
   });
+  // v114 (sql/82): "🔁 Cambiar" de cada producto (js/cambio-producto.js)
+  if (typeof engancharCambioProducto === 'function') engancharCambioProducto(venta);
 }
 
 function cerrarDetalleVenta() {

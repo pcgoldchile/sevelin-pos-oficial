@@ -270,6 +270,8 @@ const API = {
       apiRequest(`/ventas/${id}/despacho`, { method: 'PUT', body: { ...datos, pin } }),
     importar: (ventas) => apiRequest('/ventas/importar', { method: 'POST', body: { ventas } }),
     detalle: (id) => apiRequest(`/ventas/${id}`),
+    // v114 (sql/82): se entregó otro producto al mismo precio. Solo admin.
+    cambiarProducto: (id, datos) => apiRequest(`/ventas/${id}/cambiar-producto`, { method: 'POST', body: datos }),
     crear: (venta) => apiRequest('/ventas', { method: 'POST', body: venta }),
     /* Editar una venta cambia total, costo y utilidad de algo ya cerrado, y
        con eso el resultado del día. Exige reconfirmar el PIN de
