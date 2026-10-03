@@ -4853,3 +4853,16 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
 .oferta-interruptor input:disabled + .oferta-pista { opacity: .45; }
 .oferta-fecha { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; font-size: 13px; }
 .oferta-fecha input { width: auto; min-width: 200px; }
+
+/* ============================================================
+   ENTREGA DEL PEDIDO (v117) — con despacho, modal ancho en dos columnas
+   ============================================================ */
+.modal-box.modal-sm.entrega-ancha { max-width: 920px; }
+.entrega-columnas { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 28px; align-items: start; }
+.entrega-columnas .entrega-nota { grid-column: 1 / -1; }
+.entrega-col { min-width: 0; }
+.entrega-ancha .envio-chips .entrega-tipo-btn { min-width: 90px; }
+@media (max-width: 820px) {
+    .modal-box.modal-sm.entrega-ancha { max-width: 460px; }
+    .entrega-columnas { grid-template-columns: minmax(0, 1fr); }
+}

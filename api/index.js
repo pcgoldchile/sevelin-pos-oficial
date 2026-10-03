@@ -4523,7 +4523,8 @@ async function descontarStockNoLotes(items, clave = null) {
 
 /* Normaliza los campos de despacho de una venta (migración 17).
    Retiro en tienda → estado_envio 'entregado' (no hay nada que despachar).
-   Envío → 'pendiente', con dirección y notas. */
+   Envío → 'pendiente', con dirección y notas; o 'entregado' si al registrar
+   la venta el despacho ya se hizo (ya_entregado, v117). */
 function construirDatosEnvio(body) {
   const tipo = String(body?.tipo_entrega || 'retiro').trim().toLowerCase();
   if (tipo === 'despacho') {
@@ -4531,7 +4532,7 @@ function construirDatosEnvio(body) {
       tipo_entrega: 'despacho',
       direccion_envio: (body?.direccion_envio || '').trim() || null,
       notas_despacho: (body?.notas_despacho || '').trim() || null,
-      estado_envio: 'pendiente'
+      estado_envio: body?.ya_entregado === true ? 'entregado' : 'pendiente'
     };
   }
   return {

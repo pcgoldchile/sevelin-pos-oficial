@@ -4832,7 +4832,10 @@
   </div>
 
   <div id="modalEntrega" class="modal-overlay">
-    <div class="modal-box modal-sm">
+    <!-- v117: con despacho el modal se ensancha y ordena los campos en dos columnas
+         (antes era una sola columna de 460px y había que deslizar). La clase
+         entrega-ancha la pone seleccionarTipoEntrega() en js/pago.js. -->
+    <div class="modal-box modal-sm" id="modalEntregaCaja">
       <h2>📦 Entrega del pedido</h2>
 
       <div class="field" style="margin-top:6px;">
@@ -4844,68 +4847,85 @@
       </div>
 
       <!-- Campos que solo aparecen si es despacho -->
-      <div id="entregaCamposDespacho" style="display:none;">
-        <div class="field">
-          <label for="entregaDireccion">Dirección de envío</label>
-          <input type="text" id="entregaDireccion" placeholder="Calle, número, comuna" maxlength="200">
-        </div>
-        <div class="field">
-          <label for="entregaNotas">Notas de despacho</label>
-          <input type="text" id="entregaNotas" placeholder="Ej: entregar en conserjería, llamar antes" maxlength="200">
+      <div id="entregaCamposDespacho" class="entrega-columnas" style="display:none;">
+        <!-- Columna 1: a dónde va y en qué quedó -->
+        <div class="entrega-col">
+          <div class="field">
+            <label for="entregaDireccion">Dirección de envío</label>
+            <input type="text" id="entregaDireccion" placeholder="Calle, número, comuna" maxlength="200">
+          </div>
+          <div class="field">
+            <label for="envioSector">Sector / población</label>
+            <input type="text" id="envioSector" list="envioSectoresLista" placeholder="Ej: Chinchorro, Azapa, centro" maxlength="60">
+            <datalist id="envioSectoresLista"></datalist>
+          </div>
+          <div class="field">
+            <label for="entregaNotas">Notas de despacho</label>
+            <input type="text" id="entregaNotas" placeholder="Ej: entregar en conserjería, llamar antes" maxlength="200">
+          </div>
+          <!-- v117 (dueño, 03-10-2026): muchas veces el envío ya se hizo cuando se
+               registra la venta. Marcado, la venta nace con el envío "entregado" y
+               no aparece en el aviso "por entregar". -->
+          <div class="field">
+            <label>¿El pedido ya llegó al cliente?</label>
+            <div class="entrega-tipo-toggle">
+              <button type="button" class="entrega-tipo-btn activo" data-entrega-hecha="no">🕓 Todavía no</button>
+              <button type="button" class="entrega-tipo-btn" data-entrega-hecha="si">✅ Ya entregado</button>
+            </div>
+            <p class="modal-hint" id="entregaHechaHint">Queda en "por entregar" hasta que lo marques.</p>
+          </div>
         </div>
 
-        <!-- Costo real del despacho (sql/50): queda como gasto y, si sale del
-             cajón, como egreso del turno. Ver registrarEnvioDeVenta(). -->
-        <div class="field">
-          <label>¿Quién lo lleva?</label>
-          <div class="entrega-tipo-toggle envio-chips">
-            <button type="button" class="entrega-tipo-btn activo" data-envio-repartidor="indrive">🚗 InDrive</button>
-            <button type="button" class="entrega-tipo-btn" data-envio-repartidor="padre">👨 Mi padre</button>
-            <button type="button" class="entrega-tipo-btn" data-envio-repartidor="otro">Otro</button>
-            <button type="button" class="entrega-tipo-btn" data-envio-repartidor="sin_costo">Sin costo</button>
-          </div>
-        </div>
-        <div class="field" id="envioDetalleCampo" style="display:none;">
-          <label for="envioDetalle">¿Quién?</label>
-          <input type="text" id="envioDetalle" placeholder="Ej: Uber, Starken, amigo" maxlength="80">
-        </div>
-        <div id="envioCostoCampos">
-          <div class="grid grid-2">
-            <div class="field">
-              <label for="envioCosto">Costo real (lo que pagas tú)</label>
-              <input type="number" id="envioCosto" min="0" step="100" placeholder="Ej: 3500" inputmode="numeric">
-            </div>
-            <!-- sql/54: sin este campo no había forma de ver que el envío
-                 salió más caro de lo que se le cobró al cliente. -->
-            <div class="field">
-              <label for="envioCobrado">Le cobré al cliente</label>
-              <input type="number" id="envioCobrado" min="0" step="100" placeholder="Ej: 3000" inputmode="numeric">
-            </div>
-            <div class="field">
-              <label for="envioKm">Km (opcional)</label>
-              <input type="number" id="envioKm" min="0" step="0.1" placeholder="Ej: 4.2" inputmode="decimal">
-            </div>
-            <div class="field">
-              <label for="envioDuracion">Demoró (min, opcional)</label>
-              <input type="number" id="envioDuracion" min="0" max="1440" step="5" placeholder="Ej: 25" inputmode="numeric">
-            </div>
-          </div>
-          <p class="modal-hint" id="envioHintBolsillo"></p>
-          <p class="modal-hint" id="envioHintKm"></p>
+        <!-- Columna 2: costo real del despacho (sql/50): queda como gasto y, si sale
+             del cajón, como egreso del turno. Ver registrarEnvioDeVenta(). -->
+        <div class="entrega-col">
           <div class="field">
-            <label>¿Cómo lo pagas?</label>
-            <div class="entrega-tipo-toggle">
-              <button type="button" class="entrega-tipo-btn activo" data-envio-pago="caja">💵 Efectivo de la caja</button>
-              <button type="button" class="entrega-tipo-btn" data-envio-pago="transferencia">🏦 Transferencia</button>
+            <label>¿Quién lo lleva?</label>
+            <div class="entrega-tipo-toggle envio-chips">
+              <button type="button" class="entrega-tipo-btn activo" data-envio-repartidor="indrive">🚗 InDrive</button>
+              <button type="button" class="entrega-tipo-btn" data-envio-repartidor="padre">👨 Mi padre</button>
+              <button type="button" class="entrega-tipo-btn" data-envio-repartidor="otro">Otro</button>
+              <button type="button" class="entrega-tipo-btn" data-envio-repartidor="sin_costo">Sin costo</button>
+            </div>
+          </div>
+          <div class="field" id="envioDetalleCampo" style="display:none;">
+            <label for="envioDetalle">¿Quién?</label>
+            <input type="text" id="envioDetalle" placeholder="Ej: Uber, Starken, amigo" maxlength="80">
+          </div>
+          <div id="envioCostoCampos">
+            <div class="grid grid-2">
+              <div class="field">
+                <label for="envioCosto">Costo real (lo que pagas tú)</label>
+                <input type="number" id="envioCosto" min="0" step="100" placeholder="Ej: 3500" inputmode="numeric">
+              </div>
+              <!-- sql/54: sin este campo no había forma de ver que el envío
+                   salió más caro de lo que se le cobró al cliente. -->
+              <div class="field">
+                <label for="envioCobrado">Le cobré al cliente</label>
+                <input type="number" id="envioCobrado" min="0" step="100" placeholder="Ej: 3000" inputmode="numeric">
+              </div>
+              <div class="field">
+                <label for="envioKm">Km (opcional)</label>
+                <input type="number" id="envioKm" min="0" step="0.1" placeholder="Ej: 4.2" inputmode="decimal">
+              </div>
+              <div class="field">
+                <label for="envioDuracion">Demoró (min, opcional)</label>
+                <input type="number" id="envioDuracion" min="0" max="1440" step="5" placeholder="Ej: 25" inputmode="numeric">
+              </div>
+            </div>
+            <p class="modal-hint" id="envioHintBolsillo"></p>
+            <p class="modal-hint" id="envioHintKm"></p>
+            <div class="field">
+              <label>¿Cómo lo pagas?</label>
+              <div class="entrega-tipo-toggle">
+                <button type="button" class="entrega-tipo-btn activo" data-envio-pago="caja">💵 Efectivo de la caja</button>
+                <button type="button" class="entrega-tipo-btn" data-envio-pago="transferencia">🏦 Transferencia</button>
+              </div>
             </div>
           </div>
         </div>
-        <div class="field">
-          <label for="envioSector">Sector / población</label>
-          <input type="text" id="envioSector" list="envioSectoresLista" placeholder="Ej: Chinchorro, Azapa, centro" maxlength="60">
-          <datalist id="envioSectoresLista"></datalist>
-        </div>
-        <p class="modal-hint">Si todavía no sabes el costo, déjalo vacío: la venta se registra igual, pero ese envío no queda en el registro.
+
+        <p class="modal-hint entrega-nota">Si todavía no sabes el costo, déjalo vacío: la venta se registra igual, pero ese envío no queda en el registro.
           "Le cobré al cliente" también puede quedar vacío — solo sirve para saber si el despacho te costó plata a ti.</p>
       </div>
 

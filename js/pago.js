@@ -696,11 +696,17 @@ function cerrarSelectorPago() {
    ============================================================ */
 let entregaResolver = null;
 let entregaTipo = 'retiro';
+let entregaYaHecha = false;   // v117: el despacho ya llegó al cliente al registrar la venta
 
 document.addEventListener('DOMContentLoaded', () => {
   // Toggle retiro / despacho
   document.querySelectorAll('[data-entrega-tipo]').forEach(btn => {
     btn.addEventListener('click', () => seleccionarTipoEntrega(btn.dataset.entregaTipo));
+  });
+
+  // v117: ¿el despacho ya se entregó?
+  document.querySelectorAll('[data-entrega-hecha]').forEach(btn => {
+    btn.addEventListener('click', () => seleccionarEntregaHecha(btn.dataset.entregaHecha === 'si'));
   });
 
   // El campo de comisión aparece solo con pago web
@@ -739,7 +745,9 @@ function seleccionarTipoEntrega(tipo) {
   document.querySelectorAll('[data-entrega-tipo]').forEach(b =>
     b.classList.toggle('activo', b.dataset.entregaTipo === entregaTipo));
   const campos = document.getElementById('entregaCamposDespacho');
-  if (campos) campos.style.display = entregaTipo === 'despacho' ? 'block' : 'none';
+  if (campos) campos.style.display = entregaTipo === 'despacho' ? 'grid' : 'none';
+  // Con despacho hay el doble de campos: el modal se ensancha a dos columnas (v117).
+  document.getElementById('modalEntregaCaja')?.classList.toggle('entrega-ancha', entregaTipo === 'despacho');
 
   /* Un despacho casi siempre viene pagado por transferencia antes de salir
      (dueño, 13-09-2026); el retiro, en la tienda. Es solo el valor por
@@ -749,6 +757,18 @@ function seleccionarTipoEntrega(tipo) {
     origen.value = entregaTipo === 'despacho' ? 'transferencia' : 'presencial';
     origen.dispatchEvent(new Event('change'));
   }
+}
+
+/* v117 (dueño, 03-10-2026): "muchas veces ya ese envío está completado" al
+   registrar la venta. Marcado, el servidor guarda el envío como entregado. */
+function seleccionarEntregaHecha(hecha) {
+  entregaYaHecha = !!hecha;
+  document.querySelectorAll('[data-entrega-hecha]').forEach(b =>
+    b.classList.toggle('activo', (b.dataset.entregaHecha === 'si') === entregaYaHecha));
+  const hint = document.getElementById('entregaHechaHint');
+  if (hint) hint.textContent = entregaYaHecha
+    ? 'La venta queda con el envío entregado: no aparece en "por entregar".'
+    : 'Queda en "por entregar" hasta que lo marques.';
 }
 
 /* ---------- Envío: quién lo lleva, costo, km y sector (sql/50) ---------- */
@@ -883,6 +903,7 @@ function pedirDatosEntrega() {
   set('envioSector', '');
   seleccionarRepartidorEnvio('indrive');
   seleccionarPagoEnvio('caja');
+  seleccionarEntregaHecha(false);
   cargarResumenEnvios();
 
   modal.classList.add('show');
@@ -900,6 +921,7 @@ function confirmarEntregaVenta() {
   if (entregaTipo === 'despacho') {
     datos.direccion_envio = (document.getElementById('entregaDireccion')?.value || '').trim() || null;
     datos.notas_despacho = (document.getElementById('entregaNotas')?.value || '').trim() || null;
+    if (entregaYaHecha) datos.ya_entregado = true;
 
     /* Envío (sql/50). Sin costo anotado (y sin marcar "Sin costo") no se
        manda: la venta sigue igual y ese viaje no ensucia el promedio. */
