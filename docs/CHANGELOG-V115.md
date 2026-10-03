@@ -39,11 +39,16 @@ Verificado en producción: `js/config.js` servido trae `IVA_COMISION`.
 - **#60 (arriendo):** el Banco de Chile todavía no le cobra el arriendo de la máquina. El gasto fijo sigue en $19.555
   estimado hasta que consulte.
 
-## Propuesta que espera OK (pendiente #28)
+## Segundo precio por mayor cargado en 15 productos (pendiente #28)
 
 `docs/estudios-precios/2026-10-03-segundo-escalon-mayorista.md`: segundo precio por mayor para 15 de los 34 productos
 (el doble de unidades, cerca de 7% más bajo, ninguno bajo 23% de margen). Los otros 19 no tienen stock para una compra
 de ese tamaño o no tienen espacio sobre el piso de 20%.
+
+El dueño había escrito "pon un segundo precio por mayor"; se le mostró la lista con los números y respondió "Sí, carga
+los 15". Cargados de a uno (por el tope de 5 s de la sincronización). Verificado: 34 productos con precio por mayor y 15
+con segundo escalón en el POS **y** en la tienda, con los mismos valores; ningún aviso de la guardia de margen.
+⚠️ No probado: un pedido mayorista real con segundo escalón (sigue sin existir una cuenta mayorista aprobada).
 
 ## Google Shopping: por qué "sevelin" no muestra los productos
 
@@ -87,5 +92,5 @@ Fuentes: estados financieros de CajaVecina a septiembre de 2024 (CMF), The Clini
   menos por la misma venta.
 - `productos.stock_actualizado_en` lo pone la API, no un trigger: un ajuste de stock por SQL tiene que fijarlo a mano
   (es el "agotado desde" de Productos → Agotados).
-- La pregunta de un precio se confirma con la lista concreta a la vista: "pon un segundo precio" no reemplaza el OK a
-  los números.
+- Un precio se confirma con la lista concreta a la vista: ante "pon un segundo precio" se mostraron los números y se
+  cargó recién con su OK.

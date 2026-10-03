@@ -1,7 +1,10 @@
 # Segundo precio por mayor: propuesta (03-10-2026)
 
 Pendiente #28. El dueño pidió "pon un segundo precio por mayor". Esta es la lista concreta, armada con los datos
-de la base del POS del 03-10-2026 (solo lectura). **No se carga ningún precio sin su OK a esta lista.**
+de la base del POS del 03-10-2026 (solo lectura).
+
+> ✅ **Aprobada y cargada el 03-10-2026 (noche):** el dueño respondió "Sí, carga los 15". Se cargaron de a uno; los 15
+> quedaron iguales en el POS y en la tienda (`precios_mayoristas`), y la guardia del piso de margen no rechazó ninguno.
 
 ## La regla usada
 

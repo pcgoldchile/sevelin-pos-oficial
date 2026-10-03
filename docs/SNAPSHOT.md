@@ -23,9 +23,11 @@ $1.013). Las ventas ya anotadas no se recalculan. Verificado en producción.
 - **#60:** órdenes #235 y #249 cobradas con la máquina del Banco de Chile (comisión $930 cada una).
 - **#58:** Claude Pro en Gastos Fijos, $20.207 (cargo real de la cartola).
 - **#61:** Adaptador USB WiFi 6 en stock 0, en el POS y en la tienda.
+- **#28:** segundo precio por mayor en 15 de los 34 productos (lista en
+  `docs/estudios-precios/2026-10-03-segundo-escalon-mayorista.md`). Iguales en las dos bases.
 
 **Esperando al dueño:**
-- **#28:** OK a la lista del segundo precio por mayor (15 productos, `docs/estudios-precios/2026-10-03-segundo-escalon-mayorista.md`).
+- **#28:** probar una cuenta mayorista real de punta a punta (nunca se probó).
 - **#61:** cambiar el producto de la venta #250 (crear primero el que entregó).
 - **#60:** consultar al Banco de Chile por el arriendo de la máquina (todavía no se lo cobran; sigue estimado en $19.555).
 - **#62** (14-10): punto de retiro. Con cifras nuevas: la agencia de Mercado Libre es la única con monto publicado
