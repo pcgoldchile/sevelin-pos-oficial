@@ -50,7 +50,8 @@ function num(v) {
 /* ============================================================
    COMISIÓN DEL POS TUU (HAULMER PRO 2)
    ------------------------------------------------------------
-   Fórmula:  monto * 0,0079 + 65,  solo en pagos con tarjeta.
+   Fórmula:  (monto * 0,0079 + 65) más IVA,  solo en pagos con tarjeta.
+   Con IVA desde la v115 (03-10-2026): es lo que TUU descuenta del abono.
 
    OJO: esto es un ESPEJO de la fórmula del backend (api/index.js). El
    número que vale es el que guardó el servidor en ventas.comision_pos;
@@ -60,6 +61,7 @@ function num(v) {
    ============================================================ */
 const COMISION_POS_TASA = 0.0079;
 const COMISION_POS_FIJO = 65;
+const IVA_COMISION = 1.19;
 const METODOS_CON_COMISION = ['Tarjeta Débito', 'Tarjeta Crédito'];
 
 function metodoPagaComision(metodo) {
@@ -82,15 +84,17 @@ function calcularComisionPos(metodo, total, maquina) {
   if (monto <= 0) return 0;
   if (maquina === 'BANCHILE') {
     const tarifa = TARIFA_BANCHILE[String(metodo).trim()];
-    return Math.round((monto * tarifa.tasa + tarifa.fijoUf * UF_REFERENCIA_COMISION) * 1.19);
+    return Math.round((monto * tarifa.tasa + tarifa.fijoUf * UF_REFERENCIA_COMISION) * IVA_COMISION);
   }
-  return Math.round(monto * COMISION_POS_TASA + COMISION_POS_FIJO);
+  return Math.round((monto * COMISION_POS_TASA + COMISION_POS_FIJO) * IVA_COMISION);
 }
 
 /* Comisión de una venta ya registrada.
    Prioriza el valor guardado por el servidor; si la venta es anterior a la
    migración 09 (columna ausente o en 0 con método de tarjeta), la calcula
-   al vuelo para que los informes históricos no queden incompletos. */
+   al vuelo para que los informes históricos no queden incompletos. Esas
+   ventas antiguas (todas por TUU) siguen con la fórmula de entonces, sin
+   IVA: el dueño pidió no recalcular lo ya anotado (v115). */
 function comisionDeVenta(venta) {
   if (!venta) return 0;
   const guardada = Number(venta.comision_pos);
@@ -98,8 +102,9 @@ function comisionDeVenta(venta) {
 
   const metodo = venta.metodo_pago_final || venta.metodo_pago;
   const pendiente = venta.estado === 'PENDIENTE';
-  if (pendiente) return 0;
-  return calcularComisionPos(metodo, venta.total, venta.maquina_tarjeta);
+  if (pendiente || !metodoPagaComision(metodo)) return 0;
+  const monto = Number(venta.total) || 0;
+  return monto > 0 ? Math.round(monto * COMISION_POS_TASA + COMISION_POS_FIJO) : 0;
 }
 
 function setSyncBadge(type, msg) {

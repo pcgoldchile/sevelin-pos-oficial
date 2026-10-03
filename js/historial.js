@@ -801,7 +801,7 @@ function exportarHistorialPDF(ventas, desde, hasta) {
   doc.setFontSize(8);
   doc.setTextColor(51, 65, 85);
   doc.text(
-    `Comisión POS Tuu Haulmer Pro 2 = monto x 0,0079 + $65 por transacción con tarjeta (débito o crédito). ` +
+    `Comisión de tarjeta: TUU 0,79% + $65 más IVA (sin IVA antes del 03-10-2026); Banco de Chile según su contrato. ` +
     `Afecta a ${r.ventasConComision} venta(s) por ${fmtCLP(r.montoConComision)}. ` +
     `Efectivo y transferencia no pagan comisión.   |   Margen bruto ${r.margen.toFixed(1)}%  ·  Margen neto ${r.margenNeto.toFixed(1)}%`,
     19, cursorY + 14, { maxWidth: anchoUtil - 10 }

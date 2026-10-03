@@ -369,11 +369,11 @@ let envioVentaWebMaqueta = null;
 
 // v108 (sql/79): ventas en memoria para probar la máquina de tarjetas y el N° de boleta o factura.
 // La comisión imita a la del servidor real (TUU: 0,79% + $65; Banco de Chile: débito 0,6% + 0,0015 UF
-// y crédito 1,53% + 0,0018 UF, con IVA). La que vale es la de api/index.js.
+// y crédito 1,53% + 0,0018 UF; las dos con IVA desde la v115). La que vale es la de api/index.js.
 const conTarjetaMaqueta = (m) => m === 'Tarjeta Débito' || m === 'Tarjeta Crédito';
 const comisionMaqueta = (metodo, monto, maquina) => {
   if (!conTarjetaMaqueta(metodo) || !(monto > 0)) return 0;
-  if (maquina !== 'BANCHILE') return Math.round(monto * 0.0079 + 65);
+  if (maquina !== 'BANCHILE') return Math.round((monto * 0.0079 + 65) * 1.19);
   const [tasa, fijoUf] = metodo === 'Tarjeta Crédito' ? [0.0153, 0.0018] : [0.006, 0.0015];
   return Math.round((monto * tasa + fijoUf * 41082) * 1.19);
 };

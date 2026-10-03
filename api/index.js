@@ -347,9 +347,15 @@ function limiteDe(req) {
 /* ============================================================
    COMISIÓN DEL POS TUU (HAULMER PRO 2)
    ------------------------------------------------------------
-   Fórmula del contrato:  monto * 0,0079 + 65
+   Fórmula del contrato:  (monto * 0,0079 + 65) más IVA
    Solo aplica a las transacciones que pasan por el POS físico, es decir
    las tarjetas. Efectivo, Transferencia y "Por Pagar" no pagan comisión.
+
+   Se guarda CON IVA desde la v115 (03-10-2026): la tarifa publicada por TUU
+   no lo incluye ("Valores no incluyen IVA") y lo que descuenta del abono es
+   la comisión más su IVA ($1.205 y no $1.013 en una venta de $120.000).
+   Decisión del dueño: de aquí en adelante. Las ventas anteriores conservan
+   la comisión sin IVA con que se guardaron; no se recalculan.
 
    Se calcula SIEMPRE en el servidor: si viniera del navegador, cualquiera
    podría alterar la utilidad neta editando el formulario.
@@ -360,6 +366,7 @@ function limiteDe(req) {
    ============================================================ */
 const COMISION_POS_TASA = 0.0079;
 const COMISION_POS_FIJO = 65;
+const IVA_COMISION = 1.19;   // TUU y Banchile cobran su comisión más IVA
 
 // Métodos que pasan por el POS Tuu. Deben coincidir EXACTAMENTE con los
 // <option> de index.html.
@@ -384,7 +391,6 @@ function metodoPagaComision(metodo) {
    Espejo en js/config.js (solo para previsualizar). */
 const MAQUINAS_TARJETA = ['TUU', 'BANCHILE'];
 const UF_REFERENCIA_COMISION = 41082;
-const IVA_COMISION_BANCHILE = 1.19;
 const TARIFA_BANCHILE = {
   'Tarjeta Débito': { tasa: 0.006, fijoUf: 0.0015 },
   'Tarjeta Crédito': { tasa: 0.0153, fijoUf: 0.0018 }
@@ -405,16 +411,16 @@ function calcularComisionPos(metodo, total, maquina) {
   if (monto <= 0) return 0;
   if (maquinaTarjetaValida(maquina) === 'BANCHILE') {
     const tarifa = TARIFA_BANCHILE[String(metodo).trim()];
-    return Math.round((monto * tarifa.tasa + tarifa.fijoUf * UF_REFERENCIA_COMISION) * IVA_COMISION_BANCHILE);
+    return Math.round((monto * tarifa.tasa + tarifa.fijoUf * UF_REFERENCIA_COMISION) * IVA_COMISION);
   }
-  return Math.round(monto * COMISION_POS_TASA + COMISION_POS_FIJO);
+  return Math.round((monto * COMISION_POS_TASA + COMISION_POS_FIJO) * IVA_COMISION);
 }
 
 /* Comisión de una venta pagada con VARIOS medios.
    ------------------------------------------------------------
    La comisión se cobra por transacción que pasa por la máquina, así que
    cada parte con tarjeta paga su propio cargo fijo de $65 más el 0,79%
-   de SU monto. Si el cliente paga $12.000 en efectivo y $8.000 con
+   de SU monto (más IVA). Si el cliente paga $12.000 en efectivo y $8.000 con
    débito, la comisión es solo sobre los $8.000.
 
    Cobrarla sobre el total de la venta sería inflar el gasto; ignorarla
