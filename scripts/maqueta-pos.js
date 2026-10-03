@@ -447,6 +447,57 @@ app.put('/api/ventas/:id/despacho', (req, res) => {
   res.json({ ok: true });
 });
 
+// v109: aviso de margen en la caja y precio sugerido. Imitan al servidor real con los productos de
+// la maqueta (mínimo 15%; el trabajador recibe solo "bajo"). La regla que vale es la de api/index.js.
+app.post('/api/pos/margen-carrito', (req, res) => {
+  const items = req.body.items || [];
+  const subtotal = items.reduce((a, it) => a + Number(it.precio_unitario) * Number(it.cantidad), 0);
+  const valor = Number(req.body.descuento_valor) || 0;
+  const descuento = req.body.descuento_tipo === 'PORCENTAJE' ? subtotal * Math.min(valor, 100) / 100 : (req.body.descuento_tipo === 'MONTO' ? Math.min(valor, subtotal) : 0);
+  const factor = subtotal > 0 ? (subtotal - descuento) / subtotal : 1;
+  const lineas = items.map(it => {
+    const p = productos.find(x => x.id === Number(it.producto_id));
+    const costo = p ? costoRefMaqueta(p) : 0;
+    const real = Number(it.precio_unitario) * factor;
+    if (!p || p.es_servicio || p.stock_ilimitado || !(costo > 0) || !(real > 0)) return { bajo: false };
+    if (it.precio_tipo === 'MAYORISTA' && p.precio_mayorista && Number(it.precio_unitario) >= p.precio_mayorista) return { bajo: false };
+    const margen = (real - costo) / real;
+    const bajo = margen < 0.15 - 1e-9;
+    return app.locals.rolMaqueta === 'trabajador' ? { bajo }
+      : { bajo, margen_pct: Math.round(margen * 1000) / 10, precio_minimo: Math.ceil(costo / 0.85), precio_real: Math.round(real) };
+  });
+  res.json({ minimo_pct: 15, bajo_minimo: lineas.filter(l => l.bajo).length, lineas });
+});
+// Categorías de ejemplo, para que el editor de producto pueda elegir una (el precio sugerido depende de ella).
+app.get('/api/productos/categorias', (_req, res) => res.json([
+  { id: 'c1', nombre: 'Cables y Adaptadores', parent_id: null, orden: 0 },
+  { id: 'c1a', nombre: 'Adaptadores y Cables de Video', parent_id: 'c1', orden: 0 },
+  { id: 'c2', nombre: 'Componentes PC', parent_id: null, orden: 0 },
+  { id: 'c2a', nombre: 'Fuentes de poder', parent_id: 'c2', orden: 0 },
+  { id: 'c3', nombre: 'Monitores', parent_id: null, orden: 0 },
+  { id: 'c4', nombre: 'Hogar y Estilo de Vida', parent_id: null, orden: 0 },
+  { id: 'c5', nombre: 'Periféricos', parent_id: null, orden: 0 },
+  { id: 'c6', nombre: 'Computadores', parent_id: null, orden: 0 },
+]));
+const objetivosMaqueta = { 'Cables y Adaptadores': 0.45, 'Hogar y Estilo de Vida': 0.40, 'Componentes PC': 0.25, 'Monitores': 0.15 };
+app.post('/api/productos/precio-sugerido', (req, res) => {
+  const b = req.body || {};
+  const costo = Number(b.costo) || 0;
+  if (!(costo > 0)) return res.json({ precio: null, motivo: 'Escribe el costo para ver el precio sugerido' });
+  const objetivo = objetivosMaqueta[b.categoria_web];
+  if (!objetivo) return res.json({ precio: null, costo, motivo: b.categoria_web ? `"${b.categoria_web}" no tiene margen objetivo aprobado ni suficientes productos con costo para calcular uno` : 'Elige la categoría para ver el precio sugerido' });
+  const en990 = (v) => Math.max(990, Math.ceil((v - 990) / 1000) * 1000 + 990);
+  const precio = en990(costo / (1 - objetivo));
+  const base = Number(b.precio_actual) > costo ? Number(b.precio_actual) : precio;
+  const piso = Math.ceil(costo / 0.8);
+  const candidato = Math.max(Math.round((base - Math.min((base - costo) / base / 3, 0.2) * base) / 100) * 100, Math.ceil(piso / 100) * 100);
+  const mayorista = candidato <= base * 0.97 ? { precio: candidato, desde: base >= 8000 ? 3 : (base >= 3000 ? 5 : 10),
+    margen_pct: Math.round((candidato - costo) / candidato * 1000) / 10, rebaja_pct: Math.round((base - candidato) / base * 1000) / 10, sobre_precio: base } : null;
+  res.json({ precio, costo, costo_escrito: costo, familia: b.categoria_web, origen: 'tabla aprobada el 03-10-2026', margen_objetivo_pct: objetivo * 100,
+    margen_pct: Math.round((precio - costo) / precio * 1000) / 10, mayorista, piso_mayorista: piso,
+    mayorista_motivo: mayorista ? null : `Sobre $${base.toLocaleString('es-CL')} no cabe una rebaja real: el piso mayorista (20% de margen) es $${piso.toLocaleString('es-CL')}` });
+});
+
 app.use('/api', (req, res) => {
   const clave = `${req.method} ${req.path}`;
   if (!sinManejar.has(clave)) { sinManejar.add(clave); console.log('[maqueta] sin datos:', clave); }

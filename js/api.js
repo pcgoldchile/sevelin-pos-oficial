@@ -78,6 +78,8 @@ const API = {
     // Borradores: mismo criterio, ?borradores=1 (ver sql/34-borrador-productos.sql).
     listarBorradores: () => apiRequest('/productos?borradores=1'),
     crear: (p) => apiRequest('/productos', { method: 'POST', body: p }),
+    // v109: precio en 990 y mayorista sugeridos según el margen objetivo de la familia.
+    precioSugerido: (datos) => apiRequest('/productos/precio-sugerido', { method: 'POST', body: datos, silencioso: true }),
     // Venta mayorista (sql/76): mínimo que acepta el piso, con la última compra.
     mayoristaMinimo: (id) => apiRequest(`/productos/${id}/mayorista-minimo`, { silencioso: true }),
     actualizar: (id, p) => apiRequest(`/productos/${id}`, { method: 'PUT', body: p }),
@@ -238,6 +240,10 @@ const API = {
     registrarPago: (id, metodo, pagos, maquina) => apiRequest(`/ventas/${id}/pago`, {
       method: 'POST', body: { metodo_pago_final: metodo, pagos: pagos || null, maquina_tarjeta: maquina || null }
     }),
+    /* v109: margen de cada línea del carrito (solo "bajo el mínimo" para el
+       trabajador). Es un aviso de fondo: si la sesión venció, no saca al
+       usuario a mitad de una venta por esto. */
+    margenCarrito: (datos) => apiRequest('/pos/margen-carrito', { method: 'POST', body: datos, silencioso: true }),
     // sql/79 (v108): N° de boleta o factura (opcional) y máquina de tarjetas.
     sinFolio: () => apiRequest('/ventas/sin-folio'),
     guardarFolio: (id, datos) => apiRequest(`/ventas/${id}/folio`, { method: 'POST', body: datos }),

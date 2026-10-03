@@ -1954,6 +1954,15 @@ function abrirModalProducto(producto = null) {
   }
   cargarMargenSugerido();
   cargarPlazosProveedores();
+  /* v109: precio sugerido en 990 (js/precio-sugerido.js). Se limpia lo del
+     producto anterior y se pide de nuevo; la categoría se carga en paralelo,
+     así que se repite una vez por si todavía no estaba puesta. */
+  const cajaPrecioSugerido = document.getElementById('prodPrecioSugerido');
+  if (cajaPrecioSugerido) cajaPrecioSugerido.innerHTML = '';
+  if (typeof pedirPrecioSugerido === 'function') {
+    const sesion = sesionEditorProducto;
+    [600, 1800].forEach(ms => setTimeout(() => { if (sesion === sesionEditorProducto) pedirPrecioSugerido(true); }, ms));
+  }
   // v102: "Complementa tu compra" (js/complementos.js)
   if (typeof pintarComplementosProducto === 'function') pintarComplementosProducto(producto);
 }

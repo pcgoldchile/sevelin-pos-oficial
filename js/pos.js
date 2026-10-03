@@ -958,7 +958,7 @@ function renderCart() {
         `${fmtCLP(item.precio_unitario)} c/u`,
         item.serial_number ? `S/N ${escHtml(item.serial_number)}` : (item.requiere_sn ? 'sin S/N' : ''),
         item.es_servicio ? 'Servicio' : ''
-      ].filter(Boolean).join(' · ') + detalleMayoristaLinea(item, idx);
+      ].filter(Boolean).join(' · ') + detalleMayoristaLinea(item, idx) + chipMargenLinea(idx);
       return `
       <tr class="row-in">
         <td class="cart-prod">
@@ -1022,12 +1022,156 @@ function renderCart() {
       }
     }
   }
+
+  // v109: aviso de margen (se pide al servidor solo si el carrito cambió)
+  pintarAvisoMargen();
+  programarRevisionMargen();
+}
+
+/* ============================================================
+   AVISO DE MARGEN EN LA CAJA (v109, pendiente #54)
+   ------------------------------------------------------------
+   Si una línea deja menos del margen mínimo (15%), la caja lo avisa en la
+   línea y pide confirmar antes de cobrar. El margen lo calcula el SERVIDOR
+   con el mayor costo conocido, sobre el precio que queda tras el descuento:
+   el navegador del trabajador no tiene costos, y por eso él ve solo "bajo
+   el precio mínimo", sin números.
+   Es un aviso, no un bloqueo: si el servidor no responde, se cobra igual.
+   ============================================================ */
+let margenCarrito = { firma: '', lineas: [], minimo: 15 };
+let margenTemporizador = null;
+let margenPeticion = 0;
+let revisandoMargenParaCobrar = false;
+
+// Todo lo que cambia el margen de una línea: producto, cantidad, precio, tipo y descuento
+function firmaMargenCarrito() {
+  const d = obtenerDescuentoActual();
+  return JSON.stringify([cart.map(i => [i.producto_id, i.cantidad, i.precio_unitario, i.precio_tipo]), d.tipo, d.valor]);
+}
+
+function lineasBajoMargen() {
+  if (margenCarrito.firma !== firmaMargenCarrito()) return [];
+  return margenCarrito.lineas
+    .map((linea, i) => ({ linea, item: cart[i] }))
+    .filter(x => x.linea?.bajo && x.item);
+}
+
+function chipMargenLinea(idx) {
+  if (margenCarrito.firma !== firmaMargenCarrito()) return '';
+  const l = margenCarrito.lineas[idx];
+  if (!l?.bajo) return '';
+  return l.margen_pct !== undefined
+    ? ` · <span class="cart-margen-bajo" title="Con el mayor costo conocido, este precio deja menos de ${margenCarrito.minimo}% de margen">⚠ ${textoMargenLinea(l)} · mínimo ${fmtCLP(l.precio_minimo)}</span>`
+    : ' · <span class="cart-margen-bajo">⚠ Bajo el precio mínimo</span>';
+}
+
+// "Margen 8,3%", o "Bajo el costo" cuando el precio ni siquiera lo cubre
+function textoMargenLinea(l) {
+  return l.margen_pct < 0 ? 'Bajo el costo' : `Margen ${String(l.margen_pct).replace('.', ',')}%`;
+}
+
+function pintarAvisoMargen() {
+  const el = document.getElementById('posAvisoMargen');
+  if (!el) return;
+  const bajas = lineasBajoMargen().length;
+  el.style.display = bajas ? '' : 'none';
+  if (!bajas) { el.textContent = ''; return; }
+  const cuantos = bajas === 1 ? '1 producto' : `${bajas} productos`;
+  el.textContent = esAdmin()
+    ? `⚠ ${cuantos} ${bajas === 1 ? 'deja' : 'dejan'} menos de ${margenCarrito.minimo}% de margen`
+    : `⚠ ${cuantos} bajo el precio mínimo`;
+}
+
+function programarRevisionMargen() {
+  clearTimeout(margenTemporizador);
+  const firma = firmaMargenCarrito();
+  if (margenCarrito.firma === firma) return;            // ya está al día
+  if (!cart.some(i => i.producto_id)) {                 // nada del catálogo: nada que evaluar
+    margenCarrito = { firma, lineas: [], minimo: margenCarrito.minimo };
+    return;
+  }
+  margenTemporizador = setTimeout(revisarMargenCarrito, 350);
+}
+
+/* Pide el margen del carrito actual. Devuelve el resultado, o null si el
+   servidor no respondió o el carrito cambió mientras tanto. */
+async function revisarMargenCarrito() {
+  const firma = firmaMargenCarrito();
+  if (margenCarrito.firma === firma) return margenCarrito;
+  if (!cart.some(i => i.producto_id)) return null;
+  const turno = ++margenPeticion;
+  const d = obtenerDescuentoActual();
+  try {
+    const r = await API.ventas.margenCarrito({
+      items: cart.map(i => ({ producto_id: i.producto_id, cantidad: i.cantidad, precio_unitario: i.precio_unitario, precio_tipo: i.precio_tipo })),
+      descuento_tipo: d.tipo,
+      descuento_valor: d.valor
+    });
+    if (turno !== margenPeticion || firma !== firmaMargenCarrito()) return null;
+    margenCarrito = { firma, lineas: r?.lineas || [], minimo: Number(r?.minimo_pct) || 15 };
+    renderCart();
+    return margenCarrito;
+  } catch (_) {
+    return null;
+  }
+}
+
+/* Antes de cobrar: si hay líneas bajo el mínimo, pide confirmar. Devuelve
+   true si se puede seguir con el cobro. Espera al servidor 2,5 s como
+   máximo: pasado eso se cobra sin aviso, la caja no se queda trabada. */
+async function confirmarMargenAntesDeCobrar() {
+  clearTimeout(margenTemporizador);
+  await Promise.race([revisarMargenCarrito(), new Promise(r => setTimeout(r, 2500))]);
+  const bajas = lineasBajoMargen();
+  if (!bajas.length) return true;
+  return pedirConfirmacionMargen(bajas);
+}
+
+/* Ventana de confirmación. Se arma al abrirla y se destruye al cerrar
+   (mismo patrón que pedirNumeroSerie): no deja ids fijos en index.html. */
+function pedirConfirmacionMargen(bajas) {
+  return new Promise((resolve) => {
+    document.getElementById('modalMargenBajo')?.remove();
+    const admin = esAdmin();
+    const filas = bajas.map(({ linea, item }) => {
+      const detalle = linea.margen_pct !== undefined
+        ? `${fmtCLP(linea.precio_real)} c/u${linea.precio_real !== item.precio_unitario ? ' tras el descuento' : ''} · ${textoMargenLinea(linea)} · mínimo ${fmtCLP(linea.precio_minimo)}`
+        : `${fmtCLP(item.precio_unitario)} c/u`;
+      return `<li><strong>${item.cantidad} × ${escHtml(item.nombre)}</strong><span>${escHtml(detalle)}</span></li>`;
+    }).join('');
+    const cont = document.createElement('div');
+    cont.id = 'modalMargenBajo';
+    cont.className = 'modal-overlay show';
+    cont.innerHTML = `
+      <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="margenBajoTitulo" style="max-width:480px;">
+        <h2 id="margenBajoTitulo">⚠ Precio bajo el mínimo</h2>
+        <p class="modal-hint">${admin
+          ? `Con estos precios, ${bajas.length === 1 ? 'esta línea deja' : 'estas líneas dejan'} menos de ${margenCarrito.minimo}% de margen:`
+          : `${bajas.length === 1 ? 'Este producto queda' : 'Estos productos quedan'} bajo el precio mínimo:`}</p>
+        <ul class="margen-bajo-lista">${filas}</ul>
+        <p class="modal-hint">Si es una rebaja acordada, puedes cobrar igual. Si no, vuelve y corrige el precio o el descuento.</p>
+        <div class="modal-foot">
+          <button type="button" class="btn btn-ghost" data-cerrar-modal>Volver y corregir</button>
+          <button type="button" class="btn btn-primary" data-margen-cobrar>Cobrar igual</button>
+        </div>
+      </div>`;
+    document.body.appendChild(cont);
+
+    const cerrar = (seguir) => { cont.remove(); resolve(seguir); };
+    // Esc lo resuelve atajos.js pulsando el botón data-cerrar-modal
+    cont.addEventListener('click', (e) => {
+      if (e.target === cont || e.target.closest('[data-cerrar-modal]')) cerrar(false);
+      else if (e.target.closest('[data-margen-cobrar]')) cerrar(true);
+    });
+    // El foco parte en "Volver": un Enter apurado no confirma la rebaja sin leer
+    setTimeout(() => cont.querySelector('[data-cerrar-modal]')?.focus(), 50);
+  });
 }
 
 // ============================================================
 // Finalizar venta → método de pago → registro → ticket
 // ============================================================
-function abrirModalPago() {
+async function abrirModalPago() {
   if (cart.length === 0) { showToast('Agrega al menos un producto al carrito', 'err'); return; }
 
   /* Punto 4: sin un turno de caja abierto no se registran cobros. El
@@ -1038,6 +1182,15 @@ function abrirModalPago() {
     document.getElementById('btnAbrirCajaPos')?.click();
     return;
   }
+
+  // v109: aviso de margen. Un segundo clic mientras se consulta no abre dos cobros.
+  if (revisandoMargenParaCobrar) return;
+  revisandoMargenParaCobrar = true;
+  let seguir;
+  try { seguir = await confirmarMargenAntesDeCobrar(); }
+  finally { revisandoMargenParaCobrar = false; }
+  if (!seguir) { enfocarBuscador(); return; }
+  if (cart.length === 0) return;
 
   const total = cart.reduce((acc, it) => acc + it.subtotal, 0);
 

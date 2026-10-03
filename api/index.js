@@ -2110,6 +2110,225 @@ app.get('/api/productos/costos-referencia', auth(true), async (req, res) => {
   res.json(porProducto);
 });
 
+/* ============================================================
+   AVISO DE MARGEN EN LA CAJA (v109, pendiente #54 pieza A)
+   ------------------------------------------------------------
+   El dueño aprobó (02-10-2026) avisar cuando una línea deja menos de 15%
+   de margen: en 60 días, el 41% de la venta salió bajo ese margen, casi
+   siempre por una rebaja de mostrador.
+
+   · El margen se calcula ACÁ, con el mayor costo conocido (sql/78), sobre
+     el precio que queda después de repartir el descuento del carrito.
+   · El admin recibe el % y el precio mínimo. El trabajador recibe solo
+     "bajo el mínimo": el precio mínimo le diría el costo.
+   · No se evalúan: servicios, ítems escritos a mano (sin producto), líneas
+     a precio mayorista (tienen su piso de 20%, sql/76) ni productos sin
+     costo cargado.
+   · Es un AVISO: no bloquea la venta. La caja pide confirmar antes de cobrar.
+   ============================================================ */
+const MARGEN_MINIMO_CAJA = 0.15;
+
+app.post('/api/pos/margen-carrito', auth(), async (req, res) => {
+  const esAdmin = req.usuario?.rol === 'admin';
+  const lineas = (Array.isArray(req.body?.items) ? req.body.items : []).slice(0, 200).map(it => ({
+    producto_id: Number(it?.producto_id) || null,
+    cantidad: Math.max(1, Math.round(num(it?.cantidad) || 1)),
+    precio: Math.max(0, num(it?.precio_unitario)),
+    mayorista: it?.precio_tipo === 'MAYORISTA'
+  }));
+  const respuesta = (evaluadas) => res.json({
+    minimo_pct: Math.round(MARGEN_MINIMO_CAJA * 100),
+    bajo_minimo: evaluadas.filter(l => l.bajo).length,
+    lineas: evaluadas
+  });
+
+  const ids = [...new Set(lineas.map(l => l.producto_id).filter(Boolean))];
+  if (!ids.length) return respuesta(lineas.map(() => ({ bajo: false })));
+
+  const [productosR, costosR] = await Promise.all([
+    db.from('productos')
+      .select('id, es_servicio, stock_ilimitado, categoria_web, precio_mayorista, mayorista_desde').in('id', ids),
+    db.rpc('costos_referencia_productos')
+  ]);
+  if (productosR.error) return enviarErrorBD(res, productosR.error, 'POST /api/pos/margen-carrito');
+  if (costosR.error) return enviarErrorBD(res, costosR.error, 'POST /api/pos/margen-carrito');
+
+  const productos = new Map((productosR.data || []).map(p => [Number(p.id), p]));
+  const costos = new Map((costosR.data || []).map(f => [Number(f.producto_id), num(f.costo_referencia)]));
+
+  // El descuento del carrito se reparte a prorrata, igual que al guardar la venta.
+  const paraDescuento = lineas.map(l => ({ subtotal: l.precio * l.cantidad }));
+  const subtotal = paraDescuento.reduce((a, l) => a + l.subtotal, 0);
+  const tipoDescuento = ['MONTO', 'PORCENTAJE'].includes(req.body?.descuento_tipo) ? req.body.descuento_tipo : null;
+  const descuento = tipoDescuento ? calcularDescuentoMonto(paraDescuento, tipoDescuento, req.body?.descuento_valor) : 0;
+  const factor = subtotal > 0 ? (subtotal - descuento) / subtotal : 1;
+
+  respuesta(lineas.map(l => {
+    const p = l.producto_id ? productos.get(l.producto_id) : null;
+    if (!p || p.es_servicio || p.stock_ilimitado || p.categoria_web === 'Servicios Técnicos') return { bajo: false };
+    const esMayoristaReal = l.mayorista && num(p.precio_mayorista) > 0
+      && l.precio >= num(p.precio_mayorista) && l.cantidad >= num(p.mayorista_desde);
+    if (esMayoristaReal) return { bajo: false };
+    const costo = costos.get(l.producto_id) || 0;
+    const precioReal = l.precio * factor;
+    if (!(costo > 0) || !(precioReal > 0)) return { bajo: false };
+
+    const margen = (precioReal - costo) / precioReal;
+    const bajo = margen < MARGEN_MINIMO_CAJA - 1e-9;
+    if (!esAdmin) return { bajo };
+    return {
+      bajo,
+      margen_pct: Math.round(margen * 1000) / 10,
+      // Lo que tiene que quedar por unidad después del descuento para llegar al mínimo
+      precio_minimo: Math.ceil(costo / (1 - MARGEN_MINIMO_CAJA)),
+      precio_real: Math.round(precioReal)
+    };
+  }));
+});
+
+/* ============================================================
+   PRECIO SUGERIDO EN 990 Y SU MAYORISTA (v109, pendiente #54 pieza B)
+   ------------------------------------------------------------
+   Al escribir el costo en el editor de producto se PROPONE un precio (con
+   un botón "Usar": nunca se aplica solo):
+     precio = costo ÷ (1 − margen objetivo de la familia), al siguiente 990.
+   La tabla de márgenes objetivo la aprobó el dueño el 03-10-2026
+   (docs/PROPUESTA-ENCARGOS-Y-EDITOR.md). Una categoría que no está en la
+   tabla usa la mediana del margen de sus propios productos; con menos de 3
+   productos con costo, no se propone nada (no se inventa un margen).
+
+   El mayorista sigue la regla de /revisar-precios: rebaja de un tercio del
+   margen con tope de 20% del precio normal, nunca bajo el piso de 20% de
+   margen (el de sql/76, con el mayor costo conocido), desde 3, 5 o 10
+   unidades según el precio.
+   ============================================================ */
+const MARGENES_OBJETIVO = [
+  // De lo más específico a lo más general: gana la primera regla que calce.
+  { familia: 'Gabinetes', margen: 0.22, subcategoria: 'gabinetes' },
+  { familia: 'Fuentes de poder', margen: 0.20, subcategoria: 'fuentes de poder' },
+  { familia: 'Power banks', margen: 0.35, subcategoria: 'power banks' },
+  { familia: 'Reacondicionados (PC)', margen: 0.35, categoria: 'computadores', reacondicionado: true },
+  { familia: 'Monitores nuevos', margen: 0.15, categoria: 'monitores', reacondicionado: false },
+  { familia: 'Adaptadores, cables y accesorios chicos', margen: 0.45, categoria: 'cables y adaptadores' },
+  { familia: 'Hogar y estilo de vida', margen: 0.40, categoria: 'hogar y estilo de vida' },
+  { familia: 'Componentes PC', margen: 0.25, categoria: 'componentes pc' }
+];
+
+const sinTildes = (texto) => String(texto || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').trim().toLowerCase();
+
+function margenObjetivoDe({ categoria, subcategoria, condicion }) {
+  const cat = sinTildes(categoria);
+  const sub = sinTildes(subcategoria);
+  const reacondicionado = sinTildes(condicion) === 'reacondicionado' || sub === 'reacondicionados';
+  return MARGENES_OBJETIVO.find(r =>
+    (r.subcategoria === undefined || r.subcategoria === sub)
+    && (r.categoria === undefined || r.categoria === cat)
+    && (r.reacondicionado === undefined || r.reacondicionado === reacondicionado)) || null;
+}
+
+/* El menor precio terminado en 990 que es igual o mayor al valor. */
+function siguienteEn990(valor) {
+  return Math.max(990, Math.ceil((Math.max(0, num(valor)) - 990) / 1000) * 1000 + 990);
+}
+
+/* Mediana del margen de los productos con costo de una categoría (primero
+   su subcategoría, si tiene al menos 3). Devuelve null si no alcanza. */
+async function margenMedianoDeCategoria(categoria, subcategoria) {
+  if (!categoria) return null;
+  const { data, error } = await db.from('productos')
+    .select('costo_unitario, precio_unitario, subcategoria_web, es_servicio, archivado, es_borrador')
+    .eq('categoria_web', categoria).limit(1000);
+  if (error) throw new Error(error.message);
+  const validos = (data || []).filter(p => !p.archivado && !p.es_borrador && !p.es_servicio
+    && num(p.costo_unitario) > 0 && num(p.precio_unitario) > num(p.costo_unitario));
+  const mediana = (lista) => {
+    const m = lista.map(p => (num(p.precio_unitario) - num(p.costo_unitario)) / num(p.precio_unitario)).sort((a, b) => a - b);
+    const medio = Math.floor(m.length / 2);
+    return m.length % 2 ? m[medio] : (m[medio - 1] + m[medio]) / 2;
+  };
+  const deSub = subcategoria ? validos.filter(p => sinTildes(p.subcategoria_web) === sinTildes(subcategoria)) : [];
+  if (deSub.length >= 3) return { margen: mediana(deSub), detalle: `${deSub.length} productos de ${subcategoria}` };
+  if (validos.length >= 3) return { margen: mediana(validos), detalle: `${validos.length} productos de ${categoria}` };
+  return null;
+}
+
+app.post('/api/productos/precio-sugerido', auth(true), async (req, res) => {
+  try {
+    const costoEscrito = Math.max(0, num(req.body?.costo));
+    if (!(costoEscrito > 0)) return res.json({ precio: null, motivo: 'Escribe el costo para ver el precio sugerido' });
+    if (req.body?.es_servicio) return res.json({ precio: null, motivo: 'Un servicio no lleva precio sugerido por costo' });
+
+    const categoria = String(req.body?.categoria_web || '').trim();
+    const subcategoria = String(req.body?.subcategoria_web || '').trim();
+    if (sinTildes(categoria) === 'servicios tecnicos') return res.json({ precio: null, motivo: 'Un servicio no lleva precio sugerido por costo' });
+
+    // El costo que manda: el mayor entre el escrito, la última compra y los lotes (sql/76).
+    const productoId = Number(req.body?.producto_id) || null;
+    const [costoR, minimoR] = await Promise.all([
+      db.rpc('costo_referencia_mayorista', { p_producto_id: productoId, p_costo_ficha: costoEscrito }),
+      db.rpc('precio_minimo_mayorista', { p_producto_id: productoId, p_costo_ficha: costoEscrito })
+    ]);
+    if (costoR.error) throw new Error(costoR.error.message);
+    if (minimoR.error) throw new Error(minimoR.error.message);
+    const costo = Math.max(costoEscrito, num(costoR.data));
+    const pisoMayorista = Math.max(num(minimoR.data), Math.ceil(costo / 0.8));
+
+    const regla = margenObjetivoDe({ categoria, subcategoria, condicion: req.body?.condicion });
+    let margenObjetivo, familia, origen;
+    if (regla) {
+      ({ margen: margenObjetivo, familia } = regla);
+      origen = 'tabla aprobada el 03-10-2026';
+    } else {
+      const mediano = await margenMedianoDeCategoria(categoria, subcategoria);
+      if (!mediano) {
+        return res.json({
+          precio: null, costo,
+          motivo: categoria
+            ? `"${categoria}" no tiene margen objetivo aprobado ni suficientes productos con costo para calcular uno`
+            : 'Elige la categoría para ver el precio sugerido'
+        });
+      }
+      // Nunca se propone bajo el mínimo de la caja: sería sugerir un precio que la caja va a avisar.
+      margenObjetivo = Math.max(MARGEN_MINIMO_CAJA, Math.min(mediano.margen, 0.7));
+      familia = subcategoria || categoria;
+      origen = `mediana de ${mediano.detalle}`;
+    }
+
+    const precio = siguienteEn990(costo / (1 - margenObjetivo));
+
+    // Mayorista: sobre el precio que el producto tiene hoy en el formulario; si no tiene, sobre el sugerido.
+    const precioActual = Math.max(0, num(req.body?.precio_actual));
+    const base = precioActual > costo ? precioActual : precio;
+    const margenBase = (base - costo) / base;
+    const rebaja = Math.min(margenBase / 3, 0.20) * base;
+    const candidato = Math.max(Math.round((base - rebaja) / 100) * 100, Math.ceil(pisoMayorista / 100) * 100);
+    const hayRebajaReal = candidato <= base * 0.97;
+    const mayorista = hayRebajaReal ? {
+      precio: candidato,
+      desde: base >= 8000 ? 3 : (base >= 3000 ? 5 : 10),
+      margen_pct: Math.round((candidato - costo) / candidato * 1000) / 10,
+      rebaja_pct: Math.round((base - candidato) / base * 1000) / 10,
+      sobre_precio: base
+    } : null;
+
+    res.json({
+      precio,
+      costo,
+      costo_escrito: costoEscrito,
+      familia,
+      origen,
+      margen_objetivo_pct: Math.round(margenObjetivo * 1000) / 10,
+      margen_pct: Math.round((precio - costo) / precio * 1000) / 10,
+      mayorista,
+      mayorista_motivo: mayorista ? null
+        : `Sobre ${'$' + Math.round(base).toLocaleString('es-CL')} no cabe una rebaja real: el piso mayorista (20% de margen) es ${'$' + Math.round(pisoMayorista).toLocaleString('es-CL')}`,
+      piso_mayorista: pisoMayorista
+    });
+  } catch (err) {
+    enviarError(res, 500, err.message || 'No se pudo calcular el precio sugerido');
+  }
+});
+
 app.get('/api/productos/:id/lotes', auth(true), async (req, res) => {
   const { data, error } = await db.from('producto_lotes')
     .select('*')

@@ -570,6 +570,8 @@
                        y la otra no. Cada parte se cobra como venta aparte,
                        con su propio documento. -->
                   <p id="avisoDivision" class="aviso-division" style="display:none;"></p>
+                  <!-- v109: líneas que dejan menos del margen mínimo (lo calcula el servidor) -->
+                  <p id="posAvisoMargen" class="aviso-margen" style="display:none;" role="status"></p>
 
                   <button id="btnFinalizarVenta" type="button"
                           class="w-full h-12 rounded-xl text-[15px] font-semibold text-white transition-colors
@@ -2473,6 +2475,10 @@
           </div>
 
           <p class="modal-hint" id="prodCostoLotesNota" style="margin-top:8px; color:var(--blue);"></p>
+
+          <!-- v109 (pendiente #54): precio en 990 y mayorista sugeridos según el
+               margen objetivo de la familia. Lo calcula el servidor; solo propone. -->
+          <div id="prodPrecioSugerido" class="precio-sugerido admin-only" aria-live="polite"></div>
 
           <!-- v103 (sql/76): precio mayorista. En sevelin.cl solo lo ven las cuentas
                mayoristas aprobadas; en el local, la caja lo sugiere desde esa cantidad. -->
@@ -7282,6 +7288,7 @@
   <script src="js/lotes.js"></script>
   <script src="js/productos.js"></script>
   <script src="js/complementos.js"></script>   <!-- v102: después de productos.js, usa productsList -->
+  <script src="js/precio-sugerido.js"></script>   <!-- v109: después de productos.js, usa resolverCategoriaWebYSubcategoria y editingProductId -->
   <script src="js/agotados-panel.js"></script>   <!-- v102: Productos → Agotados; usa fechaCortaAviso (notificaciones.js) al pintar -->
   <script src="js/historial.js"></script>
   <script src="js/devoluciones.js"></script>   <!-- después de historial.js: su botón vive en las filas del historial y llama a cargarHistorial() -->
