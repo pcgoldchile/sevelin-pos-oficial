@@ -1,6 +1,6 @@
 # v116 y v117 — Interruptor de ofertas, precio tachado en la tienda, popup de entrega y descripción a la mano (03-10-2026)
 
-Sesión en Opus · Alto. Cuatro pedidos del dueño; quedan dos más grandes anotados en la tabla `pendientes` (#66 y #67).
+Sesión en Opus · Alto. Cuatro pedidos del dueño; los dos más grandes (#66 y #67) se hicieron después, en la misma sesión: `docs/CHANGELOG-V118.md`.
 
 ## Publicado
 
@@ -9,7 +9,7 @@ Sesión en Opus · Alto. Cuatro pedidos del dueño; quedan dos más grandes anot
 | **v116** | Chip "Ofertas": encender y apagar cada oferta web desde el POS. | POS `9602208` | `sql/83` (aplicada) |
 | **v116** | Tienda: precio normal tachado, precio de oferta en ámbar y "Ahorras $X". Respeta la oferta apagada. | tienda `a0d7667` | no |
 | **v117** | Popup "Entrega del pedido" en dos columnas y botón "Ya entregado". | POS `fc2b0c8` | no |
-| **v117** | La Descripción pasa a vivir dentro de "Información básica". | POS (commit siguiente) | no |
+| **v117** | La Descripción pasa a vivir dentro de "Información básica". | POS `b37cbe5` | no |
 
 ## v116 · Interruptor de ofertas web
 
@@ -57,6 +57,4 @@ Sesión en Opus · Alto. Cuatro pedidos del dueño; quedan dos más grandes anot
 
 ## Queda anotado en `pendientes`
 
-- **#66** Unir "Precio y stock" con "Compras de este producto" y pedir permiso de admin para cambiar el stock a mano
-  (con merma o gasto). Toca plata y permisos: conviene Opus · Extra. Espera 3 respuestas del dueño.
-- **#67** Asistente paso a paso para crear productos (descripción con IA, precio y stock, fotos, garantía, medidas).
+- **#66** y **#67**: hechos en la misma sesión, ver `docs/CHANGELOG-V118.md`.

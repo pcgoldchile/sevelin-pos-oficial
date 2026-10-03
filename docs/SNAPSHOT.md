@@ -12,6 +12,25 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 04-10-2026 · v118 y v119, el stock se carga con compras y se corrige con clave; asistente para crear productos
+
+Detalle en `docs/CHANGELOG-V118.md`.
+
+**Publicado:** **v118** (POS `d6c59c2`, `sql/84` aplicada con RLS): "Precio, stock y compras" en una tarjeta; la ficha ya
+no cambia el stock (`PUT /api/productos/:id` lo ignora); se carga con una compra (fecha, unidades, costo, precio de
+venta) y se corrige con "Corregir", que pide la clave del dueño cada vez y pregunta el motivo (se dañó / se perdió =
+merma; mal contado = solo el número; las compré = compra). Cada corrección queda en `ajustes_stock`. **v119** (POS
+`b563c4f`): "Paso a paso con IA" al crear un producto (la misma ficha, una sección a la vez, guarda como borrador
+mientras avanza) y complementos sugeridos por IA.
+
+**Reglas nuevas para no romper:** el stock no se manda por el PUT de productos; una compra no anota el gasto (ofrece
+abrir "Registrar Gasto" llenado); la merma y la compra tienen un solo núcleo en el servidor (`registrarMerma`,
+`registrarCompraDeProducto`).
+
+**Sin probar en producción:** una corrección real de stock con la clave, y lo que sugiere Gemini como complementos.
+
+**Esperan al dueño:** #68 (los 2 productos con costo por lotes tienen el stock descuadrado con sus capas), #60, #61.
+
 ## 03-10-2026 (madrugada del 04) · v116 y v117, ofertas con interruptor, popup de entrega y descripción a la mano
 
 Detalle en `docs/CHANGELOG-V116.md`.
