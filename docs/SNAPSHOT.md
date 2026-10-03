@@ -12,6 +12,43 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 03-10-2026 (tarde) · v111 a v114, escalones mayoristas, clave del dueño, IA del editor y cambio de producto
+
+Detalle en `docs/CHANGELOG-V114.md`.
+
+**Publicado (POS y tienda, los cinco despliegues en verde y revisados en producción):**
+- **v111** (sql/81 + supabase/40, #28): segundo escalón del precio por mayor ("desde 3 u. un precio y desde 10 u. otro más
+  bajo"), con el mismo piso de 20%. Lo cobran la caja, el carrito y el checkout. **Ningún producto lo tiene cargado todavía.**
+- **v112** (#54): el trabajador necesita la clave del dueño para cobrar bajo el precio mínimo. El freno está en el servidor.
+- **v113** (#54, piezas C y D): complementos sugeridos por categoría, y la ficha con IA propone marca, categoría y condición
+  con casillas. El botón de Facebook ya existía.
+- **v114** (sql/82): Detalle de Venta → "🔁 Cambiar": reemplaza el producto de una venta al mismo precio, mueve el stock de
+  los dos y corrige costo y utilidad. Solo admin.
+- **Tienda:** recuadro "Coordinemos tu entrega" (WhatsApp y Llamar) en la página del pedido pagado.
+
+**Datos cargados con OK del dueño:**
+- **#48:** 8 precios al público y 16 precios por mayor nuevos (son 34), más 2 ajustes. Iguales en las dos bases.
+- **#60:** arriendo de la máquina del Banco de Chile en Gastos Fijos, $19.555 **estimado**.
+
+**Esperando al dueño (todo en la tabla, en simple):**
+- **#60:** cuál venta cobró con la máquina del Banco de Chile (#235 o #249), y si se corrige la comisión de TUU.
+- **#61:** cambiar el producto de la venta #250 y dejar en 0 el stock del Adaptador WiFi 6 si no lo tiene.
+- **#28:** a qué productos ponerles el segundo escalón (Claude puede proponer la lista) y probar una cuenta mayorista real.
+- **#62** (postergado al 14-10): punto de retiro de paquetes. Recomendación: sí a uno, no a Caja Vecina ni a Loto.
+
+**Queda para Claude:** #49, el chequeo del Cyber el lunes 05-10 y el jueves 08-10. La auditoría semanal de precios corre por
+primera vez el lunes 05-10 a las 09:38.
+
+> 🔴 La comisión de TUU lleva IVA aparte (su sitio: "Valores no incluyen IVA"): el POS la anota 19% más baja de lo real
+> ($1.013 contra $1.205 en $120.000). Sin corregir, espera el OK del dueño. Con las dos comisiones con IVA, la máquina del
+> Banco de Chile ahorra 0,23% en débito y necesita unos $8.000.000 al mes en débito para pagar su arriendo.
+
+> 🔴 Stock fantasma: el POS dice 2 Adaptadores WiFi 6, el dueño dice que no tiene y sevelin.cl los sigue vendiendo.
+
+> ⚠️ Trampas nuevas: un heredoc de Bash borra las barras invertidas; `sinTildes()` ya existe en `api/index.js`; la maqueta
+> del POS responde 200 a rutas que no conoce (reiniciarla al agregar una); para el escalón, primero la migración de la
+> tienda y después la del POS.
+
 ## 03-10-2026 · v108 a v110, máquina del Banco de Chile, aviso de margen y Encargos
 
 Detalle en `docs/CHANGELOG-V110.md`.
