@@ -11835,9 +11835,76 @@ function sanearEncargo(body = {}) {
       // Producto del catálogo (opcional) y costo para la utilidad — sql/46.
       producto_id: Number(body.producto_id) || null,
       cantidad: Math.max(1, Math.round(num(body.cantidad) || 1)),
-      costo_total: Math.max(0, num(body.costo_total))
+      costo_total: Math.max(0, num(body.costo_total)),
+      /* Lo que dijo el proveedor (sql/80). Solo viaja lo que el formulario
+         mandó: un navegador con la versión anterior no borra estos datos. */
+      ...(body.proveedor !== undefined
+        ? { proveedor: String(body.proveedor || '').trim().slice(0, 120) || null } : {}),
+      ...(body.costo_cotizado_unitario !== undefined
+        ? { costo_cotizado_unitario: num(body.costo_cotizado_unitario) > 0 ? Math.round(num(body.costo_cotizado_unitario)) : null } : {}),
+      ...(body.fecha_estimada !== undefined
+        ? { fecha_estimada: /^\d{4}-\d{2}-\d{2}$/.test(String(body.fecha_estimada || '')) ? body.fecha_estimada : null } : {})
     }
   };
+}
+
+/* ---------- El proceso con el proveedor (sql/80, v110) ----------
+   Un encargo "con pedido" recorre COTIZANDO → CONFIRMADO → PEDIDO → LLEGO y
+   termina ENTREGADO (lo marca "Entregar") o CANCELADO. Uno sin nada que pedir
+   (reserva de algo en stock, servicio con seña) lleva etapa NULL. */
+const ETAPAS_ENCARGO_EN_CURSO = ['COTIZANDO', 'CONFIRMADO', 'PEDIDO', 'LLEGO'];
+const DIAS_COTIZANDO_ATRASADO = 2;
+
+/* Qué hay que pedirle al proveedor para `cantidad` unidades de un producto:
+   todo si es por encargo o está agotado; solo lo que falta si hay stock. */
+function pedidoSugerido(producto, cantidad) {
+  const nada = { origen: null, unidades_pedir: null };
+  if (!producto) return nada;
+  if (producto.es_pedido_encargo) return { origen: 'ENCARGO', unidades_pedir: cantidad };
+  if (producto.stock_ilimitado || producto.es_servicio) return nada;
+  const stock = Math.max(0, num(producto.stock));
+  if (stock <= 0) return { origen: 'AGOTADO', unidades_pedir: cantidad };
+  if (stock < cantidad) return { origen: 'LOTE', unidades_pedir: cantidad - stock };
+  return nada;
+}
+
+async function productoParaPedido(productoId) {
+  if (!productoId) return null;
+  const { data } = await db.from('productos')
+    .select('id, stock, stock_ilimitado, es_servicio, es_pedido_encargo').eq('id', productoId).maybeSingle();
+  return data || null;
+}
+
+/* Etapa, origen y unidades a pedir al crear o editar. `requiere` es lo que
+   marcó quien llena el formulario (true/false); sin marcar, decide el stock. */
+async function pedidoDeEncargo(datos, body, actual = null) {
+  const requiere = body?.requiere_pedido === undefined ? null : !!body.requiere_pedido;
+  const pedidas = Math.round(num(body?.unidades_pedir));
+  const soloUnidades = pedidas >= 1 ? { unidades_pedir: pedidas } : {};
+
+  // Lo que ya se pidió (o se cerró) no se "des-pide" desde el formulario
+  if (actual && ['PEDIDO', 'LLEGO', 'ENTREGADO', 'CANCELADO'].includes(actual.etapa)) return soloUnidades;
+
+  const sugerido = pedidoSugerido(await productoParaPedido(datos.producto_id), datos.cantidad);
+  const hayQuePedir = requiere === null ? (actual ? !!actual.etapa : !!sugerido.unidades_pedir) : requiere;
+  if (!hayQuePedir) return { etapa: null, etapa_cambiada_en: null, origen: null, unidades_pedir: null };
+
+  // Un encargo que ya está en proceso conserva su etapa y por qué nació: el stock de hoy no lo cambia
+  if (actual?.etapa) return soloUnidades;
+
+  return {
+    etapa: 'COTIZANDO',
+    etapa_cambiada_en: new Date().toISOString(),
+    origen: sugerido.origen,
+    unidades_pedir: pedidas >= 1 ? pedidas : (sugerido.unidades_pedir || datos.cantidad)
+  };
+}
+
+// El trabajador no ve costos: ni el de la venta ni el que cotizó el proveedor.
+function limpiarEncargoParaRol(encargo, rol) {
+  if (!encargo || rol === 'admin') return encargo;
+  const { costo_total, costo_cotizado_unitario, ...visible } = encargo;
+  return visible;
 }
 
 /* ---------- Abonos en Finanzas (sql/46) ----------
@@ -11875,8 +11942,9 @@ async function cajaAbiertaId() {
   return data?.id || null;
 }
 
-async function insertarAbono(encargoId, monto, metodoPago, nota) {
+async function insertarAbono(encargoId, monto, metodoPago, nota, maquina) {
   const metodo = metodoPago || 'Efectivo';
+  const maquinaTarjeta = maquinaDePago(metodo, maquina);   // sql/79: TUU o Banco de Chile
   return db.from('encargo_abonos').insert([{
     encargo_id: encargoId,
     monto,
@@ -11884,7 +11952,8 @@ async function insertarAbono(encargoId, monto, metodoPago, nota) {
     nota,
     caja_id: await cajaAbiertaId(),
     // La máquina cobra su comisión por cada pasada de tarjeta, abono incluido.
-    comision_pos: calcularComisionPos(metodo, monto)
+    comision_pos: calcularComisionPos(metodo, monto, maquinaTarjeta),
+    maquina_tarjeta: maquinaTarjeta
   }]);
 }
 
@@ -12028,12 +12097,39 @@ app.get('/api/encargos', auth(), async (req, res) => {
 
   const { data, error } = await q;
   if (error) return enviarErrorBD(res, error);
-  res.json(data || []);
+  res.json((data || []).map(e => limpiarEncargoParaRol(e, req.usuario.rol)));
+});
+
+/* Aviso "encargos pendientes" del encabezado (sql/80). Lo ven los dos roles.
+   Urgente = llegó y el cliente no sabe, lleva más de 2 días cotizándose, o ya
+   pasó la fecha en que el proveedor dijo que llegaba.
+   Va ANTES de /api/encargos/:id para que "resumen" no se lea como un id. */
+app.get('/api/encargos/resumen', auth(), async (req, res) => {
+  const { data, error } = await db.from('encargos')
+    .select('id, etapa, etapa_cambiada_en, cliente_avisado_en, fecha_estimada')
+    .in('etapa', ETAPAS_ENCARGO_EN_CURSO);
+  if (error) return enviarErrorBD(res, error, 'GET /api/encargos/resumen');
+
+  const hoy = fechaHoyChile();
+  const limite = Date.now() - DIAS_COTIZANDO_ATRASADO * 24 * 60 * 60 * 1000;
+  const lista = data || [];
+  const porAvisar = lista.filter(e => e.etapa === 'LLEGO' && !e.cliente_avisado_en).length;
+  const cotizandoAtrasados = lista.filter(e => e.etapa === 'COTIZANDO'
+    && e.etapa_cambiada_en && Date.parse(e.etapa_cambiada_en) < limite).length;
+  const llegadaAtrasada = lista.filter(e => e.etapa === 'PEDIDO' && e.fecha_estimada && String(e.fecha_estimada) < hoy).length;
+  res.json({
+    en_curso: lista.length,
+    por_avisar: porAvisar,
+    cotizando_atrasados: cotizandoAtrasados,
+    llegada_atrasada: llegadaAtrasada,
+    urgentes: porAvisar + cotizandoAtrasados + llegadaAtrasada
+  });
 });
 
 app.get('/api/encargos/:id', auth(), async (req, res) => {
-  const { data: encargo, error } = await db.from('encargos').select('*').eq('id', req.params.id).single();
+  const { data: crudo, error } = await db.from('encargos').select('*').eq('id', req.params.id).single();
   if (error) return enviarError(res, 404, 'Encargo no encontrado');
+  const encargo = limpiarEncargoParaRol(crudo, req.usuario.rol);
 
   const { data: abonos } = await db.from('encargo_abonos')
     .select('*').eq('encargo_id', req.params.id).order('id');
@@ -12060,6 +12156,9 @@ async function resolverCostoEncargo(datos) {
 app.post('/api/encargos', auth(), async (req, res) => {
   const { datos: crudos, error: errValidacion } = sanearEncargo(req.body);
   if (errValidacion) return enviarError(res, 400, errValidacion);
+  const esAdmin = req.usuario?.rol === 'admin';
+  // El trabajador no escribe costos: el de la venta sale del catálogo y el cotizado queda vacío.
+  if (!esAdmin) { crudos.costo_total = 0; delete crudos.costo_cotizado_unitario; }
   const datos = await resolverCostoEncargo(crudos);
 
   const abonoInicial = num(req.body?.abono_inicial);
@@ -12068,6 +12167,7 @@ app.post('/api/encargos', auth(), async (req, res) => {
 
   const registro = {
     ...datos,
+    ...(await pedidoDeEncargo(datos, req.body)),   // sql/80: etapa, origen y unidades a pedir
     monto_abonado: abonoInicial,
     saldo: datos.monto_total - abonoInicial,
     estado: estadoEncargo(datos.monto_total, abonoInicial)
@@ -12077,7 +12177,7 @@ app.post('/api/encargos', auth(), async (req, res) => {
   if (error) return enviarErrorBD(res, error);
 
   if (abonoInicial > 0) {
-    const { error: errAbono } = await insertarAbono(encargo.id, abonoInicial, req.body?.metodo_pago, 'Abono inicial');
+    const { error: errAbono } = await insertarAbono(encargo.id, abonoInicial, req.body?.metodo_pago, 'Abono inicial', req.body?.maquina_tarjeta);
     if (errAbono) {
       // Sin el abono guardado, el encargo diría "abonado" con plata que
       // Finanzas no ve. Se deshace entero en vez de quedar a medias.
@@ -12087,7 +12187,7 @@ app.post('/api/encargos', auth(), async (req, res) => {
   }
 
   const avisos = await cerrarEncargoSiCorresponde(encargo);
-  res.status(201).json({ ...encargo, avisos });
+  res.status(201).json({ ...limpiarEncargoParaRol(encargo, req.usuario.rol), avisos });
 });
 
 app.put('/api/encargos/:id', auth(), async (req, res) => {
@@ -12096,6 +12196,16 @@ app.put('/api/encargos/:id', auth(), async (req, res) => {
 
   const { data: actual, error: errActual } = await db.from('encargos').select('*').eq('id', req.params.id).single();
   if (errActual) return enviarError(res, 404, 'Encargo no encontrado');
+  const esAdmin = req.usuario?.rol === 'admin';
+  const paraRol = (fila) => limpiarEncargoParaRol(fila, req.usuario.rol);
+  // El trabajador no ve ni cambia costos: se conservan los que ya tenía el encargo.
+  if (!esAdmin) {
+    // Si cambió el producto o la cantidad, el costo se vuelve a tomar del catálogo.
+    const mismoProducto = String(crudos.producto_id || '') === String(actual.producto_id || '')
+      && num(crudos.cantidad) === num(actual.cantidad);
+    crudos.costo_total = mismoProducto ? num(actual.costo_total) : 0;
+    delete crudos.costo_cotizado_unitario;
+  }
 
   // Con la venta ya registrada, cambiar el total o el producto dejaría el
   // historial contando otra cosa. Solo se permiten los datos de contacto.
@@ -12107,7 +12217,7 @@ app.put('/api/encargos/:id', auth(), async (req, res) => {
       observaciones: crudos.observaciones
     }).eq('id', req.params.id).select().single();
     if (error) return enviarErrorBD(res, error);
-    return res.json(data);
+    return res.json(paraRol(data));
   }
 
   // El producto no se cambia después de descontar su stock.
@@ -12124,6 +12234,7 @@ app.put('/api/encargos/:id', auth(), async (req, res) => {
 
   const cambios = {
     ...datos,
+    ...(await pedidoDeEncargo(datos, req.body, actual)),   // sql/80
     saldo: datos.monto_total - abonado,
     estado: estadoEncargo(datos.monto_total, abonado)
   };
@@ -12133,7 +12244,76 @@ app.put('/api/encargos/:id', auth(), async (req, res) => {
 
   // Bajar el total hasta lo ya abonado también completa el encargo.
   const avisos = await cerrarEncargoSiCorresponde(data);
-  res.json({ ...data, avisos });
+  res.json({ ...paraRol(data), avisos });
+});
+
+/* Avanza el proceso con el proveedor (sql/80).
+   · Hacia adelante lo hacen los dos roles (COTIZANDO → CONFIRMADO → PEDIDO →
+     LLEGO; se puede saltar un paso). ENTREGADO lo pone "Entregar", que además
+     descuenta el stock.
+   · Volver a una etapa anterior, cancelar y reabrir un cancelado: solo admin.
+   · No se cancela un encargo con abonos: esa plata ya está en Finanzas y
+     devolverla no tiene todavía un registro propio. */
+app.post('/api/encargos/:id/etapa', auth(), async (req, res) => {
+  const destino = String(req.body?.etapa || '').trim().toUpperCase();
+  const esAdmin = req.usuario?.rol === 'admin';
+
+  const { data: encargo, error: errEncargo } = await db.from('encargos').select('*').eq('id', req.params.id).maybeSingle();
+  if (errEncargo) return enviarErrorBD(res, errEncargo, 'POST /api/encargos/:id/etapa');
+  if (!encargo) return enviarError(res, 404, 'Encargo no encontrado');
+  if (!encargo.etapa) return enviarError(res, 409, 'Este encargo no tiene nada que pedir al proveedor. Para iniciarlo, edítalo y marca "Hay que pedirlo".');
+  if (encargo.etapa === 'ENTREGADO') return enviarError(res, 409, 'Este encargo ya se entregó');
+  if (destino === 'ENTREGADO') return enviarError(res, 400, 'La entrega se marca con el botón "Entregar"');
+
+  const cambios = { etapa: destino, etapa_cambiada_en: new Date().toISOString() };
+
+  if (destino === 'CANCELADO') {
+    if (!esAdmin) return enviarError(res, 403, 'Solo el administrador cancela un encargo');
+    if (encargo.etapa === 'CANCELADO') return enviarError(res, 400, 'Este encargo ya está cancelado');
+    const motivo = String(req.body?.motivo || '').trim();
+    if (motivo.length < 5 || motivo.length > 300) return enviarError(res, 400, 'Escribe el motivo de la cancelación (entre 5 y 300 letras)');
+    if (num(encargo.monto_abonado) > 0) {
+      return enviarError(res, 409, `Este encargo tiene $${Math.round(num(encargo.monto_abonado)).toLocaleString('es-CL')} en abonos, que ya están en Finanzas. Devolver esa plata todavía no tiene un registro en el POS: no se cancela hasta resolverlo.`);
+    }
+    cambios.cancelado_motivo = motivo;
+  } else {
+    const hacia = ETAPAS_ENCARGO_EN_CURSO.indexOf(destino);
+    if (hacia < 0) return enviarError(res, 400, 'Etapa inválida');
+    const desde = ETAPAS_ENCARGO_EN_CURSO.indexOf(encargo.etapa);   // -1 si está CANCELADO
+    if (hacia === desde) return enviarError(res, 400, 'El encargo ya está en esa etapa');
+    if (encargo.etapa === 'CANCELADO' && !esAdmin) return enviarError(res, 403, 'Solo el administrador reabre un encargo cancelado');
+    if (hacia < desde && !esAdmin) return enviarError(res, 403, 'Solo el administrador devuelve un encargo a una etapa anterior');
+    cambios.cancelado_motivo = null;
+    // Saliendo de "llegó" (o volviendo a llegar) el aviso al cliente parte de cero
+    cambios.cliente_avisado_en = null;
+  }
+
+  // Al confirmar o pedir se suele saber quién lo trae, a cuánto y cuándo llega
+  if (req.body?.proveedor !== undefined) cambios.proveedor = String(req.body.proveedor || '').trim().slice(0, 120) || null;
+  if (req.body?.fecha_estimada !== undefined) {
+    cambios.fecha_estimada = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body.fecha_estimada || '')) ? req.body.fecha_estimada : null;
+  }
+  if (esAdmin && req.body?.costo_cotizado_unitario !== undefined) {
+    cambios.costo_cotizado_unitario = num(req.body.costo_cotizado_unitario) > 0 ? Math.round(num(req.body.costo_cotizado_unitario)) : null;
+  }
+
+  const { data, error } = await db.from('encargos').update(cambios).eq('id', encargo.id).select().single();
+  if (error) return enviarErrorBD(res, error, 'POST /api/encargos/:id/etapa');
+  res.json(limpiarEncargoParaRol(data, req.usuario.rol));
+});
+
+/* Anota que ya se le avisó al cliente que su encargo llegó (por WhatsApp o
+   por teléfono). Apaga el aviso rojo del encabezado. */
+app.post('/api/encargos/:id/avisado', auth(), async (req, res) => {
+  const { data: encargo, error: errEncargo } = await db.from('encargos').select('id, etapa').eq('id', req.params.id).maybeSingle();
+  if (errEncargo) return enviarErrorBD(res, errEncargo, 'POST /api/encargos/:id/avisado');
+  if (!encargo) return enviarError(res, 404, 'Encargo no encontrado');
+  if (encargo.etapa !== 'LLEGO') return enviarError(res, 409, 'El aviso al cliente se anota cuando el encargo ya llegó');
+
+  const { data, error } = await db.from('encargos')
+    .update({ cliente_avisado_en: new Date().toISOString() }).eq('id', encargo.id).select().single();
+  if (error) return enviarErrorBD(res, error, 'POST /api/encargos/:id/avisado');
+  res.json(limpiarEncargoParaRol(data, req.usuario.rol));
 });
 
 /* Registrar un abono: suma al total abonado y recalcula saldo y estado */
@@ -12150,7 +12330,9 @@ app.post('/api/encargos/:id/abono', auth(), async (req, res) => {
     return enviarError(res, 400, 'El abono supera el saldo pendiente');
   }
 
-  const { error: errAbono } = await insertarAbono(encargo.id, monto, req.body?.metodo_pago, (req.body?.nota || '').trim() || null);
+  if (encargo.etapa === 'CANCELADO') return enviarError(res, 409, 'Este encargo está cancelado: no recibe abonos');
+
+  const { error: errAbono } = await insertarAbono(encargo.id, monto, req.body?.metodo_pago, (req.body?.nota || '').trim() || null, req.body?.maquina_tarjeta);
   if (errAbono) return enviarErrorBD(res, errAbono);
 
   const { data, error } = await db.from('encargos').update({
@@ -12163,7 +12345,7 @@ app.post('/api/encargos/:id/abono', auth(), async (req, res) => {
 
   const avisos = await cerrarEncargoSiCorresponde(data);
   const { data: abonos } = await db.from('encargo_abonos').select('*').eq('encargo_id', encargo.id).order('id');
-  res.json({ ...data, abonos: abonos || [], ultimo_abono: monto, avisos });
+  res.json({ ...limpiarEncargoParaRol(data, req.usuario.rol), abonos: abonos || [], ultimo_abono: monto, avisos });
 });
 
 /* Marcar la entrega. Independiente del pago ("depende del caso", dueño
@@ -12173,15 +12355,19 @@ app.post('/api/encargos/:id/entregar', auth(), async (req, res) => {
   const { data: encargo, error } = await db.from('encargos').select('*').eq('id', req.params.id).single();
   if (error) return enviarError(res, 404, 'Encargo no encontrado');
   if (encargo.entregado_en) return enviarError(res, 400, 'Este encargo ya figura como entregado');
+  if (encargo.etapa === 'CANCELADO') return enviarError(res, 409, 'Este encargo está cancelado: no se puede entregar');
 
+  const ahora = new Date().toISOString();
   const { data, error: errUpd } = await db.from('encargos').update({
-    entregado_en: new Date().toISOString(),
-    entregado_nota: (req.body?.nota || '').trim() || null
+    entregado_en: ahora,
+    entregado_nota: (req.body?.nota || '').trim() || null,
+    // sql/80: si llevaba proceso con el proveedor, acá termina
+    ...(encargo.etapa ? { etapa: 'ENTREGADO', etapa_cambiada_en: ahora } : {})
   }).eq('id', encargo.id).select().single();
   if (errUpd) return enviarErrorBD(res, errUpd);
 
   const avisoStock = await descontarStockDeEncargo(data);
-  res.json({ ...data, avisos: avisoStock ? [avisoStock] : [] });
+  res.json({ ...limpiarEncargoParaRol(data, req.usuario.rol), avisos: avisoStock ? [avisoStock] : [] });
 });
 
 app.delete('/api/encargos/:id', auth(true), async (req, res) => {

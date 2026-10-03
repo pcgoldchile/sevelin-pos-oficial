@@ -136,6 +136,7 @@ function filaPanelAgotadosHtml(p) {
       <td>
         <div class="agotado-panel-acciones">
           <button type="button" class="btn btn-outline btn-sm" data-editar-agotado="${p.id}">✏️ Editar</button>
+          <button type="button" class="btn btn-outline btn-sm" data-encargo-agotado="${p.id}" title="Un cliente lo quiere: abre un encargo con este producto">📦 Iniciar encargo</button>
           <select class="campo-pos" data-decidir-agotado="${p.id}" aria-label="Decidir qué hacer con ${escHtml(p.nombre)}">
             <option value="">Decidir…</option>
             <option value="por_llegar">🚚 Viene en camino</option>
@@ -151,6 +152,15 @@ function filaPanelAgotadosHtml(p) {
 async function clickPanelAgotados(e) {
   const editar = e.target.closest('[data-editar-agotado]');
   if (editar) return abrirEditorDesdeAgotados(Number(editar.dataset.editarAgotado));
+  // v110 (sql/80): un cliente quiere este producto agotado → encargo con el producto ya puesto
+  const encargo = e.target.closest('[data-encargo-agotado]');
+  if (encargo) {
+    const id = Number(encargo.dataset.encargoAgotado);
+    if (typeof cargarProductos === 'function' && !productsList.some(p => Number(p.id) === id)) await cargarProductos(true);
+    const producto = productsList.find(p => Number(p.id) === id);
+    if (!producto) return showToast('No se encontró el producto', 'err');
+    return iniciarEncargoDeProducto(producto, 1);
+  }
   const confirmar = e.target.closest('[data-confirmar-llegar]');
   if (confirmar) {
     const id = Number(confirmar.dataset.confirmarLlegar);

@@ -114,6 +114,10 @@
            visual: los data-view y los ids de las secciones no se tocan. -->
       <button class="nav-btn active" data-view="view-pos"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2.5 3.5h2.6l2.4 11.2a1.8 1.8 0 0 0 1.8 1.4h8.4a1.8 1.8 0 0 0 1.8-1.4L21 7.5H6"/></svg>POS</button>
 
+      <!-- v110 (sql/80): Encargos dejó de ser una sub-pestaña de Servicio Técnico
+           (dueño, 03-10-2026). Lo ven los dos roles, igual que antes. -->
+      <button class="nav-btn" data-view="view-encargos"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9z"/><path d="M9 12h6"/><path d="M9 16h4"/></svg>Encargos</button>
+
       <!-- "Archivados" como sub-ítem de Productos (mismo patrón que
            Finanzas/Servicio Técnico abajo) — antes esa vista solo se podía
            llegar a mano desde el filtro "Ver: Archivados" del listado,
@@ -154,7 +158,6 @@
         <button class="nav-btn" data-view="view-taller"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.3 5.3L3.5 17.5a2 2 0 0 0 2.8 2.8l5.9-5.9a4 4 0 0 0 5.3-5.3l-2.6 2.6-2.4-.4-.4-2.4Z"/></svg>Servicio Técnico</button>
         <div class="nav-subitems">
           <button class="nav-subitem" data-view="view-taller" data-subtab="ot">Órdenes de Trabajo</button>
-          <button class="nav-subitem" data-view="view-taller" data-subtab="encargos">Abonos y Encargos</button>
           <button class="nav-subitem" data-view="view-taller" data-subtab="repuestos">Repuestos Taller</button>
         </div>
       </div>
@@ -270,6 +273,10 @@
       </button>
       <button id="btnSeguimientoDev" class="btn-notificaciones btn-seg-dev admin-only" title="Productos devueltos con seguimiento pendiente" hidden>
         <span class="chip-punto" aria-hidden="true"></span><span id="textoSeguimientoDev">Seguimiento</span>
+      </button>
+      <!-- v110 (sql/80): encargos en proceso con el proveedor. Rojo si alguno llegó y no se avisó, o está atrasado. -->
+      <button id="btnEncargosPendientes" class="btn-notificaciones btn-encargos" title="Encargos en proceso con el proveedor" hidden>
+        <span class="chip-punto" aria-hidden="true"></span><span id="textoEncargosPendientes">Encargos</span>
       </button>
       <button id="btnDevolucionesCaja" class="btn-notificaciones btn-dev-caja" title="Devoluciones en efectivo sin registrar en caja" hidden>
         <span class="chip-punto" aria-hidden="true"></span><span id="textoDevolucionesCaja">Devoluciones sin caja</span>
@@ -641,7 +648,6 @@
            ============================================================ -->
       <nav class="subtabs" id="subtabsTaller">
         <button class="subtab activo" data-subtab="ot">🔧 Órdenes de Trabajo</button>
-        <button class="subtab" data-subtab="encargos">💰 Abonos y Encargos</button>
         <button class="subtab" data-subtab="repuestos">🔩 Repuestos Taller</button>
       </nav>
 
@@ -852,70 +858,6 @@
     
       </div>
 
-<div class="panel-taller" data-panel-taller="encargos">
-      <div class="card">
-        <div class="card-head">
-          <div>
-            <h2>Abonos y Encargos</h2>
-            <p class="subtitle" id="encargosResumenLabel">Pedidos, reservas y servicios con seña.</p>
-          </div>
-          <div class="toolbar-group">
-            <div class="chip-group" id="encargosChips">
-              <button class="chip active" data-estado="">Todos</button>
-              <button class="chip" data-estado="PENDIENTE">Pendientes</button>
-              <button class="chip" data-estado="PARCIAL">Con abono</button>
-              <button class="chip" data-estado="PAGADO">Pagados</button>
-            </div>
-            <button class="btn btn-primary" id="btnNuevoEncargo">➕ Nuevo Encargo</button>
-          </div>
-        </div>
-
-        <div class="kpi-grid">
-          <div class="kpi-card kpi-blue">
-            <div class="kpi-label">📦 Encargos Activos</div>
-            <div class="kpi-value" id="kpiEncargosActivos">0</div>
-            <div class="kpi-foot">Pendientes o con abono parcial</div>
-          </div>
-          <div class="kpi-card kpi-green">
-            <div class="kpi-label">💵 Total Abonado</div>
-            <div class="kpi-value" id="kpiEncargosAbonado">$0</div>
-            <div class="kpi-foot">Dinero recibido en señas</div>
-          </div>
-          <div class="kpi-card kpi-red">
-            <div class="kpi-label">⏳ Saldo por Cobrar</div>
-            <div class="kpi-value" id="kpiEncargosSaldo">$0</div>
-            <div class="kpi-foot" id="kpiEncargosSaldoDetalle">Sobre los encargos activos</div>
-          </div>
-        </div>
-
-        <div class="toolbar-row">
-          <div class="field">
-            <input type="text" id="encargosBuscar" placeholder="Buscar por cliente, OT o descripción...">
-          </div>
-          <button class="btn btn-outline btn-sm" id="btnRecargarEncargos">🔄 Actualizar</button>
-        </div>
-
-        <div class="table-wrapper">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Cliente / OT</th>
-                <th>Descripción</th>
-                <th class="num">Total</th>
-                <th class="num">Abonado</th>
-                <th class="num">Saldo</th>
-                <th>Estado</th>
-                <th style="text-align:right;">Acciones</th>
-              </tr>
-            </thead>
-            <tbody id="encargosTableBody">
-              <tr class="empty-row"><td colspan="7">Cargando encargos...</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
 <div class="panel-taller" data-panel-taller="repuestos">
       <div class="card">
         <div class="card-head">
@@ -982,6 +924,77 @@
     <!-- ============================================================
          VISTA 4: PRODUCTOS (solo admin)
          ============================================================ -->
+
+    <!-- ============================================================
+         ENCARGOS (v110, sql/80)
+         Vivía en Servicio Técnico → "Abonos y Encargos". Se conservan
+         TODOS los id, así que encargos.js sigue funcionando igual.
+         ============================================================ -->
+    <section id="view-encargos" class="view-section">
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h2>Encargos y Abonos</h2>
+            <p class="subtitle" id="encargosResumenLabel">Pedidos al proveedor, reservas y servicios con seña.</p>
+          </div>
+          <div class="toolbar-group">
+            <div class="chip-group" id="encargosChips">
+              <button class="chip active" data-estado="">Todos</button>
+              <button class="chip" data-estado="PENDIENTE">Pendientes</button>
+              <button class="chip" data-estado="PARCIAL">Con abono</button>
+              <button class="chip" data-estado="PAGADO">Pagados</button>
+              <button class="chip" data-estado="__pedido" title="Encargos que hay que pedirle al proveedor y siguen en proceso">🚚 En proceso</button>
+            </div>
+            <button class="btn btn-primary" id="btnNuevoEncargo">➕ Nuevo Encargo</button>
+          </div>
+        </div>
+
+        <div class="kpi-grid">
+          <div class="kpi-card kpi-blue">
+            <div class="kpi-label">📦 Encargos Activos</div>
+            <div class="kpi-value" id="kpiEncargosActivos">0</div>
+            <div class="kpi-foot">Pendientes o con abono parcial</div>
+          </div>
+          <div class="kpi-card kpi-green">
+            <div class="kpi-label">💵 Total Abonado</div>
+            <div class="kpi-value" id="kpiEncargosAbonado">$0</div>
+            <div class="kpi-foot">Dinero recibido en señas</div>
+          </div>
+          <div class="kpi-card kpi-red">
+            <div class="kpi-label">⏳ Saldo por Cobrar</div>
+            <div class="kpi-value" id="kpiEncargosSaldo">$0</div>
+            <div class="kpi-foot" id="kpiEncargosSaldoDetalle">Sobre los encargos activos</div>
+          </div>
+        </div>
+
+        <div class="toolbar-row">
+          <div class="field">
+            <input type="text" id="encargosBuscar" placeholder="Buscar por cliente, OT o descripción...">
+          </div>
+          <button class="btn btn-outline btn-sm" id="btnRecargarEncargos">🔄 Actualizar</button>
+        </div>
+
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Cliente / OT</th>
+                <th>Descripción</th>
+                <th class="num">Total</th>
+                <th class="num">Abonado</th>
+                <th class="num">Saldo</th>
+                <th>Pago</th>
+                <th>Etapa</th>
+                <th style="text-align:right;">Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="encargosTableBody">
+              <tr class="empty-row"><td colspan="8">Cargando encargos...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
 
     <!-- ============================================================
          FINANZAS Y BALANCE
@@ -6294,6 +6307,34 @@
         </div>
       </div>
       <p class="modal-hint" id="encargoProductoSeleccionado" style="display:none;"></p>
+
+      <!-- v110 (sql/80): el proceso con el proveedor. Se marca solo si el producto
+           es por encargo, está agotado o faltan unidades; se puede cambiar a mano. -->
+      <div class="encargo-pedido" id="encargoPedidoBox">
+        <label class="check-item">
+          <input type="checkbox" id="encargoRequierePedido">
+          <span>📦 Hay que pedirlo al proveedor</span>
+        </label>
+        <p class="modal-hint" id="encargoPedidoHint"></p>
+        <div class="grid grid-2" id="encargoPedidoCampos" style="display:none; margin-top:10px;">
+          <div class="field">
+            <label for="encargoUnidadesPedir">Unidades a pedir</label>
+            <input type="number" id="encargoUnidadesPedir" min="1" step="1" placeholder="1">
+          </div>
+          <div class="field">
+            <label for="encargoProveedor">Proveedor (opcional)</label>
+            <input type="text" id="encargoProveedor" maxlength="120" placeholder="A quién se le pide">
+          </div>
+          <div class="field admin-only">
+            <label for="encargoCostoCotizado">Costo cotizado por unidad ($)</label>
+            <input type="number" id="encargoCostoCotizado" min="0" step="1" placeholder="Lo que dijo el proveedor">
+          </div>
+          <div class="field">
+            <label for="encargoFechaEstimada">Llega aprox. (opcional)</label>
+            <input type="date" id="encargoFechaEstimada">
+          </div>
+        </div>
+      </div>
       <p class="modal-hint">Los abonos suman al saldo de Finanzas el día que se reciben. Al completar el 100% se registra la venta en el historial. Si es un producto con stock, el stock baja al entregarlo o al terminar de pagar.</p>
 
       <div class="grid grid-3" style="margin-top:12px;">
@@ -6312,6 +6353,11 @@
             <option value="Transferencia">Transferencia</option>
             <option value="Tarjeta Débito">Tarjeta Débito</option>
             <option value="Tarjeta Crédito">Tarjeta Crédito</option>
+          </select>
+          <!-- sql/79: por cuál máquina pasó la tarjeta (aparece solo con tarjeta) -->
+          <select id="encargoMaquinaTarjeta" class="maquina-abono" style="display:none;" aria-label="Máquina de tarjetas del abono">
+            <option value="TUU">Máquina TUU</option>
+            <option value="BANCHILE">Máquina Banco de Chile</option>
           </select>
         </div>
       </div>
@@ -6357,6 +6403,11 @@
             <option value="Transferencia">Transferencia</option>
             <option value="Tarjeta Débito">Tarjeta Débito</option>
             <option value="Tarjeta Crédito">Tarjeta Crédito</option>
+          </select>
+          <!-- sql/79: por cuál máquina pasó la tarjeta (aparece solo con tarjeta) -->
+          <select id="abonoMaquinaTarjeta" class="maquina-abono" style="display:none;" aria-label="Máquina de tarjetas del abono">
+            <option value="TUU">Máquina TUU</option>
+            <option value="BANCHILE">Máquina Banco de Chile</option>
           </select>
         </div>
       </div>
@@ -7300,6 +7351,7 @@
   <script src="js/mermas.js"></script>
   <script src="js/activos.js"></script>
   <script src="js/encargos.js"></script>
+  <script src="js/encargos-etapas.js"></script>   <!-- v110 (sql/80): proceso con el proveedor; usa encargosList y productoEncargo de encargos.js -->
   <script src="js/pedidos-web.js"></script>
   <script src="js/pagina-web.js"></script>   <!-- después de pedidos-web.js: envuelve su vista en el subtab "pedidos" -->
   <script src="js/notificaciones.js"></script>

@@ -149,6 +149,12 @@ function setupPosEventListeners() {
     else if (b.dataset.cantMenos !== undefined) cambiarCantidadCarrito(Number(b.dataset.cantMenos), -1);
     else if (b.dataset.mayoristaAplicar !== undefined) alternarMayoristaLinea(Number(b.dataset.mayoristaAplicar), true);
     else if (b.dataset.mayoristaQuitar !== undefined) alternarMayoristaLinea(Number(b.dataset.mayoristaQuitar), false);
+    else if (b.dataset.encargoFaltante !== undefined) {
+      const linea = cart[Number(b.dataset.encargoFaltante)];
+      const producto = linea && productsList.find(p => p.id === linea.producto_id);
+      const llevas = cart.filter(i => i.producto_id === linea?.producto_id).reduce((a, i) => a + i.cantidad, 0);
+      if (producto && typeof iniciarEncargoDeProducto === 'function') iniciarEncargoDeProducto(producto, llevas);
+    }
   });
 
   if (elBtnDescuentoMonto) elBtnDescuentoMonto.addEventListener('click', () => elegirTipoDescuento('MONTO'));
@@ -617,6 +623,19 @@ async function cambiarCantidadCarrito(idx, delta) {
   enfocarBuscador();
 }
 
+/* v110 (sql/80): si piden más unidades de las que hay, la línea ofrece abrir
+   un encargo por el producto (el formulario calcula cuántas faltan). */
+function enlaceEncargoFaltante(item, idx) {
+  if (!item.producto_id || !Array.isArray(productsList)) return '';
+  const p = productsList.find(x => x.id === item.producto_id);
+  if (!p || p.stock_ilimitado || p.es_servicio) return '';
+  const stock = Math.max(0, Number(p.stock) || 0);
+  const llevas = cart.filter(i => i.producto_id === item.producto_id).reduce((a, i) => a + i.cantidad, 0);
+  if (llevas <= stock) return '';
+  return ` · <button type="button" class="cart-mayorista-btn" data-encargo-faltante="${idx}"
+    title="Hay ${stock} en stock y llevan ${llevas}: abre un encargo por este producto">📦 Faltan ${llevas - stock}: crear encargo</button>`;
+}
+
 /* Solo avisa: el servidor es quien valida el stock al cobrar. */
 function avisoStockCarrito(productoId) {
   if (!productoId || !Array.isArray(productsList)) return;
@@ -958,7 +977,7 @@ function renderCart() {
         `${fmtCLP(item.precio_unitario)} c/u`,
         item.serial_number ? `S/N ${escHtml(item.serial_number)}` : (item.requiere_sn ? 'sin S/N' : ''),
         item.es_servicio ? 'Servicio' : ''
-      ].filter(Boolean).join(' · ') + detalleMayoristaLinea(item, idx) + chipMargenLinea(idx);
+      ].filter(Boolean).join(' · ') + detalleMayoristaLinea(item, idx) + chipMargenLinea(idx) + enlaceEncargoFaltante(item, idx);
       return `
       <tr class="row-in">
         <td class="cart-prod">

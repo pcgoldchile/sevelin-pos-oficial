@@ -133,9 +133,13 @@ async function cargarEncargos() {
   if (!tokenActual()) return;
 
   try {
-    encargosList = await API.encargos.listar(filtroEstadoEncargo);
+    // v110: "En proceso" (los que hay que pedir al proveedor) se filtra acá, no en el servidor
+    const soloEnProceso = filtroEstadoEncargo === '__pedido';
+    const lista = await API.encargos.listar(soloEnProceso ? '' : filtroEstadoEncargo);
+    encargosList = soloEnProceso ? (lista || []).filter(encargoEnProceso) : lista;
     renderEncargosTabla(encargosList);
     renderKpisEncargos(encargosList);
+    if (typeof actualizarChipEncargos === 'function') actualizarChipEncargos();
   } catch (err) {
     console.error('Error al cargar encargos:', err.message || err);
     showToast(err.message || 'No se pudieron cargar los encargos', 'err');
@@ -176,12 +180,13 @@ function renderEncargosTabla(lista) {
   );
 
   if (filas.length === 0) {
-    elEncargosTableBody.innerHTML = '<tr class="empty-row"><td colspan="7">No hay encargos con este filtro. Crea uno con “Nuevo Encargo”.</td></tr>';
+    elEncargosTableBody.innerHTML = '<tr class="empty-row"><td colspan="8">No hay encargos con este filtro. Crea uno con “Nuevo Encargo”.</td></tr>';
     return;
   }
 
   elEncargosTableBody.innerHTML = filas.map(e => {
     const pagado = e.estado === 'PAGADO';
+    const cancelado = e.etapa === 'CANCELADO';
     return `
     <tr class="row-in${pagado ? '' : ' fila-pendiente'}">
       <td>
@@ -194,10 +199,11 @@ function renderEncargosTabla(lista) {
       <td class="num" style="color:var(--green); font-weight:600;">${fmtCLP(e.monto_abonado)}</td>
       <td class="num" style="color:${pagado ? 'var(--text-muted)' : 'var(--red)'}; font-weight:700;">${fmtCLP(e.saldo)}</td>
       <td>${badgeEstadoEncargo(e.estado)}${e.entregado_en ? '<br><small style="color:var(--green);">📦 Entregado</small>' : ''}</td>
+      <td class="celda-etapa">${celdaEtapaEncargo(e)}</td>
       <td>
         <div class="cell-actions">
-          ${pagado ? '' : `<button class="btn btn-green btn-sm" data-abonar="${e.id}" title="Registrar abono">💵 Abonar</button>`}
-          ${e.entregado_en ? '' : `<button class="btn btn-outline btn-sm" data-entregar="${e.id}" title="Marcar como entregado al cliente">📦 Entregar</button>`}
+          ${pagado || cancelado ? '' : `<button class="btn btn-green btn-sm" data-abonar="${e.id}" title="Registrar abono">💵 Abonar</button>`}
+          ${e.entregado_en || cancelado ? '' : `<button class="btn btn-outline btn-sm" data-entregar="${e.id}" title="Marcar como entregado al cliente">📦 Entregar</button>`}
           <button class="btn btn-outline btn-sm" data-ticket="${e.id}" title="Imprimir comprobante de abono">🖨️</button>
           <button class="btn btn-icon btn-icon-view" data-ver="${e.id}" title="Ver detalle">${ICO_VER_ENCARGO}</button>
           <button class="btn btn-icon btn-icon-edit" data-editar="${e.id}" title="Editar encargo">${ICO_EDITAR_ENCARGO}</button>
@@ -277,6 +283,7 @@ function abrirModalEncargo(encargo = null) {
     seleccionarProductoEncargo(null, false);
   }
 
+  prepararPedidoEncargo(encargo);   // v110: proceso con el proveedor y máquina del abono
   actualizarSaldoEncargo();
   elModalEncargo.classList.add('show');
   setTimeout(() => elEncargoCliente?.focus(), 80);
@@ -393,7 +400,9 @@ async function guardarEncargo() {
     // Vacío = el servidor toma el costo del catálogo si hay producto.
     costo_total: Number(elEncargoCostoTotal?.value) || 0,
     abono_inicial: editandoEncargoId ? 0 : abono,
-    metodo_pago: elEncargoMetodoPago?.value || 'Efectivo'
+    metodo_pago: elEncargoMetodoPago?.value || 'Efectivo',
+    maquina_tarjeta: maquinaDeAbono('encargoMetodoPago', 'encargoMaquinaTarjeta'),   // sql/79
+    ...datosPedidoEncargo()   // v110 (sql/80): si hay que pedirlo, unidades, proveedor y fecha
   };
 
   if (elBtnGuardarEncargo) elBtnGuardarEncargo.disabled = true;
@@ -469,7 +478,7 @@ function seleccionarProductoEncargo(producto, completar) {
   if (elEncargoProductoBuscar) elEncargoProductoBuscar.value = '';
   if (!elEncargoProductoSeleccionado) return;
 
-  if (!productoEncargo) { elEncargoProductoSeleccionado.style.display = 'none'; return; }
+  if (!productoEncargo) { elEncargoProductoSeleccionado.style.display = 'none'; if (completar) sugerirPedidoEncargo(); return; }
 
   if (completar) {
     if (elEncargoDescripcion && !elEncargoDescripcion.value.trim()) elEncargoDescripcion.value = productoEncargo.nombre || '';
@@ -483,8 +492,10 @@ function seleccionarProductoEncargo(producto, completar) {
   elEncargoProductoSeleccionado.innerHTML = `Producto: <b>${escHtml(productoEncargo.nombre || '')}</b> · <a href="#" id="quitarProductoEncargo">quitar</a>`;
   document.getElementById('quitarProductoEncargo')?.addEventListener('click', (e) => {
     e.preventDefault();
-    seleccionarProductoEncargo(null, false);
+    seleccionarProductoEncargo(null, true);
   });
+  // v110: con el producto elegido se sabe si hay que pedirlo (por encargo, agotado o faltan unidades)
+  if (completar) sugerirPedidoEncargo();
 }
 
 function mostrarAvisosEncargo(respuesta) {
@@ -541,6 +552,7 @@ function abrirModalAbono(encargo) {
     });
   }
 
+  pintarMaquinaAbono('abonoMetodoPago', 'abonoMaquinaTarjeta', false);   // sql/79
   actualizarNuevoSaldo();
   elModalAbono.classList.add('show');
   setTimeout(() => elAbonoMonto?.focus(), 80);
@@ -575,6 +587,7 @@ async function confirmarAbono() {
     const actualizado = await API.encargos.abonar(id, {
       monto,
       metodo_pago: elAbonoMetodoPago?.value || 'Efectivo',
+      maquina_tarjeta: maquinaDeAbono('abonoMetodoPago', 'abonoMaquinaTarjeta'),   // sql/79
       nota: elAbonoNota?.value.trim() || null
     });
 
@@ -617,6 +630,7 @@ async function verDetalleEncargo(id) {
       <p style="margin-bottom:12px;">${escHtml(encargo.descripcion || '')}</p>
       ${encargo.producto ? `<p class="modal-hint"><b>Producto:</b> ${escHtml(encargo.producto.nombre)} × ${Number(encargo.cantidad) || 1}${encargo.stock_descontado ? ' · stock descontado' : ''}</p>` : ''}
       <p class="modal-hint"><b>Entrega:</b> ${encargo.entregado_en ? `entregado el ${tsAChile(encargo.entregado_en)}${encargo.entregado_nota ? ' · ' + escHtml(encargo.entregado_nota) : ''}` : 'pendiente'}${encargo.venta_id ? ' · <b>venta registrada en el historial</b>' : ''}</p>
+      ${detalleEtapaEncargo(encargo)}
       ${encargo.observaciones ? `<p class="modal-hint">${escHtml(encargo.observaciones)}</p>` : ''}
 
       <span class="section-label" style="margin-top:14px;">Abonos recibidos</span>

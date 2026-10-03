@@ -17,6 +17,7 @@ const productos = [
   { id: 157, nombre: 'Monitor Gamer MSI MAG 255F E20 24.5" Full HD Rapid IPS 200Hz 0.5ms', sku: 'monitor-gamer-msi-mag-255f', codigo_barras: '4711377285278', precio_unitario: 120000, costo_unitario: 92990, stock: 0, imagen_urls: IMG(157, '78c2f833-2d86-41d4-9ffb-56be495d84b3', 'a323feec-16ab-4633-9c14-1ce8442e1153'), requiere_sn: false, categoria_web: 'Monitores' },
   { id: 100, nombre: 'Balanza Digital Inteligente Bluetooth', sku: 'balanza-digital-inteligente-bluetooth-z8dqs', codigo_barras: null, precio_unitario: 7000, costo_unitario: 4098, stock: 8, imagen_urls: IMG(100, '8fb040f9-d62f-4f7e-a5ce-9700fd781ecb', 'e9f1e3a4-0e18-45a5-a87d-c38a71bb86b0'), requiere_sn: false, categoria_web: 'Hogar y Estilo de Vida' },
   { id: 900, nombre: 'Formateo e instalación de Windows', sku: 'servicio-formateo', codigo_barras: null, precio_unitario: 25000, costo_unitario: 0, stock: 0, stock_ilimitado: true, imagen_urls: [], requiere_sn: false, es_servicio: true, categoria_web: 'Servicios Técnicos' },
+  { id: 910, nombre: 'Tarjeta de Video RTX 5060 8GB (por encargo)', sku: 'rtx-5060-encargo', codigo_barras: null, precio_unitario: 389990, costo_unitario: 330000, stock: 0, imagen_urls: [], requiere_sn: false, es_pedido_encargo: true, categoria_web: 'Componentes PC' },
 ].map(p => ({ archivado: false, stock_ilimitado: false, es_servicio: false, publicado_web: true, created_at: '2026-09-01T12:00:00Z', ...p }));
 
 const app = express();
@@ -445,6 +446,114 @@ app.put('/api/ventas/:id/despacho', (req, res) => {
   const e = req.body.envio || {};
   envioVentaWebMaqueta = { repartidor: e.repartidor || 'indrive', costo: Number(e.costo) || 0, cobrado_cliente: e.cobrado_cliente ?? null, km: e.km || null, sector: e.sector || null, duracion_min: e.duracion_min || null, metodo_pago: 'Efectivo' };
   res.json({ ok: true });
+});
+
+// v110 (sql/80): encargos en memoria, con el proceso con el proveedor. Imita al servidor real:
+// el trabajador no recibe costos, solo el admin vuelve atrás o cancela, y lo que vale es api/index.js.
+const encargosMaqueta = [
+  { id: 1, cliente_nombre: 'Juan <b>Prueba</b>', cliente_telefono: '+56 9 1234 5678', descripcion: 'PC Gamer a pedido', monto_total: 450000, monto_abonado: 150000, saldo: 300000,
+    estado: 'PARCIAL', producto_id: null, cantidad: 1, costo_total: 380000, etapa: 'COTIZANDO', etapa_cambiada_en: '2026-09-20T15:00:00Z', origen: null, unidades_pedir: 1,
+    proveedor: null, costo_cotizado_unitario: null, fecha_estimada: null, cliente_avisado_en: null, entregado_en: null },
+  { id: 2, cliente_nombre: 'Taller Norte', cliente_telefono: null, descripcion: 'Formateo con seña', monto_total: 25000, monto_abonado: 10000, saldo: 15000,
+    estado: 'PARCIAL', producto_id: null, cantidad: 1, costo_total: 0, etapa: null, entregado_en: null },
+];
+const abonosMaqueta = [];
+const encargoParaRol = (e) => { if (app.locals.rolMaqueta !== 'trabajador') return e; const { costo_total, costo_cotizado_unitario, ...v } = e; return v; };
+const pedidoMaqueta = (b) => {
+  const p = productos.find(x => x.id === Number(b.producto_id));
+  const cantidad = Math.max(1, Number(b.cantidad) || 1);
+  let sugerido = { origen: null, pedir: 0 };
+  if (p && p.es_pedido_encargo) sugerido = { origen: 'ENCARGO', pedir: cantidad };
+  else if (p && !p.stock_ilimitado && !p.es_servicio) {
+    if (Number(p.stock) <= 0) sugerido = { origen: 'AGOTADO', pedir: cantidad };
+    else if (Number(p.stock) < cantidad) sugerido = { origen: 'LOTE', pedir: cantidad - Number(p.stock) };
+  }
+  const requiere = b.requiere_pedido === undefined ? sugerido.pedir > 0 : !!b.requiere_pedido;
+  return requiere ? { etapa: 'COTIZANDO', etapa_cambiada_en: new Date().toISOString(), origen: sugerido.origen, unidades_pedir: Number(b.unidades_pedir) || sugerido.pedir || cantidad }
+    : { etapa: null, origen: null, unidades_pedir: null };
+};
+app.get('/api/encargos', (req, res) => res.json(encargosMaqueta.filter(e => !req.query.estado || e.estado === req.query.estado).sort((a, b) => b.id - a.id).map(encargoParaRol)));
+app.get('/api/encargos/resumen', (_req, res) => {
+  const enCurso = encargosMaqueta.filter(e => ['COTIZANDO', 'CONFIRMADO', 'PEDIDO', 'LLEGO'].includes(e.etapa));
+  const porAvisar = enCurso.filter(e => e.etapa === 'LLEGO' && !e.cliente_avisado_en).length;
+  const atrasados = enCurso.filter(e => e.etapa === 'COTIZANDO' && Date.parse(e.etapa_cambiada_en) < Date.now() - 2 * 86400000).length;
+  const tarde = enCurso.filter(e => e.etapa === 'PEDIDO' && e.fecha_estimada && e.fecha_estimada < hoyMaqueta()).length;
+  res.json({ en_curso: enCurso.length, por_avisar: porAvisar, cotizando_atrasados: atrasados, llegada_atrasada: tarde, urgentes: porAvisar + atrasados + tarde });
+});
+app.get('/api/encargos/:id', (req, res) => {
+  const e = encargosMaqueta.find(x => x.id === Number(req.params.id));
+  if (!e) return res.status(404).json({ error: 'Encargo no encontrado' });
+  const p = productos.find(x => x.id === e.producto_id);
+  res.json({ ...encargoParaRol(e), abonos: abonosMaqueta.filter(a => a.encargo_id === e.id), producto: p ? { id: p.id, nombre: p.nombre, stock: p.stock } : null });
+});
+app.post('/api/encargos', (req, res) => {
+  const b = req.body || {};
+  if (!String(b.cliente_nombre || '').trim()) return res.status(400).json({ error: 'El nombre del cliente es obligatorio' });
+  const abono = Number(b.abono_inicial) || 0;
+  const total = Number(b.monto_total) || 0;
+  const admin = app.locals.rolMaqueta !== 'trabajador';
+  const e = { id: Math.max(0, ...encargosMaqueta.map(x => x.id)) + 1, cliente_nombre: b.cliente_nombre, cliente_telefono: b.cliente_telefono || null, descripcion: b.descripcion,
+    monto_total: total, monto_abonado: abono, saldo: total - abono, estado: abono <= 0 ? 'PENDIENTE' : (abono < total ? 'PARCIAL' : 'PAGADO'),
+    producto_id: Number(b.producto_id) || null, cantidad: Math.max(1, Number(b.cantidad) || 1), costo_total: admin ? (Number(b.costo_total) || 0) : 0, observaciones: b.observaciones || null,
+    proveedor: b.proveedor || null, costo_cotizado_unitario: admin ? (Number(b.costo_cotizado_unitario) || null) : null, fecha_estimada: b.fecha_estimada || null,
+    cliente_avisado_en: null, entregado_en: null, ...pedidoMaqueta(b) };
+  encargosMaqueta.push(e);
+  if (abono > 0) abonosMaqueta.push({ id: abonosMaqueta.length + 1, encargo_id: e.id, monto: abono, metodo_pago: b.metodo_pago, maquina_tarjeta: b.maquina_tarjeta || null, nota: 'Abono inicial', fecha: new Date().toISOString() });
+  res.status(201).json({ ...encargoParaRol(e), avisos: [] });
+});
+app.put('/api/encargos/:id', (req, res) => {
+  const e = encargosMaqueta.find(x => x.id === Number(req.params.id));
+  if (!e) return res.status(404).json({ error: 'Encargo no encontrado' });
+  const b = req.body || {};
+  const admin = app.locals.rolMaqueta !== 'trabajador';
+  Object.assign(e, { cliente_nombre: b.cliente_nombre, cliente_telefono: b.cliente_telefono || null, descripcion: b.descripcion, monto_total: Number(b.monto_total), saldo: Number(b.monto_total) - e.monto_abonado,
+    cantidad: Math.max(1, Number(b.cantidad) || 1), observaciones: b.observaciones || null });
+  if (b.proveedor !== undefined) e.proveedor = b.proveedor || null;
+  if (b.fecha_estimada !== undefined) e.fecha_estimada = b.fecha_estimada || null;
+  if (admin && b.costo_cotizado_unitario !== undefined) e.costo_cotizado_unitario = Number(b.costo_cotizado_unitario) || null;
+  if (b.requiere_pedido === true && !e.etapa) Object.assign(e, pedidoMaqueta({ ...b, requiere_pedido: true }));
+  else if (b.requiere_pedido === false && ['COTIZANDO', 'CONFIRMADO'].includes(e.etapa)) Object.assign(e, { etapa: null, origen: null, unidades_pedir: null });
+  else if (Number(b.unidades_pedir) >= 1 && e.etapa) e.unidades_pedir = Number(b.unidades_pedir);
+  res.json({ ...encargoParaRol(e), avisos: [] });
+});
+app.post('/api/encargos/:id/etapa', (req, res) => {
+  const e = encargosMaqueta.find(x => x.id === Number(req.params.id));
+  if (!e) return res.status(404).json({ error: 'Encargo no encontrado' });
+  const destino = String(req.body.etapa || '').toUpperCase();
+  const admin = app.locals.rolMaqueta !== 'trabajador';
+  const orden = ['COTIZANDO', 'CONFIRMADO', 'PEDIDO', 'LLEGO'];
+  if (!e.etapa) return res.status(409).json({ error: 'Este encargo no tiene nada que pedir al proveedor' });
+  if (destino === 'CANCELADO') {
+    if (!admin) return res.status(403).json({ error: 'Solo el administrador cancela un encargo' });
+    if (String(req.body.motivo || '').trim().length < 5) return res.status(400).json({ error: 'Escribe el motivo de la cancelación (entre 5 y 300 letras)' });
+    if (e.monto_abonado > 0) return res.status(409).json({ error: 'Este encargo tiene $' + e.monto_abonado.toLocaleString('es-CL') + ' en abonos, que ya están en Finanzas. No se cancela hasta resolverlo.' });
+    Object.assign(e, { etapa: 'CANCELADO', cancelado_motivo: req.body.motivo.trim(), etapa_cambiada_en: new Date().toISOString() });
+    return res.json(encargoParaRol(e));
+  }
+  if (!orden.includes(destino)) return res.status(400).json({ error: 'Etapa inválida' });
+  if (orden.indexOf(destino) < orden.indexOf(e.etapa) && !admin) return res.status(403).json({ error: 'Solo el administrador devuelve un encargo a una etapa anterior' });
+  Object.assign(e, { etapa: destino, etapa_cambiada_en: new Date().toISOString(), cliente_avisado_en: null, cancelado_motivo: null });
+  res.json(encargoParaRol(e));
+});
+app.post('/api/encargos/:id/avisado', (req, res) => {
+  const e = encargosMaqueta.find(x => x.id === Number(req.params.id));
+  if (!e || e.etapa !== 'LLEGO') return res.status(409).json({ error: 'El aviso al cliente se anota cuando el encargo ya llegó' });
+  e.cliente_avisado_en = new Date().toISOString();
+  res.json(encargoParaRol(e));
+});
+app.post('/api/encargos/:id/entregar', (req, res) => {
+  const e = encargosMaqueta.find(x => x.id === Number(req.params.id));
+  if (!e) return res.status(404).json({ error: 'Encargo no encontrado' });
+  Object.assign(e, { entregado_en: new Date().toISOString(), entregado_nota: req.body.nota || null }, e.etapa ? { etapa: 'ENTREGADO' } : {});
+  res.json({ ...encargoParaRol(e), avisos: [] });
+});
+app.post('/api/encargos/:id/abono', (req, res) => {
+  const e = encargosMaqueta.find(x => x.id === Number(req.params.id));
+  if (!e) return res.status(404).json({ error: 'Encargo no encontrado' });
+  const monto = Number(req.body.monto) || 0;
+  e.monto_abonado += monto; e.saldo = e.monto_total - e.monto_abonado; e.estado = e.saldo <= 0 ? 'PAGADO' : 'PARCIAL';
+  abonosMaqueta.push({ id: abonosMaqueta.length + 1, encargo_id: e.id, monto, metodo_pago: req.body.metodo_pago, maquina_tarjeta: req.body.maquina_tarjeta || null, nota: req.body.nota || null, fecha: new Date().toISOString() });
+  res.json({ ...encargoParaRol(e), abonos: abonosMaqueta.filter(a => a.encargo_id === e.id), ultimo_abono: monto, avisos: [] });
 });
 
 // v109: aviso de margen en la caja y precio sugerido. Imitan al servidor real con los productos de

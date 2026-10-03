@@ -480,12 +480,11 @@ function activarVista(viewId, subtab) {
     if (typeof cargarSaldosCanales === 'function') cargarSaldosCanales();
   }
   if (viewId === 'view-taller' && typeof cargarOrdenes === 'function') cargarOrdenes();
-  /* Abonos y Repuestos pasaron a ser sub-pestañas de Servicio
-     Técnico, así que ya no llegan por aquí como vistas propias. Al
-     entrar al taller se cargan los tres módulos: son listados
-     livianos y evita que una sub-pestaña se vea vacía al abrirla. */
+  /* Repuestos es una sub-pestaña de Servicio Técnico: al entrar al taller
+     se carga también, así no se ve vacía al abrirla. */
+  // v110 (sql/80): Encargos salió de Servicio Técnico y es un módulo del menú.
+  if (viewId === 'view-encargos' && typeof cargarEncargos === 'function') cargarEncargos();
   if (viewId === 'view-taller') {
-    if (typeof cargarEncargos === 'function') cargarEncargos();
     if (typeof cargarRepuestos === 'function') cargarRepuestos();
     if (subtab && typeof mostrarPanelTaller === 'function') mostrarPanelTaller(subtab);
   }

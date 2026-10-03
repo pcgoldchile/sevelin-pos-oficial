@@ -4818,3 +4818,15 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
 .precio-sugerido p:last-child { margin-bottom: 0; }
 .precio-sugerido-titulo small, .precio-sugerido-nota { color: var(--text-muted); font-size: 12px; }
 .precio-sugerido .btn { margin-left: 4px; vertical-align: baseline; }
+
+/* ============================================================
+   ENCARGOS: PROCESO CON EL PROVEEDOR (v110, sql/80)
+   ============================================================ */
+.btn-encargos[hidden] { display: none; }
+.celda-etapa { min-width: 190px; }
+.celda-etapa small { line-height: 1.4; }
+.etapa-acciones { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.encargo-pedido { margin-top: 12px; padding: 10px 12px; border: 1px dashed var(--border-strong); border-radius: 10px; }
+.encargo-pedido .modal-hint { margin: 4px 0 0; }
+.encargo-pedido .modal-hint:empty { display: none; }
+.maquina-abono { margin-top: 6px; }
