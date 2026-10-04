@@ -3750,10 +3750,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (elVenta && elVenta.value !== e.target.value) elVenta.value = e.target.value;
   });
   document.getElementById('ingCantidad')?.addEventListener('input', actualizarTextoGuardarProducto);
+  // v120 (sql/85): factura adjunta a la compra (mismo bucket privado que los gastos)
+  document.getElementById('btnIngAdjuntar')?.addEventListener('click', () => document.getElementById('ingDocumentoArchivo')?.click());
+  document.getElementById('ingDocumentoArchivo')?.addEventListener('change', adjuntarFacturaDeCompra);
+  document.getElementById('btnIngQuitarAdjunto')?.addEventListener('click', () => ponerAdjuntoDeCompra(null));
   document.getElementById('ingAvisoGasto')?.addEventListener('click', (e) => {
     const b = e.target.closest('[data-anotar-gasto]');
     if (b) {
-      abrirGastoPrellenado({ monto: Number(b.dataset.monto), descripcion: b.dataset.descripcion, proveedor: b.dataset.proveedor });
+      abrirGastoPrellenado({ monto: Number(b.dataset.monto), descripcion: b.dataset.descripcion, proveedor: b.dataset.proveedor, documento: b.dataset.documento || '' });
       return;
     }
     if (e.target.closest('[data-cerrar-aviso-gasto]')) document.getElementById('ingAvisoGasto').innerHTML = '';
@@ -3777,6 +3781,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (recibir) { recibirCompraEnCamino(Number(recibir.dataset.recibirIngreso)); return; }
     const cerrar = e.target.closest('[data-cerrar-ingreso]');
     if (cerrar) { cerrarIngresoProducto(Number(cerrar.dataset.cerrarIngreso), cerrar.dataset.motivo); return; }
+    const doc = e.target.closest('[data-doc-ingreso]');
+    if (doc) { abrirDocumentoCompra(decodeURIComponent(doc.dataset.docIngreso)); return; }
     const borrar = e.target.closest('[data-borrar-ingreso]');
     if (borrar) borrarIngresoProducto(Number(borrar.dataset.borrarIngreso));
   });
@@ -3980,6 +3986,10 @@ function limpiarFormularioIngreso() {
   set('ingDevolucion', '');
   set('ingProveedor', '');
   set('ingReferencia', '');
+  set('ingProveedorRut', '');
+  ponerAdjuntoDeCompra(null);
+  const avisoProveedor = document.getElementById('ingAvisoProveedor');
+  if (avisoProveedor) avisoProveedor.innerHTML = '';
   set('ingPrecioVenta', document.getElementById('prodPrecio')?.value || '');
   set('ingFacturaEsperada', '');
   const factura = document.getElementById('ingFacturaPendiente');
@@ -4020,7 +4030,10 @@ function pintarIngresosProducto() {
             <td>${i.devolucion_hasta
                   ? escHtml(fechaCorta(i.devolucion_hasta))
                   : '<span style="color:var(--text-muted);">no acepta</span>'}</td>
-            <td>${escHtml(i.proveedor || '—')}</td>
+            <td>${escHtml(i.proveedor || '—')}
+              ${i.proveedor_rut ? `<br><small style="color:var(--text-muted);">${escHtml(i.proveedor_rut)}</small>` : ''}
+              ${i.referencia ? `<br><small style="color:var(--text-muted);">N° ${escHtml(i.referencia)}</small>` : ''}
+              ${i.url_documento ? `<br><button type="button" class="btn btn-ghost btn-sm" data-doc-ingreso="${encodeURIComponent(i.url_documento)}" title="Abrir la factura adjunta">📎 Ver factura</button>` : ''}</td>
             <td>
               <div class="cell-actions">
                 ${i.en_camino
@@ -4046,6 +4059,47 @@ function fechaCorta(iso) {
   return a && m && d ? `${d}-${m}-${a}` : '—';
 }
 
+/* Factura adjunta a la compra que se está escribiendo (v120, sql/85). Se sube
+   al mismo bucket privado de los gastos y se guarda su RUTA; se firma un
+   enlace nuevo cada vez que se abre (FILE-01). */
+let adjuntoDeCompra = null;
+
+function ponerAdjuntoDeCompra(ruta, nombre) {
+  adjuntoDeCompra = ruta || null;
+  const estado = document.getElementById('ingDocumentoEstado');
+  if (estado) {
+    estado.textContent = ruta ? `✔ ${nombre || 'Factura adjunta'}` : 'Sin archivo';
+    estado.className = 'doc-estado ' + (ruta ? 'doc-ok' : 'doc-falta');
+  }
+  const quitar = document.getElementById('btnIngQuitarAdjunto');
+  if (quitar) quitar.hidden = !ruta;
+}
+
+async function adjuntarFacturaDeCompra(evento) {
+  const archivo = evento.target.files[0];
+  if (!archivo) return;
+  const estado = document.getElementById('ingDocumentoEstado');
+  try {
+    if (archivo.size > 4 * 1024 * 1024) throw new Error('El archivo supera los 4 MB: usa el PDF que manda el proveedor o una foto más liviana');
+    if (estado) estado.textContent = '⏳ Subiendo…';
+    const base64 = await new Promise((resolve, reject) => {
+      const lector = new FileReader();
+      lector.onload = () => resolve(String(lector.result).split(',')[1]);
+      lector.onerror = () => reject(new Error('No se pudo leer el archivo'));
+      lector.readAsDataURL(archivo);
+    });
+    const { ruta } = await API.compras.subirArchivo(archivo.name, archivo.type, base64);
+    if (!ruta) throw new Error('El servidor no devolvió la ruta del archivo');
+    ponerAdjuntoDeCompra(ruta, archivo.name);
+    showToast('Factura adjunta: queda guardada al registrar la compra', 'ok');
+  } catch (err) {
+    ponerAdjuntoDeCompra(null);
+    showToast(err.message || 'No se pudo subir el archivo', 'err');
+  } finally {
+    evento.target.value = '';
+  }
+}
+
 /* Lo escrito en el formulario de compra (v118). Devuelve null si no hay
    ninguna compra escrita (sin unidades), { error } si está a medias, o
    { datos } listo para POST /api/productos/:id/compras. Lo usan el botón
@@ -4066,6 +4120,9 @@ function compraDelFormulario() {
       devolucion_hasta: (document.getElementById('ingDevolucion')?.value || '').trim() || null,
       proveedor: (document.getElementById('ingProveedor')?.value || '').trim() || null,
       referencia: (document.getElementById('ingReferencia')?.value || '').trim() || null,
+      // v120 (sql/85): RUT del proveedor (lo valida el servidor) y factura adjunta
+      proveedor_rut: (document.getElementById('ingProveedorRut')?.value || '').trim() || null,
+      url_documento: adjuntoDeCompra || null,
       // sql/65 — el backend la apaga solo si ya vino el N° de factura
       factura_pendiente: !!document.getElementById('ingFacturaPendiente')?.checked,
       factura_esperada_para: (document.getElementById('ingFacturaEsperada')?.value || '').trim() || null,
@@ -4087,7 +4144,7 @@ function actualizarTextoGuardarProducto() {
 
 /* Una compra de mercadería no anota el gasto en Finanzas: el gasto lleva
    factura, IVA y medio de pago. Se ofrece abrir ese formulario ya llenado. */
-function ofrecerGastoDeCompra({ unidades, costoUnitario, proveedor }) {
+function ofrecerGastoDeCompra({ unidades, costoUnitario, proveedor, documento }) {
   const aviso = document.getElementById('ingAvisoGasto');
   if (!aviso) return;
   const total = Math.round(num(unidades) * num(costoUnitario));
@@ -4096,7 +4153,7 @@ function ofrecerGastoDeCompra({ unidades, costoUnitario, proveedor }) {
   aviso.innerHTML = `<span class="compra-aviso-gasto">
     💸 Esta compra son <strong>${fmtCLP(total)}</strong> (${num(unidades)} × ${fmtCLP(costoUnitario)}). ¿Ya anotaste el gasto en Finanzas?
     <button type="button" class="btn btn-primary btn-sm" data-anotar-gasto="1" data-monto="${total}"
-            data-descripcion="${escHtml(`Compra de ${num(unidades)} × ${nombre}`)}" data-proveedor="${escHtml(proveedor || '')}">Anotar el gasto</button>
+            data-descripcion="${escHtml(`Compra de ${num(unidades)} × ${nombre}`)}" data-proveedor="${escHtml(proveedor || '')}" data-documento="${escHtml(documento || '')}">Anotar el gasto</button>
     <button type="button" class="btn btn-ghost btn-sm" data-cerrar-aviso-gasto="1">Ya está anotado</button>
   </span>`;
 }
@@ -4127,7 +4184,7 @@ async function reflejarCompraRegistrada(r, datos) {
     if (elCosto) elCosto.value = num(r.costo_rellenado);
   }
   limpiarFormularioIngreso();
-  ofrecerGastoDeCompra({ unidades: datos.cantidad, costoUnitario: datos.costo_unitario, proveedor: datos.proveedor });
+  ofrecerGastoDeCompra({ unidades: datos.cantidad, costoUnitario: datos.costo_unitario, proveedor: datos.proveedor, documento: datos.url_documento });
 
   if (r?.lote && typeof cargarLotesDelProducto === 'function') await cargarLotesDelProducto(editingProductId);
   if (typeof cargarProductos === 'function') cargarProductos(true);

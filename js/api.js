@@ -631,6 +631,10 @@ const API = {
     gastosFijosMes: () => apiRequest('/finanzas/gastos-fijos-mes'),
     // v99 — compras que el SII tiene por aceptar (robot del RCV)
     siiPorAceptar: () => apiRequest('/finanzas/sii/por-aceptar', { silencioso: true }),
+    // v120 (sql/85) — notas de crédito recibidas y búsqueda de una factura en el RCV
+    siiNotasCredito: () => apiRequest('/finanzas/sii/notas-credito', { silencioso: true }),
+    revisarNotaCredito: (id, datos) => apiRequest(`/finanzas/sii/notas-credito/${id}/revisar`, { method: 'POST', body: datos }),
+    siiFactura: (rut, folio) => apiRequest(`/finanzas/sii/factura?rut=${encodeURIComponent(rut)}&folio=${encodeURIComponent(folio)}`, { silencioso: true }),
     // v101 — pendientes del dueño y de Claude (sql/72)
     pendientes: () => apiRequest('/pendientes', { silencioso: true }),
     crearPendiente: (datos) => apiRequest('/pendientes', { method: 'POST', body: datos }),

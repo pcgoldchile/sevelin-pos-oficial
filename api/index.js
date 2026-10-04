@@ -2948,6 +2948,23 @@ function fechaValidaISO(v) {
    fecha de vencimiento. NO se redefine: dos funciones con el mismo nombre
    en este proyecto se pisan en silencio. */
 
+/* RUT de un proveedor en el formato que usa el SII ('77398220-1': sin puntos,
+   con guion y dígito verificador). Devuelve { rut } (null si vino vacío) o
+   { error }. Valida el dígito verificador: un RUT mal tipeado no calzaría
+   nunca con el Registro de Compras y el aviso de notas de crédito quedaría mudo. */
+function rutDeProveedor(crudo) {
+  const limpio = String(crudo ?? '').replace(/[^0-9kK]/g, '').toUpperCase();
+  if (!limpio) return { rut: null };
+  const cuerpo = limpio.slice(0, -1).replace(/^0+/, ''), dv = limpio.slice(-1);
+  if (!/^[0-9]{7,8}$/.test(cuerpo)) return { error: 'El RUT del proveedor no es válido: escríbelo con su dígito verificador (ej: 77.398.220-1)' };
+  let suma = 0, factor = 2;
+  for (let i = cuerpo.length - 1; i >= 0; i--) { suma += Number(cuerpo[i]) * factor; factor = factor === 7 ? 2 : factor + 1; }
+  const resto = 11 - (suma % 11);
+  const esperado = resto === 11 ? '0' : resto === 10 ? 'K' : String(resto);
+  if (dv !== esperado) return { error: 'El RUT del proveedor no calza con su dígito verificador: revisa que esté bien escrito' };
+  return { rut: `${cuerpo}-${dv}` };
+}
+
 function sanearIngreso(body) {
   const fecha = String(body?.fecha_compra || '').trim();
   if (!fechaValidaISO(fecha)) return { error: 'La fecha de compra debe venir como YYYY-MM-DD' };
@@ -2974,6 +2991,23 @@ function sanearIngreso(body) {
 
   const referencia = String(body?.referencia || '').trim().slice(0, 80) || null;
 
+  /* sql/85 — RUT del proveedor y factura adjunta. Solo entran si el body los
+     trae: quien llama sin ellos (un borrador, una corrección de stock) no
+     tiene por qué dejarlos en blanco. */
+  const extras = {};
+  if (body?.proveedor_rut !== undefined) {
+    const { rut, error: errRut } = rutDeProveedor(body.proveedor_rut);
+    if (errRut) return { error: errRut };
+    extras.proveedor_rut = rut;
+  }
+  if (body?.url_documento !== undefined) {
+    const ruta = String(body.url_documento || '').trim();
+    if (ruta && (ruta.length > 300 || ruta.includes('..') || ruta.startsWith('/') || /^https?:/i.test(ruta))) {
+      return { error: 'La factura adjunta no es válida: vuelve a subirla' };
+    }
+    extras.url_documento = ruta || null;
+  }
+
   /* sql/65 — La factura no puede estar pendiente si el número YA está
      escrito: se apaga sola y no hay que acordarse de desmarcarla. */
   const facturaPendiente = !referencia && body?.factura_pendiente === true;
@@ -2988,7 +3022,8 @@ function sanearIngreso(body) {
       referencia,
       nota: String(body?.nota || '').trim().slice(0, 300) || null,
       factura_pendiente: facturaPendiente,
-      factura_esperada_para: facturaPendiente ? (esperada || null) : null
+      factura_esperada_para: facturaPendiente ? (esperada || null) : null,
+      ...extras
     }
   };
 }
@@ -3423,6 +3458,21 @@ async function registrarCompraDeProducto(producto, datos, opciones = {}) {
   if (Object.keys(cambios).length) {
     const { error: errU } = await db.from('productos').update(cambios).eq('id', id);
     if (errU) throw errU;
+  }
+
+  /* sql/85 — El RUT se recuerda por proveedor para proponerlo la próxima
+     vez. Es una comodidad: si falla, la compra ya quedó bien registrada. */
+  if (datos.proveedor && datos.proveedor_rut) {
+    try {
+      const { data: previo } = await db.from('proveedores_plazos').select('proveedor, rut').eq('proveedor', datos.proveedor).maybeSingle();
+      if (!previo) {
+        await db.from('proveedores_plazos').insert([{ proveedor: datos.proveedor, rut: datos.proveedor_rut }]);
+      } else if (previo.rut !== datos.proveedor_rut) {
+        await db.from('proveedores_plazos').update({ rut: datos.proveedor_rut, actualizado_en: new Date().toISOString() }).eq('proveedor', datos.proveedor);
+      }
+    } catch (err) {
+      console.error('[COMPRAS] no se pudo recordar el RUT del proveedor:', err.message);
+    }
   }
 
   return {
@@ -10163,6 +10213,122 @@ app.get('/api/finanzas/sii/por-aceptar', auth(true), async (req, res) => {
     iva: Math.round(documentos.reduce((s, d) => s + d.iva, 0)),
     documentos,
     ultimaSync: ultimaSync?.creado_en || null
+  });
+});
+
+/* ============================================================
+   NOTAS DE CRÉDITO RECIBIDAS (v120, sql/85)
+   ------------------------------------------------------------
+   Pedido del dueño (04-10-2026): "hacer seguimiento a quienes están haciendo
+   notas de crédito ... para evitarme sorpresas de proveedores que dan la
+   factura y luego la nota de crédito silenciosamente".
+
+   Una nota de crédito recibida (tipo 61 en el Registro de Compras) le RESTA
+   crédito fiscal al mes en que llega. El robot del RCV (sql/51) ya las trae
+   una vez al día; lo que faltaba era mostrarlas y que el dueño diga si la
+   esperaba (devolvió algo, anuló una compra) o no.
+
+   Solo lectura del SII. Los datos parten del primer período que el robot
+   sincronizó: de antes no hay nada, y la respuesta lo dice (`desde`).
+   ============================================================ */
+const SII_TIPO_NOTA_CREDITO = 61;
+const SII_TIPOS_FACTURA = new Set([33, 34, 46]);
+
+app.get('/api/finanzas/sii/notas-credito', auth(true), async (req, res) => {
+  try {
+    const [docsR, syncR] = await Promise.all([
+      db.from('sii_rcv_documentos')
+        .select('id, periodo, estado, tipo_doc, rut, razon_social, folio, fecha_doc, neto, iva, total, revision, revisado_en, revisado_nota')
+        .eq('operacion', 'COMPRA').order('fecha_doc', { ascending: false }).limit(5000),
+      db.from('sii_sync').select('creado_en').eq('ok', true).order('creado_en', { ascending: false }).limit(1).maybeSingle()
+    ]);
+    if (docsR.error) throw docsR.error;
+    const docs = docsR.data || [];
+
+    const notas = docs.filter(d => Number(d.tipo_doc) === SII_TIPO_NOTA_CREDITO);
+    const porRut = new Map();
+    for (const d of docs) {
+      const esNota = Number(d.tipo_doc) === SII_TIPO_NOTA_CREDITO;
+      if (!esNota && !SII_TIPOS_FACTURA.has(Number(d.tipo_doc))) continue;
+      const p = porRut.get(d.rut) || { rut: d.rut, razon_social: d.razon_social || d.rut, facturas: 0, total_facturas: 0,
+        notas: 0, total_notas: 0, iva_notas: 0, no_esperadas: 0, ultima_nota: null };
+      if (esNota) {
+        p.notas += 1; p.total_notas += num(d.total); p.iva_notas += num(d.iva);
+        if (d.revision === 'no_esperada') p.no_esperadas += 1;
+        if (!p.ultima_nota || String(d.fecha_doc) > String(p.ultima_nota)) p.ultima_nota = d.fecha_doc;
+      } else {
+        p.facturas += 1; p.total_facturas += num(d.total);
+      }
+      if (!p.razon_social && d.razon_social) p.razon_social = d.razon_social;
+      porRut.set(d.rut, p);
+    }
+    const periodos = docs.map(d => d.periodo).filter(Boolean).sort();
+    res.json({
+      sin_revisar: notas.filter(d => !d.revision).length,
+      notas,
+      total_notas: Math.round(notas.reduce((a, d) => a + num(d.total), 0)),
+      iva_notas: Math.round(notas.reduce((a, d) => a + num(d.iva), 0)),
+      // Todos los proveedores que han facturado: sirve para proponer el RUT al escribir el nombre.
+      proveedores: [...porRut.values()].sort((a, b) => (b.notas - a.notas) || (b.facturas - a.facturas)),
+      desde: periodos[0] || null,
+      ultimaSync: syncR.data?.creado_en || null
+    });
+  } catch (error) {
+    return enviarErrorBD(res, error, 'notas de crédito recibidas');
+  }
+});
+
+app.post('/api/finanzas/sii/notas-credito/:id/revisar', auth(true), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return enviarError(res, 400, 'Documento inválido');
+  const revision = req.body?.revision === null ? null : String(req.body?.revision || '');
+  if (revision !== null && !['esperada', 'no_esperada'].includes(revision)) {
+    return enviarError(res, 400, 'Indica si la esperabas o no');
+  }
+  const nota = String(req.body?.nota ?? '').trim();
+  if (nota.length > 300) return enviarError(res, 400, 'La nota no puede pasar de 300 caracteres');
+
+  const { data: doc, error: errL } = await db.from('sii_rcv_documentos')
+    .select('id, operacion, tipo_doc').eq('id', id).maybeSingle();
+  if (errL) return enviarErrorBD(res, errL, 'leer nota de crédito');
+  if (!doc || doc.operacion !== 'COMPRA' || Number(doc.tipo_doc) !== SII_TIPO_NOTA_CREDITO) {
+    return enviarError(res, 404, 'Esa nota de crédito no existe');
+  }
+  const { data, error } = await db.from('sii_rcv_documentos')
+    .update(revision === null
+      ? { revision: null, revisado_en: null, revisado_nota: null }
+      : { revision, revisado_en: new Date().toISOString(), revisado_nota: nota || null })
+    .eq('id', id).select('id, revision, revisado_en, revisado_nota').single();
+  if (error) return enviarErrorBD(res, error, 'revisar nota de crédito');
+  res.json(data);
+});
+
+/* ¿Esta factura está en el SII? Con el RUT y el folio escritos en una compra
+   se busca en el Registro de Compras. Sirve para tres cosas: confirmar que
+   el número está bien, ver su total y su IVA, y saber si ese proveedor ya
+   emitió notas de crédito. El RCV se actualiza una vez al día: "no aparece"
+   no significa que no exista. */
+app.get('/api/finanzas/sii/factura', auth(true), async (req, res) => {
+  const { rut, error: errRut } = rutDeProveedor(req.query?.rut);
+  if (errRut) return enviarError(res, 400, errRut);
+  if (!rut) return enviarError(res, 400, 'Falta el RUT del proveedor');
+  const folio = Number(String(req.query?.folio || '').replace(/\D/g, ''));
+
+  const { data, error } = await db.from('sii_rcv_documentos')
+    .select('tipo_doc, estado, razon_social, folio, fecha_doc, neto, iva, total, revision')
+    .eq('operacion', 'COMPRA').eq('rut', rut).order('fecha_doc', { ascending: false }).limit(500);
+  if (error) return enviarErrorBD(res, error, 'factura en el SII');
+  const docs = data || [];
+  const notas = docs.filter(d => Number(d.tipo_doc) === SII_TIPO_NOTA_CREDITO);
+  const facturas = docs.filter(d => SII_TIPOS_FACTURA.has(Number(d.tipo_doc)));
+  res.json({
+    rut,
+    razon_social: docs.find(d => d.razon_social)?.razon_social || null,
+    factura: folio > 0 ? (facturas.find(d => Number(d.folio) === folio) || null) : null,
+    facturas: facturas.length,
+    notas: notas.length,
+    total_notas: Math.round(notas.reduce((a, d) => a + num(d.total), 0)),
+    ultima_nota: notas[0]?.fecha_doc || null
   });
 });
 

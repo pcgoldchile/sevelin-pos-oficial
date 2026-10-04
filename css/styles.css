@@ -4925,3 +4925,8 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
 .modo-guiado [data-seccion="basico"] .basico-descripcion { display: contents; }
 .modo-guiado [data-seccion="basico"] .bloque-ia-producto { order: -2; margin-top: 0 !important; padding-top: 0 !important; border-top: none !important; margin-bottom: 14px; }
 .modo-guiado [data-seccion="basico"] .basico-descripcion-head { margin-top: 14px; }
+
+/* Factura adjunta a una compra y notas de crédito recibidas (v120) */
+.compra-adjunto { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.nc-fila .nc-nota { margin-top: 4px; max-width: 420px; }
+.nc-fila .pend-acciones { flex-direction: column; align-items: stretch; }

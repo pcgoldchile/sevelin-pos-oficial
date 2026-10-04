@@ -710,7 +710,7 @@ app.post('/api/productos/:id/compras', (req, res) => {
   const precio = Number(b.precio_venta) || 0;
   if (precio && p.precio_mayorista && precio <= p.precio_mayorista) return res.status(400).json({ error: 'El precio mayorista tiene que ser menor que el precio normal' });
   const ingreso = { id: sigIngreso++, producto_id: p.id, fecha_compra: b.fecha_compra, cantidad, costo_unitario: costo, proveedor: b.proveedor || null,
-    devolucion_hasta: b.devolucion_hasta || null, referencia: b.referencia || null, estado: 'confirmado', en_camino: !!b.en_camino };
+    devolucion_hasta: b.devolucion_hasta || null, referencia: b.referencia || null, proveedor_rut: b.proveedor_rut || null, url_documento: b.url_documento || null, estado: 'confirmado', en_camino: !!b.en_camino };
   (ingresosMaqueta[p.id] = ingresosMaqueta[p.id] || []).unshift(ingreso);
   const sumar = !b.en_camino && b.sumar_stock !== false && !p.stock_ilimitado;
   if (sumar) p.stock += cantidad;
@@ -749,6 +749,43 @@ app.post('/api/productos/:id/sugerir-complementos', (req, res) => setTimeout(() 
   sugeridos: productos.filter(p => p.id !== Number(req.params.id) && p.stock > 0).slice(0, 2).map(p => ({ id: p.id, nombre: p.nombre, precio_unitario: p.precio_unitario })),
   modelo: 'maqueta'
 }), 400));
+// v120: notas de crédito recibidas (sql/85) y factura en el SII, en memoria.
+let notasCreditoMaqueta = [
+  { id: 901, periodo: '202609', estado: 'REGISTRO', tipo_doc: 61, rut: '77398220-1', razon_social: 'MercadoLibre Chile LTDA', folio: 12539856, fecha_doc: '2026-09-14', neto: 30244, iva: 5746, total: 35990, revision: null, revisado_en: null, revisado_nota: null },
+  { id: 902, periodo: '202608', estado: 'REGISTRO', tipo_doc: 61, rut: '77398220-1', razon_social: 'MercadoLibre Chile LTDA', folio: 11022085, fecha_doc: '2026-08-14', neto: 95958, iva: 18232, total: 114190, revision: null, revisado_en: null, revisado_nota: null },
+  { id: 903, periodo: '202608', estado: 'REGISTRO', tipo_doc: 61, rut: '77261280-K', razon_social: 'FALABELLA RETAIL S.A.', folio: 30391725, fecha_doc: '2026-08-09', neto: 98626, iva: 18739, total: 117365, revision: 'esperada', revisado_en: '2026-09-01T12:00:00Z', revisado_nota: 'Devolví el monitor' },
+];
+const facturasSiiMaqueta = [
+  { tipo_doc: 33, estado: 'REGISTRO', rut: '77398220-1', razon_social: 'MercadoLibre Chile LTDA', folio: 14745490, fecha_doc: '2026-09-20', neto: 24933, iva: 4737, total: 29670 },
+  { tipo_doc: 33, estado: 'REGISTRO', rut: '76123456-0', razon_social: 'Importadora Ejemplo SpA', folio: 555, fecha_doc: '2026-09-02', neto: 84034, iva: 15966, total: 100000 },
+];
+app.get('/api/finanzas/sii/notas-credito', (_req, res) => {
+  const proveedores = {};
+  for (const d of [...facturasSiiMaqueta, ...notasCreditoMaqueta]) {
+    const p = proveedores[d.rut] = proveedores[d.rut] || { rut: d.rut, razon_social: d.razon_social, facturas: 0, total_facturas: 0, notas: 0, total_notas: 0, iva_notas: 0, no_esperadas: 0, ultima_nota: null };
+    if (d.tipo_doc === 61) { p.notas++; p.total_notas += d.total; p.iva_notas += d.iva; if (d.revision === 'no_esperada') p.no_esperadas++; if (!p.ultima_nota || d.fecha_doc > p.ultima_nota) p.ultima_nota = d.fecha_doc; }
+    else { p.facturas++; p.total_facturas += d.total; }
+  }
+  res.json({ sin_revisar: notasCreditoMaqueta.filter(d => !d.revision).length, notas: notasCreditoMaqueta,
+    total_notas: notasCreditoMaqueta.reduce((a, d) => a + d.total, 0), iva_notas: notasCreditoMaqueta.reduce((a, d) => a + d.iva, 0),
+    proveedores: Object.values(proveedores).sort((a, b) => b.notas - a.notas), desde: '202608', ultimaSync: new Date().toISOString() });
+});
+app.post('/api/finanzas/sii/notas-credito/:id/revisar', (req, res) => {
+  const d = notasCreditoMaqueta.find(x => x.id === Number(req.params.id));
+  if (!d) return res.status(404).json({ error: 'Esa nota de crédito no existe' });
+  Object.assign(d, req.body.revision === null ? { revision: null, revisado_en: null, revisado_nota: null }
+    : { revision: req.body.revision, revisado_en: new Date().toISOString(), revisado_nota: req.body.nota || null });
+  res.json(d);
+});
+app.get('/api/finanzas/sii/factura', (req, res) => {
+  const rut = String(req.query.rut || ''), folio = Number(req.query.folio);
+  const notas = notasCreditoMaqueta.filter(d => d.rut === rut);
+  res.json({ rut, razon_social: [...facturasSiiMaqueta, ...notasCreditoMaqueta].find(d => d.rut === rut)?.razon_social || null,
+    factura: facturasSiiMaqueta.find(d => d.rut === rut && d.folio === folio) || null,
+    facturas: facturasSiiMaqueta.filter(d => d.rut === rut).length, notas: notas.length, total_notas: notas.reduce((a, d) => a + d.total, 0), ultima_nota: notas[0]?.fecha_doc || null });
+});
+app.post('/api/compras/archivo', (req, res) => res.status(201).json({ url: 'about:blank', ruta: `2026/maqueta_${String(req.body.nombre || 'archivo').replace(/[^\w.\-]/g, '_')}` }));
+app.post('/api/compras/firmar', (_req, res) => res.json({ url: 'about:blank' }));
 const gastosMaqueta = [];
 app.get('/api/compras/clasificaciones', (_req, res) => res.json([
   { id: 1, nombre: 'Gastos Operativos (Servicios, Arriendo, Sueldos, etc.)', activo: true },

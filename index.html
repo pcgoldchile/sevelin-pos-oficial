@@ -271,6 +271,10 @@
       <button id="btnPendientes" class="btn-notificaciones btn-facturas btn-pendientes admin-only" title="Pendientes del dueño y de Claude" hidden>
         <span class="chip-punto" aria-hidden="true"></span><span id="textoPendientes">Pendientes</span>
       </button>
+      <!-- v120 (sql/85): notas de crédito que emitieron los proveedores y están sin revisar. Solo si hay. -->
+      <button id="btnNotasCredito" class="btn-notificaciones btn-facturas factura-atrasada admin-only" title="Notas de crédito recibidas" hidden>
+        <span class="chip-punto" aria-hidden="true"></span><span id="textoNotasCredito">Notas de crédito</span>
+      </button>
       <!-- v116 (sql/83): interruptor de las ofertas web. Visible siempre para admin. -->
       <button id="btnOfertas" class="btn-notificaciones btn-facturas btn-ofertas admin-only" title="Encender y apagar las ofertas de la tienda web" hidden>
         <span class="chip-punto" aria-hidden="true"></span><span id="textoOfertas">Ofertas</span>
@@ -2167,6 +2171,7 @@
           <div class="toolbar-group">
             <button class="btn btn-outline" id="btnAdminClasificaciones">🗂️ Clasificaciones</button>
             <button class="btn btn-outline" id="btnGastosPendientes">🗓️ Gastos pendientes</button>
+            <button class="btn btn-outline" id="btnVerNotasCredito" title="Notas de crédito que te emitieron tus proveedores (SII)">🧾 Notas de crédito recibidas</button>
             <button class="btn btn-outline" id="btnExportarCompras">📤 Exportar</button>
             <button class="btn btn-primary" id="btnNuevaCompra">➕ Registrar Gasto</button>
             <!-- Movido desde el POS: una merma es un gasto, no una venta.
@@ -2646,10 +2651,16 @@
             <details class="compra-mas" id="ingMasDatos">
               <summary>Más datos de la compra: proveedor, factura, devolución, mercadería en camino</summary>
 
-              <div class="grid grid-3" style="margin-top:10px;">
+              <div class="grid grid-4" style="margin-top:10px;">
                 <div class="field">
                   <label for="ingProveedor">Proveedor</label>
-                  <input type="text" id="ingProveedor" maxlength="80" placeholder="A quién se la compraste">
+                  <!-- v120: la lista trae los proveedores que ya te facturaron (RCV del SII). -->
+                  <input type="text" id="ingProveedor" maxlength="80" placeholder="A quién se la compraste" list="listaProveedoresSii" autocomplete="off">
+                  <datalist id="listaProveedoresSii"></datalist>
+                </div>
+                <div class="field">
+                  <label for="ingProveedorRut">RUT del proveedor</label>
+                  <input type="text" id="ingProveedorRut" maxlength="12" placeholder="Ej: 77.398.220-1" autocomplete="off">
                 </div>
                 <div class="field">
                   <label for="ingReferencia">N° de factura / guía</label>
@@ -2659,6 +2670,14 @@
                   <label for="ingDevolucion">Se puede devolver hasta</label>
                   <input type="date" id="ingDevolucion">
                 </div>
+              </div>
+              <!-- v120 (sql/85): si ese proveedor ya te hizo notas de crédito y si la factura está en el SII. -->
+              <p class="modal-hint" id="ingAvisoProveedor" style="margin-top:6px;"></p>
+              <div class="compra-adjunto">
+                <input type="file" id="ingDocumentoArchivo" accept="application/pdf,image/*" hidden>
+                <button type="button" class="btn btn-outline btn-sm" id="btnIngAdjuntar">📎 Adjuntar la factura (PDF o foto, hasta 4 MB)</button>
+                <span class="doc-estado doc-falta" id="ingDocumentoEstado">Sin archivo</span>
+                <button type="button" class="btn btn-ghost btn-sm" id="btnIngQuitarAdjunto" hidden>Quitar</button>
               </div>
               <p class="modal-hint" id="ingAvisoPlazo" style="margin-top:6px;"></p>
               <p class="modal-hint">Si el proveedor no acepta devoluciones, deja la fecha vacía —
@@ -7205,6 +7224,25 @@
   </div>
 
   <!-- PENDIENTES DEL DUEÑO Y DE CLAUDE (v101, sql/72) -->
+  <!-- v120 (sql/85): notas de crédito recibidas, según el Registro de Compras del SII. js/notas-credito.js -->
+  <div id="modalNotasCredito" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <h2>🧾 Notas de crédito recibidas</h2>
+      <p class="modal-hint" id="notasCreditoResumen">—</p>
+      <div id="notasCreditoLista" style="max-height:44vh; overflow:auto;"></div>
+      <div id="notasCreditoProveedores"></div>
+      <p class="modal-hint" style="margin-top:12px;">
+        Una nota de crédito anula toda o parte de una factura y <strong>le resta crédito fiscal al mes en que llega</strong>.
+        Es normal si devolviste un producto o se anuló una compra. Si no la esperabas, pídele la explicación al proveedor.
+        El POS lee esto del SII una vez al día y no acepta ni reclama nada.
+      </p>
+      <div class="modal-foot">
+        <a class="btn btn-outline" href="https://www4.sii.cl/consdcvinternetui/" target="_blank" rel="noopener noreferrer">Abrir el RCV en el SII ↗</a>
+        <button class="btn btn-ghost" id="btnCerrarNotasCredito" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- v118 (sql/84): corregir el stock a mano. Pregunta el motivo y pide la clave del dueño.
        Lo maneja js/stock-ajuste.js. -->
   <div id="modalAjusteStock" class="modal-overlay">
@@ -7521,6 +7559,7 @@
   <script src="js/pagina-web.js"></script>   <!-- después de pedidos-web.js: envuelve su vista en el subtab "pedidos" -->
   <script src="js/notificaciones.js"></script>
   <script src="js/pendientes.js"></script>   <!-- v101: después de notificaciones.js, reutiliza fechaCortaAviso -->
+  <script src="js/notas-credito.js"></script>   <!-- v120 (sql/85): después de notificaciones.js (fechaCortaAviso) y productos.js (plazosProveedores) -->
   <script src="js/ofertas.js"></script>   <!-- v116 (sql/83): interruptor de ofertas web -->
   <script src="js/completitud.js"></script>
   <script src="js/ubicaciones.js"></script>   <!-- usa API.pedidosWeb (js/api.js) y activarVista (js/config.js), ya cargados antes -->
