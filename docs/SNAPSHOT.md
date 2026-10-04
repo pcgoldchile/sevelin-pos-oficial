@@ -12,6 +12,23 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 04-10-2026 (tarde) · v120 a v122, facturas y notas de crédito, margen en vivo, paso a paso para revisar
+
+Detalle en `docs/CHANGELOG-V120.md`.
+
+**Publicado:** **v120** (POS `85f3f54`, `sql/85` aplicada): RUT del proveedor y factura adjunta (PDF o foto) en cada
+compra; aviso si el proveedor ya emitió notas de crédito y búsqueda de la factura en el RCV; panel de notas de crédito
+recibidas (chip rojo si hay sin revisar, y botón en Finanzas → Gastos). **v121** (POS `5935636`): margen en vivo en la
+ficha y segundo precio mayorista sugerido. **v122** (POS `95f478a`): "Paso a paso" también para revisar un producto que
+ya existe, saltar pasos, la casilla de lotes (PEPS) junto a la compra con capa inicial al activarla, y categoría con IA.
+
+**Datos medidos:** Supabase usa 20,3 MB en fotos, 0,3 MB en documentos y 17,8 MB de base. Notas de crédito recibidas
+desde agosto: 3 (MercadoLibre ×2, Falabella ×1), $42.717 de crédito fiscal restado.
+
+**Sin probar en producción:** subir un PDF real, y lo que eligen de verdad Gemini para categoría y complementos.
+
+**Esperan al dueño:** #69 (marcar las 3 notas de crédito), #68 (los 2 productos con lotes descuadrados), #60, #61.
+
 ## 04-10-2026 · v118 y v119, el stock se carga con compras y se corrige con clave; asistente para crear productos
 
 Detalle en `docs/CHANGELOG-V118.md`.

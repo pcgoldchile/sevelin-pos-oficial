@@ -23,7 +23,7 @@ Sesión en Opus · Alto. Cuatro pedidos del dueño; los dos más grandes (#66 y 
 - **"Empezar ahora"** para las que todavía no parten (mueve el inicio a este momento).
 - El precio de oferta y las fechas se siguen cargando en la ficha del producto (Tienda web → Oferta web).
 - Las 31 ofertas ya cargadas quedaron encendidas: aplicar la migración no cambió nada a la vista.
-- **Probado:** 16 comprobaciones contra el servidor real con un doble de la base (permisos, apagar conserva precio y
+- **Probado:** 15 comprobaciones contra el servidor real con un doble de la base (permisos, apagar conserva precio y
   fechas, terminada pide fecha, oferta más cara que el normal no se enciende, todas). En la maqueta: apagar, encender con
   fecha, empezar ahora, apagar y encender todas. Verificado en producción que `js/ofertas.js` se sirve y que
   `/api/ofertas` existe (401 sin sesión).
