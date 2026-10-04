@@ -12,6 +12,26 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 04-10-2026 (noche) · v123, total a cobrar, redondeo y utilidad en vivo en la caja
+
+Detalle en `docs/CHANGELOG-V123.md`.
+
+**Publicado:** lista de Productos con foto ampliable, globo "ver en sevelin.cl" y archivar con ojo tachado (POS
+`67f6a2d`). **v123** (POS `65d9899`, `sql/86` aplicada): campo "Total a cobrar" junto al descuento, botones para
+redondear, y costo, utilidad y margen en vivo de la venta y de cada producto del carrito (solo admin).
+
+**Reglas:** el total escrito bajo la suma del carrito es un descuento en pesos (mismas reglas de margen y de clave del
+dueño). Sobre la suma es redondeo hacia arriba: se guarda en `ventas.ajuste_redondeo`, suma a total y utilidad, tiene
+tope de $1.000 (lo valida el servidor) y no convive con un descuento. `total = ítems − descuento + redondeo`.
+
+**Arreglo:** la ventana de pago pedía la suma del carrito sin el descuento (vuelto y pago mixto mal calculados). Ahora
+todo sale de `totalesCarrito()` en `js/pos.js`.
+
+**Ojo al leer números:** la caja muestra la utilidad con el mayor costo conocido; la venta guardada usa el costo de la
+ficha o el de los lotes, así que en Finanzas puede salir algo mayor.
+
+**Sin probar en producción:** una venta real con redondeo, el ticket impreso y la pistola con el cursor en el total.
+
 ## 04-10-2026 (tarde) · v120 a v122, facturas y notas de crédito, margen en vivo, paso a paso para revisar
 
 Detalle en `docs/CHANGELOG-V120.md`.
