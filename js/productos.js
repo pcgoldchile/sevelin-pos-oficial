@@ -37,8 +37,9 @@ let productosBorradoresCache = null;
 const ICO_EDITAR_PROD = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
 const ICO_ETIQUETA_PROD = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 12 22l-9-9V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.2"/></svg>`;
 const ICO_ELIMINAR_PROD = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>`;
-const ICO_ARCHIVAR_PROD = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></svg>`;
-const ICO_DESARCHIVAR_PROD = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M12 17v-4M10 15l2-2 2 2"/></svg>`;
+const ICO_ARCHIVAR_PROD = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><path d="M1 1l22 22"/></svg>`;
+const ICO_VER_WEB_PROD = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`;
+const ICO_DESARCHIVAR_PROD = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
 
 /* Etiqueta destacada (NOVEDAD/TENDENCIA/OFERTA) — se muestra igual en la
    tabla del POS y en la tienda web (ver tarjeta-producto.tsx). */
@@ -935,7 +936,7 @@ function renderProductosTabla(items, origen) {
     return `
     <tr class="row-in${marcada ? ' fila-marcada' : ''}">
       <td class="col-check"><input type="checkbox" data-sel="${p.id}" ${marcada ? 'checked' : ''}></td>
-      <td>${miniaturaProducto(p, 56)}</td>
+      <td>${miniaturaProducto(p, 56, { ampliable: true })}</td>
       <td>
         <!-- El nombre abre el editor directo: es lo que uno intenta
              tocar por instinto antes de buscar el lápiz de la derecha.
@@ -956,11 +957,12 @@ function renderProductosTabla(items, origen) {
       <td>${badgeStock(p)}</td>
       <td>
         <div class="cell-actions">
+          ${urlProductoWeb(p) ? `<a class="btn btn-icon btn-icon-view" href="${escHtml(urlProductoWeb(p))}" target="_blank" rel="noopener noreferrer" title="Ver este producto en sevelin.cl">${ICO_VER_WEB_PROD}</a>` : ''}
           <button class="btn btn-icon btn-icon-view" data-etiqueta="${p.id}" title="Imprimir etiqueta de código de barras">${ICO_ETIQUETA_PROD}</button>
           <button class="btn btn-icon btn-icon-edit" data-editar="${p.id}" title="Editar producto">${ICO_EDITAR_PROD}</button>
           ${origen === 'archivados'
             ? `<button class="btn btn-icon btn-icon-edit" data-desarchivar="${p.id}" title="Desarchivar producto">${ICO_DESARCHIVAR_PROD}</button>`
-            : `<button class="btn btn-icon btn-icon-edit" data-archivar="${p.id}" title="Archivar producto (retirarlo sin borrar su historial)">${ICO_ARCHIVAR_PROD}</button>`}
+            : `<button class="btn btn-icon btn-icon-devolver" data-archivar="${p.id}" title="Archivar: sacarlo de la venta (POS y web) sin borrar su historial">${ICO_ARCHIVAR_PROD}</button>`}
           <button class="btn btn-icon btn-icon-del" data-eliminar="${p.id}" title="Eliminar producto">${ICO_ELIMINAR_PROD}</button>
         </div>
       </td>
@@ -1006,6 +1008,19 @@ function renderProductosTabla(items, origen) {
   elProductosTableBody.querySelectorAll('button[data-desarchivar]').forEach(btn => {
     btn.addEventListener('click', () => desarchivarProducto(btn.dataset.desarchivar, fuente));
   });
+}
+
+/* Enlace al producto en sevelin.cl. La URL es /productos/<sku>; sin SKU la
+   tienda usa un slug de respaldo (nombre + id), igual que slugDeRespaldo()
+   de sevelin-tienda/src/app/api/sync/producto/route.ts: si cambia allá,
+   cambia acá. Solo para lo publicado y no archivado. */
+function urlProductoWeb(p) {
+  if (!p || !p.publicado_web || p.archivado || p.es_borrador) return '';
+  const sku = String(p.sku || '').trim();
+  const respaldo = String(p.nombre || 'producto')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+  return `https://sevelin.cl/productos/${encodeURIComponent(sku || `${respaldo || 'producto'}-${p.id}`)}`;
 }
 
 // ---------- Filtro de búsqueda + orden/filtro especial ----------
