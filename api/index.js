@@ -2616,6 +2616,38 @@ app.post('/api/productos/precio-sugerido', auth(true), async (req, res) => {
       sobre_precio: base
     } : null;
 
+    /* Segundo escalón (v121). Misma regla que el dueño aprobó el 03-10-2026
+       (docs/estudios-precios/2026-10-03-segundo-escalon-mayorista.md): el
+       doble de unidades del primero y cerca de 7% más barato, redondeado a
+       $100 ($50 bajo $1.000), sin bajar de 23% de margen (el piso de la base
+       es 20%: el colchón evita que una compra algo más cara lo desactive).
+       Parte del primer precio mayorista que el producto tiene escrito; si no
+       tiene, del sugerido. */
+    const mayoristaEscrito = Math.max(0, num(req.body?.mayorista_actual));
+    const desdeEscrito = Math.round(num(req.body?.mayorista_desde_actual));
+    const primero = mayoristaEscrito > costo && mayoristaEscrito < base
+      ? { precio: mayoristaEscrito, desde: desdeEscrito >= 2 ? desdeEscrito : (mayorista?.desde || 3) }
+      : mayorista;
+    let mayorista2 = null, mayorista2Motivo = null;
+    if (!primero) {
+      mayorista2Motivo = 'primero hace falta un primer precio mayorista';
+    } else {
+      const paso = primero.precio < 1000 ? 50 : 100;
+      const piso2 = Math.ceil(Math.max(pisoMayorista, costo / (1 - 0.23)) / paso) * paso;
+      const candidato2 = Math.max(Math.round(primero.precio * 0.93 / paso) * paso, piso2);
+      if (candidato2 <= primero.precio * 0.97) {
+        mayorista2 = {
+          precio: candidato2,
+          desde: Math.min(1000, primero.desde * 2),
+          margen_pct: Math.round((candidato2 - costo) / candidato2 * 1000) / 10,
+          rebaja_pct: Math.round((primero.precio - candidato2) / primero.precio * 1000) / 10,
+          sobre_precio: primero.precio
+        };
+      } else {
+        mayorista2Motivo = `bajo ${'$' + Math.round(primero.precio).toLocaleString('es-CL')} no cabe otra rebaja sin quedar con menos de 23% de margen`;
+      }
+    }
+
     res.json({
       precio,
       costo,
@@ -2624,6 +2656,8 @@ app.post('/api/productos/precio-sugerido', auth(true), async (req, res) => {
       origen,
       margen_objetivo_pct: Math.round(margenObjetivo * 1000) / 10,
       margen_pct: Math.round((precio - costo) / precio * 1000) / 10,
+      mayorista_2: mayorista2,
+      mayorista_2_motivo: mayorista2Motivo,
       mayorista,
       mayorista_motivo: mayorista ? null
         : `Sobre ${'$' + Math.round(base).toLocaleString('es-CL')} no cabe una rebaja real: el piso mayorista (20% de margen) es ${'$' + Math.round(pisoMayorista).toLocaleString('es-CL')}`,

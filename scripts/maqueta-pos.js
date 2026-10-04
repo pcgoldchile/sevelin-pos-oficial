@@ -664,6 +664,18 @@ app.get('/api/productos/categorias', (_req, res) => res.json([
   { id: 'c6', nombre: 'Computadores', parent_id: null, orden: 0 },
 ]));
 const objetivosMaqueta = { 'Cables y Adaptadores': 0.45, 'Hogar y Estilo de Vida': 0.40, 'Componentes PC': 0.25, 'Monitores': 0.15 };
+// v121: segundo escalón sugerido, con la misma regla del servidor (doble de unidades, ~7% menos, piso 23%).
+function segundoEscalonMaqueta(b, mayorista, costo, base, piso) {
+  const escrito = Number(b.mayorista_actual) || 0;
+  const primero = escrito > costo && escrito < base ? { precio: escrito, desde: Number(b.mayorista_desde_actual) >= 2 ? Number(b.mayorista_desde_actual) : (mayorista?.desde || 3) } : mayorista;
+  if (!primero) return { mayorista_2: null, mayorista_2_motivo: 'primero hace falta un primer precio mayorista' };
+  const paso = primero.precio < 1000 ? 50 : 100;
+  const piso2 = Math.ceil(Math.max(piso, costo / 0.77) / paso) * paso;
+  const c2 = Math.max(Math.round(primero.precio * 0.93 / paso) * paso, piso2);
+  return c2 <= primero.precio * 0.97
+    ? { mayorista_2: { precio: c2, desde: primero.desde * 2, margen_pct: Math.round((c2 - costo) / c2 * 1000) / 10, rebaja_pct: Math.round((primero.precio - c2) / primero.precio * 1000) / 10, sobre_precio: primero.precio }, mayorista_2_motivo: null }
+    : { mayorista_2: null, mayorista_2_motivo: 'no cabe otra rebaja sin quedar con menos de 23% de margen' };
+}
 app.post('/api/productos/precio-sugerido', (req, res) => {
   const b = req.body || {};
   const costo = Number(b.costo) || 0;
@@ -678,7 +690,7 @@ app.post('/api/productos/precio-sugerido', (req, res) => {
   const mayorista = candidato <= base * 0.97 ? { precio: candidato, desde: base >= 8000 ? 3 : (base >= 3000 ? 5 : 10),
     margen_pct: Math.round((candidato - costo) / candidato * 1000) / 10, rebaja_pct: Math.round((base - candidato) / base * 1000) / 10, sobre_precio: base } : null;
   res.json({ precio, costo, costo_escrito: costo, familia: b.categoria_web, origen: 'tabla aprobada el 03-10-2026', margen_objetivo_pct: objetivo * 100,
-    margen_pct: Math.round((precio - costo) / precio * 1000) / 10, mayorista, piso_mayorista: piso,
+    margen_pct: Math.round((precio - costo) / precio * 1000) / 10, mayorista, piso_mayorista: piso, ...segundoEscalonMaqueta(b, mayorista, costo, base, piso),
     mayorista_motivo: mayorista ? null : `Sobre $${base.toLocaleString('es-CL')} no cabe una rebaja real: el piso mayorista (20% de margen) es $${piso.toLocaleString('es-CL')}` });
 });
 
