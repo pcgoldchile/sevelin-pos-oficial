@@ -2399,6 +2399,8 @@
                que archivar hasta que exista. El texto/ícono cambia según
                el estado real del producto (ver abrirModalProducto). -->
           <button class="btn btn-outline btn-sm" id="btnArchivarProducto">📦 Archivar</button>
+          <!-- v122: la misma ficha, una sección a la vez, sobre un producto que ya existe. -->
+          <button class="btn btn-outline btn-sm" id="btnAsistenteRevisar" type="button" title="Revisa este producto sección por sección">🪄 Paso a paso</button>
           <button class="btn btn-ghost" id="btnCancelarProducto">Cancelar</button>
           <button class="btn btn-primary" id="btnGuardarProducto">Guardar Producto</button>
         </div>
@@ -2648,6 +2650,26 @@
             <p class="modal-hint" id="ingPrecioSugerido" style="margin-top:6px;"></p>
             <p class="modal-hint" id="ingDondeGuardar" style="margin-top:6px;"></p>
 
+            <!-- Costeo PEPS (sql/09). Apagado por defecto: ningún producto lo activa solo.
+                 v122 (dueño, 04-10-2026): subió desde "Otras opciones" hasta acá, junto a la
+                 compra, porque es en la compra donde importa: con esto marcado cada compra
+                 guarda su propio costo. -->
+            <label class="check-item" id="itemProdUsaLotes" style="margin-top:10px;">
+              <input type="checkbox" id="prodUsaLotes">
+              <span>📚 Llevar el costo por lotes (PEPS): cada compra guarda su propio costo y cada venta usa el de las unidades más antiguas</span>
+            </label>
+            <div id="bloqueProdLotes" style="display:none; margin-top:10px;">
+              <p class="modal-hint" id="prodLotesAviso">
+                Con esta opción activa, el <strong>Costo Unit.</strong> de arriba deja de mandar en las
+                ventas: cada compra que registres acá crea su propia capa, y cada venta consume primero
+                la más antigua con su costo real. Si el producto ya tenía stock, ese stock queda en una
+                primera capa al costo de la ficha.
+              </p>
+              <div id="prodLotesLista" class="lotes-lista">
+                <p class="modal-hint">Guarda el producto para poder cargarle capas.</p>
+              </div>
+            </div>
+
             <!-- Lo que no hace falta en cada compra queda plegado (dueño, 03-10-2026:
                  "me cansa mucho ver todas las opciones a la vez"). -->
             <details class="compra-mas" id="ingMasDatos">
@@ -2813,25 +2835,6 @@
             </div>
             <p class="modal-hint" id="prodStockActualizado" style="margin-top:10px;">Última actualización de stock: —</p>
 
-            <!-- Costeo PEPS: la opción avanzada, al final y apagada por defecto.
-                 Ningún producto la activa solo. -->
-            <div style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">
-              <label class="check-item" id="itemProdUsaLotes">
-                <input type="checkbox" id="prodUsaLotes">
-                <span>📚 Llevar el costo por lotes (PEPS): cada venta toma el costo de las unidades más antiguas</span>
-              </label>
-
-              <div id="bloqueProdLotes" style="display:none; margin-top:12px;">
-                <p class="modal-hint" id="prodLotesAviso">
-                  Con esta opción activa, el <strong>Costo Unit.</strong> de arriba deja de mandar en las
-                  ventas: cada compra que registres acá crea su propia capa, y cada venta consume primero
-                  la más antigua con su costo real.
-                </p>
-                <div id="prodLotesLista" class="lotes-lista">
-                  <p class="modal-hint">Guarda el producto para poder cargarle capas.</p>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -3004,6 +3007,12 @@
               </select>
             </div>
 
+            <!-- v122: la IA elige una categoría y subcategoría de ESTA lista. Propone; se aplica con "Usar". -->
+            <div style="margin-top:12px;">
+              <button type="button" class="btn btn-outline btn-sm" id="btnCategoriaIA">✨ Proponer categoría y subcategoría con IA</button>
+            </div>
+            <p class="modal-hint" id="prodCategoriaIA" style="margin-top:6px;"></p>
+
             <div style="display:flex; gap:8px; margin-top:12px;">
               <input type="text" id="popNuevaCategoriaInput" placeholder="Nueva categoría…" style="flex:1;">
               <button type="button" class="btn btn-outline btn-sm" id="btnPopNuevaCategoria">+ Crear</button>
@@ -3161,6 +3170,7 @@
         <button type="button" class="btn btn-ghost btn-sm" id="btnAsistenteSalir" title="Sale del paso a paso sin perder nada">📋 Ver la ficha completa</button>
         <div class="asistente-nav-botones">
           <button type="button" class="btn btn-outline" id="btnAsistenteAtras">← Atrás</button>
+          <button type="button" class="btn btn-ghost" id="btnAsistenteSaltar" title="Pasa al siguiente sin guardar lo de este paso">Saltar</button>
           <button type="button" class="btn btn-primary" id="btnAsistenteSiguiente">Siguiente →</button>
         </div>
       </div>

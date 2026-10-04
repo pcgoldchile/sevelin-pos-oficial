@@ -172,6 +172,8 @@ const API = {
     listarAjustesStock: (id) => apiRequest(`/productos/${id}/ajustes-stock`, { silencioso: true }),
     // v119 — la IA elige complementos entre los productos del catálogo (no guarda)
     sugerirComplementos: (id) => apiRequest(`/productos/${id}/sugerir-complementos`, { method: 'POST', body: {} }),
+    // v122 — la IA elige categoría y subcategoría de la lista real (no guarda)
+    sugerirCategoria: (datos) => apiRequest('/productos/sugerir-categoria', { method: 'POST', body: datos }),
     // La mercadería en camino llegó: sube el stock y apaga "por llegar"
     compraRecibida: (ingresoId) => apiRequest(`/ingresos/${ingresoId}/recibida`, { method: 'PUT' }),
 

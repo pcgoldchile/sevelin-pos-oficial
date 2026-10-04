@@ -1704,6 +1704,56 @@ Reglas:
 });
 
 
+/* Categoría y subcategoría con IA (v122, pedido del dueño 04-10-2026). La IA
+   elige UNA opción de la lista real de categorías (la misma que usa la ficha
+   con IA, categoriasParaFichaIA): responde el número de la opción y el
+   servidor lo traduce. Un número fuera de la lista, o 0, es "ninguna". No
+   guarda nada: el POS la muestra con su botón "Usar". */
+app.post('/api/productos/sugerir-categoria', auth(true), async (req, res) => {
+  const nombre = String(req.body?.nombre || '').trim().slice(0, 200);
+  const descripcion = textoPlanoParaPrompt(req.body?.descripcion_html).slice(0, 2500);
+  const datos = String(req.body?.datos || '').trim().slice(0, 2500);
+  if (!nombre && !descripcion && !datos) {
+    return enviarError(res, 400, 'Escribe el nombre o la descripción del producto primero: sin eso la IA no tiene de dónde elegir');
+  }
+  const categorias = await categoriasParaFichaIA();
+  if (!categorias.length) return res.json({ categoria: null, motivo: 'Todavía no hay categorías creadas.' });
+
+  const prompt = `Clasifica un producto de la tienda Sevelin (electrónica y computación, Arica, Chile) en UNA de las categorías de su catálogo.
+
+Producto: ${nombre || '(sin nombre)'}
+${descripcion ? `Descripción:\n"""\n${descripcion}\n"""\n` : ''}${datos ? `Información del proveedor:\n"""\n${datos}\n"""\n` : ''}
+Opciones (número. categoría > subcategoría):
+${categorias.map((c, i) => `${i + 1}. ${c.texto}`).join('\n')}
+
+Reglas:
+- Responde el NÚMERO de una sola opción de la lista. No inventes categorías.
+- Si existe una subcategoría (las opciones con ">") que calza con el producto, elige esa y no la categoría sola.
+- Si ninguna opción calza de verdad, responde 0.`;
+
+  try {
+    const { texto, modelo } = await pedirAGemini(prompt, {
+      temperature: 0.1,
+      responseMimeType: 'application/json',
+      responseSchema: { type: 'OBJECT', properties: { opcion: { type: 'INTEGER' } }, required: ['opcion'] }
+    });
+    let resultado = null;
+    try { resultado = JSON.parse(texto); } catch { resultado = null; }
+    const indice = Number(resultado?.opcion);
+    if (!resultado || !Number.isInteger(indice)) {
+      return enviarError(res, 502, 'Google devolvió una respuesta ilegible. Intenta de nuevo, o elige la categoría a mano.');
+    }
+    const c = indice >= 1 && indice <= categorias.length ? categorias[indice - 1] : null;
+    res.json({
+      categoria: c ? { categoria_id: c.categoria_id, subcategoria_id: c.subcategoria_id, categoria: c.categoria, subcategoria: c.subcategoria, texto: c.texto } : null,
+      motivo: c ? null : 'La IA no encontró una categoría que calce: elígela a mano o crea una nueva.',
+      modelo
+    });
+  } catch (err) {
+    return responderFalloGemini(res, err, 'sugerir-categoria', 'La categoría se puede elegir a mano.');
+  }
+});
+
 /* Complementos con IA (v119, pedido del dueño 03-10-2026: "que el complementa
    tu compra sea automatizado por IA también").
    La IA ELIGE entre productos que ya existen en el catálogo; no inventa
@@ -3426,6 +3476,27 @@ app.post('/api/productos/:id/ingresos', auth(true), async (req, res) => {
    El orden importa: primero la capa, después el stock. Si la capa falla,
    el stock no se movió y no queda inventario sin costo que lo explique.
    ============================================================ */
+/* ACTIVAR LOS LOTES (PEPS) SOBRE UN PRODUCTO QUE YA TIENE STOCK (v122).
+   Al encender "llevar el costo por lotes" las unidades que ya estaban no
+   tenían capa: el producto quedaba con stock y sin lotes que lo explicaran
+   (así se encontró el Cable Audio el 04-10-2026: stock 8, capas 0). Acá se
+   crea UNA capa con ese stock al costo de la ficha, solo si el producto no
+   tiene ninguna capa viva. Lanza el error de la base si falla. */
+async function crearCapaInicialSiFalta(producto) {
+  const stock = num(producto.stock);
+  if (!(stock > 0) || producto.stock_ilimitado) return null;
+  const { data: vivas, error } = await db.from('producto_lotes')
+    .select('id, cantidad').eq('producto_id', producto.id).is('agotado_en', null).gt('cantidad', 0).limit(1);
+  if (error) throw error;
+  if ((vivas || []).length) return null;
+  const { data, error: errL } = await db.from('producto_lotes').insert([{
+    producto_id: producto.id, cantidad: stock, cantidad_inicial: stock,
+    costo_unitario: num(producto.costo_unitario), referencia: 'Stock que ya había al activar los lotes'
+  }]).select().single();
+  if (errL) throw errL;
+  return data;
+}
+
 /* Lo que una compra le hace a un producto, en un solo lugar: lo usan el
    formulario de compras y la corrección de stock "las compré" (v118).
    `producto` trae id, stock, usa_lotes, stock_ilimitado y costo_unitario.
@@ -3564,6 +3635,17 @@ app.post('/api/productos/:id/compras', auth(true), async (req, res) => {
         if (rechazo) return enviarError(res, 400, rechazo);
         precioVenta = v;
       }
+    }
+
+    /* v122: la casilla "llevar el costo por lotes" marcada en la ficha pero
+       todavía sin guardar. Se activa acá, antes de la compra, para que ESTA
+       compra ya nazca con su capa; lo que había en stock queda en una capa
+       inicial al costo de la ficha. */
+    if (req.body?.activar_lotes === true && !producto.usa_lotes && !producto.stock_ilimitado) {
+      await crearCapaInicialSiFalta(producto);
+      const { error: errLotes } = await db.from('productos').update({ usa_lotes: true }).eq('id', id);
+      if (errLotes) throw errLotes;
+      producto.usa_lotes = true;
     }
 
     const resultado = await registrarCompraDeProducto(producto, datos, {
@@ -4525,8 +4607,20 @@ app.put('/api/productos/:id', auth(true), async (req, res) => {
   delete producto.stock;
   delete producto.stock_actualizado_en;
 
+  // v122: ¿esta edición ENCIENDE los lotes? Se mira antes de escribir.
+  let enciendeLotes = false;
+  if (producto.usa_lotes === true) {
+    const { data: antesLotes } = await db.from('productos').select('usa_lotes').eq('id', req.params.id).maybeSingle();
+    enciendeLotes = !!antesLotes && !antesLotes.usa_lotes;
+  }
+
   const { data, error } = await db.from('productos').update(producto).eq('id', req.params.id).select().single();
   if (error) return enviarErrorBD(res, error);
+
+  if (enciendeLotes) {
+    try { await crearCapaInicialSiFalta(data); }
+    catch (e) { console.error('[LOTES] no se pudo crear la capa inicial al activar los lotes:', e.message); }
+  }
   res.json(data);
 });
 

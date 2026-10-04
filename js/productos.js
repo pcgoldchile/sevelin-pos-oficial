@@ -4120,6 +4120,8 @@ function compraDelFormulario() {
       devolucion_hasta: (document.getElementById('ingDevolucion')?.value || '').trim() || null,
       proveedor: (document.getElementById('ingProveedor')?.value || '').trim() || null,
       referencia: (document.getElementById('ingReferencia')?.value || '').trim() || null,
+      // v122: la casilla de lotes (PEPS) marcada vale para ESTA compra aunque la ficha no se haya guardado
+      ...(document.getElementById('prodUsaLotes')?.checked ? { activar_lotes: true } : {}),
       // v120 (sql/85): RUT del proveedor (lo valida el servidor) y factura adjunta
       proveedor_rut: (document.getElementById('ingProveedorRut')?.value || '').trim() || null,
       url_documento: adjuntoDeCompra || null,

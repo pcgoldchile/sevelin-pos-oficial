@@ -4937,3 +4937,8 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
 .margen-vivo .margen-linea { min-width: 150px; }
 .margen-vivo .margen-linea + .margen-linea { margin-top: 0; }
 .margen-vivo .margen-vivo-nota { flex: 1 1 100%; font-size: 12px; color: var(--text-muted); }
+
+/* Asistente (v122): en modo guiado no se ofrece "Paso a paso" otra vez */
+.modo-guiado #btnAsistenteRevisar { display: none !important; }
+.asistente-paso.saltable { cursor: pointer; }
+.asistente-paso.saltable:hover { border-color: var(--border-strong); color: var(--text-100); }
