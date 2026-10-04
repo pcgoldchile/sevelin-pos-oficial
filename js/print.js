@@ -74,7 +74,9 @@ function construirTicketHTML(venta, items) {
   // sin eso, el cliente no entiende por qué el ticket no calza con la
   // suma de los ítems.
   const descuentoMonto = Number(venta.descuento_monto) || 0;
-  const subtotalCalculado = totalCalculado + descuentoMonto;
+  // Redondeo hacia arriba (sql/86): el total quedó sobre la suma de los ítems
+  const ajusteRedondeo = Number(venta.ajuste_redondeo) || 0;
+  const subtotalCalculado = totalCalculado + descuentoMonto - ajusteRedondeo;
   const etiquetaDescuento = venta.descuento_tipo === 'PORCENTAJE'
     ? `Descuento (${escHtml(String(venta.descuento_valor))}%)`
     : 'Descuento';
@@ -104,9 +106,10 @@ function construirTicketHTML(venta, items) {
       <tbody>${filas}</tbody>
     </table>
     <div class="t-line"></div>
-    ${descuentoMonto > 0 ? `
+    ${descuentoMonto > 0 || ajusteRedondeo > 0 ? `
     <div class="t-row"><span>Subtotal</span><span>${fmtCLP(subtotalCalculado)}</span></div>
-    <div class="t-row"><span>${etiquetaDescuento}</span><span>-${fmtCLP(descuentoMonto)}</span></div>
+    ${descuentoMonto > 0 ? `<div class="t-row"><span>${etiquetaDescuento}</span><span>-${fmtCLP(descuentoMonto)}</span></div>` : ''}
+    ${ajusteRedondeo > 0 ? `<div class="t-row"><span>Redondeo</span><span>+${fmtCLP(ajusteRedondeo)}</span></div>` : ''}
     ` : ''}
     <div class="t-total">
       <span>TOTAL</span>

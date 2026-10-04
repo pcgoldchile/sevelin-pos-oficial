@@ -5244,16 +5244,50 @@ function calcularDescuentoMonto(items, tipo, valor) {
   return Math.min(Math.max(0, monto), subtotal);
 }
 
+/* REDONDEO HACIA ARRIBA (sql/86, v123)
+   ------------------------------------------------------------
+   El dueño pidió (04-10-2026) redondear la compra en la caja, "por ejemplo
+   de $19.990 a $20.000", y escribir el total a cobrar. Lo que el total
+   queda POR ENCIMA de la suma de los ítems se guarda en
+   ventas.ajuste_redondeo; redondear hacia abajo es un descuento en pesos de
+   siempre.
+   · Tope de $1.000: es un redondeo, no una forma de cobrar otra cosa sin
+     anotarla. Para cobrar más se cambia el precio o se agrega el servicio.
+   · No convive con un descuento: la caja manda uno u otro. Si llegan los
+     dos se rechaza, en vez de guardar un total distinto del que vio quien
+     cobró.
+   Devuelve los pesos a sumar (0 si no hay). Lanza si el valor no es válido. */
+const AJUSTE_REDONDEO_MAXIMO = 1000;
+
+function ajusteRedondeoValido(valor, descuentoMonto = 0) {
+  const ajuste = Math.round(num(valor));
+  if (!(ajuste > 0)) return 0;
+  if (num(descuentoMonto) > 0) {
+    throw new Error('Una venta no puede llevar descuento y redondeo hacia arriba a la vez. Vuelve a escribir el total.');
+  }
+  if (ajuste > AJUSTE_REDONDEO_MAXIMO) {
+    throw new Error(`El total no puede pasar en más de $${AJUSTE_REDONDEO_MAXIMO.toLocaleString('es-CL')} la suma de los productos. Para cobrar más, cambia el precio del producto o agrega el servicio.`);
+  }
+  return ajuste;
+}
+
 /* `descuentoMonto` sale de calcularDescuentoMonto() — se resta del
    subtotal para llegar a `total`, y por lo tanto también de `utilidad`
    (total - costo_total): un descuento sale directo del margen, nunca del
-   costo de lo vendido. Ver sql/35-descuento-venta.sql. */
-function totalizar(items, descuentoMonto = 0) {
+   costo de lo vendido. Ver sql/35-descuento-venta.sql.
+   `ajusteRedondeo` (sql/86) sale de ajusteRedondeoValido() y suma al total;
+   con descuento no cuenta. La columna va en el resultado solo si hay
+   redondeo: una venta sin él se guarda igual que antes de sql/86. */
+function totalizar(items, descuentoMonto = 0, ajusteRedondeo = 0) {
   const subtotal = items.reduce((a, i) => a + i.subtotal, 0);
   const costoTotal = items.reduce((a, i) => a + i.costo_unitario * i.cantidad, 0);
   const descuento = Math.min(Math.max(0, num(descuentoMonto)), subtotal);
-  const total = subtotal - descuento;
-  return { total, costo_total: costoTotal, utilidad: total - costoTotal, descuento_monto: descuento };
+  const ajuste = descuento > 0 ? 0 : Math.max(0, num(ajusteRedondeo));
+  const total = subtotal - descuento + ajuste;
+  return {
+    total, costo_total: costoTotal, utilidad: total - costoTotal, descuento_monto: descuento,
+    ...(ajuste > 0 ? { ajuste_redondeo: ajuste } : {})
+  };
 }
 
 app.get('/api/ventas', auth(), async (req, res) => {
@@ -5870,6 +5904,17 @@ app.post('/api/ventas', auth(), async (req, res) => {
     const sinPermisoMargen = await rechazoPorMargen(req);
     if (sinPermisoMargen) return enviarError(res, 403, sinPermisoMargen, { requiere_clave_margen: true });
 
+    // Descuento sobre el total (no por ítem) — ver calcularDescuentoMonto().
+    // Sin tipo válido, es como si no hubiera descuento (venta de siempre).
+    const descuentoTipo = ['MONTO', 'PORCENTAJE'].includes(req.body?.descuento_tipo) ? req.body.descuento_tipo : null;
+    const descuentoValor = descuentoTipo ? Math.max(0, num(req.body?.descuento_valor)) : 0;
+    const descuentoMonto = descuentoTipo ? calcularDescuentoMonto(items, descuentoTipo, descuentoValor) : 0;
+    /* Redondeo hacia arriba (sql/86). Se valida ACÁ, antes de tocar el stock:
+       si no es válido la venta se rechaza con la base intacta. Ni el
+       descuento ni el redondeo dependen del costo, así que pueden calcularse
+       antes del PEPS. */
+    const ajusteRedondeo = ajusteRedondeoValido(req.body?.ajuste_redondeo, descuentoMonto);
+
     /* BIZ-02: se comprueba el stock Y se descuenta en una sola llamada
        atómica ANTES de escribir la venta. Si algo no alcanza, la función
        SQL lanza una excepción, no descuenta nada y la venta se rechaza
@@ -5887,13 +5932,7 @@ app.post('/api/ventas', auth(), async (req, res) => {
        está completando un cobro cortado), no se vuelve a consumir. */
     const { consumos } = ventaExistente ? { consumos: [] } : await aplicarCostosFifo(items);
 
-    // Descuento sobre el total (no por ítem) — ver calcularDescuentoMonto().
-    // Sin tipo válido, es como si no hubiera descuento (venta de siempre).
-    const descuentoTipo = ['MONTO', 'PORCENTAJE'].includes(req.body?.descuento_tipo) ? req.body.descuento_tipo : null;
-    const descuentoValor = descuentoTipo ? Math.max(0, num(req.body?.descuento_valor)) : 0;
-    const descuentoMonto = descuentoTipo ? calcularDescuentoMonto(items, descuentoTipo, descuentoValor) : 0;
-
-    const totales = totalizar(items, descuentoMonto);
+    const totales = totalizar(items, descuentoMonto, ajusteRedondeo);
 
     // "Por Pagar" deja la venta PENDIENTE: no suma a totales hasta que se cobre.
     const metodoPago = req.body?.metodo_pago || 'Efectivo';
@@ -6331,7 +6370,7 @@ app.put('/api/ventas/:id', auth(true), exigirPinAdmin, async (req, res) => {
          explícito, en cuyo caso ese manda (permite quitar o cambiar el
          descuento desde el mismo PUT). */
       const { data: ventaActual } = await db.from('ventas')
-        .select('descuento_tipo, descuento_valor').eq('id', id).maybeSingle();
+        .select('*').eq('id', id).maybeSingle();
       const descuentoTipo = req.body.descuento_tipo !== undefined
         ? (['MONTO', 'PORCENTAJE'].includes(req.body.descuento_tipo) ? req.body.descuento_tipo : null)
         : (ventaActual?.descuento_tipo || null);
@@ -6340,10 +6379,17 @@ app.put('/api/ventas/:id', auth(true), exigirPinAdmin, async (req, res) => {
         : Math.max(0, num(ventaActual?.descuento_valor));
       const descuentoMonto = descuentoTipo ? calcularDescuentoMonto(items, descuentoTipo, descuentoValor) : 0;
 
-      Object.assign(cambios, totalizar(items, descuentoMonto), {
+      /* El redondeo hacia arriba (sql/86) se conserva igual que el descuento:
+         son pesos que el cliente ya pagó, y editar los ítems no los devuelve.
+         Solo desaparece si la edición le pone un descuento a la venta. */
+      const teniaRedondeo = num(ventaActual?.ajuste_redondeo) > 0;
+      const ajusteRedondeo = descuentoMonto > 0 ? 0 : Math.min(Math.max(0, num(ventaActual?.ajuste_redondeo)), AJUSTE_REDONDEO_MAXIMO);
+
+      Object.assign(cambios, totalizar(items, descuentoMonto, ajusteRedondeo), {
         descuento_tipo: descuentoMonto > 0 ? descuentoTipo : null,
         descuento_valor: descuentoMonto > 0 ? descuentoValor : 0
       });
+      if (teniaRedondeo && !(ajusteRedondeo > 0)) cambios.ajuste_redondeo = 0;
 
       const { error: errDel } = await db.from('venta_items').delete().eq('venta_id', id);
       if (errDel) throw new Error(errDel.message);
@@ -6665,7 +6711,8 @@ app.post('/api/ventas/:id/devolucion', auth(), async (req, res) => {
        subtotal. Sin esto, devolver una línea de una venta con descuento
        devolvería más plata de la que el cliente pagó por ella. */
     const subtotalVenta = itemsVenta.reduce((s, i) => s + num(i.precio_unitario) * num(i.cantidad), 0);
-    const descuentoVenta = num(venta.descuento_monto);
+    // El redondeo hacia arriba (sql/86) también se reparte: es plata que el cliente pagó.
+    const descuentoVenta = num(venta.descuento_monto) - num(venta.ajuste_redondeo);
     const factorDescuento = subtotalVenta > 0 ? (1 - descuentoVenta / subtotalVenta) : 1;
 
     // ---- Validación línea por línea, ANTES de tocar nada ----

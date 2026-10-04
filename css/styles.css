@@ -4812,6 +4812,39 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
 .margen-bajo-lista strong { color: var(--text-100); font-size: 13.5px; overflow-wrap: anywhere; }
 .margen-bajo-lista span { color: var(--text-muted); font-size: 12.5px; }
 
+/* ============================================================
+   TOTAL A COBRAR, REDONDEO Y UTILIDAD EN VIVO (v123, js/pos.js)
+   ============================================================ */
+/* Descuento y total a cobrar lado a lado; los dos campos alineados abajo
+   aunque la etiqueta del descuento lleve el selector $ / % */
+.pos-ajuste-total { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .625rem; align-items: end; }
+.campo-pos.campo-invalido, .dark .campo-pos.campo-invalido { border-color: var(--red); box-shadow: 0 0 0 3px rgba(239, 68, 68, .2); }
+.pos-total-aviso { margin: 0 0 8px; font-size: 12px; line-height: 1.35; color: var(--red); }
+.pos-redondeos { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: .72rem; color: var(--text-muted); }
+.pos-redondeo-chip {
+    font: inherit; font-weight: 600; line-height: 1.2; padding: 4px 10px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+    border: 1px solid var(--border-strong); background: transparent; color: var(--text-100);
+    transition: border-color var(--speed, .15s), background-color var(--speed, .15s);
+}
+.pos-redondeo-chip:hover { border-color: var(--blue); background: var(--tint-blue); }
+.pos-redondeo-chip small { margin-left: 5px; font-size: .68rem; font-weight: 600; color: var(--text-muted); }
+.pos-redondeo-chip.sube small { color: var(--green); }
+.pos-redondeo-chip.baja small { color: var(--red); }
+.pos-redondeo-chip.quitar { font-weight: 500; color: var(--text-muted); border-style: dashed; }
+/* Costo y margen bajo cada producto del carrito (solo admin): un renglón
+   propio a todo el ancho, alineado con el nombre (miniatura de 42px + su separación) */
+#cartTableBody tr.cart-fila-con-costo td { border-bottom: none; padding-bottom: .15rem; }
+#cartTableBody tr.cart-fila-costo td { padding-top: 0; padding-bottom: .5rem; padding-left: calc(.65rem + 42px + .75rem); text-align: left; }
+.cart-prod-costo { display: block; font-size: .72rem; line-height: 1.35; color: var(--text-muted); }
+.cart-prod-costo b { font-weight: 600; color: var(--margen-color, inherit); }
+/* Costo, utilidad y margen de la venta entera */
+.pos-utilidad-viva { padding: 7px 10px; border-radius: 10px; border: 1px solid var(--border); font-size: .8rem; color: var(--text-muted); }
+.pos-utilidad-viva .puv-fila { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.pos-utilidad-viva .puv-fila + .puv-fila { margin-top: 2px; }
+.pos-utilidad-viva b { font-size: .92rem; color: var(--margen-color, var(--text-100)); }
+.pos-utilidad-viva #posMargenText { font-weight: 600; color: var(--margen-color, var(--text-muted)); }
+.pos-utilidad-viva .puv-aviso { margin: 5px 0 0; font-size: .72rem; line-height: 1.35; color: var(--gold); }
+
 .precio-sugerido:empty { display: none; }
 .precio-sugerido { margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--border-strong); border-radius: 10px; font-size: 13px; line-height: 1.5; color: var(--text-100); }
 .precio-sugerido p { margin: 0 0 4px; }

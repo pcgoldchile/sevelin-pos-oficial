@@ -16,6 +16,17 @@ let claveCobroEnCurso = null;   // sql/50: se repite en los reintentos del mismo
 // (api/index.js::calcularDescuentoMonto); esto es solo la previsualización.
 let descuentoTipo = 'MONTO';
 
+/* Redondeo hacia arriba (sql/86, v123): pesos que el total a cobrar queda
+   por ENCIMA de la suma del carrito (ej. $19.990 → $20.000 = 10). Vale solo
+   para el subtotal con que se aplicó: si el carrito cambia, se quita solo.
+   Hacia abajo no existe: es un descuento en pesos. El tope es espejo de
+   AJUSTE_REDONDEO_MAXIMO en api/index.js, que es el que manda. */
+const AJUSTE_REDONDEO_MAXIMO = 1000;
+let ajusteRedondeo = 0;
+let ajusteRedondeoSubtotal = 0;
+// El total escrito no se pudo aplicar (pasa el tope): no se cobra hasta corregirlo
+let totalManualInvalido = false;
+
 const elBuscarProducto = document.getElementById('posBuscarProducto');
 const elSugerencias = document.getElementById('posSugerencias');
 const elItemNombre = document.getElementById('itemNombre');
@@ -80,10 +91,19 @@ const elPosDescuentoValor = document.getElementById('posDescuentoValor');
 const elFilaSubtotalDescuento = document.getElementById('filaSubtotalDescuento');
 const elPosSubtotalText = document.getElementById('posSubtotalText');
 const elPosDescuentoMontoText = document.getElementById('posDescuentoMontoText');
+const elFilaDescuentoPos = document.getElementById('filaDescuentoPos');
+const elFilaRedondeoPos = document.getElementById('filaRedondeoPos');
+const elPosRedondeoText = document.getElementById('posRedondeoText');
+// Total a cobrar escrito a mano y sus redondeos (v123)
+const elPosTotalManual = document.getElementById('posTotalManual');
+const elPosTotalManualAviso = document.getElementById('posTotalManualAviso');
+const elPosRedondeos = document.getElementById('posRedondeos');
+// Costo, utilidad y margen de la venta en vivo (solo admin)
 const elFilaUtilidadPos = document.getElementById('filaUtilidadPos');
-const elPosUtilidadBrutaText = document.getElementById('posUtilidadBrutaText');
-const elFilaUtilidadNeta = document.getElementById('filaUtilidadNeta');
-const elPosUtilidadNetaText = document.getElementById('posUtilidadNetaText');
+const elPosCostoTotalText = document.getElementById('posCostoTotalText');
+const elPosUtilidadText = document.getElementById('posUtilidadText');
+const elPosMargenText = document.getElementById('posMargenText');
+const elPosAvisoSinCosto = document.getElementById('posAvisoSinCosto');
 
 const elModalVentaExitosa = document.getElementById('modalVentaExitosa');
 const elVentaExitosaDetalle = document.getElementById('ventaExitosaDetalle');
@@ -159,7 +179,31 @@ function setupPosEventListeners() {
 
   if (elBtnDescuentoMonto) elBtnDescuentoMonto.addEventListener('click', () => elegirTipoDescuento('MONTO'));
   if (elBtnDescuentoPorcentaje) elBtnDescuentoPorcentaje.addEventListener('click', () => elegirTipoDescuento('PORCENTAJE'));
-  if (elPosDescuentoValor) elPosDescuentoValor.addEventListener('input', renderCart);
+  // Escribir un descuento a mano quita el redondeo hacia arriba: no conviven
+  if (elPosDescuentoValor) elPosDescuentoValor.addEventListener('input', () => { ajusteRedondeo = 0; renderCart(); });
+
+  // Total a cobrar (v123): se aplica mientras se escribe, para ver la utilidad al tiro
+  if (elPosTotalManual) {
+    elPosTotalManual.addEventListener('input', () => aplicarTotalACobrar(elPosTotalManual.value));
+    /* Al salir del campo vuelve a mostrar el total que de verdad se va a
+       cobrar. Sin repintar el carrito: el clic que sacó el foco (un redondeo,
+       un "+" de cantidad) se perdería si su botón se redibuja debajo. */
+    elPosTotalManual.addEventListener('blur', () => {
+      totalManualInvalido = false;
+      pintarTotalACobrar(totalesCarrito(), true);
+    });
+    elPosTotalManual.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      enfocarBuscador();
+    });
+  }
+  if (elPosRedondeos) elPosRedondeos.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-total]');
+    if (!b) return;
+    aplicarTotalACobrar(b.dataset.total);
+    enfocarBuscador();
+  });
 
   // Limpia SOLO los campos de ingreso; el carrito queda intacto
   if (elBtnLimpiarSeleccion) elBtnLimpiarSeleccion.addEventListener('click', () => {
@@ -957,6 +1001,7 @@ function limpiarFormularioItem() {
    servidor en descuento_tipo (calcularDescuentoMonto). */
 function elegirTipoDescuento(tipo) {
   descuentoTipo = tipo;
+  ajusteRedondeo = 0;
   actualizarBotonesDescuentoTipo();
   renderCart();
 }
@@ -998,8 +1043,187 @@ function obtenerDescuentoActual() {
   return { tipo: descuentoTipo, valor };
 }
 
+/* ============================================================
+   TOTAL A COBRAR, REDONDEO Y UTILIDAD EN VIVO (v123, sql/86)
+   ------------------------------------------------------------
+   Pedido del dueño (04-10-2026), para negociar rápido en el mostrador:
+   · escribir el total acordado y que el descuento se calcule solo;
+   · redondear ($19.990 → $20.000 con efectivo);
+   · ver al tiro el costo, la utilidad y el margen de la venta y de cada
+     producto (solo admin: el trabajador no recibe costos).
+
+   El total escrito no es un dato nuevo: bajo la suma del carrito ES un
+   descuento en pesos (mismas reglas de margen y de clave del dueño); sobre
+   la suma es el redondeo hacia arriba, con tope. El servidor recalcula
+   todo y es el que manda.
+   ============================================================ */
+
+/* Lo que la caja va a cobrar por este carrito. Un solo cálculo para el
+   carrito, la ventana de pago y el registro de la venta: antes la ventana
+   de pago sumaba por su cuenta y pedía el total SIN el descuento. */
+function totalesCarrito() {
+  const subtotal = cart.reduce((acc, it) => acc + it.subtotal, 0);
+  const d = obtenerDescuentoActual();
+  const descuento = d.tipo ? calcularDescuentoMontoPreview(subtotal, d.tipo, d.valor) : 0;
+  const ajuste = (descuento > 0 || subtotal !== ajusteRedondeoSubtotal) ? 0 : ajusteRedondeo;
+  return { subtotal, descuento, ajuste, total: subtotal - descuento + ajuste };
+}
+
+/* Deja el carrito cobrando `valor`. Vacío = la suma de los productos, sin
+   descuento ni redondeo. Un total que pasa el tope no se aplica: el campo
+   queda marcado y no se cobra hasta corregirlo. */
+function aplicarTotalACobrar(valor) {
+  totalManualInvalido = false;
+  if (!cart.length) { renderCart(); return; }
+
+  const { subtotal } = totalesCarrito();
+  const texto = String(valor ?? '').trim();
+  const total = texto === '' ? subtotal : Math.round(Number(texto));
+
+  if (!Number.isFinite(total) || total < 0 || total > subtotal + AJUSTE_REDONDEO_MAXIMO) {
+    totalManualInvalido = true;
+    if (elPosTotalManualAviso) {
+      elPosTotalManualAviso.textContent = total > subtotal
+        ? `Los productos suman ${fmtCLP(subtotal)}: hacia arriba se redondea hasta ${fmtCLP(AJUSTE_REDONDEO_MAXIMO)}. Para cobrar más, cambia el precio del producto o agrega el servicio.`
+        : 'Escribe el total en pesos, sin puntos ni signos.';
+    }
+    pintarTotalACobrar(totalesCarrito());
+    return;
+  }
+
+  if (total >= subtotal) {
+    if (elPosDescuentoValor) elPosDescuentoValor.value = '';
+    ajusteRedondeo = total - subtotal;
+    ajusteRedondeoSubtotal = subtotal;
+  } else {
+    descuentoTipo = 'MONTO';
+    actualizarBotonesDescuentoTipo();
+    if (elPosDescuentoValor) elPosDescuentoValor.value = String(Math.round((subtotal - total) * 100) / 100);
+    ajusteRedondeo = 0;
+  }
+  renderCart();
+}
+
+/* El campo muestra siempre lo que se va a cobrar. Mientras se escribe en él
+   no se pisa (el aviso de margen repinta el carrito a medio tipeo), salvo
+   que el carrito haya cambiado por otro lado o se pida con `forzar`. */
+let subtotalDelTotalPintado = null;
+
+function pintarTotalACobrar(t, forzar = false) {
+  if (!elPosTotalManual) return;
+  const escribiendo = document.activeElement === elPosTotalManual;
+  const carritoCambio = t.subtotal !== subtotalDelTotalPintado;
+  subtotalDelTotalPintado = t.subtotal;
+  if (forzar || !escribiendo || carritoCambio) {
+    const texto = cart.length ? String(Math.round(t.total)) : '';
+    if (elPosTotalManual.value !== texto) elPosTotalManual.value = texto;
+  }
+  elPosTotalManual.disabled = cart.length === 0;
+  elPosTotalManual.classList.toggle('campo-invalido', totalManualInvalido);
+  if (elPosTotalManualAviso) elPosTotalManualAviso.style.display = totalManualInvalido ? '' : 'none';
+}
+
+/* Totales redondos cerca del actual: a la centena y al mil, hacia abajo
+   (descuento) y hacia arriba (hasta el tope). */
+function opcionesRedondeo(total, subtotal) {
+  const t = Math.round(total);
+  if (!(t > 0)) return [];
+  const tope = subtotal + AJUSTE_REDONDEO_MAXIMO;
+  const candidatos = [Math.floor(t / 1000) * 1000, Math.floor(t / 100) * 100, Math.ceil(t / 100) * 100, Math.ceil(t / 1000) * 1000];
+  return [...new Set(candidatos)].filter(v => v > 0 && v !== t && v <= tope).sort((a, b) => a - b);
+}
+
+function pintarRedondeos(t) {
+  if (!elPosRedondeos) return;
+  const opciones = cart.length ? opcionesRedondeo(t.total, t.subtotal) : [];
+  const conAjuste = cart.length > 0 && (t.descuento > 0 || t.ajuste > 0);
+  elPosRedondeos.style.display = opciones.length || conAjuste ? '' : 'none';
+  const base = Math.round(t.total);
+  elPosRedondeos.innerHTML =
+    (opciones.length ? '<span>Redondear a</span>' : '') +
+    opciones.map(v => {
+      const dif = v - base;
+      return `<button type="button" class="pos-redondeo-chip ${dif > 0 ? 'sube' : 'baja'}" data-total="${v}"
+        title="${dif > 0 ? `Cobrar ${fmtCLP(dif)} más` : `Rebajar ${fmtCLP(-dif)}`}">${fmtCLP(v)}<small>${dif > 0 ? '+' : '−'}${fmtCLP(Math.abs(dif))}</small></button>`;
+    }).join('') +
+    (conAjuste ? `<button type="button" class="pos-redondeo-chip quitar" data-total="${t.subtotal}"
+        title="Volver a la suma de los productos, sin descuento ni redondeo">✕ Sin ajuste</button>` : '');
+}
+
+/* Costo de una línea para el margen: el MAYOR conocido, igual que la lista
+   de Productos y el aviso de margen del servidor (sql/78). El de la ficha
+   no sube al registrar una compra más cara y daría un margen inflado. */
+function costoLineaCarrito(item) {
+  const propio = Number(item.costo_unitario) || 0;
+  const producto = item.producto_id && Array.isArray(productsList) ? productsList.find(p => p.id === item.producto_id) : null;
+  const referencia = producto && typeof costoParaMargen === 'function' ? costoParaMargen(producto) : 0;
+  return Math.max(propio, referencia);
+}
+
+/* "Costo $9.890 · Margen 34% · Deja $5.100" bajo cada producto del carrito,
+   sobre el precio que queda después de repartir el descuento (`factor`).
+   Solo admin. */
+function detalleCostoLinea(item, factor) {
+  if (!esAdmin()) return '';
+  const costo = costoLineaCarrito(item);
+  if (!(costo > 0)) {
+    return `<span class="cart-prod-costo">${item.es_servicio ? 'Servicio · sin costo' : 'Sin costo cargado'}</span>`;
+  }
+  const precioReal = item.precio_unitario * factor;
+  const pct = precioReal > 0 ? (precioReal - costo) / precioReal * 100 : null;
+  const deja = (precioReal - costo) * item.cantidad;
+  const tono = pct === null ? 'rojo' : (typeof tonoMargen === 'function' ? tonoMargen(pct) : '');
+  const tras = Math.abs(factor - 1) > 1e-9 ? ` Precio real ${fmtCLP(precioReal)} c/u tras el ${factor < 1 ? 'descuento' : 'redondeo'}.` : '';
+  return `<span class="cart-prod-costo margen-${tono}" title="Con el mayor costo conocido (ficha, última compra o lotes).${tras}">` +
+    `Costo ${fmtCLP(costo)}${item.cantidad > 1 ? ' c/u' : ''}` +
+    (pct === null ? '' : ` · Margen <b>${textoPorcentajeMargen(pct)}</b>`) +
+    ` · <b>${deja >= 0 ? 'Deja' : 'Pierde'} ${fmtCLP(Math.abs(deja))}</b></span>`;
+}
+
+// "34%", "−18%": sin decimales, como la lista de Productos
+function textoPorcentajeMargen(pct) {
+  const n = Math.round(pct) || 0;
+  return `${n < 0 ? '−' : ''}${Math.abs(n)}%`;
+}
+
+/* Costo, utilidad y margen de la venta entera, sobre el total a cobrar. */
+function pintarUtilidadCarrito(t) {
+  if (!elFilaUtilidadPos) return;
+  // Los ítems de un trabajador llegan con costo 0: mostrarle utilidad sería mentir.
+  const mostrar = esAdmin() && cart.length > 0;
+  elFilaUtilidadPos.style.display = mostrar ? '' : 'none';
+  if (!mostrar) return;
+
+  const costoTotal = cart.reduce((acc, it) => acc + costoLineaCarrito(it) * it.cantidad, 0);
+  const utilidad = t.total - costoTotal;
+  // Sin ningún costo cargado no hay margen que mostrar: 100% sería inventarlo.
+  const pct = costoTotal > 0 && t.total > 0 ? utilidad / t.total * 100 : null;
+  const tono = costoTotal > 0 ? (pct === null ? 'rojo' : (typeof tonoMargen === 'function' ? tonoMargen(pct) : '')) : '';
+
+  elFilaUtilidadPos.classList.remove('margen-rojo', 'margen-ambar', 'margen-verde');
+  if (tono) elFilaUtilidadPos.classList.add(`margen-${tono}`);
+  elFilaUtilidadPos.title = 'Sobre el total a cobrar, con el mayor costo conocido (ficha, última compra o lotes). No descuenta la comisión de la tarjeta.';
+  if (elPosCostoTotalText) elPosCostoTotalText.textContent = fmtCLP(costoTotal);
+  if (elPosUtilidadText) elPosUtilidadText.textContent = `${utilidad < 0 ? '−' : ''}${fmtCLP(Math.abs(utilidad))}`;
+  if (elPosMargenText) elPosMargenText.textContent = pct === null ? '' : `· ${textoPorcentajeMargen(pct)}`;
+
+  if (elPosAvisoSinCosto) {
+    const sinCosto = cart.filter(it => !it.es_servicio && !(costoLineaCarrito(it) > 0)).length;
+    elPosAvisoSinCosto.style.display = sinCosto ? '' : 'none';
+    elPosAvisoSinCosto.textContent = sinCosto
+      ? `⚠ ${sinCosto === 1 ? '1 producto no tiene' : `${sinCosto} productos no tienen`} costo cargado: la utilidad real es menor.`
+      : '';
+  }
+}
+
 function renderCart() {
   if (!elCartTableBody) return;
+
+  // El redondeo hacia arriba vale solo para el carrito con que se aplicó
+  if (ajusteRedondeo && !totalesCarrito().ajuste) ajusteRedondeo = 0;
+  const t = totalesCarrito();
+  // Lo que queda de cada peso de precio después del descuento (o del redondeo)
+  const factorPrecio = t.subtotal > 0 ? t.total / t.subtotal : 1;
 
   if (cart.length === 0) {
     elCartTableBody.innerHTML = '<tr class="empty-row"><td colspan="4">El carrito está vacío. Busca un producto o escribe uno manualmente.</td></tr>';
@@ -1010,8 +1234,12 @@ function renderCart() {
         item.serial_number ? `S/N ${escHtml(item.serial_number)}` : (item.requiere_sn ? 'sin S/N' : ''),
         item.es_servicio ? 'Servicio' : ''
       ].filter(Boolean).join(' · ') + detalleMayoristaLinea(item, idx) + chipMargenLinea(idx) + enlaceEncargoFaltante(item, idx);
+      /* Costo y margen (solo admin) van en un renglón propio a todo el ancho
+         del carrito: dentro de la columna del producto, que es angosta, se
+         partían en tres o cuatro líneas. */
+      const costoLinea = detalleCostoLinea(item, factorPrecio);
       return `
-      <tr class="row-in">
+      <tr class="row-in${costoLinea ? ' cart-fila-con-costo' : ''}">
         <td class="cart-prod">
           <div class="cart-prod-fila">
             ${miniaturaProducto({ imagen_urls: item.imagen_urls || [], nombre: item.nombre }, 42, { ampliable: true })}
@@ -1034,7 +1262,8 @@ function renderCart() {
         <td class="cart-quitar">
           <button type="button" class="btn btn-icon btn-icon-del" data-quitar="${idx}" title="Quitar del carrito">${ICO_QUITAR}</button>
         </td>
-      </tr>`;
+      </tr>${costoLinea ? `
+      <tr class="cart-fila-costo"><td colspan="4">${costoLinea}</td></tr>` : ''}`;
     }).join('');
   }
 
@@ -1044,35 +1273,22 @@ function renderCart() {
   // La cantidad "en el carrito" de la vista previa se mantiene al día
   if (vistaPrevia) mostrarVistaPrevia(vistaPrevia.producto, vistaPrevia.modo);
 
-  const subtotal = cart.reduce((acc, it) => acc + it.subtotal, 0);
-  const { tipo: tipoActivo, valor: descuentoValor } = obtenerDescuentoActual();
-  const descuentoMonto = tipoActivo ? calcularDescuentoMontoPreview(subtotal, tipoActivo, descuentoValor) : 0;
-  const total = subtotal - descuentoMonto;
+  if (elCartTotalText) elCartTotalText.textContent = fmtCLP(t.total);
 
-  if (elCartTotalText) elCartTotalText.textContent = fmtCLP(total);
-
-  if (elFilaSubtotalDescuento) elFilaSubtotalDescuento.style.display = descuentoMonto > 0 ? '' : 'none';
-  if (descuentoMonto > 0) {
-    if (elPosSubtotalText) elPosSubtotalText.textContent = fmtCLP(subtotal);
-    if (elPosDescuentoMontoText) elPosDescuentoMontoText.textContent = `-${fmtCLP(descuentoMonto)}`;
+  // Subtotal y lo que lo mueve: el descuento o el redondeo hacia arriba (nunca los dos)
+  const hayAjuste = t.descuento > 0 || t.ajuste > 0;
+  if (elFilaSubtotalDescuento) elFilaSubtotalDescuento.style.display = hayAjuste ? '' : 'none';
+  if (elFilaDescuentoPos) elFilaDescuentoPos.style.display = t.descuento > 0 ? '' : 'none';
+  if (elFilaRedondeoPos) elFilaRedondeoPos.style.display = t.ajuste > 0 ? '' : 'none';
+  if (hayAjuste) {
+    if (elPosSubtotalText) elPosSubtotalText.textContent = fmtCLP(t.subtotal);
+    if (elPosDescuentoMontoText) elPosDescuentoMontoText.textContent = `-${fmtCLP(t.descuento)}`;
+    if (elPosRedondeoText) elPosRedondeoText.textContent = `+${fmtCLP(t.ajuste)}`;
   }
 
-  // Utilidad: solo el admin la ve (los ítems de un trabajador ya llegan con
-  // costo_unitario=0, ver agregarItemAlCarrito — mostrarla ahí sería mentir).
-  if (elFilaUtilidadPos) {
-    const mostrar = esAdmin() && cart.length > 0;
-    elFilaUtilidadPos.style.display = mostrar ? '' : 'none';
-    if (mostrar) {
-      const costoTotal = cart.reduce((acc, it) => acc + Number(it.costo_unitario || 0) * it.cantidad, 0);
-      const utilidadBruta = subtotal - costoTotal;
-      if (elPosUtilidadBrutaText) elPosUtilidadBrutaText.textContent = fmtCLP(utilidadBruta);
-
-      if (elFilaUtilidadNeta) elFilaUtilidadNeta.style.display = descuentoMonto > 0 ? '' : 'none';
-      if (descuentoMonto > 0 && elPosUtilidadNetaText) {
-        elPosUtilidadNetaText.textContent = fmtCLP(total - costoTotal);
-      }
-    }
-  }
+  pintarTotalACobrar(t);
+  pintarRedondeos(t);
+  pintarUtilidadCarrito(t);
 
   // v109: aviso de margen (se pide al servidor solo si el carrito cambió)
   pintarAvisoMargen();
@@ -1269,6 +1485,14 @@ function pedirConfirmacionMargen(bajas) {
 async function abrirModalPago() {
   if (cart.length === 0) { showToast('Agrega al menos un producto al carrito', 'err'); return; }
 
+  // Un total escrito que no se pudo aplicar (v123): no se cobra otro distinto sin avisar
+  if (totalManualInvalido) {
+    showToast('Corrige el total a cobrar antes de finalizar', 'err');
+    elPosTotalManual?.focus();
+    elPosTotalManual?.select();
+    return;
+  }
+
   /* Punto 4: sin un turno de caja abierto no se registran cobros. El
      estado lo mantiene caja.js; si el módulo no está cargado, no se
      bloquea (hayCajaAbierta no existiría). */
@@ -1288,7 +1512,11 @@ async function abrirModalPago() {
   if (!seguir) { enfocarBuscador(); return; }
   if (cart.length === 0) return;
 
-  const total = cart.reduce((acc, it) => acc + it.subtotal, 0);
+  /* El total a cobrar, con el descuento y el redondeo ya aplicados. Antes
+     iba la suma del carrito a secas: con un descuento, la ventana de pago
+     pedía de más, el vuelto salía mal y el pago mixto no cuadraba con lo que
+     guarda el servidor. */
+  const { total } = totalesCarrito();
 
   abrirSelectorPago({
     titulo: 'Confirmar Pago',
@@ -1309,6 +1537,8 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
   // El backend calcula total, costo_total y utilidad a partir de los ítems,
   // y deja la venta en PENDIENTE si el método es "Por Pagar".
   const descuento = obtenerDescuentoActual();
+  // Redondeo hacia arriba (sql/86): el servidor lo valida y es quien suma
+  const ajusteRedondeoVenta = totalesCarrito().ajuste;
 
   /* Clave de cobro (sql/50): la misma en todos los reintentos de este
      carrito, así un corte de Supabase nunca duplica la venta ni descuenta
@@ -1333,6 +1563,7 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
     // siempre lo vuelve a calcular el servidor, ver calcularDescuentoMonto().
     descuento_tipo: descuento.tipo,
     descuento_valor: descuento.valor,
+    ajuste_redondeo: ajusteRedondeoVenta,
     /* Desglose del pago mixto. Va solo si el usuario eligió "Mixto"; el
        backend lo revalida contra el total y calcula la comisión sobre
        cada parte con tarjeta por separado. */
@@ -1379,6 +1610,8 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
   mostrarVistaPrevia(null);
   if (elPosDescuentoValor) elPosDescuentoValor.value = '';
   descuentoTipo = 'MONTO';
+  ajusteRedondeo = 0;
+  totalManualInvalido = false;
   actualizarBotonesDescuentoTipo();
   renderCart();
   limpiarFormularioItem();

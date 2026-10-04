@@ -462,9 +462,19 @@ app.post('/api/ventas', (req, res) => {
   const b = req.body || {};
   const items = (b.items || []).map((it, i) => ({ id: Date.now() + i, nombre: it.nombre, cantidad: it.cantidad, precio_unitario: it.precio_unitario,
     costo_unitario: it.costo_unitario || 0, subtotal: it.precio_unitario * it.cantidad, serial_number: it.serial_number || null }));
-  const total = items.reduce((a, it) => a + it.subtotal, 0);
+  // v123 (sql/86): descuento y redondeo hacia arriba, con las reglas del servidor real (el que vale es api/index.js).
+  const subtotal = items.reduce((a, it) => a + it.subtotal, 0);
+  const valorDesc = Math.max(0, Number(b.descuento_valor) || 0);
+  const descuento = b.descuento_tipo === 'PORCENTAJE' ? subtotal * Math.min(valorDesc, 100) / 100 : (b.descuento_tipo === 'MONTO' ? Math.min(valorDesc, subtotal) : 0);
+  const ajuste = Math.max(0, Math.round(Number(b.ajuste_redondeo) || 0));
+  if (ajuste > 0 && descuento > 0) return res.status(400).json({ error: 'Una venta no puede llevar descuento y redondeo hacia arriba a la vez. Vuelve a escribir el total.' });
+  if (ajuste > 1000) return res.status(400).json({ error: 'El total no puede pasar en más de $1.000 la suma de los productos. Para cobrar más, cambia el precio del producto o agrega el servicio.' });
+  const total = subtotal - descuento + ajuste;
   const pendiente = b.metodo_pago === 'Por Pagar';
   const partes = !pendiente && Array.isArray(b.pagos) && b.pagos.length >= 2 ? b.pagos : null;
+  if (partes && Math.abs(partes.reduce((a, p) => a + Number(p.monto), 0) - total) > 1) {
+    return res.status(400).json({ error: `El desglose de pagos suma ${partes.reduce((a, p) => a + Number(p.monto), 0)} y la venta es ${total}` });
+  }
   const maquina = b.maquina_tarjeta === 'BANCHILE' ? 'BANCHILE' : 'TUU';
   const huboTarjeta = !pendiente && (partes ? partes.some(p => conTarjetaMaqueta(p.metodo)) : conTarjetaMaqueta(b.metodo_pago));
   const id = Math.max(...ventasMaqueta.map(v => v.id)) + 1;
@@ -473,7 +483,8 @@ app.post('/api/ventas', (req, res) => {
     estado: pendiente ? 'PENDIENTE' : 'PAGADA', total, costo_total: items.reduce((a, it) => a + it.costo_unitario * it.cantidad, 0), utilidad: 0,
     tipo_dte: ['BOLETA', 'FACTURA'].includes(b.tipo_dte) ? b.tipo_dte : 'SIN DTE', dte_folio: null, maquina_tarjeta: huboTarjeta ? maquina : null,
     comision_pos: pendiente ? 0 : (partes ? partes.reduce((a, p) => a + comisionMaqueta(p.metodo, Number(p.monto), maquina), 0) : comisionMaqueta(b.metodo_pago, total, maquina)),
-    tipo_entrega: b.tipo_entrega || 'retiro', estado_envio: 'entregado', descuento_monto: 0 };
+    tipo_entrega: b.tipo_entrega || 'retiro', estado_envio: 'entregado',
+    descuento_monto: descuento, descuento_tipo: descuento > 0 ? b.descuento_tipo : null, descuento_valor: descuento > 0 ? valorDesc : 0, ajuste_redondeo: ajuste };
   venta.utilidad = total - venta.costo_total;
   ventasMaqueta.push(venta);
   itemsMaqueta[id] = items;

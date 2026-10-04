@@ -191,7 +191,10 @@ function recalcularTotalDevolucion() {
 
   const items = devVentaActual.items || [];
   const subtotalVenta = items.reduce((s, i) => s + num(i.precio_unitario) * num(i.cantidad), 0);
-  const factor = subtotalVenta > 0 ? (1 - num(devVentaActual.descuento_monto) / subtotalVenta) : 1;
+  // El redondeo hacia arriba (sql/86) también se reparte, igual que en el servidor
+  const factor = subtotalVenta > 0
+    ? (1 - (num(devVentaActual.descuento_monto) - num(devVentaActual.ajuste_redondeo)) / subtotalVenta)
+    : 1;
 
   let total = 0, unidades = 0;
   items.forEach(i => {

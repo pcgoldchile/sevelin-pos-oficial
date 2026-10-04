@@ -1854,6 +1854,15 @@ function renderDetalleVenta(venta) {
         <span>-${fmtCLP(descuentoMonto)}</span>
       </div>
       ` : ''}
+      ${num(venta.ajuste_redondeo) > 0 ? `
+      <!-- sql/86: el total se redondeó hacia arriba en la caja (nunca convive con un descuento) -->
+      <div style="display:flex; justify-content:space-between; font-size:14px; color:var(--text-muted); margin-bottom:4px;">
+        <span>Subtotal</span><span>${fmtCLP(subtotalItems)}</span>
+      </div>
+      <div style="display:flex; justify-content:space-between; font-size:14px; color:var(--green); margin-bottom:8px;">
+        <span>Redondeo</span><span>+${fmtCLP(venta.ajuste_redondeo)}</span>
+      </div>
+      ` : ''}
       <div style="display:flex; justify-content:space-between; font-weight:bold; font-size:17px;">
         <span>TOTAL</span><span>${fmtCLP(venta.total)}</span>
       </div>

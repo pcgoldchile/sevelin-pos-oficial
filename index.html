@@ -538,42 +538,64 @@
                   <!-- Descuento: aplica solo al total de la compra, nunca a
                        un ítem suelto. El monto real siempre lo recalcula el
                        servidor (ver api/index.js::calcularDescuentoMonto). -->
-                  <div class="mb-3">
-                    <div class="flex items-center justify-between mb-1.5">
-                      <span class="etiqueta-pos">Descuento (opcional)</span>
-                      <div class="flex rounded-lg overflow-hidden border border-slate-300 dark:border-slate-600 text-[11px] font-semibold">
-                        <button type="button" id="btnDescuentoMonto" data-tipo="MONTO"
-                                class="px-2.5 py-1 transition-colors">$</button>
-                        <button type="button" id="btnDescuentoPorcentaje" data-tipo="PORCENTAJE"
-                                class="px-2.5 py-1 transition-colors">%</button>
+                  <!-- v123: el descuento y el total a cobrar son dos formas de
+                       escribir lo mismo. Escribir el total calcula solo el
+                       descuento (o el redondeo hacia arriba, sql/86). -->
+                  <div class="pos-ajuste-total mb-2">
+                    <div>
+                      <div class="flex items-center justify-between mb-1.5">
+                        <label for="posDescuentoValor" class="etiqueta-pos">Descuento</label>
+                        <div class="flex rounded-lg overflow-hidden border border-slate-300 dark:border-slate-600 text-[11px] font-semibold">
+                          <button type="button" id="btnDescuentoMonto" data-tipo="MONTO"
+                                  class="px-2.5 py-1 transition-colors">$</button>
+                          <button type="button" id="btnDescuentoPorcentaje" data-tipo="PORCENTAJE"
+                                  class="px-2.5 py-1 transition-colors">%</button>
+                        </div>
                       </div>
+                      <input type="number" id="posDescuentoValor" min="0" step="1" inputmode="decimal"
+                             placeholder="0" class="campo-pos">
                     </div>
-                    <input type="number" id="posDescuentoValor" min="0" step="1" inputmode="decimal"
-                           placeholder="0" class="campo-pos">
+                    <div>
+                      <div class="flex items-center justify-between mb-1.5">
+                        <label for="posTotalManual" class="etiqueta-pos">Total a cobrar</label>
+                      </div>
+                      <input type="number" id="posTotalManual" min="0" step="1" inputmode="numeric"
+                             placeholder="0" class="campo-pos" autocomplete="off"
+                             title="Escribe el total acordado: el descuento se calcula solo">
+                    </div>
                   </div>
+                  <p id="posTotalManualAviso" class="pos-total-aviso" style="display:none;" role="alert"></p>
+                  <!-- Redondeos del total: los pinta renderCart (js/pos.js) -->
+                  <div id="posRedondeos" class="pos-redondeos mb-3" style="display:none;"></div>
 
                   <div id="filaSubtotalDescuento" style="display:none;" class="mb-2 text-sm">
                     <div class="flex items-baseline justify-between text-slate-500 dark:text-slate-400">
                       <span>Subtotal</span>
                       <span id="posSubtotalText" class="tabular-nums">$0</span>
                     </div>
-                    <div class="flex items-baseline justify-between text-rose-500 dark:text-rose-400">
+                    <div id="filaDescuentoPos" class="flex items-baseline justify-between text-rose-500 dark:text-rose-400">
                       <span>Descuento</span>
                       <span id="posDescuentoMontoText" class="tabular-nums">-$0</span>
                     </div>
+                    <div id="filaRedondeoPos" style="display:none;" class="flex items-baseline justify-between text-emerald-600 dark:text-emerald-400">
+                      <span>Redondeo</span>
+                      <span id="posRedondeoText" class="tabular-nums">+$0</span>
+                    </div>
                   </div>
 
-                  <!-- Solo el admin ve utilidad (mismo criterio que el resto
-                       del POS: los trabajadores no ven costos/márgenes). -->
-                  <div id="filaUtilidadPos" style="display:none;" class="mb-2 text-xs text-slate-400 dark:text-slate-500">
-                    <div class="flex items-baseline justify-between">
-                      <span>Utilidad estimada</span>
-                      <span id="posUtilidadBrutaText" class="tabular-nums">$0</span>
+                  <!-- Solo el admin ve costo, utilidad y margen (mismo criterio
+                       que el resto del POS: el trabajador no ve costos). Sobre
+                       el total a cobrar, con el mayor costo conocido. -->
+                  <div id="filaUtilidadPos" style="display:none;" class="pos-utilidad-viva mb-2">
+                    <div class="puv-fila">
+                      <span>Costo</span>
+                      <span id="posCostoTotalText" class="tabular-nums">$0</span>
                     </div>
-                    <div id="filaUtilidadNeta" style="display:none;" class="flex items-baseline justify-between text-amber-500 dark:text-amber-400">
-                      <span>Utilidad tras descuento</span>
-                      <span id="posUtilidadNetaText" class="tabular-nums">$0</span>
+                    <div class="puv-fila">
+                      <span>Utilidad</span>
+                      <span class="tabular-nums"><b id="posUtilidadText">$0</b> <span id="posMargenText"></span></span>
                     </div>
+                    <p id="posAvisoSinCosto" class="puv-aviso" style="display:none;"></p>
                   </div>
 
                   <div class="flex items-baseline justify-between mb-3">
