@@ -319,7 +319,11 @@ function abrirModalPedidoWeb(id) {
       const mayorista = it.precio_tipo === 'MAYORISTA'
         ? ` <span class="badge badge-blue">🤝 Mayorista ${fmtCLP(it.precio_web)} c/u${Number(it.precio_normal) > 0 ? ` (normal ${fmtCLP(it.precio_normal)})` : ''}</span>`
         : '';
-      return `<li>${escHtml(it.nombre)} × ${it.cantidad} — ${fmtCLP(it.precio_web * it.cantidad)}${mayorista}</li>`;
+      // v126: línea reservada de algo por llegar. No se entrega hasta que llegue la compra.
+      const porLlegar = it.por_llegar === true
+        ? ` <span class="badge badge-gold">🚚 Por llegar${it.fecha_llegada_estimada ? ` · ${escHtml(String(it.fecha_llegada_estimada).slice(8, 10) + '-' + String(it.fecha_llegada_estimada).slice(5, 7))}` : ''}</span>`
+        : '';
+      return `<li>${escHtml(it.nombre)} × ${it.cantidad} — ${fmtCLP(it.precio_web * it.cantidad)}${mayorista}${porLlegar}</li>`;
     }).join('') || '<li>Sin ítems</li>';
   }
 

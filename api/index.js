@@ -3831,9 +3831,14 @@ app.put('/api/ingresos/:id/recibida', auth(true), async (req, res) => {
     if (!ing.en_camino) return enviarError(res, 400, 'Esa compra no estaba marcada como en camino');
 
     const { data: producto, error: errP } = await db.from('productos')
-      .select('id, stock, usa_lotes, stock_ilimitado, costo_unitario').eq('id', ing.producto_id).maybeSingle();
+      .select('id, stock, usa_lotes, stock_ilimitado, costo_unitario, reservado_web').eq('id', ing.producto_id).maybeSingle();
     if (errP) throw errP;
     if (!producto) return enviarError(res, 404, 'Producto no encontrado');
+
+    /* v126 (sql/87) — unidades de esta compra que ya se pagaron en sevelin.cl
+       mientras venían en camino. Tienen dueño: no entran al stock para la
+       venta. El costo de esa venta ya quedó anotado al pagar. */
+    const apartadas = producto.stock_ilimitado ? 0 : Math.min(Math.max(0, num(producto.reservado_web)), num(ing.cantidad));
 
     /* La capa PEPS se crea ahora y no al comprar: antes de llegar no hay
        unidades que consumir, y una capa con stock que no existe haría que
@@ -3849,10 +3854,15 @@ app.put('/api/ingresos/:id/recibida', auth(true), async (req, res) => {
       }]).select().single();
       if (error) throw error;
       lote = data;
+      // Las apartadas salen de las capas igual que salen del stock.
+      if (apartadas > 0) {
+        const { error: errCapas } = await db.rpc('fifo_consumir', { p_producto_id: producto.id, p_cantidad: apartadas });
+        if (errCapas) throw errCapas;
+      }
     }
 
     const sumar = !producto.stock_ilimitado;
-    const stockNuevo = sumar ? num(producto.stock) + num(ing.cantidad) : num(producto.stock);
+    const stockNuevo = sumar ? num(producto.stock) + num(ing.cantidad) - apartadas : num(producto.stock);
 
     const { error: errU } = await db.from('ingresos_mercaderia')
       .update({ en_camino: false, recibido_en: new Date().toISOString() }).eq('id', id);
@@ -3865,6 +3875,7 @@ app.put('/api/ingresos/:id/recibida', auth(true), async (req, res) => {
 
     const cambios = {};
     if (sumar) { cambios.stock = stockNuevo; cambios.stock_actualizado_en = new Date().toISOString(); }
+    if (apartadas > 0) cambios.reservado_web = Math.max(0, num(producto.reservado_web) - apartadas);
     if (num(producto.costo_unitario) === 0 && num(ing.costo_unitario) > 0) {
       cambios.costo_unitario = num(ing.costo_unitario);
     }
@@ -3882,6 +3893,8 @@ app.put('/api/ingresos/:id/recibida', auth(true), async (req, res) => {
       ok: true,
       stock_nuevo: stockNuevo,
       lote,
+      // v126: unidades que ya estaban vendidas por la web; hay que apartarlas para su dueño
+      apartadas_web: apartadas,
       quedan_en_camino: quedanEnCamino,
       // La tienda avisa por correo a los que reservaron cuando esto se apaga
       aviso_tienda: quedanEnCamino ? null : 'El producto dejó de estar "por llegar": la tienda avisa a quienes lo esperaban.'
@@ -13703,8 +13716,30 @@ app.post('/api/interno/ajustar-stock', authSync, async (req, res) => {
   const items = Array.isArray(req.body?.items) ? req.body.items : [];
   if (items.length === 0) return enviarError(res, 400, 'Falta items');
 
+  /* v126 (sql/87) — RESERVAS de productos "por llegar". La tienda marca con
+     `reserva: true` las líneas pagadas de algo que todavía no está: no hay
+     stock que descontar. Bajan `stock_por_llegar` y suben `reservado_web`,
+     en la MISMA transacción que el descuento del resto del pedido. Sin
+     reservas, el camino es el de siempre. */
+  const reservas = items
+    .filter(it => it?.reserva === true && it.producto_id)
+    .map(it => ({ producto_id: Number(it.producto_id), cantidad: Math.max(1, Math.round(num(it.cantidad))) }));
+  const normales = items.filter(it => it?.reserva !== true);
+
   try {
-    const descontados = await descontarStockNoLotes(items);
+    if (reservas.length) {
+      const p_items = normales
+        .filter(it => it?.producto_id)
+        .map(it => ({ producto_id: Number(it.producto_id), cantidad: num(it.cantidad) || 1 }));
+      const { data, error } = await db.rpc('ajustar_stock_web', { p_items, p_reservas: reservas });
+      if (error) throw new Error(error.message);
+      return res.json({
+        ok: true,
+        producto_ids_descontados: (data || []).map(r => r.producto_id),
+        producto_ids_reservados: reservas.map(r => r.producto_id)
+      });
+    }
+    const descontados = await descontarStockNoLotes(normales);
     res.json({ ok: true, producto_ids_descontados: [...descontados] });
   } catch (err) {
     // STOCK_INSUFICIENTE u otro error de la RPC: se informa tal cual,
@@ -13781,6 +13816,21 @@ app.post('/api/interno/registrar-venta-web', authSync, async (req, res) => {
       };
     });
 
+    /* v126 — PEPS EN LAS VENTAS WEB. /api/interno/ajustar-stock nunca tocó
+       los productos con lotes: una venta web de uno de ellos no bajaba el
+       stock ni consumía capas. No importaba con 2 productos con lotes; desde
+       v125 todo producto nuevo nace con lotes. Se consume ACÁ, antes de
+       totalizar, para que la utilidad salga con el costo real (igual que la
+       caja). Este endpoint ya es de una sola pasada por pedido (el candado de
+       arriba y el del pedido en la tienda), así que no se consume dos veces.
+       Las líneas RESERVADAS (por llegar, sql/87) no se tocan: todavía no hay
+       unidades ni capas; su capa se consume cuando la compra llega. */
+    const esReserva = items.map(i => i?.por_llegar === true);
+    const indiceReal = lineas.map((_, idx) => idx).filter(idx => !esReserva[idx]);
+    const { consumos } = await aplicarCostosFifo(indiceReal.map(idx => lineas[idx]));
+    consumos.forEach(c => { c.indiceItem = indiceReal[c.indiceItem]; });
+    lineas.forEach(l => { delete l._fifo; });
+
     const totales = totalizar(lineas, 0);
     const fecha = fechaHoyChile();
     const cabecera = {
@@ -13831,12 +13881,13 @@ app.post('/api/interno/registrar-venta-web', authSync, async (req, res) => {
       throw new Error(error.message);
     }
 
-    const { error: errItems } = await db.from('venta_items')
-      .insert(lineas.map(l => ({ ...l, venta_id: venta.id })));
+    const { data: guardados, error: errItems } = await db.from('venta_items')
+      .insert(lineas.map(l => ({ ...l, venta_id: venta.id }))).select('id');
     if (errItems) {
       await db.from('ventas').delete().eq('id', venta.id);
       throw new Error(errItems.message);
     }
+    if (consumos.length) await registrarConsumoLotes(venta.id, guardados || [], consumos);
 
     res.status(201).json({ ok: true, venta_id: venta.id, numero_orden: venta.numero_orden });
   } catch (err) {
@@ -13968,9 +14019,32 @@ app.put('/api/pos/pedidos-web/:id', auth(true), async (req, res) => {
      acción principal — y se avisa en la respuesta para que el trabajador
      lo ajuste a mano si hace falta. */
   let stockRepuesto = false;
+  /* v126 (sql/87) — una línea RESERVADA (por llegar) que todavía no llega no
+     tiene stock que reponer: se libera la reserva, se marque o no la casilla.
+     Si la compra ya llegó (la reserva ya se entregó), sigue la regla de
+     siempre y depende de la casilla. */
+  const lineasYaLiberadas = new Set();
+  if (cambios.estado === 'CANCELADO') {
+    for (const [idx, it] of (actual.items || []).entries()) {
+      if (it?.por_llegar !== true || !it.producto_pos_id) continue;
+      try {
+        const cantidad = Math.max(1, Math.round(num(it.cantidad)));
+        const { data: prod } = await db.from('productos')
+          .select('id, por_llegar, stock_por_llegar, reservado_web').eq('id', it.producto_pos_id).maybeSingle();
+        if (!prod || num(prod.reservado_web) < cantidad) continue;   // ya llegó: va por la casilla
+        const liberar = { reservado_web: num(prod.reservado_web) - cantidad };
+        if (prod.por_llegar) liberar.stock_por_llegar = num(prod.stock_por_llegar) + cantidad;
+        const { error: errLib } = await db.from('productos').update(liberar).eq('id', prod.id);
+        if (errLib) throw errLib;
+        lineasYaLiberadas.add(idx);
+      } catch (err) {
+        console.error('[Pedidos Web] No se pudo liberar la reserva del pedido', req.params.id, ':', err.message);
+      }
+    }
+  }
   if (cambios.estado === 'CANCELADO' && req.body?.reponer_stock === true) {
     const itemsPos = (actual.items || [])
-      .filter(it => it?.producto_pos_id)
+      .filter((it, idx) => it?.producto_pos_id && !lineasYaLiberadas.has(idx))
       .map(it => ({ producto_id: it.producto_pos_id, cantidad: it.cantidad }));
     if (itemsPos.length) {
       try {
@@ -14031,7 +14105,7 @@ app.put('/api/pos/pedidos-web/:id', auth(true), async (req, res) => {
     }
   }
 
-  res.json({ ...data, stock_repuesto: stockRepuesto, correo_enviado: correoEnviado });
+  res.json({ ...data, stock_repuesto: stockRepuesto, reservas_liberadas: lineasYaLiberadas.size, correo_enviado: correoEnviado });
 });
 
 /* ============================================================

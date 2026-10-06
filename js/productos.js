@@ -3852,6 +3852,7 @@ Se suman al stock y, si no queda nada más por llegar, la tienda le avisa por co
   try {
     const r = await API.productos.compraRecibida(id);
     showToast(`Llegó: stock ${num(r.stock_nuevo)}`, 'ok');
+    if (num(r?.apartadas_web) > 0) alert(`${num(r.apartadas_web)} unidad(es) ya estaban vendidas en sevelin.cl: apártalas, no entraron al stock. Mira Página Web → Pedidos Web.`);
     if (r?.aviso_tienda) setTimeout(() => showToast(r.aviso_tienda, 'ok'), 1800);
 
     const elStock = document.getElementById('prodStock');

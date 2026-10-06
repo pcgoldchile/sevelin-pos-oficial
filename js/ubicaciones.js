@@ -363,6 +363,8 @@ async function recibirDesdeAviso(ingresoId) {
   try {
     const r = await API.productos.compraRecibida(ingresoId);
     showToast(`${c.producto}: llegó, stock ${num(r.stock_nuevo)}`, 'ok');
+    // v126 (sql/87): unidades que ya se habían pagado en la web mientras venían
+    if (num(r?.apartadas_web) > 0) alert(`${num(r.apartadas_web)} unidad(es) de "${c.producto}" ya estaban vendidas en sevelin.cl: apártalas, no entraron al stock. Mira Página Web → Pedidos Web.`);
     if (r?.aviso_tienda) setTimeout(() => showToast(r.aviso_tienda, 'ok'), 1800);
     await actualizarAvisoEnCamino();
     if (!enCaminoCache?.total) cerrarModal('modalEnCamino');
