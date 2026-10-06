@@ -12,6 +12,25 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 06-10-2026 · v124, "¿ya llegó o viene en camino?" a la vista y la compra a MercadoLibre corregida
+
+Detalle en `docs/CHANGELOG-V124.md`.
+
+**Publicado:** **v124** (POS `84377c5`, sin migración): en la compra de un producto, dos botones "Sí, ya llegó / No,
+viene en camino" en vez de la casilla escondida; aviso de si se verá en sevelin.cl con botón para publicarlo; "llegan N"
+bajo el stock en la lista de Productos.
+
+**Datos:** la compra a MercadoLibre del 06-10 (gasto #29, $602.396) quedó como 12 compras en camino para el 08-10
+(productos #325 a #336, stock 0). La raqueta Dropmaxi se juntó con la #95. Primeras dos mermas de la tabla: 2 raquetas
+"por devolver" y 1 regalada.
+
+**Reglas:** una compra que no ha llegado nunca se carga como stock: se registra "en camino" y sube con "📦 Ya llegó".
+La ficha no apaga "por llegar" mientras quede una compra en camino.
+
+**Queda:** correr a mano la auditoría semanal de precios (#65: no corrió sola, se detuvo esperando un permiso); el
+jueves 08-10 revisar que el Cyber volvió al precio normal (#49); el dueño marca "Ya llegó" y publica los 11 productos
+nuevos (#70).
+
 ## 04-10-2026 (noche) · v123, total a cobrar, redondeo y utilidad en vivo en la caja
 
 Detalle en `docs/CHANGELOG-V123.md`.
