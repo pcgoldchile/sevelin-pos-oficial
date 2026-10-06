@@ -91,6 +91,24 @@ async function sugerirComplementosConIA() {
   }
 }
 
+/* v127 (dueño, 06-10-2026): desde la ventana de la ficha con IA, los
+   complementos que elige la IA se AGREGAN de una vez (ahí él ya marcó la
+   casilla). Quedan en la tarjeta, donde se pueden quitar. */
+async function agregarComplementosConIA() {
+  if (!complementosDeProducto) return;
+  const productoId = complementosDeProducto;
+  try {
+    const r = await API.productos.sugerirComplementos(productoId);
+    if (productoId !== complementosDeProducto) return;   // se abrió otro producto mientras tanto
+    const nuevos = (r?.sugeridos || []).map(s => Number(s.id)).filter(id => id && !complementosIds.includes(id));
+    if (!nuevos.length) { showToast(r?.motivo || 'La IA no encontró complementos claros entre tus productos con stock', 'err'); return; }
+    await guardarComplementos([...complementosIds, ...nuevos].slice(0, MAX_COMPLEMENTOS_POS));
+    showToast(`La IA agregó ${nuevos.length} complemento(s): revísalos en "Complementa tu compra"`, 'ok');
+  } catch (err) {
+    showToast(err.message || 'No se pudieron agregar complementos con IA', 'err');
+  }
+}
+
 /* v113 (pendiente #54, pieza C): complementos sugeridos según la categoría.
    Sin IA: se cuentan los complementos que YA usan los demás productos de la
    misma categoría (primero los de la misma subcategoría) y se proponen los

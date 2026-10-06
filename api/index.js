@@ -1791,7 +1791,7 @@ reescribirlos en un título y una meta-descripción optimizados para que aparezc
 resultados de Google — NUNCA agregues una característica, medida, marca o dato que no esté
 explícitamente en el texto de abajo. Si algo no está mencionado, no lo menciones tú tampoco.
 
-Nombre del producto: ${nombre}
+Nombre del producto: ${sinPalabraGenerica(nombre)}
 
 Descripción real (tal cual la escribió el dueño):
 """
@@ -1840,8 +1840,8 @@ Reglas:
       .trim();
 
     return res.json({
-      meta_titulo: sinMarca(resultado.meta_titulo).slice(0, 70),
-      meta_descripcion: sinMarca(resultado.meta_descripcion).slice(0, 200),
+      meta_titulo: sinPalabraGenerica(sinMarca(resultado.meta_titulo)).slice(0, 70),
+      meta_descripcion: sinPalabraGenerica(sinMarca(resultado.meta_descripcion)).slice(0, 200),
       modelo
     });
   } catch (err) {
@@ -2218,6 +2218,30 @@ function fuentesDeFichaIA(body) {
   return [body?.nombre, body?.marca, body?.datos, textoPlanoParaPrompt(body?.descripcion_html)].map(t => String(t || ''));
 }
 
+/* MARCA GENÉRICA (v127, dueño 06-10-2026): "queda re mal y poco estético".
+   "Genérica" es un dato del campo Marca, no una palabra para mostrar: no va
+   en el nombre, ni en la descripción, ni en el SEO. Se le dice a la IA y,
+   como los modelos livianos igual la repiten ("El Genérica Perchero…"), se
+   quita también del texto que devuelve. */
+const esMarcaGenerica = (marca) => /^(generic[ao]s?|sin marca|no indicada|ninguna|n\/?a|-)$/i.test(sinTildes(String(marca || '').trim()));
+
+function sinPalabraGenerica(texto) {
+  return String(texto || '')
+    .replace(/[ \t]*\b(?:de\s+)?marca\s+gen[eé]ric[ao]s?\b/giu, '')
+    .replace(/\bgen[eé]ric[ao]s?\b[ \t]*/giu, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/[ \t]+([.,;:!?])/g, '$1')
+    .replace(/\(\s*\)/g, '')
+    .replace(/[ \t]+$/gm, '')
+    // Una viñeta que era solo "Marca: Genérica" queda vacía: se va la línea entera
+    .replace(/^[ \t]*(?:[✅•*-][ \t]*)?(?:\*\*)?marca(?:\*\*)?[ \t]*:?[ \t]*(?:\*\*)?[ \t]*$\n?/gimu, '')
+    .replace(/^[ \t]*[✅•*-][ \t]*$\n?/gmu, '');
+}
+
+const REGLA_SIN_GENERICA = `
+
+REGLA DE MARCA: si el producto no tiene una marca real (es genérico o sin marca), NO escribas las palabras "Genérico", "Genérica", "sin marca" ni "marca genérica" en el título ni en ninguna parte del texto. Nómbralo por lo que es (por ejemplo "Perchero Organizador 5 Niveles"), nunca "Genérica Perchero…". Si el nombre que te entregué trae esa palabra, quítala.`;
+
 function armarPromptTexto(body, categorias = []) {
   const destino = String(body?.destino || '').trim().toLowerCase();
   if (!DESTINOS_TEXTO_IA.includes(destino)) {
@@ -2250,9 +2274,10 @@ function armarPromptTexto(body, categorias = []) {
      rotulados: el prompt no debe confundirlos con specs verificadas. */
   const contexto = [
     nombre
-      ? `Nombre actual en el sistema: ${nombre}`
+      ? `Nombre actual en el sistema: ${sinPalabraGenerica(nombre)}`
       : 'Todavía no tiene nombre en el sistema — proponlo tú, basado en la información real de abajo.',
-    body?.marca ? `Marca: ${String(body.marca).trim()}` : null,
+    body?.marca && !esMarcaGenerica(body.marca) ? `Marca: ${String(body.marca).trim()}` : null,
+    body?.marca && esMarcaGenerica(body.marca) ? 'Marca: no tiene una marca real (no la menciones).' : null,
     body?.condicion ? `Condición: ${String(body.condicion).trim()}` : null,
     body?.categoria ? `Categoría: ${String(body.categoria).trim()}` : null,
     esServicio ? 'Este ítem es un SERVICIO TÉCNICO, no un producto físico.' : null,
@@ -2270,7 +2295,7 @@ function armarPromptTexto(body, categorias = []) {
     destino,
     esServicio,
     pideDatos,
-    prompt: `${base}${pideDatos ? instruccionDatosFichaIA(categorias) : ''}\n\nInformación real del ${esServicio ? 'servicio' : 'producto'}:\n${contexto}`
+    prompt: `${base}${esServicio ? '' : REGLA_SIN_GENERICA}${pideDatos ? instruccionDatosFichaIA(categorias) : ''}\n\nInformación real del ${esServicio ? 'servicio' : 'producto'}:\n${contexto}`
   };
 }
 
@@ -2322,7 +2347,8 @@ app.post('/api/productos/separar-ficha', auth(true), async (req, res) => {
   // v113: el bloque de marca, categoría y condición. `contexto` es lo que el
   // dueño tiene en el formulario (para comprobar que la marca no es inventada).
   const datos = separarDatosDeFicha(texto, fuentesDeFichaIA(req.body?.contexto), await categoriasParaFichaIA());
-  res.json({ ...separarTituloDeFicha(datos.texto), sugerencias: datos.sugerencias });
+  const ficha = separarTituloDeFicha(datos.texto);
+  res.json({ titulo: sinPalabraGenerica(ficha.titulo), cuerpo: sinPalabraGenerica(ficha.cuerpo), sugerencias: datos.sugerencias });
 });
 
 
@@ -2345,12 +2371,13 @@ app.post('/api/productos/generar-texto', auth(true), async (req, res) => {
     const limpio = String(texto).trim();
 
     if (destino === 'facebook') {
-      return res.json({ destino, texto: limpio, modelo });
+      return res.json({ destino, texto: sinPalabraGenerica(limpio), modelo });
     }
 
     // El mismo corte que se le hace a una respuesta pegada a mano
     const datos = separarDatosDeFicha(limpio, fuentesDeFichaIA(req.body), categoriasIA);
-    return res.json({ destino, ...separarTituloDeFicha(datos.texto), sugerencias: datos.sugerencias, modelo });
+    const ficha = separarTituloDeFicha(datos.texto);
+    return res.json({ destino, titulo: sinPalabraGenerica(ficha.titulo), cuerpo: sinPalabraGenerica(ficha.cuerpo), sugerencias: datos.sugerencias, modelo });
   } catch (err) {
     return responderFalloGemini(res, err, `generar-texto:${destino}`,
       'Mientras tanto puedes pegar el prompt en Gemini a mano, como antes.');

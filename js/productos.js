@@ -1624,7 +1624,62 @@ function abrirModalFichaGenerada(cuerpoMarkdown, tituloPropuesto, sugerencias) {
   ofrecerTituloDeFicha(tituloPropuesto);
   ofrecerSugerenciasDeFicha(sugerencias);
   prepararOfertaSeoDeFicha();
+  prepararOfertaCategoriaYComplementos(sugerencias);
   elModalFichaGenerada?.classList.add('show');
+}
+
+/* v127 (dueño, 06-10-2026): categoría y "Complementa tu compra" con IA desde
+   la misma ventana de la ficha, igual que el SEO. La categoría viene marcada
+   si el producto no tiene ninguna (y la ficha no trae ya una propuesta); los
+   complementos, si todavía no tiene ninguno. Los complementos se guardan por
+   su propia ruta y necesitan un producto ya guardado. */
+function prepararOfertaCategoriaYComplementos(sugerencias) {
+  const chkCat = document.getElementById('fichaGeneradaCategoriaIA');
+  const avisoCat = document.getElementById('fichaGeneradaCategoriaAviso');
+  const tieneCategoria = !!(elPopFotosCategoria && elPopFotosCategoria.value);
+  const yaPropuesta = !!sugerencias?.categoria;
+  if (chkCat) chkCat.checked = !tieneCategoria && !yaPropuesta;
+  if (avisoCat) {
+    avisoCat.textContent = yaPropuesta
+      ? 'La ficha ya trae una categoría propuesta más arriba. Marca esta casilla solo si quieres que la IA la elija de nuevo.'
+      : tieneCategoria
+        ? 'Este producto ya tiene categoría. Marca la casilla para que la IA proponga otra.'
+        : 'La IA elige una de tus categorías. Queda puesta en la ficha para que la revises antes de guardar.';
+  }
+
+  const chkComp = document.getElementById('fichaGeneradaComplementosIA');
+  const avisoComp = document.getElementById('fichaGeneradaComplementosAviso');
+  const guardado = !!editingProductId;
+  const tieneComplementos = typeof complementosIds !== 'undefined' && complementosIds.length > 0;
+  if (chkComp) { chkComp.disabled = !guardado; chkComp.checked = guardado && !tieneComplementos; }
+  if (avisoComp) {
+    avisoComp.textContent = !guardado
+      ? 'Guarda el producto primero: los complementos se agregan a un producto que ya existe.'
+      : tieneComplementos
+        ? 'Este producto ya tiene complementos. Marca la casilla para que la IA agregue más.'
+        : 'La IA elige entre tus productos publicados y con stock. Se agregan a la tarjeta y puedes quitar los que no te sirvan.';
+  }
+}
+
+/* La categoría que elige la IA, puesta directo en la ficha (no se guarda sola). */
+async function ponerCategoriaConIA() {
+  const nombre = (elProdNombre?.value || '').trim();
+  const sesion = sesionEditorProducto;
+  try {
+    const r = await API.productos.sugerirCategoria({
+      nombre: nombreProvisorioDeProducto(nombre) ? '' : nombre,
+      descripcion_html: document.getElementById('prodDescripcion')?.value || '',
+      datos: (document.getElementById('prodDatosReales')?.value || '').trim()
+    });
+    if (sesion !== sesionEditorProducto) return;   // la ficha ya es de otro producto
+    const c = r?.categoria;
+    const existe = c && [...(elPopFotosCategoria?.options || [])].some(o => String(o.value) === String(c.categoria_id));
+    if (!existe) { showToast(r?.motivo || 'La IA no encontró una categoría que calce: elígela a mano', 'err'); return; }
+    if (typeof usarCategoriaPropuesta === 'function') usarCategoriaPropuesta(c.categoria_id, c.subcategoria_id, c.texto);
+    showToast(`Categoría puesta por la IA: ${c.texto}. Revísala antes de guardar`, 'ok');
+  } catch (err) {
+    if (sesion === sesionEditorProducto) showToast(err.message || 'No se pudo elegir la categoría con IA', 'err');
+  }
 }
 
 /* v113 (pendiente #54, pieza D): marca, categoría y condición que propone la
@@ -1778,6 +1833,11 @@ function aplicarFichaGenerada() {
 
   const conSeo = !!elFichaGeneradaGenerarSeo?.checked;
   seoIAOfrecido = true;   // ya se le preguntó en esta ventana, cualquiera sea la respuesta
+
+  // v127: categoría y complementos con IA. No dependen del SEO ni entre sí.
+  if (document.getElementById('fichaGeneradaCategoriaIA')?.checked) ponerCategoriaConIA();
+  const chkComp = document.getElementById('fichaGeneradaComplementosIA');
+  if (chkComp?.checked && !chkComp.disabled && typeof agregarComplementosConIA === 'function') agregarComplementosConIA();
 
   cerrarModalFichaGenerada();
   const queFalta = conSeo ? 'Generando el SEO…' : 'Revisa y guarda el producto';

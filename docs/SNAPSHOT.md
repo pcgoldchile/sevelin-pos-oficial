@@ -12,6 +12,12 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 06-10-2026 (noche) · v127, sin "Genérica" en las fichas y más IA desde la ficha
+
+Detalle en `docs/CHANGELOG-V127.md`. La palabra "Genérica" queda solo en el campo Marca: se le prohíbe a la IA y además
+se quita de lo que devuelve (`sinPalabraGenerica`). La ventana de la ficha generada suma dos casillas: categoría con IA y
+"Complementa tu compra" con IA.
+
 ## 06-10-2026 (noche) · v126, reservas de "por llegar", Categorías rehechas y gasto a elección
 
 Detalle en `docs/CHANGELOG-V126.md`.
