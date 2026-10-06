@@ -898,6 +898,39 @@ app.get('/api/compras/clasificaciones', (_req, res) => res.json([
 app.post('/api/compras', (req, res) => { const g = { id: gastosMaqueta.length + 1, ...req.body }; gastosMaqueta.push(g); res.status(201).json(g); });
 app.get('/api/compras', (_req, res) => res.json(gastosMaqueta));
 
+// v128: IVA a favor al día. Remanente y facturas inventados; las boletas salen de las ventas de la
+// maqueta del mes en curso, así una venta con boleta mueve el chip al instante (el que vale es api/index.js).
+app.get('/api/finanzas/sii/iva', (_req, res) => {
+  const hoy = hoyMaqueta(), mes = hoy.slice(0, 7), remanente = 332831, debitoSii = 2395;
+  const facturas = [
+    { fecha: `${mes}-01`, tipo: 'factura', proveedor: 'Importadora Ejemplo SpA', folio: 601, iva: 15966 },
+    { fecha: `${mes}-02`, tipo: 'factura', proveedor: 'Distribuidora <b>Demo</b> Ltda', folio: 92, iva: 30336 },
+    { fecha: `${mes}-03`, tipo: 'nota_credito', proveedor: 'Importadora Ejemplo SpA', folio: 14, iva: -5746 },
+  ];
+  const dias = {};
+  ventasMaqueta.filter(v => v.estado === 'PAGADA' && ['BOLETA', 'FACTURA'].includes(v.tipo_dte) && String(v.fecha).startsWith(mes))
+    .forEach(v => { const d = dias[v.fecha] = dias[v.fecha] || { fecha: v.fecha, tipo: 'boletas', cantidad: 0, bruto: 0 }; d.cantidad++; d.bruto += v.total; });
+  const boletas = Object.values(dias).map(d => ({ ...d, iva: -Math.round(d.bruto - d.bruto / 1.19) }));
+  const debitoPos = -boletas.reduce((a, b) => a + b.iva, 0);
+  const credito = facturas.reduce((a, f) => a + f.iva, 0);
+  const debito = Math.max(debitoSii, debitoPos);
+  const movimientos = [...facturas, ...boletas].sort((a, b) => a.fecha.localeCompare(b.fecha));
+  if (debito !== debitoPos) movimientos.push({ fecha: null, tipo: 'cuadre_debito', iva: -(debito - debitoPos) });
+  let saldo = remanente;
+  movimientos.forEach(m => { saldo += m.iva; m.saldo = saldo; });
+  const resultado = remanente + credito - debito;
+  const [a, m] = mes.split('-').map(Number);
+  res.json({ periodo: mes.replace('-', ''), hoy, esMesActual: true, credito, fuenteCredito: 'sii',
+    debito, fuenteDebito: debitoPos > debitoSii ? 'pos_adelantado' : 'sii', debitoSii, debitoPos,
+    remanenteAnterior: remanente, remanentePeriodo: m === 1 ? `${a - 1}-12` : `${a}-${String(m - 1).padStart(2, '0')}`, remanenteFuente: 'propuesta F29', remanenteEstimado: false,
+    resultado, nivel: resultado < 0 ? 'rojo' : 'verde', diasCobertura: null, ivaAPagarEstimado: resultado < 0 ? -resultado : 0,
+    ventasConBoletaHastaPagar: resultado > 0 ? Math.floor((resultado / 0.19) * 1.19) : 0, pendientes: { cantidad: 2, iva: 45600 }, movimientos,
+    brechaMesAnterior: { periodo: '2026-09', debitoSii: 251952, debitoPos: 226882, boletasSii: 38, boletasPos: 20 },
+    porTipo: [], facturasRecientes: [], configurado: true, certificadoVence: null,
+    ultimaSync: { creado_en: new Date(Date.now() - 3 * 3600000).toISOString(), ok: true, origen: 'robot' } });
+});
+app.post('/api/finanzas/sii/sincronizar', (_req, res) => res.json({ ok: true, documentos: 3 }));
+
 app.use('/api', (req, res) => {
   const clave = `${req.method} ${req.path}`;
   if (!sinManejar.has(clave)) { sinManejar.add(clave); console.log('[maqueta] sin datos:', clave); }

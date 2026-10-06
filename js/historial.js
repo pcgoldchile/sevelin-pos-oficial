@@ -1245,6 +1245,7 @@ function pagarVentaPendiente(id) {
       }
 
       showToast(metodo === 'Mixto' ? 'Venta cobrada con pago mixto' : `Venta cobrada con ${metodo}`, 'ok');
+      document.dispatchEvent(new CustomEvent('pos:iva-cambio'));   // v128: el chip "IVA a favor" se recalcula
       await cargarHistorial();
     }
   });
@@ -1258,6 +1259,7 @@ async function cambiarDteVenta(id, tipo, selectEl) {
   try {
     if (selectEl) selectEl.disabled = true;
     await API.ventas.cambiarDTE(id, tipo);
+    document.dispatchEvent(new CustomEvent('pos:iva-cambio'));   // v128: el chip "IVA a favor" se recalcula
 
     if (venta) venta.tipo_dte = tipo;
     if (selectEl) selectEl.className = `dte-select dte-${claseDte(tipo)}`;

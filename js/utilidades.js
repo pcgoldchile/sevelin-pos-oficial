@@ -969,6 +969,7 @@ async function cargarIvaSii() {
   try {
     ivaSiiActual = await API.balance.ivaSii();
     pintarIvaSii();
+    pintarIvaAlDia();
   } catch (err) {
     const estado = document.getElementById('ivaSiiEstado');
     if (estado) estado.textContent = 'No se pudo calcular el IVA del mes: ' + (err.message || 'error');
@@ -1088,11 +1089,11 @@ function pintarIvaSii() {
 
   // --- Cifras ---
   set('ivaSiiDebito', fmtCLP(d.debito));
-  set('ivaSiiDebitoFuente', d.fuenteDebito === 'sii' ? 'Según el RCV del SII' : 'Estimado con las boletas del POS (el SII aún no lo informa)');
+  set('ivaSiiDebitoFuente', textoFuenteDebitoIva(d));
   set('ivaSiiCredito', fmtCLP(d.credito));
   set('ivaSiiCreditoFuente', d.fuenteCredito === 'sii' ? 'Facturas registradas en el SII'
     : d.fuenteCredito === 'csv' ? 'Desde el CSV que subiste' : 'Sin datos del SII todavía');
-  set('ivaSiiRemanente', d.remanenteAnterior === null ? 'Sin dato' : fmtCLP(d.remanenteAnterior));
+  set('ivaSiiRemanente', d.remanenteAnterior === null ? 'Sin dato' : fmtCLP(d.remanenteAnterior) + (d.remanenteEstimado ? ' (estimado)' : ''));
 
   set('ivaSiiPendientes', d.pendientes && d.pendientes.cantidad
     ? `⏳ ${d.pendientes.cantidad} factura(s) por aceptar en el SII con ${fmtCLP(d.pendientes.iva)} de IVA: todavía no suman crédito (el SII las acepta solas a los 8 días).`
@@ -1151,6 +1152,201 @@ async function subirCsvIvaSii(e) {
     cargarIvaSii();
   } catch (err) {
     showToast(err.message || 'No se pudo leer el CSV', 'err');
+  }
+}
+
+/* ============================================================
+   IVA A FAVOR AL DÍA (v128) — chip del encabezado + ventana
+   ------------------------------------------------------------
+   Pedido del dueño (06-10-2026): ver en el POS, sin entrar a Finanzas,
+   cuánto IVA crédito va acumulando día a día.
+
+     a favor = remanente del F29 anterior + facturas de compra del mes (SII)
+               − boletas del mes
+
+   Es el mismo cálculo del semáforo de arriba (un solo endpoint, una sola
+   variable: ivaSiiActual), así que el chip, la ventana y la tarjeta de
+   Finanzas nunca pueden decir números distintos.
+
+   Qué tan "al día" es cada parte, y se dice en pantalla:
+     · Boletas  → al instante: se vuelve a calcular apenas se cobra.
+     · Facturas → cuando corre el robot del SII (una vez al día) o con el
+                  botón. El SII es la única fuente: nadie las carga a mano.
+   ============================================================ */
+const INTERVALO_IVA_DIA_MS = 10 * 60 * 1000;
+let intervaloIvaDia = null;
+let esperaIvaDia = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btnIvaAlDia')?.addEventListener('click', () => {
+    pintarIvaAlDia();
+    document.getElementById('modalIvaAlDia')?.classList.add('show');
+    refrescarIvaAlDia();   // se abre con lo que hay y se actualiza encima
+  });
+  document.getElementById('btnCerrarIvaDia')?.addEventListener('click', () => cerrarModal('modalIvaAlDia'));
+  document.getElementById('btnIvaDiaSincronizar')?.addEventListener('click', sincronizarIvaAlDia);
+});
+
+document.addEventListener('pos:sesion-iniciada', () => {
+  if (intervaloIvaDia) { clearInterval(intervaloIvaDia); intervaloIvaDia = null; }
+  const btn = document.getElementById('btnIvaAlDia');
+  if (!esAdmin()) { if (btn) btn.hidden = true; return; }
+  refrescarIvaAlDia();
+  intervaloIvaDia = setInterval(refrescarIvaAlDia, INTERVALO_IVA_DIA_MS);
+});
+
+/* Una venta cobrada o un documento cambiado mueven el débito del mes. Se
+   espera un momento para juntar varios avisos seguidos en una sola consulta. */
+document.addEventListener('pos:iva-cambio', () => {
+  clearTimeout(esperaIvaDia);
+  esperaIvaDia = setTimeout(refrescarIvaAlDia, 1500);
+});
+
+async function refrescarIvaAlDia() {
+  if (!tokenActual() || !esAdmin()) return;
+  try {
+    ivaSiiActual = await API.balance.ivaSii();
+    pintarIvaAlDia();
+    pintarIvaSii();
+  } catch (err) {
+    // Sondeo de fondo: no interrumpe con un toast, se reintenta en el próximo ciclo
+    console.error('Error al calcular el IVA al día:', err.message || err);
+  }
+}
+
+function textoFuenteDebitoIva(d) {
+  if (d.fuenteDebito === 'sii') {
+    return 'Según el SII' + (d.debitoPos !== null && d.debitoPos !== undefined ? ` (el POS tiene anotado ${fmtCLP(d.debitoPos)})` : '');
+  }
+  if (d.fuenteDebito === 'pos_adelantado') return `Según el POS. El SII va atrasado: lleva ${fmtCLP(d.debitoSii)}`;
+  return 'Según el POS. El SII todavía no informa boletas de este mes';
+}
+
+// "06-10" desde 'AAAA-MM-DD', sin pasar por Date (evita el corrimiento UTC)
+function diaMesIva(iso) {
+  const [, m, d] = String(iso || '').slice(0, 10).split('-');
+  return m && d ? `${d}-${m}` : '—';
+}
+
+function pintarIvaAlDia() {
+  const d = ivaSiiActual;
+  const btn = document.getElementById('btnIvaAlDia');
+  if (!d || !btn) return;
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+
+  // Sin remanente, sin facturas y sin boletas del SII no hay nada que mostrar
+  const sinDatos = d.remanenteAnterior === null && d.fuenteCredito === 'sin_datos' && d.fuenteDebito === 'pos';
+  if (sinDatos || !esAdmin()) { btn.hidden = true; return; }
+
+  // --- Chip ---
+  const aFavor = d.resultado >= 0;
+  set('textoIvaAlDia', aFavor ? `IVA a favor ${fmtCLP(d.resultado)}` : `IVA a pagar ${fmtCLP(d.ivaAPagarEstimado)}`);
+  btn.classList.remove('nivel-verde', 'nivel-amarillo', 'nivel-rojo');
+  btn.classList.add(`nivel-${d.nivel}`);
+  btn.title = aFavor
+    ? `Te quedan ${fmtCLP(d.resultado)} de IVA a favor en ${nombreMesIvaSii(d.periodo)}. Clic para ver el detalle día a día.`
+    : `Tus boletas de ${nombreMesIvaSii(d.periodo)} ya superaron el crédito: IVA a pagar estimado ${fmtCLP(d.ivaAPagarEstimado)}.`;
+  btn.hidden = false;
+
+  // --- Ventana ---
+  const mes = nombreMesIvaSii(d.periodo);
+  const mesSolo = mes.split(' ')[0];
+  const mesAnterior = nombreMesIvaSii(String(d.remanentePeriodo || '').replace('-', '')).split(' ')[0];
+  const sync = d.ultimaSync
+    ? (d.ultimaSync.ok ? `facturas del SII actualizadas ${haceCuantoIvaSii(d.ultimaSync.creado_en)}`
+                       : `❌ el último intento con el SII falló ${haceCuantoIvaSii(d.ultimaSync.creado_en)}`)
+    : 'todavía no se sincroniza con el SII';
+  set('ivaDiaEstado', `${mes} · ${sync} · boletas del POS al instante`);
+
+  const caja = document.getElementById('ivaDiaSemaforo');
+  if (caja) caja.className = `iva-sii-semaforo nivel-${d.nivel}`;
+  if (aFavor) {
+    set('ivaDiaTitular', `Te quedan ${fmtCLP(d.resultado)} de IVA a favor`);
+    set('ivaDiaBajada', `Puedes vender unos ${fmtCLP(d.ventasConBoletaHastaPagar)} más con boleta antes de empezar a pagar IVA.`
+      + (d.nivel === 'amarillo'
+        ? ` Al ritmo de este mes se acaba en unos ${d.diasCobertura} día(s), antes de fin de mes: si vas a reponer stock, compra con factura ya.`
+        : ''));
+  } else {
+    set('ivaDiaTitular', `IVA a pagar estimado: ${fmtCLP(d.ivaAPagarEstimado)}`);
+    set('ivaDiaBajada', 'Tus ventas con boleta ya superaron el crédito del mes. Comprar con factura antes de fin de mes lo baja.');
+  }
+
+  // --- La cuenta, en cuatro líneas ---
+  const facturas = (d.movimientos || []).filter(x => x.tipo === 'factura' || x.tipo === 'nota_credito').length;
+  const detalleRemanente = d.remanenteAnterior === null
+    ? `Sin dato: falta cargar el F29 de ${mesAnterior}`
+    : d.remanenteEstimado
+      ? `Estimado, porque el F29 de ${mesAnterior} todavía no está cargado. Queda un poco bajo el real`
+      : 'Remanente del F29 (código 77)';
+  const linea = (titulo, detalle, valor, clase) => `
+    <div class="util-linea ${clase || ''}">
+      <div><span>${escHtml(titulo)}</span><small>${escHtml(detalle)}</small></div>
+      <b>${escHtml(valor)}</b>
+    </div>`;
+  const cuenta = document.getElementById('ivaDiaCuenta');
+  if (cuenta) {
+    cuenta.innerHTML =
+      linea(`Venía de ${mesAnterior}`, detalleRemanente, d.remanenteAnterior === null ? 'Sin dato' : fmtCLP(d.remanenteAnterior))
+      + linea(`+ Facturas de compra de ${mesSolo}`,
+          d.fuenteCredito === 'sin_datos' ? 'El SII todavía no registra facturas este mes' : `${facturas} documento(s) registrados en el SII`,
+          '+ ' + fmtCLP(d.credito))
+      + linea(`− Boletas de ${mesSolo}`, textoFuenteDebitoIva(d), '− ' + fmtCLP(d.debito))
+      + linea(aFavor ? '= Te queda a favor' : '= IVA a pagar estimado', 'Lo que va hasta hoy', fmtCLP(Math.abs(d.resultado)), 'util-linea-fuerte');
+  }
+
+  // --- Avisos: lo que puede mover el número ---
+  const avisos = [];
+  const b = d.brechaMesAnterior;
+  if (b && b.debitoSii > b.debitoPos) {
+    avisos.push(`⚠️ En ${mesAnterior} el SII cerró con ${b.boletasSii} boletas y el POS tenía anotadas ${b.boletasPos}: `
+      + `${fmtCLP(b.debitoSii - b.debitoPos)} de IVA que aquí no se veían. Si este mes pasa lo mismo, el número real será algo menor. `
+      + 'Se corrige marcando esas ventas como BOLETA en el Historial.');
+  }
+  if (d.pendientes && d.pendientes.cantidad) {
+    avisos.push(`⏳ ${d.pendientes.cantidad} factura(s) por aceptar en el SII con ${fmtCLP(d.pendientes.iva)} de IVA: todavía no suman.`);
+  }
+  set('ivaDiaAvisos', avisos.join(' '));
+
+  // --- Día a día, lo más nuevo arriba ---
+  const tbody = document.getElementById('ivaDiaMovimientos');
+  if (!tbody) return;
+  const quePaso = (x) => {
+    if (x.tipo === 'factura') return `Factura de ${x.proveedor} · folio ${x.folio}`;
+    if (x.tipo === 'nota_credito') return `Nota de crédito de ${x.proveedor} · folio ${x.folio}`;
+    if (x.tipo === 'boletas') return x.cantidad
+      ? `${x.cantidad} venta(s) con boleta · ${fmtCLP(x.bruto)}`
+      : `Boleta devuelta después de cerrar el mes · ${fmtCLP(x.bruto)}`;
+    if (x.tipo === 'cuadre_debito') return 'Boletas que el SII tiene y el POS no anotó como boleta';
+    if (x.tipo === 'boletas_sii') return 'Boletas del mes, según el SII';
+    return 'Compras que el SII suma en el total y no trae en el detalle';
+  };
+  const filas = (d.movimientos || []).slice().reverse().map(x => `
+      <tr>
+        <td>${x.fecha ? escHtml(diaMesIva(x.fecha)) : '<small style="color:var(--text-muted);">sin fecha</small>'}</td>
+        <td>${escHtml(quePaso(x))}</td>
+        <td class="num ${x.iva < 0 ? 'texto-rojo' : 'texto-verde'}">${x.iva < 0 ? '− ' : '+ '}${escHtml(fmtCLP(Math.abs(x.iva)))}</td>
+        <td class="num">${escHtml(fmtCLP(x.saldo))}</td>
+      </tr>`).join('');
+  tbody.innerHTML = filas + `
+      <tr>
+        <td>—</td>
+        <td>Venía de ${escHtml(mesAnterior)}</td>
+        <td class="num"></td>
+        <td class="num">${d.remanenteAnterior === null ? 'Sin dato' : escHtml(fmtCLP(d.remanenteAnterior))}</td>
+      </tr>`;
+}
+
+async function sincronizarIvaAlDia() {
+  const btn = document.getElementById('btnIvaDiaSincronizar');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Conectando con el SII…'; }
+  try {
+    const r = await API.balance.siiSincronizar();
+    showToast(`SII actualizado: ${r.documentos} documento(s)`, 'ok');
+  } catch (err) {
+    showToast(err.message || 'No se pudo sincronizar con el SII', 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🔄 Traer facturas del SII ahora'; }
+    refrescarIvaAlDia();
   }
 }
 

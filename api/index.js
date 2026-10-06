@@ -10569,20 +10569,129 @@ app.put('/api/finanzas/iva-remanente/:periodo', auth(true), async (req, res) => 
   res.json(data);
 });
 
+/* Débito de un mes según el POS: el IVA de las ventas pagadas con boleta o
+   factura, en total y día por día. Es lo único que se conoce AL INSTANTE:
+   el SII informa las boletas con días de atraso (medido el 06-10-2026: el
+   RCV llevaba 1 boleta de octubre y el POS 4). */
+async function debitoPosDelMes(a, m) {
+  const mes = `${a}-${String(m).padStart(2, '0')}`;
+  const desde = `${mes}-01`;
+  const hasta = ultimoDiaDelMes(mes);
+  const { data: ventasPos } = await db.from('ventas').select('id, fecha, total, tipo_dte')
+    .gte('fecha', desde).lte('fecha', hasta).eq('estado', 'PAGADA').in('tipo_dte', ['BOLETA', 'FACTURA']);
+
+  const dias = {};
+  const sumar = (fecha, monto, boletas) => {
+    const dia = String(fecha || '').slice(0, 10);
+    dias[dia] = dias[dia] || { dia, bruto: 0, boletas: 0 };
+    dias[dia].bruto += monto;
+    dias[dia].boletas += boletas;
+  };
+  (ventasPos || []).forEach(v => sumar(v.fecha, num(v.total), 1));
+
+  /* UN MES YA DECLARADO NO PUEDE ENCOGER HACIA ATRÁS (sql/61).
+     Si una boleta de agosto se devuelve en septiembre, el débito de
+     agosto tiene que seguir siendo el que se declaró: la reversa va en
+     septiembre, con su Nota de Crédito. Sin esto, al devolver una boleta
+     vieja el POS mostraría un débito distinto al del F29 ya presentado y
+     la diferencia sería imposible de rastrear después.
+
+     Las devoluciones DENTRO del período no se suman de vuelta: ahí la
+     Nota de Crédito también cae en el mismo mes y ya está descontada
+     (la venta salió por ANULADA o se le rebajó el total). */
+  const { data: devueltasDespues } = await db.from('devoluciones')
+    .select('monto, venta_id').gt('fecha', hasta);
+  const idsDevueltas = [...new Set((devueltasDespues || []).map(d => d.venta_id).filter(Boolean))];
+  if (idsDevueltas.length) {
+    const { data: ventasDevueltas } = await db.from('ventas')
+      .select('id, fecha, tipo_dte').in('id', idsDevueltas);
+    // Solo las que emitieron documento Y son del período que se consulta.
+    const fechaDe = new Map((ventasDevueltas || [])
+      .filter(v => ['BOLETA', 'FACTURA'].includes(String(v.tipo_dte || '').toUpperCase()))
+      .filter(v => String(v.fecha) >= desde && String(v.fecha) <= hasta)
+      .map(v => [v.id, v.fecha]));
+    (devueltasDespues || []).filter(d => fechaDe.has(d.venta_id))
+      .forEach(d => sumar(fechaDe.get(d.venta_id), num(d.monto), 0));
+  }
+
+  /* El IVA de cada día se redondea sobre el ACUMULADO, no día por día: así
+     la suma de los días da exactamente el total del mes y el "día a día"
+     no termina un par de pesos distinto del titular. */
+  let bruto = 0, ivaPrevio = 0;
+  const porDia = Object.values(dias).sort((x, y) => x.dia.localeCompare(y.dia)).map(d => {
+    bruto += d.bruto;
+    const ivaAcumulado = Math.round(bruto - bruto / 1.19);
+    const fila = { dia: d.dia, bruto: Math.round(d.bruto), boletas: d.boletas, iva: ivaAcumulado - ivaPrevio };
+    ivaPrevio = ivaAcumulado;
+    return fila;
+  });
+  return { debito: ivaPrevio, porDia };
+}
+
+/* Remanente con que PARTE un mes: el código 77 del F29 del mes anterior.
+   Si ese mes todavía no tiene su F29 anotado se ESTIMA, encadenando desde el
+   último remanente conocido con lo que el robot guardó del RCV en los meses
+   intermedios (crédito − débito, con piso en 0, igual que el formulario).
+
+   Sin esto, cada día 1 el semáforo quedaba en "Sin dato" y mostraba casi $0
+   de crédito hasta que alguien cargara el F29: pasó del 01 al 06-10-2026,
+   con $332.831 reales a favor. La estimación no trae el reajuste por UTM
+   que aplica el SII, así que queda unos pesos POR DEBAJO del real: prudente.
+   Más de 6 meses sin un F29 anotado no se adivina. */
+async function remanenteDeIvaAl(periodoAnterior) {
+  const { data: conocidos } = await db.from('iva_remanentes').select('*')
+    .lte('periodo', periodoAnterior).order('periodo', { ascending: false }).limit(1);
+  const base = (conocidos || [])[0];
+  if (!base) return { monto: null, fuente: null, estimado: false, desde: null };
+  if (base.periodo === periodoAnterior) return { monto: num(base.monto), fuente: base.fuente || null, estimado: false, desde: base.periodo };
+
+  const meses = [];
+  let [a, m] = base.periodo.split('-').map(Number);
+  while (meses.length < 6) {
+    m++; if (m === 13) { m = 1; a++; }
+    meses.push(`${a}${String(m).padStart(2, '0')}`);
+    if (`${a}-${String(m).padStart(2, '0')}` === periodoAnterior) break;
+  }
+  const sinDato = { monto: null, fuente: null, estimado: false, desde: base.periodo };
+  if (`${meses[meses.length - 1].slice(0, 4)}-${meses[meses.length - 1].slice(4)}` !== periodoAnterior) return sinDato;
+
+  const { data: resumen } = await db.from('sii_rcv_resumen').select('periodo, operacion, tipo_doc, iva')
+    .eq('estado', 'REGISTRO').in('periodo', meses);
+  let monto = num(base.monto);
+  for (const p of meses) {
+    const delMes = (resumen || []).filter(f => f.periodo === p);
+    if (!delMes.length) return sinDato;   // el robot no tiene ese mes: no hay con qué encadenar
+    const suma = op => delMes.filter(f => f.operacion === op)
+      .reduce((s, f) => s + (SII_DOC_RESTA.has(Number(f.tipo_doc)) ? -1 : 1) * num(f.iva), 0);
+    // Mismo criterio que el mes en curso: el débito es el mayor entre el SII y el POS
+    const pos = await debitoPosDelMes(Number(p.slice(0, 4)), Number(p.slice(4)));
+    monto = Math.max(0, monto + suma('COMPRA') - Math.max(suma('VENTA'), pos.debito));
+  }
+  return { monto: Math.round(monto), fuente: `estimado desde el F29 de ${base.periodo}`, estimado: true, desde: base.periodo };
+}
+
 /* El semáforo: ¿cuánto crédito me queda este mes antes de empezar a pagar IVA?
    resultado = crédito del mes + remanente del mes anterior − débito del mes
-   Si el SII todavía no tiene las ventas del mes, el débito se estima con las
-   boletas registradas en el POS (y se dice). */
+
+   EL DÉBITO DEL MES EN CURSO ES EL MAYOR ENTRE EL SII Y EL POS (v128).
+   El SII es la verdad, pero llega atrasado; el POS es al instante, pero no
+   ve las boletas que la máquina de tarjetas emite sola y que quedan anotadas
+   "sin documento" (en septiembre 2026 el SII cerró con 38 boletas y el POS
+   con 20). Los dos se quedan cortos, así que se usa el más alto: antes se
+   tomaba el del SII apenas informaba UNA boleta, y el crédito disponible
+   salía inflado todo el mes. En un mes ya cerrado manda el SII. */
 async function calcularIvaMes(periodoAAAAMM) {
   const periodo = /^\d{6}$/.test(periodoAAAAMM || '') ? periodoAAAAMM : periodosRcvActuales()[1];
   const a = Number(periodo.slice(0, 4)), m = Number(periodo.slice(4));
   const anterior = m === 1 ? `${a - 1}-12` : `${a}-${String(m - 1).padStart(2, '0')}`;
   const signo = t => (SII_DOC_RESTA.has(Number(t)) ? -1 : 1);
+  const hoy = fechaHoyChile();
+  const esMesActual = periodo === hoy.slice(0, 7).replace('-', '');
 
-  const [{ data: resumen }, { data: docs }, { data: rem }, { data: ultimaSync }] = await Promise.all([
+  const [{ data: resumen }, { data: docs }, rem, { data: ultimaSync }] = await Promise.all([
     db.from('sii_rcv_resumen').select('*').eq('periodo', periodo),
     db.from('sii_rcv_documentos').select('operacion, estado, tipo_doc, iva, rut, razon_social, folio, fecha_doc, total').eq('periodo', periodo).eq('operacion', 'COMPRA'),
-    db.from('iva_remanentes').select('*').eq('periodo', anterior).maybeSingle(),
+    remanenteDeIvaAl(anterior),
     db.from('sii_sync').select('*').order('creado_en', { ascending: false }).limit(1).maybeSingle()
   ]);
   const filas = resumen || [];
@@ -10600,58 +10709,64 @@ async function calcularIvaMes(periodoAAAAMM) {
   const pendientesIva = compraPend.length ? sumaIva(compraPend) : sumaIva(docsPend);
   const pendientesCantidad = compraPend.length ? compraPend.reduce((s, f) => s + (f.total_docs || 0), 0) : docsPend.length;
 
-  // Débito: resumen de ventas del SII; si no hay, estimado con las boletas del POS
+  // Débito: el SII, el POS, o el mayor de los dos en el mes en curso (ver arriba)
   const ventaReg = filas.filter(f => f.operacion === 'VENTA' && f.estado === 'REGISTRO');
+  const debitoSii = ventaReg.length ? sumaIva(ventaReg) : null;
+  const pos = (debitoSii === null || esMesActual) ? await debitoPosDelMes(a, m) : null;
   let debito, fuenteDebito;
-  if (ventaReg.length) {
-    debito = sumaIva(ventaReg);
-    fuenteDebito = 'sii';
-  } else {
-    const desde = `${a}-${String(m).padStart(2, '0')}-01`;
-    const hasta = ultimoDiaDelMes(`${a}-${String(m).padStart(2, '0')}`);
-    const { data: ventasPos } = await db.from('ventas').select('id, total, tipo_dte')
-      .gte('fecha', desde).lte('fecha', hasta).eq('estado', 'PAGADA').in('tipo_dte', ['BOLETA', 'FACTURA']);
-    let baseDebito = (ventasPos || []).reduce((s, v) => s + num(v.total), 0);
+  if (debitoSii === null) { debito = pos.debito; fuenteDebito = 'pos'; }
+  else if (pos && pos.debito > debitoSii) { debito = pos.debito; fuenteDebito = 'pos_adelantado'; }
+  else { debito = debitoSii; fuenteDebito = 'sii'; }
 
-    /* UN MES YA DECLARADO NO PUEDE ENCOGER HACIA ATRÁS (sql/61).
-       Si una boleta de agosto se devuelve en septiembre, el débito de
-       agosto tiene que seguir siendo el que se declaró: la reversa va en
-       septiembre, con su Nota de Crédito. Sin esto, al devolver una boleta
-       vieja el POS mostraría un débito distinto al del F29 ya presentado y
-       la diferencia sería imposible de rastrear después.
-
-       Las devoluciones DENTRO del período no se suman de vuelta: ahí la
-       Nota de Crédito también cae en el mismo mes y ya está descontada
-       (la venta salió por ANULADA o se le rebajó el total). */
-    const { data: devueltasDespues } = await db.from('devoluciones')
-      .select('monto, venta_id').gt('fecha', hasta);
-    const idsDevueltas = [...new Set((devueltasDespues || []).map(d => d.venta_id).filter(Boolean))];
-    if (idsDevueltas.length) {
-      const { data: ventasDevueltas } = await db.from('ventas')
-        .select('id, fecha, tipo_dte').in('id', idsDevueltas);
-      // Solo las que emitieron documento Y son del período que se consulta.
-      const declaradas = new Set((ventasDevueltas || [])
-        .filter(v => ['BOLETA', 'FACTURA'].includes(String(v.tipo_dte || '').toUpperCase()))
-        .filter(v => String(v.fecha) >= desde && String(v.fecha) <= hasta)
-        .map(v => v.id));
-      baseDebito += (devueltasDespues || [])
-        .filter(d => declaradas.has(d.venta_id))
-        .reduce((s, d) => s + num(d.monto), 0);
+  /* Cuánto se quedó corto el POS el mes pasado frente al SII. Es la medida
+     de cuánto confiar en el débito "al instante" de este mes: si el mes
+     pasado faltó un 10%, este mes probablemente también. */
+  let brechaMesAnterior = null;
+  if (esMesActual) {
+    const [aAnt, mAnt] = anterior.split('-').map(Number);
+    const [{ data: ventaAnt }, posAnt] = await Promise.all([
+      db.from('sii_rcv_resumen').select('tipo_doc, iva, total_docs').eq('periodo', anterior.replace('-', ''))
+        .eq('operacion', 'VENTA').eq('estado', 'REGISTRO'),
+      debitoPosDelMes(aAnt, mAnt)
+    ]);
+    if ((ventaAnt || []).length) {
+      brechaMesAnterior = {
+        periodo: anterior,
+        debitoSii: sumaIva(ventaAnt),
+        debitoPos: posAnt.debito,
+        boletasSii: ventaAnt.reduce((s, f) => s + (Number(f.total_docs) || 0), 0),
+        boletasPos: posAnt.porDia.reduce((s, d) => s + d.boletas, 0)
+      };
     }
-
-    debito = Math.round(baseDebito - baseDebito / 1.19);
-    fuenteDebito = 'pos';
   }
 
-  const remanente = rem ? num(rem.monto) : null;
+  const remanente = rem.monto;
   const resultado = credito + (remanente || 0) - debito;
+
+  /* DÍA A DÍA (v128): cada factura que suma y cada día de boletas que resta,
+     con el saldo que va quedando. Las líneas sin fecha son cuadres: lo que el
+     total del SII trae y el detalle no explica. Van siempre, para que la
+     última fila termine exactamente en el titular. */
+  const movimientos = docsReg.map(d => ({
+    fecha: d.fecha_doc || null,
+    tipo: SII_DOC_RESTA.has(Number(d.tipo_doc)) ? 'nota_credito' : 'factura',
+    proveedor: d.razon_social || d.rut, folio: d.folio,
+    iva: Math.round(signo(d.tipo_doc) * num(d.iva))
+  }));
+  const creditoDetalle = movimientos.reduce((s, x) => s + x.iva, 0);
+  if (pos) pos.porDia.forEach(d => movimientos.push({ fecha: d.dia, tipo: 'boletas', cantidad: d.boletas, bruto: d.bruto, iva: -d.iva }));
+  movimientos.sort((x, y) => String(x.fecha || '9999').localeCompare(String(y.fecha || '9999')));
+  if (credito !== creditoDetalle) movimientos.push({ fecha: null, tipo: 'cuadre_credito', iva: credito - creditoDetalle });
+  const debitoDetalle = pos ? pos.debito : 0;
+  if (debito !== debitoDetalle) movimientos.push({ fecha: null, tipo: pos ? 'cuadre_debito' : 'boletas_sii', iva: -(debito - debitoDetalle) });
+  let saldo = remanente || 0;
+  movimientos.forEach(x => { saldo += x.iva; x.saldo = saldo; });
+
   /* Amarillo = al ritmo de boletas de este mes, el crédito se acaba ANTES de
      fin de mes. Es la señal que sirve para decidir (comprar con factura ya),
      no un monto fijo: $50.000 de crédito es mucho un día 28 y nada un día 5. */
   let nivel = 'verde';
   let diasCobertura = null;
-  const hoy = fechaHoyChile();
-  const esMesActual = periodo === hoy.slice(0, 7).replace('-', '');
   if (resultado < 0) {
     nivel = 'rojo';
   } else if (esMesActual) {
@@ -10668,10 +10783,10 @@ async function calcularIvaMes(periodoAAAAMM) {
   if (siiConfigurado()) { try { vence = siiCredencialesTls().vence; } catch (_) { vence = null; } }
 
   return {
-    periodo,
+    periodo, hoy, esMesActual,
     credito, fuenteCredito,
-    debito, fuenteDebito,
-    remanenteAnterior: remanente, remanentePeriodo: anterior, remanenteFuente: rem?.fuente || null,
+    debito, fuenteDebito, debitoSii, debitoPos: pos ? pos.debito : null,
+    remanenteAnterior: remanente, remanentePeriodo: anterior, remanenteFuente: rem.fuente, remanenteEstimado: rem.estimado,
     resultado,
     nivel,
     diasCobertura,
@@ -10679,6 +10794,8 @@ async function calcularIvaMes(periodoAAAAMM) {
     // Cuánto más se puede vender con boleta antes de empezar a pagar IVA (precio con IVA)
     ventasConBoletaHastaPagar: resultado > 0 ? Math.floor((resultado / 0.19) * 1.19) : 0,
     pendientes: { cantidad: pendientesCantidad, iva: pendientesIva },
+    movimientos,
+    brechaMesAnterior,
     porTipo: filas.filter(f => f.estado === 'REGISTRO').map(f => ({ operacion: f.operacion, tipo_doc: f.tipo_doc, nombre: f.nombre_doc || SII_NOMBRES_DOC[f.tipo_doc] || String(f.tipo_doc), total_docs: f.total_docs, iva: num(f.iva) })),
     facturasRecientes: documentos.filter(d => d.estado === 'REGISTRO' || d.estado === 'PENDIENTE')
       .sort((x, y) => String(y.fecha_doc || '').localeCompare(String(x.fecha_doc || ''))).slice(0, 15),

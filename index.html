@@ -205,6 +205,11 @@
       <button id="btnF29" class="btn-notificaciones btn-f29 admin-only" title="F29 pendiente" hidden>
         <span class="chip-punto" aria-hidden="true"></span><span id="textoF29">F29</span>
       </button>
+      <!-- v128: IVA a favor al día (remanente del F29 + facturas del SII − boletas).
+           Visible siempre para admin cuando hay datos. Lo pinta js/utilidades.js. -->
+      <button id="btnIvaAlDia" class="btn-notificaciones btn-iva-dia admin-only" title="IVA a favor al día" hidden>
+        <span class="chip-punto" aria-hidden="true"></span><span id="textoIvaAlDia">IVA</span>
+      </button>
       <!-- Productos agotados esperando decisión (sql/55): solo aparece si
            hay alguno sin decidir. Lo pinta js/notificaciones.js. -->
       <button id="btnAgotados" class="btn-notificaciones btn-agotados admin-only" title="Productos agotados sin decidir" hidden>
@@ -7397,6 +7402,42 @@
       <div class="modal-foot">
         <button class="btn btn-ghost" id="btnCancelarPostergar" type="button">Cancelar</button>
         <button class="btn btn-primary" id="btnConfirmarPostergar" type="button">Postergar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- v128: IVA a favor al día — js/utilidades.js -->
+  <div id="modalIvaAlDia" class="modal-overlay">
+    <div class="modal-box" style="max-width:760px;">
+      <h2>🧾 IVA a favor al día</h2>
+      <p class="modal-hint" id="ivaDiaEstado">—</p>
+
+      <div class="iva-sii-semaforo" id="ivaDiaSemaforo">
+        <span class="iva-sii-luz"></span>
+        <div>
+          <b id="ivaDiaTitular">—</b>
+          <small id="ivaDiaBajada"></small>
+        </div>
+      </div>
+
+      <div class="util-lineas" id="ivaDiaCuenta"></div>
+      <p class="modal-hint" id="ivaDiaAvisos"></p>
+
+      <h3 style="margin:16px 0 6px;">Día a día</h3>
+      <div class="table-wrapper">
+        <table class="data-table">
+          <thead><tr><th>Fecha</th><th>Qué pasó</th><th class="num">Movimiento</th><th class="num">Te queda</th></tr></thead>
+          <tbody id="ivaDiaMovimientos"><tr class="empty-row"><td colspan="4">Sin datos todavía</td></tr></tbody>
+        </table>
+      </div>
+      <p class="modal-hint">
+        Las <strong>boletas</strong> se descuentan apenas cobras en la caja. Las <strong>facturas de compra</strong>
+        las trae el robot del SII una vez al día; con el botón las traes ahora.
+      </p>
+
+      <div class="modal-foot">
+        <button class="btn btn-outline" id="btnIvaDiaSincronizar" type="button">🔄 Traer facturas del SII ahora</button>
+        <button class="btn btn-ghost" id="btnCerrarIvaDia" type="button">Cerrar</button>
       </div>
     </div>
   </div>

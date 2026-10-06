@@ -12,6 +12,14 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 06-10-2026 (noche) · v128, IVA a favor al día
+
+Detalle en `docs/CHANGELOG-V128.md`. F29 de septiembre cargado (remanente código 77: **$332.831**; la propuesta no
+está presentada todavía, vence el 20-10). Chip "IVA a favor $X" en el encabezado y ventana con el día a día. El
+débito del mes en curso es el mayor entre el SII y el POS, y si falta el F29 del mes anterior el remanente se estima
+encadenando (`remanenteDeIvaAl`). **Sin tocar, espera al dueño:** el bloque "IVA" de Utilidades resta de la
+utilidad un IVA que no se paga, porque ninguna compra del POS está marcada "con factura".
+
 ## 06-10-2026 (noche) · v127, sin "Genérica" en las fichas y más IA desde la ficha
 
 Detalle en `docs/CHANGELOG-V127.md`. La palabra "Genérica" queda solo en el campo Marca: se le prohíbe a la IA y además

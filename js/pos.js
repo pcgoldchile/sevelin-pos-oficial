@@ -1598,6 +1598,7 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
   }
 
   ultimaVentaRegistrada = venta;
+  document.dispatchEvent(new CustomEvent('pos:iva-cambio'));   // v128: el chip "IVA a favor" se recalcula
   claveCobroEnCurso = null;
   autorizacionMargen = null;
   showToast(venta.estado === 'PENDIENTE' ? 'Venta registrada como PENDIENTE de pago'
