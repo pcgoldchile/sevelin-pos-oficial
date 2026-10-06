@@ -12,6 +12,13 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 06-10-2026 (noche) · Auditoría semanal de precios (pendiente #65, corrida a mano)
+
+`docs/estudios-precios/2026-10-06-auditoria-semanal.md`. Semana del 30-09 al 06-10: 18 ventas, margen real de
+productos 27,0%, 2 líneas bajo 15% y $0 perdidos por rebajas. Cuatro cosas por decidir (pendiente #79); la más clara,
+el Motorola Moto E15 a $84.990 con costo $79.990. La tarea programada no corre sola: se queda esperando un permiso
+en su primer comando; cambiar eso es un ajuste de permisos que aprueba el dueño.
+
 ## 06-10-2026 (noche) · Propuesta de categorías (pendiente #72, sin aplicar)
 
 `docs/propuesta-categorias-2026-10-06.md`: 222 productos y 50 categorías revisados; cinco bloques (A a E) para que

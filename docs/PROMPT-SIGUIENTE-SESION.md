@@ -1,25 +1,26 @@
-# Prompt para abrir la siguiente sesión (escrito el 04-10-2026, noche)
+# Prompt para abrir la siguiente sesión (escrito el 06-10-2026, noche)
 
 > Copia el bloque de abajo en un chat nuevo y completa lo que va después de cada "→".
 > Una línea "→" en blanco se toma como "todavía no decido": no se aplica nada de eso.
-> Regla del dueño (03-10-2026): este prompt lleva solo lo que aporta (respuestas pendientes, propuestas y lo que hay
-> que hacer o programar). Lo ya decidido vive en la memoria de Claude y en CLAUDE.md, no se repite aquí.
 
 ```text
-Soy Carlos. Estoy en ____ · ____: dime en una línea qué modelo y esfuerzo recomiendas.
+Soy Carlos. Dime en una línea qué modelo y esfuerzo recomiendas.
 
 Mis respuestas (en blanco = todavía no decido):
-- #61 Venta #250: (ya cambié el producto en el POS / todavía no): →
-- #60 Arriendo de la máquina del Banco de Chile: (me dijeron $ … el día … / no se cobra / todavía no pregunto): →
-- #68 Balanza Bluetooth y Cable Audio 2 m, que llevan el costo "por lotes" y están descuadrados: (apaga los lotes en los dos / arréglalos y déjalos con lotes / no los toques): →
-- #69 Las 3 notas de crédito (MercadoLibre $35.990 y $114.190, Falabella $117.365): (ya las marqué en el POS / las esperaba todas / hay una que no esperaba: …): →
-- Lo nuevo (Ofertas, popup de entrega, corregir stock con clave, paso a paso, margen en vivo, RUT y factura en la compra): (todo bien / esto se ve mal o no me sirve: …): →
-- La caja nueva (total a cobrar, redondear, costo y margen por producto): (todo bien / esto se ve mal o no me sirve: …): →
-- Redondear hacia arriba tiene tope de $1.000 sobre la suma de los productos: (está bien / súbelo a $ … / quítalo): →
+- #76 Utilidades resta un IVA que no pagas (en septiembre $226.882, y al SII le pagaste $0): (A: que use el IVA real del SII / B: déjalo así) →
+- #78 Renombrar un producto sin SKU le cambia el enlace en la tienda (103 productos): (A: deja fijo el enlace actual / B: déjalo así) →
+- #72 Categorías, bloques A a E de docs/propuesta-categorias-2026-10-06.md: (ejemplo: "A, B y D sí; C no") →
+  ¿Vas a vender celulares?: (sí, crea la categoría / no, es uno solo) →
+- #79 Precios: Moto E15 a $94.990 (sí / no / otro: $…) → · Kingston NV3 1 TB, su costo es $… → ·
+  RAM ADATA a $69.990 (sí / no) → · Monitor HP V214a a $59.990 desde el jueves (sí / no) →
+- #77 Por llegar: (ya hice la compra de prueba y apreté "Listo para retiro": me llegó el correo / no me llegó / todavía no) →
+  La opción "un solo envío cuando llegue todo": (déjala / quítala) →
+- La auditoría de precios de cada lunes: (A: córrela tú en la sesión / B: apruebo el permiso fijo de solo lectura) →
+- El F29 de septiembre: (ya lo presenté, folio … y pagué $1.658 / todavía no; vence el 20-10) →
 
 Para hoy, en este orden y avisándome al cerrar cada una:
-1. #49 Cyber: si es lunes 5 o después, comprueba que las ofertas se encendieron y que en sevelin.cl se ve el precio tachado con "Ahorras $X". Si es jueves 8 o después, que todo volvió al precio normal, y dime cuántos monitores de 19" se movieron.
-2. #65 El informe de la auditoría semanal de precios (corre el lunes 05-10 a las 09:38): dime en simple qué encontró.
+1. #49 Cierre del Cyber (jueves 8 o después): que todo volvió al precio normal y cuántos monitores de 19" se movieron.
+2. #70 La compra a MercadoLibre: qué llegó, y los avisos "listo para retiro" que falten.
 3. Mis respuestas de arriba.
 
 Recuérdame lo que tengo yo por revisar en la tabla de pendientes.
