@@ -13,8 +13,9 @@
 //   4. Carga todo con POST /api/productos/carga-masiva, que usa lo mismo que
 //      el formulario de una compra. Fotos, descripción y lo demás, después.
 //
-// Nada se guarda hasta el botón final. El gasto en Finanzas se ofrece al
-// terminar, igual que en una compra suelta.
+// Nada se guarda hasta el botón final. Si la compra se suma o no a Gastos se
+// elige ANTES de cargar (v126, dueño 06-10-2026): con "sí" se abre el gasto
+// ya llenado al terminar; con "no" no se anota nada. Nunca se anota solo.
 // ==========================================
 
 const CARGA_MASIVA_INSTRUCCIONES = `Te voy a pasar una captura o el texto de un carrito de compra (o de una factura). Saca cada producto y respóndeme SOLO con una lista de texto, una línea por producto, con este formato exacto, separado por barras verticales:
@@ -39,7 +40,7 @@ Pack x6 Cinta de Embalaje Transparente 300 m | 3 | 8861 |`;
 const CARGA_MASIVA_VACIAS = new Set(['para', 'con', 'sin', 'los', 'las', 'del', 'por', 'una', 'uno', 'color', 'negro', 'negra',
   'blanco', 'blanca', 'azul', 'rojo', 'gris', 'verde', 'pack', 'unidad', 'unidades', 'nuevo', 'nueva', 'generico', 'generica', 'tipo']);
 
-let cargaMasiva = { filas: [], estado: null, enviando: false };
+let cargaMasiva = { filas: [], estado: null, gasto: null, enviando: false };
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnCargaMasiva')?.addEventListener('click', abrirCargaMasiva);
@@ -51,6 +52,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const b = e.target.closest('[data-estado-masiva]');
     if (!b) return;
     cargaMasiva.estado = b.dataset.estadoMasiva;
+    pintarCargaMasiva();
+  });
+  /* v126: sumar o no la compra a Gastos se elige antes de cargar (dueño, 06-10-2026). */
+  document.getElementById('cmGastos')?.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-gasto-masiva]');
+    if (!b) return;
+    cargaMasiva.gasto = b.dataset.gastoMasiva;
     pintarCargaMasiva();
   });
   // Lo que se escribe en la tabla se guarda en la fila, sin redibujar (no se pierde el foco)
@@ -72,7 +80,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function abrirCargaMasiva() {
-  cargaMasiva = { filas: [], estado: null, enviando: false };
+  cargaMasiva = { filas: [], estado: null, gasto: null, enviando: false };
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
   set('cmInstrucciones', CARGA_MASIVA_INSTRUCCIONES);
   set('cmTexto', '');
@@ -192,6 +200,14 @@ function pintarCargaMasiva() {
     b.classList.toggle('activo', activo);
     b.setAttribute('aria-checked', activo ? 'true' : 'false');
   });
+  // Un encargo no es una compra: no hay gasto que decidir
+  const bloqueGasto = document.getElementById('cmBloqueGasto');
+  if (bloqueGasto) bloqueGasto.style.display = encargo ? 'none' : 'block';
+  document.querySelectorAll('#cmGastos [data-gasto-masiva]').forEach(b => {
+    const activo = b.dataset.gastoMasiva === cargaMasiva.gasto;
+    b.classList.toggle('activo', activo);
+    b.setAttribute('aria-checked', activo ? 'true' : 'false');
+  });
   const bloqueFecha = document.getElementById('cmBloqueLlegada');
   if (bloqueFecha) bloqueFecha.style.display = cargaMasiva.estado === 'por_llegar' ? 'block' : 'none';
 
@@ -234,6 +250,7 @@ function pintarResumenCargaMasiva() {
   if (!cargaMasiva.filas.length) falta = '';
   else if (!filas.length) falta = 'Marca al menos un producto.';
   else if (!cargaMasiva.estado) falta = 'Elige arriba si ya llegaron, están por llegar o son por encargo.';
+  else if (!encargo && !cargaMasiva.gasto) falta = 'Dime si sumo esta compra a gastos de mercadería o no.';
   else if (filas.some(f => !String(f.nombre || '').trim())) falta = 'Hay un producto sin nombre.';
   else if (!encargo && filas.some(f => !(Number(f.cantidad) > 0))) falta = 'Hay un producto sin cantidad.';
   else if (!encargo && filas.some(f => f.costo === '' || Number(f.costo) < 0)) falta = 'Hay un producto sin costo (si de verdad fue gratis, escribe 0).';
@@ -279,6 +296,11 @@ async function enviarCargaMasiva() {
   try {
     const r = await API.productos.cargaMasiva(cuerpo);
     const malos = (r.resultados || []).filter(x => !x.ok);
+    const quiereGasto = !encargo && cargaMasiva.gasto === 'si';
+    const abrirGasto = () => {
+      cerrarModal('modalCargaMasiva');
+      abrirGastoPrellenado({ monto: num(r.total_compra), descripcion: `Compra de ${num(r.cargados)} productos (carga masiva)`, proveedor: r.proveedor || '' });
+    };
     const resultado = document.getElementById('cmResultado');
     if (resultado) {
       resultado.innerHTML = `
@@ -288,13 +310,11 @@ async function enviarCargaMasiva() {
           ${r.estado === 'llego' ? ' El stock ya quedó sumado.' : ''}
           ${malos.length ? `<br>⚠️ No se pudieron cargar: ${malos.map(m => `${escHtml(m.nombre)} (${escHtml(m.error)})`).join('; ')}` : ''}
           <br>Les falta foto, descripción, categoría${filas.some(f => !(Number(f.precio) > 0)) ? ', precio de venta' : ''} y publicarlos: están en la lista de Productos.
-          ${num(r.total_compra) > 0 ? `<br><span class="compra-aviso-gasto" style="margin-top:8px;">💸 Esta compra son <strong>${fmtCLP(r.total_compra)}</strong>. ¿Ya anotaste el gasto en Finanzas?
-            <button type="button" class="btn btn-primary btn-sm" id="btnCmGasto">Anotar el gasto</button></span>` : ''}
+          ${num(r.total_compra) > 0 && quiereGasto ? `<br><span class="compra-aviso-gasto" style="margin-top:8px;">💸 Esta compra son <strong>${fmtCLP(r.total_compra)}</strong>. Falta guardar el gasto en Finanzas.
+            <button type="button" class="btn btn-primary btn-sm" id="btnCmGasto">Abrir el gasto</button></span>` : ''}
+          ${num(r.total_compra) > 0 && !quiereGasto ? '<br>🚫 No se anotó ningún gasto por esta compra, como pediste.' : ''}
         </div>`;
-      document.getElementById('btnCmGasto')?.addEventListener('click', () => {
-        cerrarModal('modalCargaMasiva');
-        abrirGastoPrellenado({ monto: num(r.total_compra), descripcion: `Compra de ${num(r.cargados)} productos (carga masiva)`, proveedor: r.proveedor || '' });
-      });
+      document.getElementById('btnCmGasto')?.addEventListener('click', abrirGasto);
     }
     // Lo que entró sale de la lista; lo que falló se queda para corregirlo
     const fallidos = new Set(malos.map(m => m.nombre));
@@ -304,6 +324,9 @@ async function enviarCargaMasiva() {
     showToast(`${num(r.cargados)} producto(s) cargado(s)`, malos.length ? 'err' : 'ok');
     if (typeof cargarProductos === 'function') await cargarProductos(true);
     if (typeof actualizarAvisoEnCamino === 'function') actualizarAvisoEnCamino();
+    // Pidió sumar el gasto y todo cargó bien: se abre el gasto ya llenado, sin otro clic
+    if (quiereGasto && !malos.length && num(r.total_compra) > 0) abrirGasto();
+    cargaMasiva.gasto = null;
   } catch (err) {
     showToast(err.message || 'No se pudo cargar la lista', 'err');
   } finally {

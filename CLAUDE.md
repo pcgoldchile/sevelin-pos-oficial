@@ -229,6 +229,10 @@ Cuando el dueño dice "compré esto, ponlo por llegar" **nunca se carga stock**.
   desorden; se arregla tocando la fila otra vez.
 - En pantalla siempre se dice **"por llegar"**, no "en camino" (pedido del dueño). En el código la
   columna sigue llamándose `en_camino`.
+- **Reservas (v126, sql/87):** lo por llegar se puede pagar en sevelin.cl. La reserva baja
+  `stock_por_llegar` y sube `productos.reservado_web` (nunca toca `stock`); al apretar "Ya llegó" esas
+  unidades no entran al stock. El tope de compra está en `sevelin-tienda/src/lib/por-llegar.ts`: si
+  cambia la regla, se cambia ahí y en `ajustar_stock_web()`.
 
 ---
 
@@ -238,5 +242,10 @@ Cuando el dueño dice "compré esto, ponlo por llegar" **nunca se carga stock**.
   `cancelarEntregaVenta`.
 - Modales de caja: Finanzas usa `modalAbrirCaja` / `modalCerrarCaja`; el POS usa `modalAperturaPos` /
   `modalCierrePos` (renombrados para no colisionar).
+- **La tienda lee el TEXTO de categoría del producto** (`categoria_web`, `subcategoria_web`), no la tabla
+  `producto_categorias`. Cambiar una categoría sin reescribir ese texto deja la tienda con el nombre viejo.
+  Desde v126 lo hacen los endpoints de categorías, producto por producto.
+- **Los productos con lotes (PEPS) en una venta web** se descuentan en `registrar-venta-web`, no en
+  `ajustar-stock` (que solo ve los que no tienen lotes).
 - El POS descarta `codigo_barras` al guardar `venta_items`. Por eso el buscador resuelve el barcode
   contra el catálogo (`productos`), no contra el ítem de venta.

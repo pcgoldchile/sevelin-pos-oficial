@@ -12,6 +12,26 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 06-10-2026 (noche) · v126, reservas de "por llegar", Categorías rehechas y gasto a elección
+
+Detalle en `docs/CHANGELOG-V126.md`.
+
+**Hallazgo:** reservar algo "por llegar" en sevelin.cl nunca funcionó (carrito con cantidad 0, checkout que lo rechazaba
+y descuento de stock imposible). No se cobró nada mal; simplemente nadie pudo pagar una reserva.
+
+**Publicado:** **v126** (POS `314512c` y el siguiente, `sql/87` aplicada; tienda `13ee6f3`). La reserva funciona de
+punta a punta: baja `stock_por_llegar`, sube `productos.reservado_web`, y al apretar "Ya llegó" esas unidades no
+entran al stock. El checkout nombra el producto por llegar y avisa por correo cuando llega. `/por-llegar` y encargos
+con orden y filtros; el buscador encuentra encargos y por llegar. Las ventas web de productos con lotes ahora bajan
+stock y consumen capas. Página Web → Categorías rehecha (`js/categorias-web.js`): árbol con conteos, productos a la
+derecha, arrastrar para ordenar y para mover; renombrar o eliminar ya cambia lo que muestra la tienda. Carga masiva:
+se elige si la compra va o no a Gastos. Se quitó "Carga por Comando / Tiendanube" (`js/tiendanube.js` →
+`js/alta-producto.js`).
+
+**Falta que el dueño confirme:** con despacho y algo por llegar, el pedido sale completo cuando llega lo que falta.
+
+**No probado:** un pago real de una reserva y su correo de llegada.
+
 ## 06-10-2026 (tarde) · v125, carga masiva por copiar y pegar, "por llegar" y PEPS de fábrica
 
 Detalle en `docs/CHANGELOG-V125.md`.

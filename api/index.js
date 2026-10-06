@@ -1334,18 +1334,131 @@ app.post('/api/productos/categorias', auth(true), async (req, res) => {
   res.status(201).json(data);
 });
 
+/* ============================================================
+   CATEGORÍAS: LO QUE LA TIENDA LEE ES EL TEXTO DEL PRODUCTO (v126)
+   ------------------------------------------------------------
+   sevelin.cl arma su menú con `productos.categoria_web` y
+   `subcategoria_web` (texto), no con esta tabla. Hasta v125 renombrar o
+   eliminar una categoría acá no tocaba ese texto: la tienda seguía
+   mostrando el nombre viejo, y un producto de una categoría "eliminada"
+   seguía apareciendo bajo ella. Desde v126 renombrar, eliminar y asignar
+   escriben también el texto del producto.
+
+   Los productos se actualizan DE A UNO: cada UPDATE dispara la
+   sincronización con la tienda (trg_sync_tienda) y varios en una sola
+   sentencia ya perdieron sincronizaciones (12-09-2026).
+   ============================================================ */
+
+/* Los textos que le corresponden a un producto que queda en esta categoría
+   (o subcategoría). null = sin categoría. Devuelve undefined si no existe. */
+async function textosDeCategoria(categoriaId) {
+  if (!categoriaId) return { categoria_id: null, categoria_web: null, subcategoria_web: null };
+  const { data: cat } = await db.from('producto_categorias').select('id, nombre, parent_id').eq('id', categoriaId).maybeSingle();
+  if (!cat) return undefined;
+  if (!cat.parent_id) return { categoria_id: cat.id, categoria_web: cat.nombre, subcategoria_web: null };
+  const { data: padre } = await db.from('producto_categorias').select('id, nombre').eq('id', cat.parent_id).maybeSingle();
+  if (!padre) return undefined;
+  return { categoria_id: cat.id, categoria_web: padre.nombre, subcategoria_web: cat.nombre };
+}
+
+/* Todos los productos (también los archivados) que hoy están en una
+   categoría, buscados por el texto que la tienda usa y por el id. */
+async function productosDeCategoria(cat, nombrePadre) {
+  let q = db.from('productos').select('id, categoria_id, categoria_web, subcategoria_web');
+  q = cat.parent_id
+    ? q.eq('subcategoria_web', cat.nombre).eq('categoria_web', nombrePadre)
+    : q.eq('categoria_web', cat.nombre);
+  const { data: porTexto, error } = await q.limit(2000);
+  if (error) throw error;
+  const { data: porId, error: errId } = await db.from('productos')
+    .select('id, categoria_id, categoria_web, subcategoria_web').eq('categoria_id', cat.id).limit(2000);
+  if (errId) throw errId;
+  const vistos = new Map();
+  [...(porTexto || []), ...(porId || [])].forEach(p => vistos.set(Number(p.id), p));
+  return [...vistos.values()];
+}
+
+/* Aplica cambios a varios productos, uno por uno (ver arriba por qué). */
+async function actualizarProductosDeAUno(ids, cambiosDe) {
+  let hechos = 0;
+  for (const id of ids) {
+    const { error } = await db.from('productos').update(cambiosDe(id)).eq('id', id);
+    if (error) throw error;
+    hechos++;
+  }
+  return hechos;
+}
+
+/* Asignar categoría a varios productos de una vez (arrastrar o "mover a"). */
+app.put('/api/productos/categorias/asignar', auth(true), async (req, res) => {
+  const ids = [...new Set((Array.isArray(req.body?.producto_ids) ? req.body.producto_ids : [])
+    .map(Number).filter(n => Number.isInteger(n) && n > 0))];
+  if (!ids.length) return enviarError(res, 400, 'Elige al menos un producto');
+  if (ids.length > 200) return enviarError(res, 400, 'Son demasiados de una vez: mueve hasta 200 productos');
+  try {
+    const textos = await textosDeCategoria(req.body?.categoria_id || null);
+    if (textos === undefined) return enviarError(res, 404, 'Esa categoría ya no existe');
+    const movidos = await actualizarProductosDeAUno(ids, () => textos);
+    res.json({ ok: true, movidos, ...textos });
+  } catch (error) {
+    return enviarErrorBD(res, error, 'asignar categoría');
+  }
+});
+
+/* Orden nuevo de un grupo de hermanos, tal como quedó al arrastrar. */
+app.put('/api/productos/categorias/orden', auth(true), async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [];
+  if (ids.length < 2 || new Set(ids).size !== ids.length) return enviarError(res, 400, 'Orden inválido');
+  try {
+    const { data: filas, error } = await db.from('producto_categorias').select('id, parent_id').in('id', ids);
+    if (error) throw error;
+    if ((filas || []).length !== ids.length) return enviarError(res, 404, 'Alguna categoría ya no existe: recarga la página');
+    const padres = new Set(filas.map(c => c.parent_id || ''));
+    if (padres.size !== 1) return enviarError(res, 400, 'Solo se ordenan categorías del mismo nivel');
+    for (let i = 0; i < ids.length; i++) {
+      const { error: errU } = await db.from('producto_categorias').update({ orden: i }).eq('id', ids[i]);
+      if (errU) throw errU;
+    }
+    res.json({ ok: true });
+  } catch (error) {
+    return enviarErrorBD(res, error, 'ordenar categorías');
+  }
+});
+
 app.put('/api/productos/categorias/:id', auth(true), async (req, res) => {
   const nombre = String(req.body?.nombre || '').trim();
   if (!nombre) return enviarError(res, 400, 'Escribe un nombre');
 
-  const { data, error } = await db.from('producto_categorias')
-    .update({ nombre }).eq('id', req.params.id).select().single();
-  if (error) {
-    const duplicado = /duplicate|unique/i.test(error.message);
-    if (/no rows/i.test(error.message)) return enviarError(res, 404, 'No se encontró esa categoría');
-    return enviarError(res, duplicado ? 409 : 500, duplicado ? 'Ya existe otra categoría con ese nombre' : error.message);
+  try {
+    const { data: antes, error: errA } = await db.from('producto_categorias')
+      .select('id, nombre, parent_id').eq('id', req.params.id).maybeSingle();
+    if (errA) throw errA;
+    if (!antes) return enviarError(res, 404, 'No se encontró esa categoría');
+    if (antes.nombre === nombre) return res.json({ ...antes, productos_actualizados: 0 });
+
+    let nombrePadre = null;
+    if (antes.parent_id) {
+      const { data: padre } = await db.from('producto_categorias').select('nombre').eq('id', antes.parent_id).maybeSingle();
+      nombrePadre = padre?.nombre || null;
+    }
+    // Se buscan ANTES de renombrar: después ya no calzan por el texto viejo
+    const afectados = await productosDeCategoria(antes, nombrePadre);
+
+    const { data, error } = await db.from('producto_categorias')
+      .update({ nombre }).eq('id', req.params.id).select().single();
+    if (error) {
+      const duplicado = /duplicate|unique/i.test(error.message);
+      return enviarError(res, duplicado ? 409 : 500, duplicado ? 'Ya existe otra categoría con ese nombre' : error.message);
+    }
+
+    /* Una categoría de primer nivel renombra categoria_web de TODO lo suyo,
+       incluidas sus subcategorías; una subcategoría, solo subcategoria_web. */
+    const actualizados = await actualizarProductosDeAUno(afectados.map(p => p.id),
+      () => (antes.parent_id ? { subcategoria_web: nombre } : { categoria_web: nombre }));
+    res.json({ ...data, productos_actualizados: actualizados });
+  } catch (error) {
+    return enviarErrorBD(res, error, 'renombrar categoría');
   }
-  res.json(data);
 });
 
 // Sube/baja una categoría intercambiando su `orden` con la vecina —
@@ -1383,10 +1496,43 @@ app.put('/api/productos/categorias/:id/mover', auth(true), async (req, res) => {
   res.json({ ok: true });
 });
 
+/* v126: los productos de la categoría (y de sus subcategorías) se mueven a
+   `mover_a` o quedan sin categoría ANTES de borrarla. Antes solo se borraba
+   la fila y la tienda los seguía mostrando bajo el nombre eliminado. */
 app.delete('/api/productos/categorias/:id', auth(true), async (req, res) => {
-  const { error } = await db.from('producto_categorias').delete().eq('id', req.params.id);
-  if (error) return enviarErrorBD(res, error);
-  res.json({ ok: true });
+  const destino = String(req.query?.mover_a || req.body?.mover_a || '').trim() || null;
+  try {
+    const { data: cat, error: errC } = await db.from('producto_categorias')
+      .select('id, nombre, parent_id').eq('id', req.params.id).maybeSingle();
+    if (errC) throw errC;
+    if (!cat) return enviarError(res, 404, 'No se encontró esa categoría');
+
+    const { data: hijas } = await db.from('producto_categorias').select('id').eq('parent_id', cat.id);
+    if (destino && (destino === String(cat.id) || (hijas || []).some(h => String(h.id) === destino))) {
+      return enviarError(res, 400, 'Elige otra categoría para mover los productos: esa se va a eliminar');
+    }
+    const textos = await textosDeCategoria(destino);
+    if (textos === undefined) return enviarError(res, 404, 'La categoría de destino ya no existe');
+
+    let nombrePadre = null;
+    if (cat.parent_id) {
+      const { data: padre } = await db.from('producto_categorias').select('nombre').eq('id', cat.parent_id).maybeSingle();
+      nombrePadre = padre?.nombre || null;
+    }
+    const afectados = await productosDeCategoria(cat, nombrePadre);
+    /* Una subcategoría que se elimina sin destino deja sus productos en la
+       categoría de arriba, no en el aire. */
+    const quedanEn = !destino && cat.parent_id
+      ? { categoria_id: cat.parent_id, categoria_web: nombrePadre, subcategoria_web: null }
+      : textos;
+    const movidos = await actualizarProductosDeAUno(afectados.map(p => p.id), () => quedanEn);
+
+    const { error } = await db.from('producto_categorias').delete().eq('id', cat.id);
+    if (error) throw error;
+    res.json({ ok: true, productos_movidos: movidos });
+  } catch (error) {
+    return enviarErrorBD(res, error, 'eliminar categoría');
+  }
 });
 
 /* ============================================================

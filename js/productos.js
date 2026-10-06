@@ -343,7 +343,7 @@ function setupProductosEventListeners() {
 
   if (elBuscarProductoTabla) elBuscarProductoTabla.addEventListener('input', handleBuscarProductoTabla);
   /* "Nuevo Producto" ya no abre el formulario directo: primero pregunta si
-     la carga es manual o pegando la ficha de Tiendanube (js/tiendanube.js).
+     la carga es paso a paso con IA o manual (js/alta-producto.js).
      Si ese módulo no está cargado, se cae al formulario de siempre. */
   if (elBtnNuevoProducto) elBtnNuevoProducto.addEventListener('click', () => {
     if (typeof abrirSelectorAltaProducto === 'function') abrirSelectorAltaProducto();

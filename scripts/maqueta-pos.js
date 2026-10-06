@@ -664,16 +664,64 @@ app.post('/api/pos/autorizar-margen', (req, res) => {
   res.json({ autorizacion: 'permiso-de-maqueta' });
 });
 // Categorías de ejemplo, para que el editor de producto pueda elegir una (el precio sugerido depende de ella).
-app.get('/api/productos/categorias', (_req, res) => res.json([
+const categoriasMaqueta = [
   { id: 'c1', nombre: 'Cables y Adaptadores', parent_id: null, orden: 0 },
   { id: 'c1a', nombre: 'Adaptadores y Cables de Video', parent_id: 'c1', orden: 0 },
-  { id: 'c2', nombre: 'Componentes PC', parent_id: null, orden: 0 },
+  { id: 'c2', nombre: 'Componentes PC', parent_id: null, orden: 1 },
   { id: 'c2a', nombre: 'Fuentes de poder', parent_id: 'c2', orden: 0 },
-  { id: 'c3', nombre: 'Monitores', parent_id: null, orden: 0 },
-  { id: 'c4', nombre: 'Hogar y Estilo de Vida', parent_id: null, orden: 0 },
-  { id: 'c5', nombre: 'Periféricos', parent_id: null, orden: 0 },
-  { id: 'c6', nombre: 'Computadores', parent_id: null, orden: 0 },
-]));
+  { id: 'c2b', nombre: 'Placas madre', parent_id: 'c2', orden: 1 },
+  { id: 'c3', nombre: 'Monitores', parent_id: null, orden: 2 },
+  { id: 'c4', nombre: 'Hogar y Estilo de Vida', parent_id: null, orden: 3 },
+  { id: 'c5', nombre: 'Periféricos', parent_id: null, orden: 4 },
+  { id: 'c6', nombre: 'Computadores', parent_id: null, orden: 5 },
+];
+app.get('/api/productos/categorias', (_req, res) => res.json([...categoriasMaqueta].sort((a, b) => a.orden - b.orden || a.nombre.localeCompare(b.nombre))));
+// v126: crear, renombrar, ordenar, eliminar y asignar, con las mismas reglas del servidor real (el texto del producto se mueve con la categoría).
+const catMaqueta = (id) => categoriasMaqueta.find(c => c.id === id);
+const textosMaqueta = (id) => { const c = catMaqueta(id); if (!id) return { categoria_id: null, categoria_web: null, subcategoria_web: null }; if (!c) return undefined;
+  return c.parent_id ? { categoria_id: c.id, categoria_web: catMaqueta(c.parent_id).nombre, subcategoria_web: c.nombre } : { categoria_id: c.id, categoria_web: c.nombre, subcategoria_web: null }; };
+const deCategoriaMaqueta = (c) => productos.filter(p => p.categoria_id === c.id || (c.parent_id ? p.subcategoria_web === c.nombre && p.categoria_web === catMaqueta(c.parent_id).nombre : p.categoria_web === c.nombre));
+app.post('/api/productos/categorias', (req, res) => {
+  const nombre = String(req.body?.nombre || '').trim();
+  if (!nombre) return res.status(400).json({ error: 'Escribe un nombre' });
+  if (categoriasMaqueta.some(c => c.nombre === nombre)) return res.status(409).json({ error: 'Esa categoría ya existe' });
+  const c = { id: 'n' + Date.now(), nombre, parent_id: req.body.parent_id || null, orden: 99 };
+  categoriasMaqueta.push(c);
+  res.status(201).json(c);
+});
+app.put('/api/productos/categorias/asignar', (req, res) => {
+  const textos = textosMaqueta(req.body?.categoria_id || null);
+  if (textos === undefined) return res.status(404).json({ error: 'Esa categoría ya no existe' });
+  const ids = (req.body?.producto_ids || []).map(Number);
+  productos.filter(p => ids.includes(p.id)).forEach(p => Object.assign(p, textos));
+  res.json({ ok: true, movidos: ids.length, ...textos });
+});
+app.put('/api/productos/categorias/orden', (req, res) => { (req.body?.ids || []).forEach((id, i) => { const c = catMaqueta(id); if (c) c.orden = i; }); res.json({ ok: true }); });
+app.put('/api/productos/categorias/:id/mover', (req, res) => {
+  const c = catMaqueta(req.params.id); if (!c) return res.status(404).json({ error: 'No se encontró esa categoría' });
+  const hermanos = categoriasMaqueta.filter(x => (x.parent_id || '') === (c.parent_id || '')).sort((a, b) => a.orden - b.orden);
+  const i = hermanos.indexOf(c), j = req.body?.direccion === 'arriba' ? i - 1 : i + 1;
+  if (hermanos[j]) { hermanos.splice(i, 1); hermanos.splice(j, 0, c); hermanos.forEach((x, k) => { x.orden = k; }); }
+  res.json({ ok: true });
+});
+app.put('/api/productos/categorias/:id', (req, res) => {
+  const c = catMaqueta(req.params.id); const nombre = String(req.body?.nombre || '').trim();
+  if (!c) return res.status(404).json({ error: 'No se encontró esa categoría' });
+  if (categoriasMaqueta.some(x => x !== c && x.nombre === nombre)) return res.status(409).json({ error: 'Ya existe otra categoría con ese nombre' });
+  const afectados = deCategoriaMaqueta(c);
+  afectados.forEach(p => Object.assign(p, c.parent_id ? { subcategoria_web: nombre } : { categoria_web: nombre }));
+  c.nombre = nombre;
+  res.json({ ...c, productos_actualizados: afectados.length });
+});
+app.delete('/api/productos/categorias/:id', (req, res) => {
+  const c = catMaqueta(req.params.id); if (!c) return res.status(404).json({ error: 'No se encontró esa categoría' });
+  const destino = String(req.query.mover_a || '') || null;
+  const textos = !destino && c.parent_id ? { categoria_id: c.parent_id, categoria_web: catMaqueta(c.parent_id).nombre, subcategoria_web: null } : textosMaqueta(destino);
+  const afectados = deCategoriaMaqueta(c);
+  afectados.forEach(p => Object.assign(p, textos));
+  for (let i = categoriasMaqueta.length - 1; i >= 0; i--) if (categoriasMaqueta[i].id === c.id || categoriasMaqueta[i].parent_id === c.id) categoriasMaqueta.splice(i, 1);
+  res.json({ ok: true, productos_movidos: afectados.length });
+});
 const objetivosMaqueta = { 'Cables y Adaptadores': 0.45, 'Hogar y Estilo de Vida': 0.40, 'Componentes PC': 0.25, 'Monitores': 0.15 };
 // v121: segundo escalón sugerido, con la misma regla del servidor (doble de unidades, ~7% menos, piso 23%).
 function segundoEscalonMaqueta(b, mayorista, costo, base, piso) {

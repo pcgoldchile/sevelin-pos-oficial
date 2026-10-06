@@ -2406,7 +2406,7 @@
          y desactivan esta vista con el mismo mecanismo .view-section.active
          que usa initNavegacion() (js/config.js) — por eso los 5 lugares que
          llaman abrirModalProducto() en el resto del código (reportes.js,
-         tiendanube.js, el resto de productos.js) no necesitaron cambiar.
+         alta-producto.js, el resto de productos.js) no necesitaron cambiar.
          Fotos y Categoría son tarjetas independientes a propósito (antes
          vivían juntas en un pop-up aparte, #modalFotosCategoria — eliminado).
          ============================================================ -->
@@ -3444,16 +3444,26 @@
 
       <div class="panel-pagina-web" data-panel-pagina-web="categorias">
         <div class="card">
+          <!-- v126 (dueño, 06-10-2026): rehecha. Árbol con cuántos productos tiene cada categoría a la
+               izquierda, sus productos a la derecha; se ordena y se mueven productos arrastrando.
+               Todo lo pinta js/categorias-web.js. -->
           <div class="card-head">
             <div>
-              <h2>Categorías del catálogo web</h2>
-              <p class="subtitle">Agrupan los productos en la tienda online. El orden acá es el orden en que aparecen los filtros en la tienda.</p>
+              <h2>Categorías de la tienda</h2>
+              <p class="subtitle">Así se agrupan los productos en sevelin.cl. El orden de acá es el orden del menú de la tienda.</p>
+            </div>
+            <div class="toolbar-group">
+              <button class="btn btn-primary" id="btnCatwNueva" type="button">➕ Nueva categoría</button>
             </div>
           </div>
-          <div class="admin-cat-lista" id="listaCategoriasWeb"></div>
-          <div class="admin-cat-nuevo" style="margin-top:12px;">
-            <input type="text" id="nuevaCategoriaWebInput" placeholder="Nueva categoría...">
-            <button class="btn btn-outline btn-sm" id="btnNuevaCategoriaWeb">➕ Agregar</button>
+          <div class="catw-resumen" id="catwResumen"></div>
+          <div class="catw-layout">
+            <aside class="catw-col-arbol">
+              <input type="search" id="catwBuscarCat" placeholder="Buscar categoría…" aria-label="Buscar categoría">
+              <div class="catw-arbol" id="catwArbol"></div>
+              <p class="modal-hint">Arrastra ⠿ para cambiar el orden. Doble clic en un nombre para cambiarlo.</p>
+            </aside>
+            <section class="catw-col-detalle" id="catwDetalle"></section>
           </div>
         </div>
       </div>
@@ -5449,7 +5459,7 @@
 
 
   <!-- ============================================================
-       MODAL 1/3: ¿CÓMO QUIERES CARGAR EL PRODUCTO?
+       MODAL: ¿CÓMO QUIERES CARGAR EL PRODUCTO?
        Se abre al pulsar "Nuevo Producto".
        ============================================================ -->
   <div id="modalMetodoAlta" class="modal-overlay">
@@ -5463,152 +5473,15 @@
         <small>Una cosa a la vez: ficha con IA, precio y stock, fotos, garantía, tienda y medidas.</small>
       </button>
 
-      <div class="grid grid-2" style="margin-top:12px;">
-        <button class="btn btn-outline modo-alta-btn" id="btnAltaManual" type="button">
-          ✍️ Carga Manual<br>
-          <small>Formulario completo, campo por campo.</small>
-        </button>
-        <button class="btn btn-outline modo-alta-btn" id="btnAltaTiendanube" type="button">
-          📋 Carga por Comando / Tiendanube<br>
-          <small>Pega el texto copiado de la ficha y se rellena solo.</small>
-        </button>
-      </div>
+      <!-- v126: "Carga por Comando / Tiendanube" se quitó (dueño, 06-10-2026). Para varios
+           productos de una compra está "📋 Carga masiva (pegar)" en el catálogo. -->
+      <button class="btn btn-outline modo-alta-btn" id="btnAltaManual" type="button" style="margin-top:12px; width:100%;">
+        ✍️ Carga Manual<br>
+        <small>Formulario completo, campo por campo.</small>
+      </button>
 
       <div class="modal-foot">
         <button class="btn btn-ghost" id="btnCancelarMetodoAlta">Cancelar</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ============================================================
-       MODAL 2/3: PEGAR EL TEXTO CRUDO DE TIENDANUBE
-       ============================================================ -->
-  <div id="modalPegarTiendanube" class="modal-overlay">
-    <div class="modal-box modal-lg">
-      <h2>Carga por comando · Tiendanube</h2>
-      <p class="modal-hint">
-        Abre la ficha del producto en el admin de Tiendanube, pulsa <strong>Ctrl + A</strong> y
-        <strong>Ctrl + C</strong>, y pega todo aquí abajo. No importa que venga el menú lateral:
-        se descarta solo.
-      </p>
-
-      <div class="field" style="margin-top:14px;">
-        <textarea id="textoTiendanube" rows="12"
-                  placeholder="Pega aquí todo el texto copiado de Tiendanube (Ctrl+A y Ctrl+C)..."></textarea>
-      </div>
-
-      <p class="modal-hint" id="avisoPegado">Se leen: nombre, SKU, código de barras, precio, costo, stock, peso y dimensiones.</p>
-
-      <div class="modal-foot">
-        <button class="btn btn-ghost" id="btnCancelarPegarTiendanube">Cancelar</button>
-        <button class="btn btn-outline" id="btnLimpiarPegado" type="button">Limpiar</button>
-        <button class="btn btn-primary" id="btnProcesarTexto" type="button">⚙️ Procesar Texto</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ============================================================
-       MODAL 3/3: REVISIÓN ANTES DE GUARDAR
-       Nada se escribe en la base hasta confirmar aquí.
-       ============================================================ -->
-  <div id="modalRevisarTiendanube" class="modal-overlay">
-    <div class="modal-box modal-lg">
-      <h2>Revisar antes de guardar</h2>
-      <p class="modal-hint">
-        Todavía no se guardó nada. Corrige lo que haga falta y confirma.
-      </p>
-
-      <!-- Resumen de qué se pudo leer y qué no -->
-      <div id="revResumenLectura" class="rev-resumen"></div>
-
-      <div class="field" style="margin-top:14px;">
-        <label>Nombre del Producto *</label>
-        <input type="text" id="revNombre" placeholder="Nombre del producto">
-      </div>
-
-      <div class="grid grid-2" style="margin-top:12px;">
-        <div class="field">
-          <label>SKU</label>
-          <div class="input-scan">
-            <input type="text" id="revSku" placeholder="Código interno">
-            <button class="btn btn-outline btn-scan" type="button" data-scan="revSku" title="Escanear SKU con la cámara">📷</button>
-          </div>
-        </div>
-        <div class="field">
-          <label>Código de Barras</label>
-          <div class="input-scan">
-            <input type="text" id="revBarcode" placeholder="Solo números (EAN / UPC)" inputmode="numeric" pattern="[0-9]*">
-            <button class="btn btn-outline btn-scan" type="button" data-scan="revBarcode" title="Escanear código de barras con la cámara">📷</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="grid grid-3" style="margin-top:12px;">
-        <div class="field">
-          <label>Costo Unit.</label>
-          <input type="number" id="revCosto" min="0" step="1">
-        </div>
-        <div class="field">
-          <label>Precio de Venta</label>
-          <input type="number" id="revPrecio" min="0" step="1">
-        </div>
-        <div class="field">
-          <label>Stock</label>
-          <input type="number" id="revStock" min="0" step="1">
-        </div>
-      </div>
-      <p class="modal-hint" id="revMargen">—</p>
-
-      <span class="section-label" style="margin-top:16px;">Medidas y envío</span>
-      <div class="grid grid-4">
-        <div class="field">
-          <label>Peso (kg)</label>
-          <input type="number" id="revPeso" min="0" step="0.001">
-        </div>
-        <div class="field">
-          <label>Alto (cm)</label>
-          <input type="number" id="revAlto" min="0" step="0.1">
-        </div>
-        <div class="field">
-          <label>Ancho (cm)</label>
-          <input type="number" id="revAncho" min="0" step="0.1">
-        </div>
-        <div class="field">
-          <label>Profundidad (cm)</label>
-          <input type="number" id="revProfundidad" min="0" step="0.1">
-        </div>
-      </div>
-
-      <span class="section-label" style="margin-top:16px;">Control de stock y opciones</span>
-      <div class="grid grid-2">
-        <div class="field">
-          <label>Alerta de bajo stock cuando queden</label>
-          <input type="number" id="revStockMinimo" min="0" step="1" placeholder="3">
-        </div>
-        <div class="field">
-          <label class="field-ghost-label">&nbsp;</label>
-          <label class="sn-toggle">
-            <input type="checkbox" id="revAlertaStock" checked> Avisarme cuando baje del mínimo
-          </label>
-        </div>
-      </div>
-
-      <div style="margin-top:12px;">
-        <label class="sn-toggle" style="width:fit-content;">
-          <input type="checkbox" id="revStockIlimitado"> ♾️ Stock ilimitado (servicios o ítems sin inventario físico)
-        </label>
-        <label class="sn-toggle" style="width:fit-content; margin-top:10px;">
-          <input type="checkbox" id="revRequiereSN"> El producto requiere registrar S/N al vender
-        </label>
-        <label class="sn-toggle" style="width:fit-content; margin-top:10px;">
-          <input type="checkbox" id="revEsRepuesto"> Es repuesto / insumo de taller
-        </label>
-      </div>
-
-      <div class="modal-foot">
-        <button class="btn btn-ghost" id="btnCancelarRevision">Cancelar</button>
-        <button class="btn btn-outline" id="btnVolverAPegar" type="button">← Volver al texto</button>
-        <button class="btn btn-primary" id="btnConfirmarTiendanube" type="button">✅ Confirmar y Guardar Producto</button>
       </div>
     </div>
   </div>
@@ -7146,6 +7019,22 @@
     </div>
   </div>
 
+  <!-- ELIMINAR UNA CATEGORÍA (v126, js/categorias-web.js): pregunta a dónde van sus productos -->
+  <div id="modalCatwEliminar" class="modal-overlay">
+    <div class="modal-box modal-sm">
+      <h2 id="catwEliminarTitulo">Eliminar categoría</h2>
+      <p class="modal-hint" id="catwEliminarTexto">—</p>
+      <div class="field" id="catwEliminarBloque" style="margin-top:12px;">
+        <label for="catwEliminarDestino">Mover sus productos a</label>
+        <select id="catwEliminarDestino"></select>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCatwCancelarEliminar" type="button">Cancelar</button>
+        <button class="btn btn-red" id="btnCatwEliminar" type="button">🗑 Eliminar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- CARGA MASIVA POR COPIAR Y PEGAR (v125, js/carga-masiva.js) -->
   <div id="modalCargaMasiva" class="modal-overlay">
     <div class="modal-box modal-xl">
@@ -7190,6 +7079,18 @@
           <div class="field"><label for="cmFechaCompra">Fecha de compra</label><input type="date" id="cmFechaCompra"></div>
           <div class="field"><label for="cmProveedor">Proveedor</label><input type="text" id="cmProveedor" maxlength="80" placeholder="A quién se la compraste"></div>
           <div class="field" id="cmBloqueLlegada" style="display:none;"><label for="cmFechaLlegada">¿Cuándo llega? (estimada)</label><input type="date" id="cmFechaLlegada"></div>
+        </div>
+        <!-- v126 (dueño, 06-10-2026): el gasto se decide ACÁ, antes de cargar. Nada se anota solo. -->
+        <div id="cmBloqueGasto" style="margin-top:12px;">
+          <p class="compra-llegada-titulo">¿Anoto esta compra en Gastos (Finanzas)?</p>
+          <div class="compra-llegada-opciones" id="cmGastos" role="radiogroup" aria-label="¿Anotar el gasto de esta compra?">
+            <button type="button" class="compra-llegada-opcion" data-gasto-masiva="si" role="radio" aria-checked="false">
+              <strong>💸 Sí, sumar a gastos de mercadería</strong><small>Al terminar se abre el gasto ya llenado, para ponerle medio de pago y factura.</small>
+            </button>
+            <button type="button" class="compra-llegada-opcion" data-llegada="camino" data-gasto-masiva="no" role="radio" aria-checked="false">
+              <strong>🚫 No registrar gasto por estos productos</strong><small>Solo se cargan los productos. En Finanzas no se anota nada.</small>
+            </button>
+          </div>
         </div>
         <div id="cmTabla" style="margin-top:12px; overflow:auto; max-height:44vh;"></div>
         <p class="modal-hint">El precio de venta puede quedar para después. Si un producto se suma a uno que ya existe, su precio no cambia.</p>
@@ -7642,7 +7543,7 @@
   <script src="js/inactividad-global.js"></script>
   <script src="js/pinpad.js"></script>
   <script src="js/pago.js"></script>
-  <script src="js/tiendanube.js"></script>
+  <script src="js/alta-producto.js"></script>
   <script src="js/lotes.js"></script>
   <script src="js/productos.js"></script>
   <script src="js/stock-ajuste.js"></script>   <!-- v118 (sql/84): después de productos.js, usa editingProductId y cargarIngresosProducto -->
@@ -7663,6 +7564,7 @@
   <script src="js/encargos.js"></script>
   <script src="js/encargos-etapas.js"></script>   <!-- v110 (sql/80): proceso con el proveedor; usa encargosList y productoEncargo de encargos.js -->
   <script src="js/pedidos-web.js"></script>
+  <script src="js/categorias-web.js"></script>   <!-- v126: Página Web → Categorías. Antes de pagina-web.js, que la llama al abrir la pestaña -->
   <script src="js/pagina-web.js"></script>   <!-- después de pedidos-web.js: envuelve su vista en el subtab "pedidos" -->
   <script src="js/notificaciones.js"></script>
   <script src="js/pendientes.js"></script>   <!-- v101: después de notificaciones.js, reutiliza fechaCortaAviso -->

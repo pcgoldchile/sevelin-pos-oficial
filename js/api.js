@@ -584,7 +584,11 @@ const API = {
     crear: (nombre, parentId) => apiRequest('/productos/categorias', { method: 'POST', body: { nombre, parent_id: parentId || null } }),
     renombrar: (id, nombre) => apiRequest(`/productos/categorias/${id}`, { method: 'PUT', body: { nombre } }),
     mover: (id, direccion) => apiRequest(`/productos/categorias/${id}/mover`, { method: 'PUT', body: { direccion } }),
-    eliminar: (id) => apiRequest(`/productos/categorias/${id}`, { method: 'DELETE' })
+    // v126: `moverA` = categoría a la que pasan sus productos ('' = quedan sin categoría)
+    eliminar: (id, moverA) => apiRequest(`/productos/categorias/${id}${moverA ? `?mover_a=${encodeURIComponent(moverA)}` : ''}`, { method: 'DELETE' }),
+    // v126: asignar categoría a varios productos, y guardar el orden tal como quedó al arrastrar
+    asignar: (productoIds, categoriaId) => apiRequest('/productos/categorias/asignar', { method: 'PUT', body: { producto_ids: productoIds, categoria_id: categoriaId || null } }),
+    ordenar: (ids) => apiRequest('/productos/categorias/orden', { method: 'PUT', body: { ids } })
   },
 
   ot: {
