@@ -4980,6 +4980,23 @@
     </div>
   </div>
 
+  <!-- v129: aviso "listo para retiro" de un pedido web (supabase/41 de la tienda). js/pedidos-web.js -->
+  <div id="modalListoRetiro" class="modal-overlay">
+    <div class="modal-box" style="max-width:560px;">
+      <h2>📣 Avisar: listo para retiro</h2>
+      <p class="modal-hint" id="listoRetiroTexto">—</p>
+      <div id="listoRetiroLista" style="display:flex; flex-direction:column; gap:8px; margin-top:12px;"></div>
+      <p class="modal-hint" style="margin-top:12px;">
+        Le llega un correo al cliente con lo que marcaste y la dirección y el horario de la tienda.
+        Lo que quede sin marcar se le dice que <strong>todavía no está listo</strong>.
+      </p>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnListoRetiroVolver" type="button">Volver</button>
+        <button class="btn btn-primary" id="btnListoRetiroConfirmar" type="button">📣 Mandar el aviso</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modalEntrega" class="modal-overlay">
     <!-- v117: con despacho el modal se ensancha y ordena los campos en dos columnas
          (antes era una sola columna de 460px y había que deslizar). La clase

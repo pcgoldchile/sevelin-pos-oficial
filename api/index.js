@@ -14398,6 +14398,71 @@ app.put('/api/pos/pedidos-web/:id', auth(true), async (req, res) => {
   res.json({ ...data, stock_repuesto: stockRepuesto, reservas_liberadas: lineasYaLiberadas.size, correo_enviado: correoEnviado });
 });
 
+/* AVISO "LISTO PARA RETIRO" (v129, supabase/41 de la tienda).
+   Pedido del dueño (06-10-2026): encontrar los productos de un pedido web,
+   revisarlos y dejarlos listos toma tiempo, y el cliente no debe venir
+   antes. Este botón le manda el correo "tu pedido está listo para retiro".
+
+   Se avisa por PRODUCTO (`skus`): un pedido con algo por llegar tiene dos
+   avisos, primero lo que estaba y después lo que llegó. El correo lo manda
+   la tienda (tiene Resend y la plantilla; la URL se deriva de
+   TIENDA_NOTIFICAR_ENTREGA_URL, igual que el aviso de mayoristas) y nombra
+   lo que todavía falta, para que nadie venga creyendo que se lleva todo.
+
+   Solo queda anotado en pedidos_web.retiro_avisos si el correo SALIÓ: un
+   aviso que el cliente no recibió no puede figurar como hecho. De paso, un
+   pedido "Por preparar" pasa a "Preparando" y deja de contar en la campana. */
+app.post('/api/pos/pedidos-web/:id/listo-retiro', auth(true), async (req, res) => {
+  const { data: pedido, error: errPedido } = await dbWeb.from('pedidos_web')
+    .select('id, numero_pedido, estado, metodo_envio, items, retiro_avisos, cliente_email').eq('id', req.params.id).single();
+  if (errPedido || !pedido) return enviarError(res, 404, 'Pedido no encontrado');
+  if (pedido.metodo_envio !== 'RETIRO') return enviarError(res, 409, 'Este pedido va con despacho: no se retira en la tienda');
+  if (!['PAGADO', 'PREPARANDO'].includes(pedido.estado)) {
+    return enviarError(res, 409, 'Solo se avisa un pedido pagado que todavía no se entrega');
+  }
+  if (!pedido.cliente_email) return enviarError(res, 409, 'El pedido no tiene correo: avísale tú por WhatsApp');
+
+  // Solo productos del propio pedido. Los servicios técnicos tienen su aviso aparte (QR de la orden).
+  const delPedido = new Set((pedido.items || []).filter(it => !it?.es_servicio).map(it => String(it.sku)));
+  const skus = [...new Set((Array.isArray(req.body?.skus) ? req.body.skus : []).map(s => String(s || '').trim()))]
+    .filter(s => delPedido.has(s));
+  if (!skus.length) return enviarError(res, 400, 'Marca qué productos quedaron listos para retiro');
+
+  const url = String(TIENDA_NOTIFICAR_ENTREGA_URL || '').replace(/notificar-entrega\/?$/, 'notificar-listo-retiro');
+  if (!url || url === TIENDA_NOTIFICAR_ENTREGA_URL || !SYNC_SECRET) {
+    return enviarError(res, 503, 'Falta TIENDA_NOTIFICAR_ENTREGA_URL o SYNC_SECRET: avísale tú por WhatsApp');
+  }
+
+  let cuerpo = {};
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-sync-secret': SYNC_SECRET },
+      body: JSON.stringify({ numero_pedido: pedido.numero_pedido, skus })
+    });
+    cuerpo = await resp.json().catch(() => ({}));
+    if (!resp.ok || !cuerpo.enviado) {
+      const motivo = cuerpo.error || (resp.ok ? 'el proveedor de correo no confirmó el envío' : 'la tienda respondió ' + resp.status);
+      await registrarErrorSalud({ ruta: 'correo de listo para retiro', mensaje: pedido.numero_pedido + ': ' + motivo });
+      return enviarError(res, 502, 'No se pudo mandar el correo (' + motivo + '). No quedó como avisado: inténtalo de nuevo o avísale por WhatsApp.');
+    }
+  } catch (err) {
+    await registrarErrorSalud({ ruta: 'correo de listo para retiro', mensaje: pedido.numero_pedido + ': no se pudo contactar a la tienda (' + err.message + ')' });
+    return enviarError(res, 502, 'No se pudo contactar a la tienda para mandar el correo. No quedó como avisado.');
+  }
+
+  const avisos = [...(Array.isArray(pedido.retiro_avisos) ? pedido.retiro_avisos : []), { en: new Date().toISOString(), skus }];
+  const cambios = { retiro_avisos: avisos };
+  if (pedido.estado === 'PAGADO') cambios.estado = 'PREPARANDO';
+  const { data, error } = await dbWeb.from('pedidos_web').update(cambios).eq('id', pedido.id).select().single();
+  if (error) {
+    // El correo ya salió: se dice, para que no lo mande dos veces creyendo que falló.
+    await registrarErrorSalud({ ruta: 'correo de listo para retiro', mensaje: pedido.numero_pedido + ': el correo salió pero no se pudo anotar el aviso (' + error.message + ')' });
+    return enviarError(res, 500, 'El correo SÍ se mandó, pero no se pudo anotar en el pedido. No lo mandes de nuevo.');
+  }
+  res.json({ ...data, correo_enviado: true, pendientes: Number(cuerpo.pendientes) || 0 });
+});
+
 /* ============================================================
    VENTA MAYORISTA — Fase 1 (v103, sql/76 + supabase/39 de la tienda)
    ------------------------------------------------------------

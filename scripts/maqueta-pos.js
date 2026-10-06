@@ -898,6 +898,48 @@ app.get('/api/compras/clasificaciones', (_req, res) => res.json([
 app.post('/api/compras', (req, res) => { const g = { id: gastosMaqueta.length + 1, ...req.body }; gastosMaqueta.push(g); res.status(201).json(g); });
 app.get('/api/compras', (_req, res) => res.json(gastosMaqueta));
 
+// v129: Pedidos Web (inventados). Uno de retiro que mezcla stock y por llegar, uno con despacho en dos
+// envíos, uno de retiro ya avisado en parte y uno sin correo. El aviso "listo para retiro" no manda nada:
+// solo anota el aviso, igual que api/index.js (que es el que vale) cuando la tienda confirma el correo.
+const itemWebMaqueta = (sku, nombre, precio, extra = {}) => ({ sku, producto_pos_id: 100, nombre, precio_web: precio, cantidad: 1, ...extra });
+const basePedidoWeb = { estado: 'PAGADO', metodo_pago: 'KHIPU', metodo_envio: 'RETIRO', tipo_pedido: 'NORMAL', agenda_tipo: 'RETIRO', retiro_fecha: null, retiro_bloque: null,
+  costo_envio: 0, recargo_medio_pago: 0, entrega_por_llegar: null, retiro_avisos: [], tracking_courier: null, es_mayorista: false, url_boleta_sii: null,
+  cliente_email: 'cliente@maqueta.test', cliente_telefono: '+56900000000', direccion_envio: { calle: '21 de Mayo', numero: '500', comuna: 'Arica' }, creado_en: new Date().toISOString() };
+let pedidosWebMaqueta = [
+  { id: 1, numero_pedido: 'WEB-900001', cliente_nombre: 'Carla <b>Cliente</b>', subtotal: 21980, total: 21980,
+    items: [itemWebMaqueta('balanza-cocina', 'Balanza de Cocina Digital 5 kg', 6990), itemWebMaqueta('ventilador-18', 'Ventilador Industrial 18"', 14990, { por_llegar: true, fecha_llegada_estimada: '2026-10-08' })] },
+  { id: 2, numero_pedido: 'WEB-900002', cliente_nombre: 'Pedro Despacho', metodo_envio: 'LOCAL', costo_envio: 6000, entrega_por_llegar: 'DOS_ENVIOS', subtotal: 21980, total: 27980,
+    items: [itemWebMaqueta('mouse-rgb', 'Mouse gamer RGB 7200 DPI', 6990), itemWebMaqueta('perchero', 'Perchero Colgador de Pie', 14990, { por_llegar: true, fecha_llegada_estimada: '2026-10-08' })] },
+  { id: 3, numero_pedido: 'WEB-900003', cliente_nombre: 'Ana Parcial', estado: 'PREPARANDO', subtotal: 12980, total: 12980, retiro_avisos: [{ en: new Date(Date.now() - 86400000).toISOString(), skus: ['cinta'] }],
+    items: [itemWebMaqueta('cinta', 'Cinta de Embalaje Transparente', 2990), itemWebMaqueta('basurero', 'Basurero con Pedal 12 L', 9990, { por_llegar: true, fecha_llegada_estimada: '2026-10-08' })] },
+  { id: 4, numero_pedido: 'WEB-900004', cliente_nombre: 'Luis Sin Correo', cliente_email: null, subtotal: 8000, total: 8000, items: [itemWebMaqueta('combo', 'Combo Teclado y Mouse RGB', 8000)] },
+  { id: 5, numero_pedido: 'WEB-900005', cliente_nombre: 'Marta Un Envío', metodo_envio: 'LOCAL', costo_envio: 3000, entrega_por_llegar: 'JUNTO', subtotal: 21980, total: 24980,
+    items: [itemWebMaqueta('mouse-rgb', 'Mouse gamer RGB 7200 DPI', 6990), itemWebMaqueta('zapatero', 'Zapatero 5 Niveles', 14990, { por_llegar: true, fecha_llegada_estimada: '2026-10-08' })] },
+].map(p => ({ ...basePedidoWeb, ...p }));
+app.get('/api/pos/pedidos-web', (req, res) => {
+  const estados = String(req.query.estado || '').split(',').map(e => e.trim()).filter(Boolean);
+  res.json(pedidosWebMaqueta.filter(p => !estados.length || estados.includes(p.estado)).sort((a, b) => b.id - a.id));
+});
+app.put('/api/pos/pedidos-web/:id', (req, res) => {
+  const p = pedidosWebMaqueta.find(x => x.id === Number(req.params.id));
+  if (!p) return res.status(404).json({ error: 'Pedido no encontrado' });
+  if (req.body.estado) p.estado = req.body.estado;
+  if (req.body.tracking_courier !== undefined) p.tracking_courier = req.body.tracking_courier || null;
+  res.json({ ...p, correo_enviado: true });
+});
+app.post('/api/pos/pedidos-web/:id/listo-retiro', (req, res) => {
+  const p = pedidosWebMaqueta.find(x => x.id === Number(req.params.id));
+  if (!p) return res.status(404).json({ error: 'Pedido no encontrado' });
+  if (p.metodo_envio !== 'RETIRO') return res.status(409).json({ error: 'Este pedido va con despacho: no se retira en la tienda' });
+  if (!p.cliente_email) return res.status(409).json({ error: 'El pedido no tiene correo: avísale tú por WhatsApp' });
+  const skus = (req.body.skus || []).filter(s => p.items.some(it => it.sku === s));
+  if (!skus.length) return res.status(400).json({ error: 'Marca qué productos quedaron listos para retiro' });
+  p.retiro_avisos = [...p.retiro_avisos, { en: new Date().toISOString(), skus }];
+  if (p.estado === 'PAGADO') p.estado = 'PREPARANDO';
+  const avisados = new Set(p.retiro_avisos.flatMap(a => a.skus));
+  res.json({ ...p, correo_enviado: true, pendientes: p.items.filter(it => !avisados.has(it.sku)).length });
+});
+
 // v128: IVA a favor al día. Remanente y facturas inventados; las boletas salen de las ventas de la
 // maqueta del mes en curso, así una venta con boleta mueve el chip al instante (el que vale es api/index.js).
 app.get('/api/finanzas/sii/iva', (_req, res) => {

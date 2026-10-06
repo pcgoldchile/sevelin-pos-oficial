@@ -12,6 +12,13 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 06-10-2026 (noche) · v129, por llegar: el cliente elige cómo recibe, y "listo para retiro"
+
+Detalle en `docs/CHANGELOG-V129.md` (tienda `8ea0b56`, `supabase/41` aplicada). Retiro gratis y con aviso: botón
+"📣 Listo para retiro" en Pedidos Web, por producto, que manda el correo y solo anota si el correo salió. Despacho
+cobrado por adelantado; si el pedido mezcla stock y por llegar, el cliente elige un envío (paga 1) o dos (paga 2).
+**Falta del dueño:** confirmar la opción "un solo envío" y hacer una compra real de prueba.
+
 ## 06-10-2026 (noche) · v128, IVA a favor al día
 
 Detalle en `docs/CHANGELOG-V128.md`. F29 de septiembre cargado (remanente código 77: **$332.831**; la propuesta no

@@ -456,7 +456,9 @@ const API = {
       const qs = params.toString();
       return apiRequest('/pos/pedidos-web' + (qs ? `?${qs}` : ''));
     },
-    actualizar: (id, cambios) => apiRequest(`/pos/pedidos-web/${id}`, { method: 'PUT', body: cambios })
+    actualizar: (id, cambios) => apiRequest(`/pos/pedidos-web/${id}`, { method: 'PUT', body: cambios }),
+    // v129: correo "listo para retiro" por los productos marcados (supabase/41 de la tienda)
+    listoRetiro: (id, skus) => apiRequest(`/pos/pedidos-web/${id}/listo-retiro`, { method: 'POST', body: { skus } })
   },
 
   /* Cotizaciones que el cliente se armó solo en la tienda (supabase/35 de

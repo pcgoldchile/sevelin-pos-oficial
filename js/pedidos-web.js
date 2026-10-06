@@ -187,9 +187,12 @@ function renderPedidosWebTabla(lista) {
     // vez que el pedido ya salió (Preparando/Enviado) — si sigue "Por
     // preparar" (PAGADO) es más fácil equivocarse de un salto.
     const puedeMarcarEntregado = ['PREPARANDO', 'ENVIADO'].includes(p.estado);
+    // v129: correo "listo para retiro". Mientras quede algún producto sin avisar.
+    const puedeAvisarRetiro = estadoAvisoRetiroPedidoWeb(p).faltan > 0;
     const accion = puedeDespachar
       ? `<div class="cell-actions" style="justify-content:flex-end;">
            <button class="btn btn-outline btn-sm" data-pedido-web="${p.id}">Gestionar</button>
+           ${puedeAvisarRetiro ? `<button class="btn btn-outline btn-sm" style="color:var(--cyan);border-color:rgba(34,211,238,.4);" data-listo-retiro="${p.id}">📣 Listo para retiro</button>` : ''}
            ${puedeMarcarEntregado ? `<button class="btn btn-outline btn-sm" style="color:var(--green);border-color:rgba(34,197,94,.4);" data-entregar-pedido-web="${p.id}">✅ Entregado</button>` : ''}
            ${puedeCancelar ? `<button class="btn btn-outline btn-sm" style="color:var(--red);border-color:rgba(239,68,68,.4);" data-cancelar-pedido-web="${p.id}">Cancelar</button>` : ''}
          </div>`
@@ -205,7 +208,7 @@ function renderPedidosWebTabla(lista) {
       <td>${tsAChile(p.creado_en)}</td>
       <td>${escHtml(p.cliente_nombre || '—')}</td>
       <td>${badgeMedioPagoPedidoWeb(p)}</td>
-      <td>${escHtml(p.metodo_envio || '—')}${retiroAgendadoPedidoWeb(p)}${tracking}</td>
+      <td>${escHtml(p.metodo_envio || '—')}${retiroAgendadoPedidoWeb(p)}${entregaExtraPedidoWeb(p)}${tracking}</td>
       <td class="num">${fmtCLP(p.total)}</td>
       <td>${badgeEstadoPedidoWeb(p.estado)}</td>
       <td style="text-align:right;">${accion}</td>
@@ -223,6 +226,122 @@ function renderPedidosWebTabla(lista) {
   elPedidosWebTableBody.querySelectorAll('[data-entregar-pedido-web]').forEach(btn => {
     btn.addEventListener('click', () => marcarPedidoWebEntregado(btn.dataset.entregarPedidoWeb, btn));
   });
+
+  elPedidosWebTableBody.querySelectorAll('[data-listo-retiro]').forEach(btn => {
+    btn.addEventListener('click', () => abrirModalListoRetiro(btn.dataset.listoRetiro));
+  });
+}
+
+/* ============================================================
+   AVISO "LISTO PARA RETIRO" Y PLAN DE ENTREGA (v129)
+   ------------------------------------------------------------
+   Decisión del dueño (06-10-2026, supabase/41 de la tienda):
+     · Retiro: gratis, y el cliente NO viene hasta que le llega el correo
+       "listo para retiro". Dejar un pedido listo toma tiempo.
+     · Despacho con algo por llegar: el cliente eligió en el pago un solo
+       envío cuando llegue todo, o dos envíos (los dos ya pagados).
+   Se avisa por producto: un pedido con algo por llegar tiene dos avisos.
+   ============================================================ */
+let pedidoWebIdListoRetiro = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+  const modal = document.getElementById('modalListoRetiro');
+  document.getElementById('btnListoRetiroVolver')?.addEventListener('click', cerrarModalListoRetiro);
+  document.getElementById('btnListoRetiroConfirmar')?.addEventListener('click', confirmarListoRetiro);
+  modal?.addEventListener('click', (e) => { if (e.target === modal) cerrarModalListoRetiro(); });
+});
+
+/* Cuántos productos del pedido ya se avisaron y cuántos faltan. `faltan` es
+   0 si el pedido no es de retiro o ya no está en una etapa en que se avisa:
+   así el botón y el recordatorio desaparecen solos. */
+function estadoAvisoRetiroPedidoWeb(p) {
+  const productos = (Array.isArray(p.items) ? p.items : []).filter(it => !it.es_servicio);
+  const avisos = Array.isArray(p.retiro_avisos) ? p.retiro_avisos : [];
+  const cuando = {};
+  avisos.forEach(a => (a.skus || []).forEach(sku => { if (!cuando[sku]) cuando[sku] = a.en; }));
+  const avisados = productos.filter(it => cuando[it.sku]);
+  const aplica = p.metodo_envio === 'RETIRO' && ['PAGADO', 'PREPARANDO'].includes(p.estado);
+  return {
+    productos, cuando, avisados: avisados.length,
+    faltan: aplica ? productos.length - avisados.length : 0,
+    ultimo: avisos.length ? avisos[avisos.length - 1].en : null
+  };
+}
+
+// Línea chica bajo el método de envío: qué eligió el cliente y si ya se le avisó.
+function entregaExtraPedidoWeb(p) {
+  const lineas = [];
+  if (p.entrega_por_llegar === 'DOS_ENVIOS') lineas.push('<small style="color:var(--gold);">📦📦 2 envíos, los dos pagados</small>');
+  if (p.entrega_por_llegar === 'JUNTO') lineas.push('<small style="color:var(--text-muted);">📦 1 envío, cuando llegue todo</small>');
+  if (p.metodo_envio === 'RETIRO' && !['CREADO', 'FALLIDO', 'EXPIRADO', 'CANCELADO'].includes(p.estado)) {
+    const e = estadoAvisoRetiroPedidoWeb(p);
+    if (e.avisados && e.productos.length > e.avisados) {
+      lineas.push(`<small style="color:var(--gold);">📣 Avisado en parte (${e.avisados} de ${e.productos.length})</small>`);
+    } else if (e.avisados) {
+      lineas.push(`<small style="color:var(--green);">📣 Listo para retiro · avisado ${escHtml(tsAChile(e.ultimo))}</small>`);
+    } else if (e.faltan) {
+      lineas.push('<small style="color:var(--gold);">⏳ Sin avisar: el cliente espera tu correo</small>');
+    }
+  }
+  return lineas.map(l => '<br>' + l).join('');
+}
+
+function abrirModalListoRetiro(id) {
+  const pedido = pedidosWebList.find(p => String(p.id) === String(id));
+  if (!pedido) return;
+  pedidoWebIdListoRetiro = pedido.id;
+  const e = estadoAvisoRetiroPedidoWeb(pedido);
+
+  const texto = document.getElementById('listoRetiroTexto');
+  if (texto) {
+    texto.textContent = `Pedido ${pedido.numero_pedido} de ${pedido.cliente_nombre || 'cliente'}${pedido.cliente_email ? ' · ' + pedido.cliente_email : ' · SIN CORREO'}. Marca lo que ya revisaste y dejaste listo.`;
+  }
+  const lista = document.getElementById('listoRetiroLista');
+  if (lista) {
+    lista.innerHTML = e.productos.map(it => {
+      const avisado = e.cuando[it.sku];
+      const porLlegar = it.por_llegar === true && !avisado;
+      const nota = avisado
+        ? `<small style="color:var(--green);">✅ Ya avisado el ${escHtml(tsAChile(avisado))}</small>`
+        : porLlegar
+          ? `<small style="color:var(--gold);">🚚 Por llegar${it.fecha_llegada_estimada ? ' (' + escHtml(String(it.fecha_llegada_estimada).slice(8, 10) + '-' + String(it.fecha_llegada_estimada).slice(5, 7)) + ')' : ''}: márcalo solo si ya llegó</small>`
+          : '';
+      return `<label class="caja-check" style="align-items:flex-start;">
+          <input type="checkbox" class="w-4 h-4 accent-blue-600" data-sku-listo="${escHtml(it.sku)}" ${avisado ? 'checked disabled' : porLlegar ? '' : 'checked'}>
+          <span>${escHtml(it.nombre)} × ${escHtml(String(it.cantidad))}${nota ? '<br>' + nota : ''}</span>
+        </label>`;
+    }).join('') || '<p class="modal-hint">Este pedido no tiene productos que retirar.</p>';
+  }
+  document.getElementById('modalListoRetiro')?.classList.add('show');
+}
+
+function cerrarModalListoRetiro() {
+  document.getElementById('modalListoRetiro')?.classList.remove('show');
+  pedidoWebIdListoRetiro = null;
+}
+
+async function confirmarListoRetiro() {
+  if (!pedidoWebIdListoRetiro) return;
+  const id = pedidoWebIdListoRetiro;
+  const pedido = pedidosWebList.find(p => String(p.id) === String(id));
+  const skus = [...document.querySelectorAll('#listoRetiroLista [data-sku-listo]')]
+    .filter(c => c.checked && !c.disabled).map(c => c.dataset.skuListo);
+  if (!skus.length) { showToast('Marca al menos un producto que esté listo', 'err'); return; }
+
+  const btn = document.getElementById('btnListoRetiroConfirmar');
+  if (btn) btn.disabled = true;
+  try {
+    const r = await API.pedidosWeb.listoRetiro(id, skus);
+    cerrarModalListoRetiro();
+    showToast(`Aviso enviado por correo: pedido ${pedido?.numero_pedido || '#' + id} listo para retiro`
+      + (r?.pendientes ? ` (quedan ${r.pendientes} producto(s) por avisar)` : ''), 'ok');
+    await cargarPedidosWeb();
+    if (typeof actualizarNotificaciones === 'function') actualizarNotificaciones();
+  } catch (err) {
+    showToast(err.message || 'No se pudo mandar el aviso', 'err');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 /* Atajo de un clic — mismo cambio de estado que "Gestionar" (PUT
@@ -328,8 +447,12 @@ function abrirModalPedidoWeb(id) {
   }
 
   if (elPedidoWebTotales) {
+    // v129: con dos envíos, "Entregado" manda el correo final y la reseña: va al terminar el segundo.
+    const plan = pedido.entrega_por_llegar === 'DOS_ENVIOS'
+      ? ' · 📦📦 2 envíos, los dos pagados: marca Entregado recién al entregar el segundo'
+      : pedido.entrega_por_llegar === 'JUNTO' ? ' · 📦 1 envío, cuando llegue todo' : '';
     elPedidoWebTotales.textContent =
-      `Subtotal ${fmtCLP(pedido.subtotal)} · Envío ${fmtCLP(pedido.costo_envio)} · Total ${fmtCLP(pedido.total)}`;
+      `Subtotal ${fmtCLP(pedido.subtotal)} · Envío ${fmtCLP(pedido.costo_envio)} · Total ${fmtCLP(pedido.total)}${plan}`;
   }
 
   if (elPedidoWebBoleta && elPedidoWebBoletaLink) {
