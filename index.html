@@ -2672,6 +2672,45 @@
             <p class="modal-hint" id="ingPrecioSugerido" style="margin-top:6px;"></p>
             <p class="modal-hint" id="ingDondeGuardar" style="margin-top:6px;"></p>
 
+            <!-- ¿YA LLEGÓ O VIENE EN CAMINO? (v124, dueño 06-10-2026).
+                 Es lo que decide si la compra suma stock, y era una casilla dentro de
+                 "Más datos de la compra": no se veía, y una compra en camino terminó
+                 cargada como stock. Ahora son dos botones a la vista. La casilla
+                 #prodPorLlegar sigue siendo el dato (oculta): la mueven los botones. -->
+            <div class="compra-llegada" id="compraLlegada">
+              <p class="compra-llegada-titulo">¿Ya tienes esta mercadería en la tienda?</p>
+              <div class="compra-llegada-opciones" role="radiogroup" aria-label="¿Ya llegó la mercadería?">
+                <button type="button" class="compra-llegada-opcion activo" data-llegada="ya" role="radio" aria-checked="true">
+                  <strong>✅ Sí, ya llegó</strong>
+                  <small>Las unidades se suman al stock ahora.</small>
+                </button>
+                <button type="button" class="compra-llegada-opcion" data-llegada="camino" role="radio" aria-checked="false">
+                  <strong>🚚 No, viene en camino</strong>
+                  <small>No suma stock todavía. Queda "por llegar" hasta que aprietes "Ya llegó".</small>
+                </button>
+              </div>
+              <input type="checkbox" id="prodPorLlegar" hidden>
+
+              <div id="bloqueIngPorLlegar" class="compra-llegada-detalle" style="display:none;">
+                <div class="grid grid-2">
+                  <div class="field">
+                    <label for="prodFechaLlegada">¿Cuándo llega? (fecha estimada)</label>
+                    <input type="date" id="prodFechaLlegada">
+                  </div>
+                  <div class="field">
+                    <label for="prodStockPorLlegar">¿Cuántas unidades vienen?</label>
+                    <input type="number" id="prodStockPorLlegar" min="0" step="1" placeholder="0">
+                  </div>
+                </div>
+                <!-- Si se va a ver o no en sevelin.cl, y el botón para publicarlo (js/productos.js). -->
+                <div id="ingEstadoWeb" class="compra-llegada-web" aria-live="polite"></div>
+                <p class="subtitle" style="margin-top:8px;">Cuando llegue, aprieta <strong>"📦 Ya llegó"</strong>
+                  en la lista de abajo o en el botón 🚚 de arriba: ahí sube el stock y la tienda
+                  <strong>avisa por correo</strong> a quienes lo esperaban. La fecha se muestra siempre
+                  como <strong>estimada</strong>; déjala vacía si no la sabes.</p>
+              </div>
+            </div>
+
             <!-- Costeo PEPS (sql/09). Apagado por defecto: ningún producto lo activa solo.
                  v122 (dueño, 04-10-2026): subió desde "Otras opciones" hasta acá, junto a la
                  compra, porque es en la compra donde importa: con esto marcado cada compra
@@ -2695,7 +2734,7 @@
             <!-- Lo que no hace falta en cada compra queda plegado (dueño, 03-10-2026:
                  "me cansa mucho ver todas las opciones a la vez"). -->
             <details class="compra-mas" id="ingMasDatos">
-              <summary>Más datos de la compra: proveedor, factura, devolución, mercadería en camino</summary>
+              <summary>Más datos de la compra: proveedor, factura, devolución</summary>
 
               <div class="grid grid-4" style="margin-top:10px;">
                 <div class="field">
@@ -2734,34 +2773,8 @@
                 <span>➕ Sumar estas unidades al stock (desmárcalo solo si ya estaban contadas)</span>
               </label>
 
-              <!-- MERCADERÍA EN CAMINO (dueño, 21-09-2026). Antes vivía en
-                   "Tienda web" como tres campos sueltos que había que acordarse
-                   de llenar. Es lo mismo que una compra que todavía no llegó, así
-                   que va acá: al marcarlo, la compra NO suma stock y el producto
-                   queda reservable en sevelin.cl. -->
-              <label class="check-item" id="itemProdPorLlegar" style="margin-top:8px;">
-                <input type="checkbox" id="prodPorLlegar">
-                <span>🚚 Todavía no llega — es mercadería en camino (se puede reservar en la tienda)</span>
-              </label>
-
-              <div id="bloqueIngPorLlegar" style="display:none; margin-top:10px; padding:10px 12px; border:1px solid var(--border); border-radius:10px;">
-                <div class="grid grid-2">
-                  <div class="field">
-                    <label for="prodStockPorLlegar">¿Cuántas unidades vienen?</label>
-                    <input type="number" id="prodStockPorLlegar" min="0" step="1" placeholder="0">
-                  </div>
-                  <div class="field">
-                    <label for="prodFechaLlegada">Fecha estimada de llegada</label>
-                    <input type="date" id="prodFechaLlegada">
-                  </div>
-                </div>
-                <p class="subtitle" style="margin-top:8px;">Al registrar la compra, estas unidades
-                  <strong>no suman stock</strong>: quedan como tope de lo que se puede reservar. Si
-                  todavía tienes unidades en tienda, el cliente solo puede comprar esas.
-                  La fecha se muestra siempre como <strong>estimada</strong>; déjala vacía si no sabes.</p>
-                <p class="subtitle">Cuando llegue, usa <strong>"📦 Ya llegó"</strong> en la lista de
-                  abajo: suma el stock y <strong>avisa por correo</strong> a todos los que lo esperaban.</p>
-              </div>
+              <!-- "Mercadería en camino" (dueño, 21-09-2026) vivía acá como casilla;
+                   desde v124 son los dos botones de arriba, fuera de este plegable. -->
 
               <!-- LA FACTURA TODAVÍA NO LLEGA (sql/65, dueño 24-09-2026).
                    Marca explícita y no "referencia vacía": hoy ninguna entrada

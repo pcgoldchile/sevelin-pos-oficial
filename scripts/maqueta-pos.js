@@ -741,7 +741,11 @@ app.post('/api/productos/:id/compras', (req, res) => {
   if (costoRellenado) p.costo_unitario = costo;
   const precioNuevo = precio && precio !== p.precio_unitario ? precio : null;
   if (precioNuevo) p.precio_unitario = precioNuevo;
-  res.status(201).json({ ingreso, lote: null, stock_nuevo: p.stock, stock_sumado: sumar, en_camino: !!b.en_camino, costo_rellenado: costoRellenado, precio_nuevo: precioNuevo });
+  // v124: en camino → el producto queda "por llegar" y, si se pidió, publicado (como el servidor real)
+  if (b.en_camino) Object.assign(p, { por_llegar: true, stock_por_llegar: Number(b.stock_por_llegar) || cantidad, fecha_llegada_estimada: b.fecha_llegada_estimada || null });
+  const publicado = !!(b.en_camino && b.publicar_web && !p.publicado_web && !p.archivado);
+  if (publicado) p.publicado_web = true;
+  res.status(201).json({ ingreso, lote: null, stock_nuevo: p.stock, stock_sumado: sumar, en_camino: !!b.en_camino, costo_rellenado: costoRellenado, precio_nuevo: precioNuevo, publicado_web: publicado });
 });
 app.get('/api/productos/:id/ajustes-stock', (req, res) => res.json(ajustesMaqueta[req.params.id] || []));
 app.post('/api/productos/:id/ajuste-stock', (req, res) => {

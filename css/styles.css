@@ -4915,6 +4915,23 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
 .stock-actual-fila input { flex: 1; min-width: 0; }
 .stock-actual-fila input[readonly] { background: var(--surface-soft); color: var(--text-100); font-weight: 700; cursor: default; }
 .stock-actual-fila .btn { white-space: nowrap; }
+/* v124 — ¿ya llegó o viene en camino?: dos botones a la vista en la compra */
+.compra-llegada { margin-top: 12px; }
+.compra-llegada-titulo { margin: 0 0 6px; font-size: 13px; font-weight: 700; color: var(--text-100); }
+.compra-llegada-opciones { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.compra-llegada-opcion { text-align: left; padding: 10px 12px; border-radius: var(--radius-sm); border: 1.5px solid var(--border); background: var(--bg-800); color: var(--text-100); cursor: pointer; font-family: inherit; font-size: 13px; }
+.compra-llegada-opcion strong { display: block; font-size: 14px; }
+.compra-llegada-opcion small { color: var(--text-muted); }
+.compra-llegada-opcion:hover { border-color: var(--border-strong); }
+.compra-llegada-opcion.activo { border-color: var(--green); background: rgba(34,197,94,.10); }
+.compra-llegada-opcion[data-llegada="camino"].activo { border-color: var(--gold); background: rgba(245,158,11,.10); }
+.compra-llegada-detalle { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--gold); border-radius: 10px; }
+.compra-llegada-web { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; font-size: 13px; color: var(--text-300); }
+.compra-llegada-web:empty { display: none; }
+.compra-llegada-web.falta { padding: 8px 10px; border-radius: 8px; background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.38); color: var(--gold); }
+.compra-llegada-web.ok { color: var(--green); }
+.stock-en-camino { display: block; margin-top: 4px; font-size: 11px; font-weight: 600; color: var(--gold); white-space: nowrap; }
+@media (max-width: 560px) { .compra-llegada-opciones { grid-template-columns: 1fr; } }
 .compra-mas { margin-top: 10px; border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; }
 .compra-mas > summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-300); }
 .compra-mas[open] > summary { color: var(--text-100); margin-bottom: 4px; }

@@ -3558,6 +3558,10 @@ async function registrarCompraDeProducto(producto, datos, opciones = {}) {
     cambios.stock_por_llegar = Math.max(0, Math.round(num(opciones.stockPorLlegar) || datos.cantidad));
     const eta = String(opciones.fechaLlegada || '').trim();
     cambios.fecha_llegada_estimada = /^\d{4}-\d{2}-\d{2}$/.test(eta) ? eta : null;
+    /* v124: "para que aparezca en la tienda web también". Si el formulario
+       pide publicarlo, queda publicado con esta misma compra; un archivado
+       no se publica (misma regla que sanearProducto). */
+    if (opciones.publicarWeb && !producto.publicado_web && !producto.archivado) cambios.publicado_web = true;
   }
 
   if (Object.keys(cambios).length) {
@@ -3587,7 +3591,8 @@ async function registrarCompraDeProducto(producto, datos, opciones = {}) {
     stock_sumado: sumarStock,
     en_camino: enCamino,
     costo_rellenado: costoRellenado ? datos.costo_unitario : null,
-    precio_nuevo: opciones.precioVenta || null
+    precio_nuevo: opciones.precioVenta || null,
+    publicado_web: cambios.publicado_web === true
   };
 }
 
@@ -3606,7 +3611,8 @@ async function rechazoPrecioDeVenta(producto, precioNuevo, costoNuevo = null) {
 }
 
 const CAMPOS_PRODUCTO_COMPRA = 'id, nombre, stock, usa_lotes, stock_ilimitado, costo_unitario, precio_unitario, precio_web, ' +
-  'precio_oferta_web, precio_mayorista, mayorista_desde, precio_mayorista_2, mayorista_desde_2, es_servicio, es_pedido_encargo, precio_a_consultar';
+  'precio_oferta_web, precio_mayorista, mayorista_desde, precio_mayorista_2, mayorista_desde_2, es_servicio, es_pedido_encargo, precio_a_consultar, ' +
+  'publicado_web, archivado';
 
 app.post('/api/productos/:id/compras', auth(true), async (req, res) => {
   const id = Number(req.params.id);
@@ -3653,6 +3659,7 @@ app.post('/api/productos/:id/compras', auth(true), async (req, res) => {
       sumarStock: req.body?.sumar_stock !== false,
       stockPorLlegar: req.body?.stock_por_llegar,
       fechaLlegada: req.body?.fecha_llegada_estimada,
+      publicarWeb: req.body?.publicar_web === true,
       precioVenta,
       usuario: req.usuario?.usuario || req.usuario?.rol || null
     });

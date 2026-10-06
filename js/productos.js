@@ -390,7 +390,7 @@ function setupProductosEventListeners() {
 
   // Aviso "no va a aparecer en la tienda" (Tienda web) — se recalcula en
   // vivo con cualquier campo que lo pueda cambiar.
-  [elProdPublicadoWeb, elProdSku, elProdStock, elProdStockIlimitado].forEach(el => {
+  [elProdPublicadoWeb, elProdSku, elProdStock, elProdStockIlimitado, elProdEsEncargo].forEach(el => {
     if (el) el.addEventListener('input', evaluarAvisoPublicacion);
     if (el) el.addEventListener('change', evaluarAvisoPublicacion);
   });
@@ -562,6 +562,15 @@ function badgeStock(p) {
   if (stock <= 0) return `<span class="stock-badge stock-agotado">Agotado</span>`;
   if (stock <= limiteStock(p)) return `<span class="stock-badge stock-bajo">⚠️ ${stock}</span>`;
   return `<span class="stock-badge stock-ok">${stock}</span>`;
+}
+
+/* v124: lo que viene en camino se ve en la lista, debajo del stock. */
+function badgeEnCamino(p) {
+  if (!p.por_llegar) return '';
+  const unidades = Number(p.stock_por_llegar) || 0;
+  const eta = String(p.fecha_llegada_estimada || '').slice(0, 10);
+  const fecha = /^\d{4}-\d{2}-\d{2}$/.test(eta) ? ` · ${eta.slice(8, 10)}-${eta.slice(5, 7)}` : '';
+  return `<small class="stock-en-camino" title="Comprado y todavía no llega. No está sumado al stock.">🚚 ${unidades > 0 ? `llegan ${unidades}` : 'por llegar'}${fecha}</small>`;
 }
 
 /* ============================================================
@@ -954,7 +963,7 @@ function renderProductosTabla(items, origen) {
       <td class="admin-only">${fmtCLP(p.costo_unitario)}</td>
       <td>${fmtCLP(p.precio_unitario)}</td>
       <td class="admin-only col-margen">${esAdmin() ? celdaMargen(p) : ''}</td>
-      <td>${badgeStock(p)}</td>
+      <td>${badgeStock(p)}${badgeEnCamino(p)}</td>
       <td>
         <div class="cell-actions">
           ${urlProductoWeb(p) ? `<a class="btn btn-icon btn-icon-view" href="${escHtml(urlProductoWeb(p))}" target="_blank" rel="noopener noreferrer" title="Ver este producto en sevelin.cl">${ICO_VER_WEB_PROD}</a>` : ''}
@@ -1979,6 +1988,8 @@ function abrirModalProducto(producto = null) {
     productoEnEdicionImagenUrls = Array.isArray(producto.imagen_urls) ? [...producto.imagen_urls] : [];
     fotosNuevasStaged = [];
     productoEnEdicionArchivado = !!producto.archivado;
+    // v124: el aviso de "se verá en sevelin.cl" mira las fotos de ESTE producto
+    if (typeof pintarEstadoWebDeCompra === 'function') pintarEstadoWebDeCompra();
   } else {
     editingProductId = null;
     if (elProductoFormTitle) elProductoFormTitle.textContent = 'Nuevo Producto';
@@ -2169,8 +2180,10 @@ function evaluarAvisoPublicacion() {
   const publicado = !!(elProdPublicadoWeb && elProdPublicadoWeb.checked);
   const ilimitado = !!(elProdStockIlimitado && elProdStockIlimitado.checked);
   const sinStock = !ilimitado && (Number(elProdStock?.value) || 0) === 0;
+  // v124: "por llegar" y "por encargo" sí se ven en la tienda con stock 0
+  const seVeIgual = !!elProdPorLlegar?.checked || !!elProdEsEncargo?.checked;
 
-  if (!publicado || !sinStock) {
+  if (!publicado || !sinStock || seVeIgual) {
     elAvisoPublicacionIncompleta.style.display = 'none';
     return;
   }
@@ -2262,7 +2275,10 @@ function construirPayloadProducto() {
     stock_umbral_web: elProdStockUmbralWeb?.value.trim() ? Number(elProdStockUmbralWeb.value) : null,
     etiqueta_web: elProdEtiquetaWeb?.value || null,
     urgencia_stock_web: elProdUrgenciaStockWeb ? elProdUrgenciaStockWeb.checked : true,
-    por_llegar: elProdPorLlegar ? elProdPorLlegar.checked : false,
+    /* v124: mientras quede una compra en camino el producto sigue "por llegar",
+       aunque los botones digan "ya llegó" para una compra nueva. Apagarlo acá
+       haría que la tienda avise "ya llegó" a quienes lo esperan; se apaga con "📦 Ya llegó". */
+    por_llegar: (elProdPorLlegar ? elProdPorLlegar.checked : false) || tieneCompraEnCamino(),
     fecha_llegada_estimada: elProdFechaLlegada?.value || null,
     stock_por_llegar: Number(elProdStockPorLlegar?.value) || 0,
     meta_titulo_web: elProdMetaTitulo?.value.trim() || null,
@@ -3750,6 +3766,26 @@ document.addEventListener('DOMContentLoaded', () => {
     if (chk?.checked) { chk.checked = false; alternarIngresoFactura(); }
   });
   document.getElementById('prodPorLlegar')?.addEventListener('change', alternarIngresoEnCamino);
+  /* v124: los dos botones "ya llegó / viene en camino" mueven la casilla oculta. */
+  document.getElementById('compraLlegada')?.addEventListener('click', (e) => {
+    const opcion = e.target.closest('[data-llegada]');
+    if (opcion) {
+      const chk = document.getElementById('prodPorLlegar');
+      if (!chk) return;
+      chk.checked = opcion.dataset.llegada === 'camino';
+      chk.dispatchEvent(new Event('change', { bubbles: true }));
+      if (chk.checked) document.getElementById('prodFechaLlegada')?.focus();
+      return;
+    }
+    if (e.target.closest('[data-publicar-por-llegar]') && elProdPublicadoWeb) {
+      elProdPublicadoWeb.checked = true;
+      elProdPublicadoWeb.dispatchEvent(new Event('change', { bubbles: true }));
+      showToast('Marcado para publicar: queda en sevelin.cl al registrar la compra o al guardar el producto', 'ok');
+    }
+  });
+  document.getElementById('prodStockPorLlegar')?.addEventListener('input', (e) => { delete e.target.dataset.auto; });
+  document.getElementById('ingCantidad')?.addEventListener('input', sincronizarUnidadesEnCamino);
+  elProdPublicadoWeb?.addEventListener('change', pintarEstadoWebDeCompra);
   document.getElementById('ingCosto')?.addEventListener('input', proponerPrecioDeVenta);
   /* v118: "Precio de venta" de la compra y "Precio Unit." son el mismo dato
      escrito en dos lugares: se mantienen iguales para que nunca se contradigan. */
@@ -3967,23 +4003,67 @@ async function cargarIngresosProducto({ conservarFormulario = false } = {}) {
 
 /* "Todavía no llega" y "sumar al stock" se contradicen: lo que no tienes
    no puede sumar stock. Al marcar uno, el otro se apaga y se bloquea, en
-   vez de dejar dos casillas que juntas mienten. */
+   vez de dejar dos casillas que juntas mienten.
+   v124: la casilla #prodPorLlegar está oculta y la mueven los dos botones
+   "ya llegó / viene en camino"; acá se pinta todo lo que depende de ella. */
 function alternarIngresoEnCamino() {
   const enCamino = !!document.getElementById('prodPorLlegar')?.checked;
   const bloque = document.getElementById('bloqueIngPorLlegar');
   if (bloque) bloque.style.display = enCamino ? 'block' : 'none';
-  // Vive dentro de "Más datos de la compra" (v118): marcada, tiene que verse.
-  if (enCamino) document.getElementById('ingMasDatos')?.setAttribute('open', '');
+  document.querySelectorAll('#compraLlegada [data-llegada]').forEach(b => {
+    const activo = (b.dataset.llegada === 'camino') === enCamino;
+    b.classList.toggle('activo', activo);
+    b.setAttribute('aria-checked', activo ? 'true' : 'false');
+  });
+  const btn = document.getElementById('btnAgregarIngreso');
+  if (btn) btn.textContent = enCamino ? '🚚 Registrar compra en camino' : '📥 Registrar compra';
 
   const sumar = document.getElementById('ingSumarStock');
   const item = document.getElementById('itemIngSumarStock');
   if (sumar) { sumar.disabled = enCamino; if (enCamino) sumar.checked = false; else sumar.checked = true; }
   if (item) item.style.opacity = enCamino ? '.45' : '';
 
-  // Si no dijo cuántas vienen, vienen las que compró
+  sincronizarUnidadesEnCamino();
+  pintarEstadoWebDeCompra();
+  if (typeof evaluarAvisoPublicacion === 'function') evaluarAvisoPublicacion();
+}
+
+/* Si no dijo cuántas vienen, vienen las que compró. Mientras no escriba
+   otro número a mano, el campo sigue a "Unidades" de la compra. */
+function sincronizarUnidadesEnCamino() {
   const cuantas = document.getElementById('prodStockPorLlegar');
-  const cantidad = document.getElementById('ingCantidad')?.value;
-  if (enCamino && cuantas && !cuantas.value && cantidad) cuantas.value = cantidad;
+  if (!cuantas || !document.getElementById('prodPorLlegar')?.checked) return;
+  const cantidad = Number(document.getElementById('ingCantidad')?.value) || 0;
+  if (!(cantidad > 0)) return;
+  if (!(Number(cuantas.value) > 0) || cuantas.dataset.auto === '1') {
+    cuantas.value = cantidad;
+    cuantas.dataset.auto = '1';
+  }
+}
+
+/* ¿Queda alguna compra de ESTE producto que todavía no llega? */
+function tieneCompraEnCamino() {
+  return ingresosDelProducto.some(i => i.en_camino && Number(i.producto_id) === Number(editingProductId));
+}
+
+/* v124 — "para que aparezca en la tienda web también": al elegir "viene en
+   camino" se dice ahí mismo si el producto se va a ver en sevelin.cl, y si
+   no está publicado se ofrece publicarlo sin ir a buscar la otra tarjeta. */
+function pintarEstadoWebDeCompra() {
+  const caja = document.getElementById('ingEstadoWeb');
+  if (!caja) return;
+  if (!document.getElementById('prodPorLlegar')?.checked) { caja.innerHTML = ''; return; }
+  const publicado = !!document.getElementById('prodPublicadoWeb')?.checked;
+  if (!publicado) {
+    caja.className = 'compra-llegada-web falta';
+    caja.innerHTML = `<span>⚠️ Este producto <strong>no está publicado</strong> en sevelin.cl: los clientes no lo van a ver.</span>
+      <button type="button" class="btn btn-primary btn-sm" data-publicar-por-llegar="1">🌐 Publicarlo en la web</button>`;
+    return;
+  }
+  const sinFoto = !(productoEnEdicionImagenUrls.length + fotosNuevasStaged.length);
+  caja.className = 'compra-llegada-web ok';
+  caja.innerHTML = `<span>🌐 En sevelin.cl se verá como <strong>"Por llegar"</strong>, con la fecha estimada, y se podrá reservar.
+    ${sinFoto ? ' Todavía no tiene foto: se verá sin imagen.' : ''}</span>`;
 }
 
 /* sql/65 — muestra los campos de la factura esperada solo cuando la marcó. */
@@ -4012,6 +4092,8 @@ function limpiarFormularioIngreso() {
   alternarIngresoFactura();
   const sumar = document.getElementById('ingSumarStock');
   if (sumar) sumar.checked = true;
+  // v124: "cuántas vienen" deja de seguir a las unidades de la compra anterior
+  delete document.getElementById('prodStockPorLlegar')?.dataset.auto;
   // Y si el producto está marcado como "todavía no llega", manda eso
   alternarIngresoEnCamino();
   actualizarTextoGuardarProducto();
@@ -4145,6 +4227,8 @@ function compraDelFormulario() {
       factura_esperada_para: (document.getElementById('ingFacturaEsperada')?.value || '').trim() || null,
       sumar_stock: !!document.getElementById('ingSumarStock')?.checked,
       en_camino: !!document.getElementById('prodPorLlegar')?.checked,
+      // v124: en camino y marcado "Publicar en la web" → la compra lo deja publicado, sin otro guardado
+      ...(document.getElementById('prodPorLlegar')?.checked && elProdPublicadoWeb?.checked ? { publicar_web: true } : {}),
       stock_por_llegar: Number(document.getElementById('prodStockPorLlegar')?.value) || 0,
       fecha_llegada_estimada: (document.getElementById('prodFechaLlegada')?.value || '').trim() || null
     }
@@ -4179,6 +4263,7 @@ function ofrecerGastoDeCompra({ unidades, costoUnitario, proveedor, documento })
 async function reflejarCompraRegistrada(r, datos) {
   const partes = ['Compra registrada'];
   if (r?.en_camino) partes.push('queda en camino, sin sumar stock');
+  if (r?.publicado_web) partes.push('publicado en sevelin.cl como "por llegar"');
   if (r?.stock_sumado) partes.push(`stock: ${num(r.stock_nuevo)}`);
   if (r?.precio_nuevo) partes.push(`precio: ${fmtCLP(r.precio_nuevo)}`);
   if (r?.lote) partes.push('capa PEPS creada');
