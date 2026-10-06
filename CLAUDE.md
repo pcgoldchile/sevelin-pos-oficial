@@ -206,6 +206,32 @@ Informe con veredicto y fuentes; se guarda en `docs/estudios-producto/`.
 
 ---
 
+## 🚚 "Por llegar": mercadería comprada que todavía no está (regla del dueño, 06-10-2026)
+
+Cuando el dueño dice "compré esto, ponlo por llegar" **nunca se carga stock**. Una sesión lo hizo mal el
+05-10-2026 (stock sumado, costo $0, el costo puesto como precio) y hubo que corregirlo a mano.
+
+- **En el POS (lo normal):** Productos → **"📋 Carga masiva (pegar)"** para varios, o en la ficha →
+  "Cargar stock" → **"🚚 No, está por llegar"** para uno. Los dos usan `registrarCompraDeProducto()`.
+- **Qué queda en la base** (lo mismo si hay que hacerlo por SQL, con OK del dueño):
+  1. `productos`: `stock = 0`, `costo_unitario` = lo pagado por unidad (con IVA), `precio_unitario` = precio
+     de VENTA (se pregunta, no es el costo), `por_llegar = true`, `stock_por_llegar` = unidades,
+     `fecha_llegada_estimada`, `usa_lotes = true` en productos nuevos.
+  2. `ingresos_mercaderia`: una fila por producto con `en_camino = true`, `estado = 'confirmado'`,
+     `cantidad`, `costo_unitario`, `proveedor` y `compra_id` = el gasto de Finanzas si ya existe.
+  3. El gasto es una fila aparte en `compras` (Finanzas → Gastos). No se crea solo.
+- **El stock sube solo con su clic:** botón 🚚 "Por llegar" del encabezado → "📦 Ya llegó"
+  (`PUT /api/ingresos/:id/recibida`). Ahí se crea la capa PEPS y la tienda avisa por correo.
+- **Para que se vea en sevelin.cl/por-llegar** además tiene que estar `publicado_web = true`.
+- **Antes de crear:** buscar si ya existe con otro nombre y preguntar ("¿es el mismo que el #95?").
+- **Después de escribir por SQL:** revisar `productos_web` en la base de la tienda. El webhook
+  `trg_sync_tienda` dispara con cada `UPDATE`, pero varios seguidos al mismo producto pueden llegar en
+  desorden; se arregla tocando la fila otra vez.
+- En pantalla siempre se dice **"por llegar"**, no "en camino" (pedido del dueño). En el código la
+  columna sigue llamándose `en_camino`.
+
+---
+
 ## Trampas ya descubiertas (no repetir)
 
 - `confirmarEntrega` existía en `ot.js` y `pago.js`. Las de venta ahora son `confirmarEntregaVenta` /

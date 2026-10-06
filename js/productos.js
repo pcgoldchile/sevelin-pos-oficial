@@ -2008,8 +2008,8 @@ function abrirModalProducto(producto = null) {
     if (elProdEsRepuesto) elProdEsRepuesto.checked = false;
     if (elProdStockMinimo) elProdStockMinimo.value = STOCK_MINIMO_POR_DEFECTO;
     if (elProdSinAlertaStock) elProdSinAlertaStock.checked = false;
-    // Un producto NUEVO siempre nace sin lotes: solo se activan a mano
-    if (elProdUsaLotes) elProdUsaLotes.checked = false;
+    // v125 (dueño, 06-10-2026): un producto NUEVO nace con el costo por lotes (PEPS) encendido
+    if (elProdUsaLotes) elProdUsaLotes.checked = true;
     if (elProdStockIlimitado) elProdStockIlimitado.checked = false;
     if (elProdEsServicio) elProdEsServicio.checked = false;
     if (elProdStockActualizado) elProdStockActualizado.textContent = 'Última actualización de stock: se registrará al guardar.';
@@ -3847,7 +3847,7 @@ async function recibirCompraEnCamino(id) {
   if (!ing) return;
   if (!confirm(`¿Llegaron las ${num(ing.cantidad)} unidades?
 
-Se suman al stock y, si no queda nada más en camino, la tienda le avisa por correo a quienes lo estaban esperando.`)) return;
+Se suman al stock y, si no queda nada más por llegar, la tienda le avisa por correo a quienes lo estaban esperando.`)) return;
 
   try {
     const r = await API.productos.compraRecibida(id);
@@ -4016,7 +4016,7 @@ function alternarIngresoEnCamino() {
     b.setAttribute('aria-checked', activo ? 'true' : 'false');
   });
   const btn = document.getElementById('btnAgregarIngreso');
-  if (btn) btn.textContent = enCamino ? '🚚 Registrar compra en camino' : '📥 Registrar compra';
+  if (btn) btn.textContent = enCamino ? '🚚 Registrar compra por llegar' : '📥 Registrar compra';
 
   const sumar = document.getElementById('ingSumarStock');
   const item = document.getElementById('itemIngSumarStock');
@@ -4120,7 +4120,7 @@ function pintarIngresosProducto() {
               ${i.estado === 'borrador'
                 ? '<br><small style="color:var(--valor);">📥 sin confirmar</small>'
                 : ''}
-              ${i.en_camino ? '<br><small style="color:var(--gold);">🚚 en camino</small>' : ''}
+              ${i.en_camino ? '<br><small style="color:var(--gold);">🚚 por llegar</small>' : ''}
               ${i.recibido_en ? `<br><small style="color:var(--green);">📦 llegó ${escHtml(fechaCorta(i.recibido_en))}</small>` : ''}</td>
             <td>${num(i.cantidad)}</td>
             <td class="num">${fmtCLP(i.costo_unitario)}</td>
@@ -4262,7 +4262,7 @@ function ofrecerGastoDeCompra({ unidades, costoUnitario, proveedor, documento })
 /* Lo que cambia en pantalla después de una compra registrada. */
 async function reflejarCompraRegistrada(r, datos) {
   const partes = ['Compra registrada'];
-  if (r?.en_camino) partes.push('queda en camino, sin sumar stock');
+  if (r?.en_camino) partes.push('queda por llegar, sin sumar stock');
   if (r?.publicado_web) partes.push('publicado en sevelin.cl como "por llegar"');
   if (r?.stock_sumado) partes.push(`stock: ${num(r.stock_nuevo)}`);
   if (r?.precio_nuevo) partes.push(`precio: ${fmtCLP(r.precio_nuevo)}`);

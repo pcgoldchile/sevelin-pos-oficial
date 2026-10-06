@@ -139,7 +139,7 @@ function filaPanelAgotadosHtml(p) {
           <button type="button" class="btn btn-outline btn-sm" data-encargo-agotado="${p.id}" title="Un cliente lo quiere: abre un encargo con este producto">📦 Iniciar encargo</button>
           <select class="campo-pos" data-decidir-agotado="${p.id}" aria-label="Decidir qué hacer con ${escHtml(p.nombre)}">
             <option value="">Decidir…</option>
-            <option value="por_llegar">🚚 Viene en camino</option>
+            <option value="por_llegar">🚚 Está por llegar</option>
             <option value="encargo">📝 Pasar a encargo</option>
             <option value="archivar">🗄️ Archivar</option>
             <option value="dejar">✋ Dejar como está</option>

@@ -12,6 +12,20 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 06-10-2026 (tarde) · v125, carga masiva por copiar y pegar, "por llegar" y PEPS de fábrica
+
+Detalle en `docs/CHANGELOG-V125.md`.
+
+**Publicado:** Productos → "📋 Carga masiva (pegar)": instrucciones para una IA, pegar la lista, el POS pregunta por los
+parecidos (nuevo o sumar) y si ya llegó, está por llegar o es por encargo (`js/carga-masiva.js`,
+`POST /api/productos/carga-masiva`). En pantalla se dice "por llegar", ya no "en camino". Un producto nuevo nace con el
+costo por lotes (PEPS) encendido. Tienda: lo que está por llegar dice "Reservar" en la tarjeta.
+
+**Datos:** los 11 productos nuevos quedaron publicados y con categoría (4 subcategorías nuevas en "Hogar y Estilo de
+Vida"); sevelin.cl/por-llegar muestra 12.
+
+**Regla para la IA:** sección "🚚 Por llegar" de `CLAUDE.md`.
+
 ## 06-10-2026 · v124, "¿ya llegó o viene en camino?" a la vista y la compra a MercadoLibre corregida
 
 Detalle en `docs/CHANGELOG-V124.md`.

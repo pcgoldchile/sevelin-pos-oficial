@@ -747,6 +747,31 @@ app.post('/api/productos/:id/compras', (req, res) => {
   if (publicado) p.publicado_web = true;
   res.status(201).json({ ingreso, lote: null, stock_nuevo: p.stock, stock_sumado: sumar, en_camino: !!b.en_camino, costo_rellenado: costoRellenado, precio_nuevo: precioNuevo, publicado_web: publicado });
 });
+// v125: carga masiva por copiar y pegar (como el servidor real, en memoria).
+app.post('/api/productos/carga-masiva', (req, res) => {
+  const b = req.body || {};
+  if (!['llego', 'por_llegar', 'encargo'].includes(b.estado)) return res.status(400).json({ error: 'Indica si los productos ya llegaron, están por llegar o son por encargo' });
+  const resultados = (b.items || []).map(it => {
+    let p = it.producto_id ? productoMaqueta(it.producto_id) : null;
+    const creado = !p;
+    if (!p) {
+      if (productos.some(x => x.nombre.toLowerCase() === String(it.nombre).toLowerCase())) return { ok: false, nombre: it.nombre, error: 'Ya existe un producto con ese nombre' };
+      p = { id: Math.max(...productos.map(x => x.id)) + 1, nombre: it.nombre, costo_unitario: it.costo_unitario, precio_unitario: it.precio_venta || 0, stock: 0, usa_lotes: b.estado !== 'encargo',
+        publicado_web: false, es_pedido_encargo: b.estado === 'encargo', archivado: false, stock_ilimitado: false, es_servicio: false, imagen_urls: [], created_at: new Date().toISOString() };
+      productos.push(p);
+    }
+    if (b.estado !== 'encargo') {
+      (ingresosMaqueta[p.id] = ingresosMaqueta[p.id] || []).unshift({ id: sigIngreso++, producto_id: p.id, fecha_compra: b.fecha_compra, cantidad: it.cantidad, costo_unitario: it.costo_unitario,
+        proveedor: b.proveedor || null, devolucion_hasta: null, estado: 'confirmado', en_camino: b.estado === 'por_llegar' });
+      if (b.estado === 'llego') p.stock += it.cantidad;
+      else Object.assign(p, { por_llegar: true, stock_por_llegar: it.cantidad, fecha_llegada_estimada: b.fecha_llegada_estimada || null });
+    }
+    return { ok: true, producto_id: p.id, nombre: p.nombre, creado, cantidad: b.estado === 'encargo' ? 0 : it.cantidad, costo_unitario: it.costo_unitario, stock_nuevo: p.stock };
+  });
+  const buenos = resultados.filter(r => r.ok);
+  res.status(201).json({ estado: b.estado, cargados: buenos.length, creados: buenos.filter(r => r.creado).length, sumados: buenos.filter(r => !r.creado).length,
+    fallidos: resultados.length - buenos.length, total_compra: buenos.reduce((a, r) => a + r.cantidad * r.costo_unitario, 0), proveedor: b.proveedor || null, resultados });
+});
 app.get('/api/productos/:id/ajustes-stock', (req, res) => res.json(ajustesMaqueta[req.params.id] || []));
 app.post('/api/productos/:id/ajuste-stock', (req, res) => {
   const p = productoMaqueta(req.params.id);

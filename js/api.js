@@ -167,6 +167,8 @@ const API = {
        los dos endpoints viejos siguen vivos porque los usa el flujo de
        borradores (sql/57) y el detector de reposición. */
     crearCompra: (id, compra) => apiRequest(`/productos/${id}/compras`, { method: 'POST', body: compra }),
+    // v125 — varios productos de una compra, pegados desde una lista (js/carga-masiva.js)
+    cargaMasiva: (datos) => apiRequest('/productos/carga-masiva', { method: 'POST', body: datos }),
     // v118 (sql/84) — corregir el stock a mano: pide la clave del dueño y el motivo
     ajustarStock: (id, datos) => apiRequest(`/productos/${id}/ajuste-stock`, { method: 'POST', body: datos }),
     listarAjustesStock: (id) => apiRequest(`/productos/${id}/ajustes-stock`, { silencioso: true }),

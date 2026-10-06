@@ -230,7 +230,7 @@
       <!-- Mercadería comprada que todavía no llega (sql/59). Rojo cuando la
            fecha estimada ya pasó: eso hay que confirmarlo o corregirlo. -->
       <button id="btnEnCamino" class="btn-notificaciones btn-camino admin-only" title="Mercadería comprada que todavía no llega" hidden>
-        <span class="chip-punto" aria-hidden="true"></span><span id="textoEnCamino">En camino</span>
+        <span class="chip-punto" aria-hidden="true"></span><span id="textoEnCamino">Por llegar</span>
       </button>
       <!-- Plata devuelta en efectivo que no quedó en ninguna caja (sql/61).
            NO es admin-only: el trabajador también devuelve, y el arqueo de
@@ -2316,6 +2316,8 @@
           </div>
           <div class="toolbar-group">
             <button class="btn btn-primary" id="btnNuevoProducto">➕ Nuevo Producto</button>
+            <!-- v125: varios productos de una compra, pegando lo que respondió una IA (js/carga-masiva.js) -->
+            <button class="btn btn-outline" id="btnCargaMasiva" title="Cargar varios productos de una compra pegando una lista">📋 Carga masiva (pegar)</button>
             <button class="btn btn-gold" id="btnValorizacion">💎 Valorización de Inventario</button>
             <button class="btn btn-red" id="btnEliminarTodosProductos">🗑️ Eliminar Todos</button>
           </div>
@@ -2685,7 +2687,7 @@
                   <small>Las unidades se suman al stock ahora.</small>
                 </button>
                 <button type="button" class="compra-llegada-opcion" data-llegada="camino" role="radio" aria-checked="false">
-                  <strong>🚚 No, viene en camino</strong>
+                  <strong>🚚 No, está por llegar</strong>
                   <small>No suma stock todavía. Queda "por llegar" hasta que aprietes "Ya llegó".</small>
                 </button>
               </div>
@@ -7144,10 +7146,68 @@
     </div>
   </div>
 
+  <!-- CARGA MASIVA POR COPIAR Y PEGAR (v125, js/carga-masiva.js) -->
+  <div id="modalCargaMasiva" class="modal-overlay">
+    <div class="modal-box modal-xl">
+      <h2>📋 Carga masiva: pegar una compra completa</h2>
+      <p class="modal-hint">Para cargar de una vez todo lo que compraste. Nada se guarda hasta el botón del final.</p>
+
+      <div class="cm-paso">
+        <p class="cm-paso-titulo"><span>1</span> Pídele la lista a tu IA</p>
+        <p class="subtitle">Copia las instrucciones y pégalas en tu IA (ChatGPT, Gemini, Claude) junto con la <strong>captura de tu carrito</strong> o el texto de la compra.</p>
+        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:8px;">
+          <button type="button" class="btn btn-primary" id="btnCmCopiar">📋 Copiar las instrucciones para la IA</button>
+        </div>
+        <details class="compra-mas" id="cmVerInstrucciones">
+          <summary>Ver las instrucciones</summary>
+          <textarea id="cmInstrucciones" rows="9" readonly style="width:100%; margin-top:8px;"></textarea>
+        </details>
+      </div>
+
+      <div class="cm-paso">
+        <p class="cm-paso-titulo"><span>2</span> Pega acá lo que te respondió</p>
+        <textarea id="cmTexto" rows="6" style="width:100%;" placeholder="Una línea por producto:&#10;Nombre del producto | Cantidad | Costo por unidad | Enlace"></textarea>
+        <div style="display:flex; justify-content:flex-end; margin-top:8px;">
+          <button type="button" class="btn btn-primary" id="btnCmRevisar">🔎 Revisar la lista</button>
+        </div>
+      </div>
+
+      <div class="cm-paso" id="cmRevision" style="display:none;">
+        <p class="cm-paso-titulo"><span>3</span> Revisa y dime cómo vienen</p>
+        <p class="compra-llegada-titulo" style="margin-top:8px;">¿Esta mercadería ya la tienes?</p>
+        <div class="compra-llegada-opciones tres" id="cmEstados" role="radiogroup" aria-label="¿Ya llegó la mercadería?">
+          <button type="button" class="compra-llegada-opcion" data-estado-masiva="llego" role="radio" aria-checked="false">
+            <strong>✅ Ya llegó</strong><small>Se suma al stock ahora.</small>
+          </button>
+          <button type="button" class="compra-llegada-opcion" data-llegada="camino" data-estado-masiva="por_llegar" role="radio" aria-checked="false">
+            <strong>🚚 Está por llegar</strong><small>No suma stock hasta que aprietes "Ya llegó".</small>
+          </button>
+          <button type="button" class="compra-llegada-opcion" data-estado-masiva="encargo" role="radio" aria-checked="false">
+            <strong>📦 Son por encargo</strong><small>Sin stock: se piden cuando alguien los compra.</small>
+          </button>
+        </div>
+        <div class="grid grid-3" style="margin-top:10px;">
+          <div class="field"><label for="cmFechaCompra">Fecha de compra</label><input type="date" id="cmFechaCompra"></div>
+          <div class="field"><label for="cmProveedor">Proveedor</label><input type="text" id="cmProveedor" maxlength="80" placeholder="A quién se la compraste"></div>
+          <div class="field" id="cmBloqueLlegada" style="display:none;"><label for="cmFechaLlegada">¿Cuándo llega? (estimada)</label><input type="date" id="cmFechaLlegada"></div>
+        </div>
+        <div id="cmTabla" style="margin-top:12px; overflow:auto; max-height:44vh;"></div>
+        <p class="modal-hint">El precio de venta puede quedar para después. Si un producto se suma a uno que ya existe, su precio no cambia.</p>
+      </div>
+
+      <div id="cmResultado"></div>
+      <div class="modal-foot" style="align-items:center;">
+        <span id="cmResumen" style="margin-right:auto; font-size:13px;"></span>
+        <button class="btn btn-ghost" id="btnCmCerrar" type="button">Cerrar</button>
+        <button class="btn btn-primary" id="btnCmCargar" type="button" disabled>📥 Cargar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Mercadería en camino (sql/59) -->
   <div id="modalEnCamino" class="modal-overlay">
     <div class="modal-box" style="max-width:740px;">
-      <h2>📦 Mercadería en camino</h2>
+      <h2>🚚 Mercadería por llegar</h2>
       <p class="modal-hint" id="enCaminoResumen">—</p>
       <div id="enCaminoLista" style="max-height:52vh; overflow:auto;"></div>
       <div class="modal-foot">
@@ -7609,6 +7669,7 @@
   <script src="js/notas-credito.js"></script>   <!-- v120 (sql/85): después de notificaciones.js (fechaCortaAviso) y productos.js (plazosProveedores) -->
   <script src="js/ofertas.js"></script>   <!-- v116 (sql/83): interruptor de ofertas web -->
   <script src="js/completitud.js"></script>
+  <script src="js/carga-masiva.js"></script>   <!-- v125: después de productos.js (productsList, acortar) y compras.js (abrirGastoPrellenado) -->
   <script src="js/ubicaciones.js"></script>   <!-- usa API.pedidosWeb (js/api.js) y activarVista (js/config.js), ya cargados antes -->
   <script src="js/garantias.js"></script>
   <script src="js/repuestos.js"></script>

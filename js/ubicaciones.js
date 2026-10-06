@@ -292,11 +292,11 @@ async function actualizarAvisoEnCamino() {
     if (!total) { btn.hidden = true; return; }
 
     const vencidos = Number(enCaminoCache?.vencidos) || 0;
-    texto.textContent = vencidos ? `${vencidos} por confirmar` : `${total} en camino`;
+    texto.textContent = vencidos ? `${vencidos} por confirmar` : `${total} por llegar`;
     btn.classList.toggle('camino-vencido', vencidos > 0);
     btn.title = vencidos
       ? `${vencidos} compra(s) que ya deberían haber llegado: confírmalas o corrige la fecha`
-      : `${total} compra(s) en camino`;
+      : `${total} compra(s) por llegar`;
     btn.hidden = false;
     if (document.getElementById('modalEnCamino')?.classList.contains('show')) pintarEnCamino();
   } catch (err) {
@@ -320,9 +320,9 @@ function pintarEnCamino() {
     resumen.textContent = compras.length
       ? `${compras.length} compra(s) esperando llegar`
         + (enCaminoCache.vencidos ? ` · ${enCaminoCache.vencidos} ya deberían estar acá.` : '.')
-      : 'No hay nada en camino.';
+      : 'No hay nada por llegar.';
   }
-  if (!compras.length) { cont.innerHTML = '<p class="modal-hint">Nada en camino.</p>'; return; }
+  if (!compras.length) { cont.innerHTML = '<p class="modal-hint">Nada por llegar.</p>'; return; }
 
   cont.innerHTML = compras.map(c => {
     const d = c.dias_para_llegar;
@@ -358,7 +358,7 @@ function pintarEnCamino() {
 async function recibirDesdeAviso(ingresoId) {
   const c = (enCaminoCache?.compras || []).find(x => Number(x.id) === Number(ingresoId));
   if (!c) return;
-  if (!confirm(`¿Llegaron las ${num(c.cantidad)} unidades de "${c.producto}"?\n\nSe suman al stock y, si no queda nada más en camino de ese producto, la tienda le avisa por correo a quienes lo estaban esperando.`)) return;
+  if (!confirm(`¿Llegaron las ${num(c.cantidad)} unidades de "${c.producto}"?\n\nSe suman al stock y, si no queda nada más por llegar de ese producto, la tienda le avisa por correo a quienes lo estaban esperando.`)) return;
 
   try {
     const r = await API.productos.compraRecibida(ingresoId);

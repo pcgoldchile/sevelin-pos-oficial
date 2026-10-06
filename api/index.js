@@ -3669,6 +3669,147 @@ app.post('/api/productos/:id/compras', auth(true), async (req, res) => {
   }
 });
 
+/* ============================================================
+   CARGA MASIVA POR COPIAR Y PEGAR (v125, dueño 06-10-2026)
+   ------------------------------------------------------------
+   "Le saco una captura a mi carrito, se la paso a una IA y pego el
+   resultado." El navegador parte el texto pegado en filas y acá se cargan:
+     · fila con `producto_id`  → se suma una compra a ese producto;
+     · fila sin `producto_id`  → se crea el producto y, salvo que sea por
+       encargo, se le registra la compra.
+   `estado` vale para toda la carga: 'llego' (suma stock), 'por_llegar'
+   (compra en camino, sql/59) o 'encargo' (producto por encargo: sin stock
+   ni compra). Usa lo mismo que el formulario de una compra
+   (registrarCompraDeProducto), así que no hay una segunda forma de cargar.
+
+   No es atómico (supabase-js no da transacciones): se valida TODO antes
+   de escribir y después se responde fila por fila, para que una que falle
+   no esconda las que sí entraron. El gasto en Finanzas se anota aparte.
+   El precio de un producto que ya existe no se toca desde acá.
+   ============================================================ */
+const ESTADOS_CARGA_MASIVA = ['llego', 'por_llegar', 'encargo'];
+const TOPE_FILAS_CARGA_MASIVA = 60;
+
+app.post('/api/productos/carga-masiva', auth(true), async (req, res) => {
+  const estado = String(req.body?.estado || '').trim();
+  if (!ESTADOS_CARGA_MASIVA.includes(estado)) {
+    return enviarError(res, 400, 'Indica si los productos ya llegaron, están por llegar o son por encargo');
+  }
+  const filas = Array.isArray(req.body?.items) ? req.body.items : [];
+  if (!filas.length) return enviarError(res, 400, 'No hay productos que cargar');
+  if (filas.length > TOPE_FILAS_CARGA_MASIVA) {
+    return enviarError(res, 400, `Son demasiados de una vez: carga hasta ${TOPE_FILAS_CARGA_MASIVA} productos por pegado`);
+  }
+  const fechaCompra = String(req.body?.fecha_compra || '').trim() || fechaHoyChile();
+  const eta = String(req.body?.fecha_llegada_estimada || '').trim();
+  if (eta && !fechaValidaISO(eta)) return enviarError(res, 400, 'La fecha estimada de llegada debe venir como YYYY-MM-DD');
+  const proveedor = String(req.body?.proveedor || '').trim().slice(0, 80) || null;
+  const usuario = req.usuario?.usuario || req.usuario?.rol || null;
+
+  // 1) Validar todo antes de escribir nada
+  const items = [];
+  const idsVistos = new Set();
+  const nombresVistos = new Set();
+  for (let i = 0; i < filas.length; i++) {
+    const f = filas[i] || {};
+    const etiqueta = `Fila ${i + 1}`;
+    const nombre = String(f.nombre || '').trim().slice(0, 200);
+    const productoId = f.producto_id ? Number(f.producto_id) : null;
+    if (productoId !== null && !(Number.isInteger(productoId) && productoId > 0)) return enviarError(res, 400, `${etiqueta}: el producto elegido no es válido`);
+    if (!productoId && !nombre) return enviarError(res, 400, `${etiqueta}: falta el nombre del producto`);
+    if (productoId && estado === 'encargo') return enviarError(res, 400, `${etiqueta}: "por encargo" solo sirve para productos nuevos`);
+    const precio = Math.round(num(f.precio_venta));
+    if (precio < 0 || precio > 100000000) return enviarError(res, 400, `${etiqueta}: el precio de venta no es válido`);
+    let datos = null;
+    if (estado !== 'encargo') {
+      const saneado = sanearIngreso({
+        fecha_compra: fechaCompra, cantidad: f.cantidad, costo_unitario: f.costo_unitario, proveedor,
+        nota: String(f.enlace || '').trim().slice(0, 300) || 'Carga masiva'
+      });
+      if (saneado.error) return enviarError(res, 400, `${etiqueta}: ${saneado.error}`);
+      if (!Number.isInteger(saneado.datos.cantidad)) return enviarError(res, 400, `${etiqueta}: la cantidad tiene que ser un número entero`);
+      datos = saneado.datos;
+    }
+    const costo = Math.max(0, Math.round(num(f.costo_unitario)));
+    if (productoId) {
+      if (idsVistos.has(productoId)) return enviarError(res, 400, `${etiqueta}: ese producto está dos veces en la lista. Júntalo en una sola fila`);
+      idsVistos.add(productoId);
+    } else {
+      const clave = nombre.toLowerCase();
+      if (nombresVistos.has(clave)) return enviarError(res, 400, `${etiqueta}: "${nombre}" está dos veces en la lista`);
+      nombresVistos.add(clave);
+    }
+    items.push({ nombre, productoId, precio, costo, datos });
+  }
+
+  try {
+    // Los que dicen ser existentes tienen que existir; los nuevos no pueden chocar con otro
+    const existentes = new Map();
+    if (idsVistos.size) {
+      const { data, error } = await db.from('productos').select(CAMPOS_PRODUCTO_COMPRA).in('id', [...idsVistos]);
+      if (error) throw error;
+      (data || []).forEach(p => existentes.set(Number(p.id), p));
+    }
+    for (const it of items) {
+      if (it.productoId) {
+        const p = existentes.get(it.productoId);
+        if (!p) return enviarError(res, 404, `El producto #${it.productoId} ya no existe: vuelve a revisar la lista`);
+        if (p.archivado) return enviarError(res, 400, `"${p.nombre}" está archivado: desarchívalo antes de sumarle una compra`);
+      } else {
+        const dup = await buscarDuplicado({ nombre: it.nombre });
+        if (dup) return enviarError(res, 409, `"${it.nombre}" ya existe en tu catálogo (${dup.existente.nombre}). Elige "sumar al que ya existe" o cámbiale el nombre.`);
+      }
+    }
+
+    // 2) Cargar, fila por fila
+    const resultados = [];
+    for (const it of items) {
+      try {
+        let producto = it.productoId ? existentes.get(it.productoId) : null;
+        let creado = false;
+        if (!producto) {
+          const nuevo = sanearProducto({
+            nombre: it.nombre, costo_unitario: it.costo, precio_unitario: it.precio, stock: 0,
+            usa_lotes: estado !== 'encargo', publicado_web: false, es_pedido_encargo: estado === 'encargo'
+          });
+          const { data, error } = await db.from('productos').insert([nuevo]).select(CAMPOS_PRODUCTO_COMPRA).single();
+          if (error) throw error;
+          producto = data;
+          creado = true;
+        }
+        let compra = null;
+        if (estado !== 'encargo') {
+          compra = await registrarCompraDeProducto(producto, it.datos, {
+            enCamino: estado === 'por_llegar', fechaLlegada: eta, usuario
+          });
+        }
+        resultados.push({
+          ok: true, producto_id: producto.id, nombre: producto.nombre, creado,
+          cantidad: it.datos ? it.datos.cantidad : 0, costo_unitario: it.costo,
+          stock_nuevo: compra ? compra.stock_nuevo : num(producto.stock)
+        });
+      } catch (errFila) {
+        console.error('[CARGA MASIVA] fila fallida:', it.nombre, errFila.message);
+        resultados.push({ ok: false, nombre: it.nombre || `#${it.productoId}`, error: errFila.message || 'No se pudo cargar' });
+      }
+    }
+
+    const buenos = resultados.filter(r => r.ok);
+    res.status(201).json({
+      estado,
+      cargados: buenos.length,
+      creados: buenos.filter(r => r.creado).length,
+      sumados: buenos.filter(r => !r.creado).length,
+      fallidos: resultados.length - buenos.length,
+      total_compra: buenos.reduce((a, r) => a + r.cantidad * r.costo_unitario, 0),
+      proveedor,
+      resultados
+    });
+  } catch (error) {
+    return enviarErrorBD(res, error, 'POST /api/productos/carga-masiva');
+  }
+});
+
 /* La mercadería en camino LLEGÓ (sql/59).
    ------------------------------------------------------------
    Recién acá sube el stock, y recién acá el producto deja de estar "por

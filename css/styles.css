@@ -4930,6 +4930,21 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
 .compra-llegada-web:empty { display: none; }
 .compra-llegada-web.falta { padding: 8px 10px; border-radius: 8px; background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.38); color: var(--gold); }
 .compra-llegada-web.ok { color: var(--green); }
+.compra-llegada-opciones.tres { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 720px) { .compra-llegada-opciones.tres { grid-template-columns: 1fr; } }
+/* v125 — carga masiva por copiar y pegar */
+.modal-box.modal-xl { max-width: 1080px; }
+.cm-paso { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.cm-paso-titulo { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font-size: 15px; font-weight: 700; color: var(--text-100); }
+.cm-paso-titulo span { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--blue); color: #fff; font-size: 13px; }
+.tabla-carga-masiva input.cm-nombre { width: 100%; min-width: 220px; }
+.tabla-carga-masiva input.cm-num { width: 96px; }
+.tabla-carga-masiva select.cm-destino { max-width: 320px; }
+.tabla-carga-masiva select.cm-falta { border-color: var(--gold); color: var(--gold); }
+.cm-nuevo { font-size: 13px; color: var(--text-muted); white-space: nowrap; }
+.cm-aviso { color: var(--gold); font-weight: 600; }
+.cm-resultado { margin-top: 14px; padding: 10px 12px; border: 1px solid var(--green); border-radius: 10px; font-size: 13px; line-height: 1.5; color: var(--text-100); }
+.cm-resultado.con-fallas { border-color: var(--gold); }
 .stock-en-camino { display: block; margin-top: 4px; font-size: 11px; font-weight: 600; color: var(--gold); white-space: nowrap; }
 @media (max-width: 560px) { .compra-llegada-opciones { grid-template-columns: 1fr; } }
 .compra-mas { margin-top: 10px; border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; }

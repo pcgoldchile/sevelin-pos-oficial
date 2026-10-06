@@ -5,8 +5,9 @@
 // Con los lotes activos, cada venta consume primero las unidades más
 // antiguas y toma SU costo, en vez de usar un costo único del catálogo.
 //
-// La opción nace APAGADA para todos los productos, nuevos y existentes.
-// La única forma de encenderla es el checkbox del editor de producto.
+// Desde v125 (dueño, 06-10-2026) un producto NUEVO nace con la opción
+// ENCENDIDA; los que ya existían quedan como estaban. Se apaga y se enciende
+// con el checkbox del editor de producto.
 //
 // 21-09-2026: las capas YA NO se cargan con un formulario propio. Se crean
 // solas al registrar una compra (POST /api/productos/:id/compras), porque
@@ -41,20 +42,29 @@ function alternarLotesUI() {
      capas. Dejarlo editable daba dos costos a la vista y ninguna forma de
      saber cuál se usaba. Queda de solo lectura y mostrando el promedio real
      de las capas vigentes. */
-  const elCosto = document.getElementById('prodCosto');
-  if (elCosto) {
-    elCosto.classList.toggle('campo-atenuado', activo);
-    elCosto.readOnly = activo;
-    elCosto.title = activo
-      ? 'Con PEPS activo lo deciden las capas: este campo solo sirve de respaldo si se vende más de lo cargado.'
-      : '';
-  }
+  bloquearCostoSegunLotes();
   pintarCostoSegunLotes(activo ? (lotesPorProducto[editingProductId] || []) : null);
 
   if (activo && editingProductId) cargarLotesDelProducto(editingProductId);
   else if (activo && elProdLotesLista) {
     elProdLotesLista.innerHTML = '<p class="modal-hint">Guarda el producto primero: las capas se crean al registrar una compra.</p>';
   }
+}
+
+/* v125: el "Costo Unit." solo se bloquea cuando ya hay capas que lo deciden.
+   Con PEPS encendido de fábrica, un producto sin compras (nuevo, por encargo)
+   tiene que poder llevar su costo escrito a mano. */
+function bloquearCostoSegunLotes() {
+  const elCosto = document.getElementById('prodCosto');
+  if (!elCosto) return;
+  const activo = !!(elProdUsaLotes && elProdUsaLotes.checked);
+  const hayCapas = (lotesPorProducto[editingProductId] || []).some(l => Number(l.cantidad) > 0);
+  const bloquear = activo && !!editingProductId && hayCapas;
+  elCosto.classList.toggle('campo-atenuado', bloquear);
+  elCosto.readOnly = bloquear;
+  elCosto.title = bloquear
+    ? 'Con PEPS activo lo deciden las capas: este campo solo sirve de respaldo si se vende más de lo cargado.'
+    : '';
 }
 
 /* Promedio PONDERADO por unidades vivas, no promedio simple de las capas:
@@ -92,6 +102,7 @@ async function cargarLotesDelProducto(productoId) {
     lotesPorProducto[productoId] = lotes || [];
     renderLotesModal(productoId, lotes || []);
     pintarCostoSegunLotes(lotes || []);
+    bloquearCostoSegunLotes();
   } catch (err) {
     console.error('Error al cargar lotes:', err.message || err);
     elProdLotesLista.innerHTML = `<p class="modal-hint" style="color:var(--red);">No se pudieron cargar los lotes: ${err.message || 'error'}</p>`;
