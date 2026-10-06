@@ -12,6 +12,20 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 06-10-2026 (noche) · Propuesta de categorías (pendiente #72, sin aplicar)
+
+`docs/propuesta-categorias-2026-10-06.md`: 222 productos y 50 categorías revisados; cinco bloques (A a E) para que
+el dueño apruebe. Lo más desordenado es "Hogar y Estilo de Vida" (29 de 39 sin subcategoría). Datos útiles: el orden
+del menú de la tienda está en el código (`ORDEN_CATEGORIAS_PRINCIPALES`, `header.tsx`), no en `producto_categorias.orden`;
+el enlace de una categoría lleva su nombre, así que renombrar una principal deja los enlaces viejos con la lista vacía.
+
+## 06-10-2026 (noche) · "Genérica" en lo guardado (pendiente #74, solo datos)
+
+La palabra estaba en 3 productos. Se limpió 1: #325 "Selladora De Bolsa Genérica FS-200 Azul" → "Selladora De Bolsa
+FS-200 Azul" (nombre y descripción). #299 y #303 no se tocaron: ahí "genérica" habla de la fuente del cliente.
+**Hallazgo:** renombrar un producto sin SKU le cambia el enlace en la tienda (103 productos publicados); pendiente #78
+y trampa anotada en `CLAUDE.md`.
+
 ## 06-10-2026 (noche) · v129, por llegar: el cliente elige cómo recibe, y "listo para retiro"
 
 Detalle en `docs/CHANGELOG-V129.md` (tienda `8ea0b56`, `supabase/41` aplicada). Retiro gratis y con aviso: botón

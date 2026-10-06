@@ -247,5 +247,11 @@ Cuando el dueño dice "compré esto, ponlo por llegar" **nunca se carga stock**.
   Desde v126 lo hacen los endpoints de categorías, producto por producto.
 - **Los productos con lotes (PEPS) en una venta web** se descuentan en `registrar-venta-web`, no en
   `ajustar-stock` (que solo ve los que no tienen lotes).
+- **Renombrar un producto SIN SKU le cambia el enlace en la tienda.** Si `productos.sku` está vacío, la tienda arma
+  el enlace con el nombre (`slugDeRespaldo` en `sevelin-tienda/src/app/api/sync/producto/route.ts`) en cada
+  sincronización: el enlace viejo queda en 404. Al 06-10-2026 son 103 productos publicados (pendiente #78). Antes de
+  cambiar un nombre por SQL o en lote, mirar si el producto tiene SKU.
+- **"Genérica" también es una palabra normal.** En las fichas de servicios aparece hablando de la fuente del cliente
+  ("si tu fuente es genérica…"). Una limpieza de marca nunca se aplica a ciegas: se revisa cada aparición.
 - El POS descarta `codigo_barras` al guardar `venta_items`. Por eso el buscador resuelve el barcode
   contra el catálogo (`productos`), no contra el ítem de venta.
