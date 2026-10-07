@@ -5013,7 +5013,17 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
 .cm-paso-titulo span { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--blue); color: #fff; font-size: 13px; }
 .tabla-carga-masiva input.cm-nombre { width: 100%; min-width: 220px; }
 .tabla-carga-masiva input.cm-num { width: 96px; }
-.tabla-carga-masiva select.cm-destino { max-width: 320px; }
+.tabla-carga-masiva select.cm-destino { width: 100%; }
+/* v130: carga masiva ancha y en columnas */
+.modal-box.modal-cm { max-width: min(1380px, 96vw); max-height: 94vh; }
+.cm-arriba { display: grid; grid-template-columns: minmax(300px, 1fr) 1.5fr; gap: 0 28px; }
+.cm-opciones { display: grid; grid-template-columns: 3fr 2fr; gap: 0 20px; align-items: start; }
+.cm-opciones #cmBloqueGasto { margin-top: 8px; }
+.cm-datos { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0 14px; margin-top: 12px; }
+.tabla-carga-masiva td.cm-celda-destino { min-width: 340px; }
+.tabla-carga-masiva input.cm-buscar { width: 100%; margin-top: 6px; font-size: 12.5px; padding: 6px 10px; }
+.cm-buscar-nota { display: block; min-height: 15px; font-size: 11.5px; color: var(--text-muted); }
+@media (max-width: 980px) { .cm-arriba, .cm-opciones { grid-template-columns: 1fr; } }
 .tabla-carga-masiva select.cm-falta { border-color: var(--gold); color: var(--gold); }
 .cm-nuevo { font-size: 13px; color: var(--text-muted); white-space: nowrap; }
 .cm-aviso { color: var(--gold); font-weight: 600; }

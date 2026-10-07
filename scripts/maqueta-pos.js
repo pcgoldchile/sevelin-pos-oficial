@@ -31,7 +31,10 @@ app.post('/api/login', (req, res) => {
 });
 app.get('/api/me', (_req, res) => res.json({ rol: 'admin', negocio: 'Sevelin' }));
 app.get('/api/health', (_req, res) => res.json({ ok: true, db: true }));
-app.get('/api/productos', (_req, res) => res.json(productos));
+// v130: un producto archivado de ejemplo, para probar que la carga masiva lo encuentra y lo desarchiva.
+productos.push({ ...productos[0], id: 9263, sku: null, codigo_barras: null, nombre: 'Limpiador de Aire Comprimido Air Duster 400ML', stock: 2, costo_unitario: 3500,
+  precio_unitario: 6990, archivado: true, publicado_web: false, por_llegar: false, imagen_urls: [] });
+app.get('/api/productos', (req, res) => res.json(productos.filter(p => (req.query.archivados === '1') === !!p.archivado)));
 app.get('/api/productos/buscar', (req, res) => {
   const codigo = String(req.query.codigo || '');
   const p = productos.find(x => x.codigo_barras === codigo || x.sku === codigo);
@@ -808,13 +811,15 @@ app.post('/api/productos/carga-masiva', (req, res) => {
         publicado_web: false, es_pedido_encargo: b.estado === 'encargo', archivado: false, stock_ilimitado: false, es_servicio: false, imagen_urls: [], created_at: new Date().toISOString() };
       productos.push(p);
     }
+    const desarchivado = !!p.archivado;
+    if (desarchivado) p.archivado = false;
     if (b.estado !== 'encargo') {
       (ingresosMaqueta[p.id] = ingresosMaqueta[p.id] || []).unshift({ id: sigIngreso++, producto_id: p.id, fecha_compra: b.fecha_compra, cantidad: it.cantidad, costo_unitario: it.costo_unitario,
-        proveedor: b.proveedor || null, devolucion_hasta: null, estado: 'confirmado', en_camino: b.estado === 'por_llegar' });
+        proveedor: b.proveedor || null, devolucion_hasta: b.devolucion_hasta || null, referencia: b.referencia || null, estado: 'confirmado', en_camino: b.estado === 'por_llegar' });
       if (b.estado === 'llego') p.stock += it.cantidad;
       else Object.assign(p, { por_llegar: true, stock_por_llegar: it.cantidad, fecha_llegada_estimada: b.fecha_llegada_estimada || null });
     }
-    return { ok: true, producto_id: p.id, nombre: p.nombre, creado, cantidad: b.estado === 'encargo' ? 0 : it.cantidad, costo_unitario: it.costo_unitario, stock_nuevo: p.stock };
+    return { ok: true, producto_id: p.id, nombre: p.nombre, creado, desarchivado, cantidad: b.estado === 'encargo' ? 0 : it.cantidad, costo_unitario: it.costo_unitario, stock_nuevo: p.stock };
   });
   const buenos = resultados.filter(r => r.ok);
   res.status(201).json({ estado: b.estado, cargados: buenos.length, creados: buenos.filter(r => r.creado).length, sumados: buenos.filter(r => !r.creado).length,

@@ -7073,32 +7073,35 @@
 
   <!-- CARGA MASIVA POR COPIAR Y PEGAR (v125, js/carga-masiva.js) -->
   <div id="modalCargaMasiva" class="modal-overlay">
-    <div class="modal-box modal-xl">
+    <!-- v130 (dueño, 07-10-2026): más ancho y en dos columnas, para no tener que bajar ni achicar el zoom. -->
+    <div class="modal-box modal-cm">
       <h2>📋 Carga masiva: pegar una compra completa</h2>
       <p class="modal-hint">Para cargar de una vez todo lo que compraste. Nada se guarda hasta el botón del final.</p>
 
-      <div class="cm-paso">
-        <p class="cm-paso-titulo"><span>1</span> Pídele la lista a tu IA</p>
-        <p class="subtitle">Copia las instrucciones y pégalas en tu IA (ChatGPT, Gemini, Claude) junto con la <strong>captura de tu carrito</strong> o el texto de la compra.</p>
-        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:8px;">
-          <button type="button" class="btn btn-primary" id="btnCmCopiar">📋 Copiar las instrucciones para la IA</button>
+      <div class="cm-arriba">
+        <div class="cm-paso">
+          <p class="cm-paso-titulo"><span>1</span> Pídele la lista a tu IA</p>
+          <p class="subtitle">Copia las instrucciones y pégalas en tu IA (ChatGPT, Gemini, Claude) junto con la <strong>captura de tu carrito</strong> o el texto de la compra. Si en la captura se ve cuándo llega, la IA también lo anota.</p>
+          <button type="button" class="btn btn-primary" id="btnCmCopiar" style="margin-top:8px;">📋 Copiar las instrucciones para la IA</button>
+          <details class="compra-mas" id="cmVerInstrucciones">
+            <summary>Ver las instrucciones</summary>
+            <textarea id="cmInstrucciones" rows="9" readonly style="width:100%; margin-top:8px;"></textarea>
+          </details>
         </div>
-        <details class="compra-mas" id="cmVerInstrucciones">
-          <summary>Ver las instrucciones</summary>
-          <textarea id="cmInstrucciones" rows="9" readonly style="width:100%; margin-top:8px;"></textarea>
-        </details>
-      </div>
 
-      <div class="cm-paso">
-        <p class="cm-paso-titulo"><span>2</span> Pega acá lo que te respondió</p>
-        <textarea id="cmTexto" rows="6" style="width:100%;" placeholder="Una línea por producto:&#10;Nombre del producto | Cantidad | Costo por unidad | Enlace"></textarea>
-        <div style="display:flex; justify-content:flex-end; margin-top:8px;">
-          <button type="button" class="btn btn-primary" id="btnCmRevisar">🔎 Revisar la lista</button>
+        <div class="cm-paso">
+          <p class="cm-paso-titulo"><span>2</span> Pega acá lo que te respondió</p>
+          <textarea id="cmTexto" rows="5" style="width:100%;" placeholder="Una línea por producto:&#10;Nombre del producto | Cantidad | Costo por unidad | Enlace&#10;&#10;Opcional, arriba de la lista:&#10;PROVEEDOR: nombre      LLEGA: AAAA-MM-DD"></textarea>
+          <div style="display:flex; justify-content:flex-end; margin-top:8px;">
+            <button type="button" class="btn btn-primary" id="btnCmRevisar">🔎 Revisar la lista</button>
+          </div>
         </div>
       </div>
 
       <div class="cm-paso" id="cmRevision" style="display:none;">
         <p class="cm-paso-titulo"><span>3</span> Revisa y dime cómo vienen</p>
+        <div class="cm-opciones">
+        <div>
         <p class="compra-llegada-titulo" style="margin-top:8px;">¿Esta mercadería ya la tienes?</p>
         <div class="compra-llegada-opciones tres" id="cmEstados" role="radiogroup" aria-label="¿Ya llegó la mercadería?">
           <button type="button" class="compra-llegada-opcion" data-estado-masiva="llego" role="radio" aria-checked="false">
@@ -7111,13 +7114,9 @@
             <strong>📦 Son por encargo</strong><small>Sin stock: se piden cuando alguien los compra.</small>
           </button>
         </div>
-        <div class="grid grid-3" style="margin-top:10px;">
-          <div class="field"><label for="cmFechaCompra">Fecha de compra</label><input type="date" id="cmFechaCompra"></div>
-          <div class="field"><label for="cmProveedor">Proveedor</label><input type="text" id="cmProveedor" maxlength="80" placeholder="A quién se la compraste"></div>
-          <div class="field" id="cmBloqueLlegada" style="display:none;"><label for="cmFechaLlegada">¿Cuándo llega? (estimada)</label><input type="date" id="cmFechaLlegada"></div>
         </div>
         <!-- v126 (dueño, 06-10-2026): el gasto se decide ACÁ, antes de cargar. Nada se anota solo. -->
-        <div id="cmBloqueGasto" style="margin-top:12px;">
+        <div id="cmBloqueGasto">
           <p class="compra-llegada-titulo">¿Anoto esta compra en Gastos (Finanzas)?</p>
           <div class="compra-llegada-opciones" id="cmGastos" role="radiogroup" aria-label="¿Anotar el gasto de esta compra?">
             <button type="button" class="compra-llegada-opcion" data-gasto-masiva="si" role="radio" aria-checked="false">
@@ -7128,7 +7127,16 @@
             </button>
           </div>
         </div>
-        <div id="cmTabla" style="margin-top:12px; overflow:auto; max-height:44vh;"></div>
+        </div>
+        <!-- Los mismos datos del formulario de una compra, una vez para toda la carga. -->
+        <div class="cm-datos">
+          <div class="field"><label for="cmFechaCompra">Fecha de compra</label><input type="date" id="cmFechaCompra"></div>
+          <div class="field"><label for="cmProveedor">Proveedor</label><input type="text" id="cmProveedor" maxlength="80" placeholder="A quién se la compraste"></div>
+          <div class="field" id="cmBloqueLlegada" style="display:none;"><label for="cmFechaLlegada">¿Cuándo llega? (opcional)</label><input type="date" id="cmFechaLlegada"></div>
+          <div class="field"><label for="cmDevolucion">Puedes devolver hasta (opcional)</label><input type="date" id="cmDevolucion"></div>
+          <div class="field"><label for="cmReferencia">N° de pedido o boleta (opcional)</label><input type="text" id="cmReferencia" maxlength="80" placeholder="Ej: 2000012345"></div>
+        </div>
+        <div id="cmTabla" style="margin-top:12px; overflow-x:auto;"></div>
         <p class="modal-hint">El precio de venta puede quedar para después. Si un producto se suma a uno que ya existe, su precio no cambia.</p>
       </div>
 

@@ -12,6 +12,12 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 07-10-2026 · v130, carga masiva: archivados, buscador, fecha de llegada y ventana ancha
+
+Detalle en `docs/CHANGELOG-V130.md`. La carga masiva no veía los productos archivados (así se iba a duplicar el aire
+comprimido #263): ahora los compara y los desarchiva al cargar. Buscador por fila, línea opcional `LLEGA:` en las
+instrucciones para la IA, plazo de devolución y N° de pedido, y la ventana en dos columnas.
+
 ## 06-10-2026 (noche) · Auditoría semanal de precios (pendiente #65, corrida a mano)
 
 `docs/estudios-precios/2026-10-06-auditoria-semanal.md`. Semana del 30-09 al 06-10: 18 ventas, margen real de

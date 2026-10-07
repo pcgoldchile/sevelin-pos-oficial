@@ -3897,7 +3897,9 @@ app.post('/api/productos/carga-masiva', auth(true), async (req, res) => {
     if (estado !== 'encargo') {
       const saneado = sanearIngreso({
         fecha_compra: fechaCompra, cantidad: f.cantidad, costo_unitario: f.costo_unitario, proveedor,
-        nota: String(f.enlace || '').trim().slice(0, 300) || 'Carga masiva'
+        nota: String(f.enlace || '').trim().slice(0, 300) || 'Carga masiva',
+        // v130: lo mismo que ofrece el formulario de una compra, una vez para toda la carga
+        devolucion_hasta: req.body?.devolucion_hasta, referencia: req.body?.referencia
       });
       if (saneado.error) return enviarError(res, 400, `${etiqueta}: ${saneado.error}`);
       if (!Number.isInteger(saneado.datos.cantidad)) return enviarError(res, 400, `${etiqueta}: la cantidad tiene que ser un número entero`);
@@ -3927,7 +3929,6 @@ app.post('/api/productos/carga-masiva', auth(true), async (req, res) => {
       if (it.productoId) {
         const p = existentes.get(it.productoId);
         if (!p) return enviarError(res, 404, `El producto #${it.productoId} ya no existe: vuelve a revisar la lista`);
-        if (p.archivado) return enviarError(res, 400, `"${p.nombre}" está archivado: desarchívalo antes de sumarle una compra`);
       } else {
         const dup = await buscarDuplicado({ nombre: it.nombre });
         if (dup) return enviarError(res, 409, `"${it.nombre}" ya existe en tu catálogo (${dup.existente.nombre}). Elige "sumar al que ya existe" o cámbiale el nombre.`);
@@ -3950,6 +3951,17 @@ app.post('/api/productos/carga-masiva', auth(true), async (req, res) => {
           producto = data;
           creado = true;
         }
+        /* v130 (dueño, 07-10-2026): un producto ARCHIVADO que se vuelve a comprar se
+           desarchiva acá. Antes se rechazaba, y como la pantalla ni siquiera lo
+           mostraba, el dueño terminaba creando un duplicado (pasó con el aire
+           comprimido #263). Sigue sin publicarse solo: eso lo decide él. */
+        let desarchivado = false;
+        if (producto.archivado) {
+          const { error: errArch } = await db.from('productos').update({ archivado: false }).eq('id', producto.id);
+          if (errArch) throw errArch;
+          producto = { ...producto, archivado: false };
+          desarchivado = true;
+        }
         let compra = null;
         if (estado !== 'encargo') {
           compra = await registrarCompraDeProducto(producto, it.datos, {
@@ -3957,7 +3969,7 @@ app.post('/api/productos/carga-masiva', auth(true), async (req, res) => {
           });
         }
         resultados.push({
-          ok: true, producto_id: producto.id, nombre: producto.nombre, creado,
+          ok: true, producto_id: producto.id, nombre: producto.nombre, creado, desarchivado,
           cantidad: it.datos ? it.datos.cantidad : 0, costo_unitario: it.costo,
           stock_nuevo: compra ? compra.stock_nuevo : num(producto.stock)
         });

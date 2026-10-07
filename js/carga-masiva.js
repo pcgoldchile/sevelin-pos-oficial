@@ -30,9 +30,11 @@ Reglas:
 5. No inventes nada. Si un dato no se lee bien, escribe un signo ? en su lugar.
 6. No pongas encabezado, numeración, comentarios ni el total.
 7. Si se ve a quién le compré, pon antes de la lista una línea así: PROVEEDOR: nombre
+8. Si se ve cuándo llega la compra (por ejemplo "Llega el sábado" o "Llega entre el 15 y el 20"), pon otra línea así: LLEGA: AAAA-MM-DD, con la fecha más lejana que aparezca. Hoy es __HOY__. Si no se ve, no pongas esa línea.
 
 Ejemplo de respuesta:
 PROVEEDOR: MercadoLibre
+LLEGA: 2026-10-10
 Balanza Digital de Baño 180 kg Vidrio Transparente | 30 | 2912 | https://ejemplo.cl/balanza
 Pack x6 Cinta de Embalaje Transparente 300 m | 3 | 8861 |`;
 
@@ -40,7 +42,25 @@ Pack x6 Cinta de Embalaje Transparente 300 m | 3 | 8861 |`;
 const CARGA_MASIVA_VACIAS = new Set(['para', 'con', 'sin', 'los', 'las', 'del', 'por', 'una', 'uno', 'color', 'negro', 'negra',
   'blanco', 'blanca', 'azul', 'rojo', 'gris', 'verde', 'pack', 'unidad', 'unidades', 'nuevo', 'nueva', 'generico', 'generica', 'tipo']);
 
-let cargaMasiva = { filas: [], estado: null, gasto: null, enviando: false };
+let cargaMasiva = { filas: [], estado: null, gasto: null, enviando: false, archivados: [] };
+
+// Las instrucciones llevan la fecha de hoy: sin ella la IA no puede convertir "llega el sábado" en una fecha.
+function instruccionesCargaMasiva() {
+  const [a, m, d] = todayISO().split('-');
+  const dia = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'][new Date(Date.UTC(+a, +m - 1, +d)).getUTCDay()];
+  return CARGA_MASIVA_INSTRUCCIONES.replace('__HOY__', `${dia} ${todayISO()}`);
+}
+
+/* "2026-10-10", "10-10-2026" o "10/10/2026" → "2026-10-10" · cualquier otra cosa → '' */
+function fechaDeCargaMasiva(texto) {
+  const t = String(texto || '').trim();
+  let m = t.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (!m) { const x = t.match(/(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/); if (x) m = [x[0], x[3], x[2], x[1]]; }
+  if (!m) return '';
+  const iso = `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+  const f = new Date(iso + 'T12:00:00Z');
+  return Number.isNaN(f.getTime()) || f.toISOString().slice(0, 10) !== iso ? '' : iso;
+}
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnCargaMasiva')?.addEventListener('click', abrirCargaMasiva);
@@ -77,12 +97,76 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   tabla?.addEventListener('input', anotar);
   tabla?.addEventListener('change', anotar);
+  /* v130: buscador por fila. Solo se rehacen las opciones de ESA fila, para
+     no perder el foco de lo que se está escribiendo. */
+  tabla?.addEventListener('input', (e) => {
+    const el = e.target.closest('[data-cm-buscar]');
+    if (!el) return;
+    const i = Number(el.dataset.cmBuscar);
+    const fila = cargaMasiva.filas[i];
+    if (!fila) return;
+    fila.busqueda = el.value;
+    fila.buscados = buscarEnCatalogoCargaMasiva(el.value);
+    const sel = tabla.querySelector(`select[data-cm-fila="${i}"][data-cm-campo="destino"]`);
+    if (sel) sel.innerHTML = opcionesDestinoCargaMasiva(fila);
+    const nota = tabla.querySelector(`[data-cm-nota="${i}"]`);
+    if (nota) nota.textContent = notaBusquedaCargaMasiva(fila);
+  });
 });
 
+/* Todo lo que se puede comprar de nuevo: los productos activos y también los
+   ARCHIVADOS (v130). Un producto archivado que se vuelve a comprar es el caso
+   típico de duplicado: no aparecía en ninguna lista y se creaba otro igual. */
+function catalogoDeCargaMasiva() {
+  const activos = typeof productsList !== 'undefined' ? productsList : [];
+  const vistos = new Set(activos.map(p => p.id));
+  return activos.concat((cargaMasiva.archivados || []).filter(p => !vistos.has(p.id)))
+    .filter(p => !p.es_servicio && !p.stock_ilimitado && !p.es_borrador);
+}
+
+const resumenProductoCargaMasiva = (p) => ({ id: p.id, nombre: p.nombre, stock: Number(p.stock) || 0, archivado: !!p.archivado });
+
+/* Búsqueda a mano: todas las palabras escritas tienen que estar en el nombre,
+   el SKU, el código de barras o el número del producto. */
+function buscarEnCatalogoCargaMasiva(texto) {
+  const norm = s => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const palabras = norm(texto).split(/\s+/).filter(Boolean);
+  if (norm(texto).trim().length < 2) return [];
+  return catalogoDeCargaMasiva()
+    .filter(p => { const donde = `${norm(p.nombre)} ${norm(p.sku)} ${norm(p.codigo_barras)} #${p.id}`; return palabras.every(x => donde.includes(x)); })
+    .slice(0, 12).map(resumenProductoCargaMasiva);
+}
+
+function notaBusquedaCargaMasiva(f) {
+  if (String(f.busqueda || '').trim().length < 2) return '';
+  const n = (f.buscados || []).length;
+  return n ? `${n} encontrado(s): elígelo en la lista de arriba` : 'No hay ninguno con ese nombre';
+}
+
+/* Las opciones de "¿ya existe?": producto nuevo, los parecidos que propone el
+   POS, lo que el dueño buscó a mano y el que ya tenga elegido. */
+function opcionesDestinoCargaMasiva(f) {
+  const candidatos = [];
+  const agregar = (p) => { if (p && !candidatos.some(c => String(c.id) === String(p.id))) candidatos.push(p); };
+  (f.parecidos || []).forEach(agregar);
+  (f.buscados || []).forEach(agregar);
+  if (f.destino && f.destino !== 'nuevo' && !candidatos.some(c => String(c.id) === String(f.destino))) {
+    const elegido = catalogoDeCargaMasiva().find(p => String(p.id) === String(f.destino));
+    if (elegido) agregar(resumenProductoCargaMasiva(elegido));
+  }
+  return `${(f.parecidos || []).length && !f.destino ? '<option value="">⚠️ Se parece a uno que ya tienes: elige</option>' : ''}
+    <option value="nuevo" ${f.destino === 'nuevo' ? 'selected' : ''}>🆕 Es un producto nuevo</option>
+    ${candidatos.map(p => `<option value="${p.id}" ${String(f.destino) === String(p.id) ? 'selected' : ''}>➕ Sumar a: ${escHtml(acortar(p.nombre, 58))} (stock ${p.stock}${p.archivado ? ' · archivado: se desarchiva' : ''})</option>`).join('')}`;
+}
+
 function abrirCargaMasiva() {
-  cargaMasiva = { filas: [], estado: null, gasto: null, enviando: false };
+  cargaMasiva = { filas: [], estado: null, gasto: null, enviando: false, archivados: [] };
+  // Los archivados se traen aparte (la lista de Productos no los incluye). Si falla, se sigue sin ellos.
+  cargaMasiva.esperaArchivados = API.productos.listarArchivados().then(lista => { cargaMasiva.archivados = Array.isArray(lista) ? lista : []; }).catch(() => {});
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
-  set('cmInstrucciones', CARGA_MASIVA_INSTRUCCIONES);
+  set('cmInstrucciones', instruccionesCargaMasiva());
+  set('cmDevolucion', '');
+  set('cmReferencia', '');
   set('cmTexto', '');
   set('cmFechaCompra', todayISO());
   set('cmProveedor', '');
@@ -95,7 +179,7 @@ function abrirCargaMasiva() {
 
 async function copiarInstruccionesCargaMasiva() {
   try {
-    await navigator.clipboard.writeText(CARGA_MASIVA_INSTRUCCIONES);
+    await navigator.clipboard.writeText(instruccionesCargaMasiva());
     showToast('Instrucciones copiadas: pégalas en tu IA junto con la captura del carrito', 'ok');
   } catch (_) {
     // Sin permiso de portapapeles: se abre el texto seleccionado para copiarlo a mano
@@ -121,12 +205,16 @@ function numeroDeCargaMasiva(texto) {
 function leerTextoCargaMasiva(texto) {
   const filas = [];
   let proveedor = '';
+  let llegada = '';
   let sinEntender = 0;
   for (const cruda of String(texto || '').split(/\r?\n/)) {
     const linea = cruda.trim();
     if (!linea || /^[\s|:\-–—=_]+$/.test(linea)) continue;
     const prov = linea.match(/^\**\s*proveedor\s*\**\s*:\s*(.+)$/i);
     if (prov) { proveedor = prov[1].replace(/\*/g, '').trim().slice(0, 80); continue; }
+    // v130: "LLEGA: 2026-10-10" (opcional). Una fecha que no se entiende se ignora, no frena nada.
+    const llega = linea.match(/^\**\s*(?:llega|llegada|fecha de llegada)\s*\**\s*:\s*(.+)$/i);
+    if (llega) { llegada = fechaDeCargaMasiva(llega[1]); continue; }
     const celdas = linea.replace(/^\|/, '').replace(/\|$/, '').split(linea.includes('|') ? '|' : '\t').map(c => c.trim());
     if (celdas.length < 2 || !celdas[0]) { sinEntender++; continue; }
     if (/^(nombre|producto)/i.test(celdas[0]) && numeroDeCargaMasiva(celdas[1]) === null) continue;   // encabezado
@@ -141,7 +229,7 @@ function leerTextoCargaMasiva(texto) {
       destino: ''
     });
   }
-  return { filas, proveedor, sinEntender };
+  return { filas, proveedor, llegada, sinEntender };
 }
 
 function palabrasDeCargaMasiva(nombre) {
@@ -157,32 +245,40 @@ function parecidosDeCargaMasiva(nombre) {
   if (!mias.length) return [];
   const calza = (a, b) => a === b || (a.length >= 4 && b.length >= 4 && (a.startsWith(b) || b.startsWith(a)));
   const lista = [];
-  for (const p of (typeof productsList !== 'undefined' ? productsList : [])) {
-    if (p.es_servicio || p.stock_ilimitado) continue;
+  for (const p of catalogoDeCargaMasiva()) {
     const suyas = palabrasDeCargaMasiva(p.nombre);
     if (!suyas.length) continue;
     const comunes = mias.filter(a => suyas.some(b => calza(a, b))).length;
     const parte = comunes / Math.min(mias.length, suyas.length);
-    if (comunes >= 2 && parte >= 0.5) lista.push({ id: p.id, nombre: p.nombre, stock: Number(p.stock) || 0, comunes, parte });
+    if (comunes >= 2 && parte >= 0.5) lista.push({ ...resumenProductoCargaMasiva(p), comunes, parte });
   }
   return lista.sort((a, b) => b.parte - a.parte || b.comunes - a.comunes).slice(0, 4);
 }
 
-function revisarTextoCargaMasiva() {
+async function revisarTextoCargaMasiva() {
+  await cargaMasiva.esperaArchivados;   // los archivados tienen que estar antes de buscar parecidos
   const texto = document.getElementById('cmTexto')?.value || '';
-  const { filas, proveedor, sinEntender } = leerTextoCargaMasiva(texto);
+  const { filas, proveedor, llegada, sinEntender } = leerTextoCargaMasiva(texto);
   if (!filas.length) {
     showToast('No encontré productos en lo pegado. Tiene que venir una línea por producto: Nombre | Cantidad | Costo por unidad', 'err');
     return;
   }
-  filas.forEach(f => { f.parecidos = parecidosDeCargaMasiva(f.nombre); });
+  // Sin parecidos parte como "nuevo" (se puede cambiar buscando); con parecidos hay que elegir.
+  filas.forEach(f => { f.parecidos = parecidosDeCargaMasiva(f.nombre); f.buscados = []; f.busqueda = ''; f.destino = f.parecidos.length ? '' : 'nuevo'; });
   cargaMasiva.filas = filas;
   const elProv = document.getElementById('cmProveedor');
   if (elProv && proveedor && !elProv.value) elProv.value = proveedor;
+  /* v130: si la IA leyó cuándo llega, queda puesta la fecha y marcado "por
+     llegar" (una fecha de llegada futura es justamente eso). Se puede cambiar. */
+  const elLlegada = document.getElementById('cmFechaLlegada');
+  if (llegada && elLlegada) {
+    elLlegada.value = llegada;
+    if (!cargaMasiva.estado && llegada >= todayISO()) cargaMasiva.estado = 'por_llegar';
+  }
   const resultado = document.getElementById('cmResultado');
   if (resultado) resultado.innerHTML = '';
   pintarCargaMasiva();
-  showToast(`${filas.length} producto(s) leído(s)${sinEntender ? ` · ${sinEntender} línea(s) no se entendieron` : ''}`, sinEntender ? 'err' : 'ok');
+  showToast(`${filas.length} producto(s) leído(s)${llegada ? ` · llega el ${llegada.split('-').reverse().join('-')}` : ''}${sinEntender ? ` · ${sinEntender} línea(s) no se entendieron` : ''}`, sinEntender ? 'err' : 'ok');
   document.getElementById('cmRevision')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -225,13 +321,11 @@ function pintarCargaMasiva() {
             <td><input type="number" class="cm-num" data-cm-fila="${i}" data-cm-campo="cantidad" value="${escHtml(f.cantidad)}" min="1" step="1" ${encargo ? 'disabled' : ''}></td>
             <td><input type="number" class="cm-num" data-cm-fila="${i}" data-cm-campo="costo" value="${escHtml(f.costo)}" min="0" step="1"></td>
             <td><input type="number" class="cm-num" data-cm-fila="${i}" data-cm-campo="precio" value="${escHtml(f.precio)}" min="0" step="1" placeholder="Después"></td>
-            <td>${encargo || !f.parecidos.length
+            <td class="cm-celda-destino">${encargo
               ? '<span class="cm-nuevo">🆕 Producto nuevo</span>'
-              : `<select data-cm-fila="${i}" data-cm-campo="destino" class="cm-destino${f.destino ? '' : ' cm-falta'}">
-                   <option value="">⚠️ Se parece a uno que ya tienes: elige</option>
-                   <option value="nuevo" ${f.destino === 'nuevo' ? 'selected' : ''}>🆕 Es un producto nuevo</option>
-                   ${f.parecidos.map(p => `<option value="${p.id}" ${String(f.destino) === String(p.id) ? 'selected' : ''}>➕ Sumar a: ${escHtml(acortar(p.nombre, 52))} (stock ${p.stock})</option>`).join('')}
-                 </select>`}</td>
+              : `<select data-cm-fila="${i}" data-cm-campo="destino" class="cm-destino${f.destino ? '' : ' cm-falta'}">${opcionesDestinoCargaMasiva(f)}</select>
+                 <input type="search" class="cm-buscar" data-cm-buscar="${i}" value="${escHtml(f.busqueda || '')}" placeholder="🔎 ¿No aparece? Búscalo en tu catálogo…" autocomplete="off">
+                 <small class="cm-buscar-nota" data-cm-nota="${i}">${escHtml(notaBusquedaCargaMasiva(f))}</small>`}</td>
           </tr>`).join('')}
       </tbody>
     </table>`;
@@ -281,6 +375,9 @@ async function enviarCargaMasiva() {
     fecha_compra: document.getElementById('cmFechaCompra')?.value || todayISO(),
     proveedor: (document.getElementById('cmProveedor')?.value || '').trim() || null,
     fecha_llegada_estimada: cargaMasiva.estado === 'por_llegar' ? (document.getElementById('cmFechaLlegada')?.value || null) : null,
+    // v130: los mismos datos opcionales del formulario de una compra
+    devolucion_hasta: encargo ? null : (document.getElementById('cmDevolucion')?.value || null),
+    referencia: encargo ? null : ((document.getElementById('cmReferencia')?.value || '').trim() || null),
     items: filas.map(f => ({
       nombre: String(f.nombre).trim(),
       cantidad: encargo ? 0 : Number(f.cantidad),
@@ -308,6 +405,7 @@ async function enviarCargaMasiva() {
           <strong>✅ ${num(r.cargados)} producto(s) cargado(s)</strong>: ${num(r.creados)} nuevo(s) y ${num(r.sumados)} sumado(s) a uno que ya existía.
           ${r.estado === 'por_llegar' ? ' Quedaron <strong>por llegar</strong>, sin sumar stock: cuando lleguen, botón 🚚 de arriba y "Ya llegó".' : ''}
           ${r.estado === 'llego' ? ' El stock ya quedó sumado.' : ''}
+          ${(r.resultados || []).some(x => x.desarchivado) ? `<br>📦 Volvieron del archivo: ${(r.resultados || []).filter(x => x.desarchivado).map(x => escHtml(x.nombre)).join(', ')}. Siguen sin publicar.` : ''}
           ${malos.length ? `<br>⚠️ No se pudieron cargar: ${malos.map(m => `${escHtml(m.nombre)} (${escHtml(m.error)})`).join('; ')}` : ''}
           <br>Les falta foto, descripción, categoría${filas.some(f => !(Number(f.precio) > 0)) ? ', precio de venta' : ''} y publicarlos: están en la lista de Productos.
           ${num(r.total_compra) > 0 && quiereGasto ? `<br><span class="compra-aviso-gasto" style="margin-top:8px;">💸 Esta compra son <strong>${fmtCLP(r.total_compra)}</strong>. Falta guardar el gasto en Finanzas.
