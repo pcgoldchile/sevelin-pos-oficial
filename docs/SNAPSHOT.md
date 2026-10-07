@@ -12,6 +12,11 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 07-10-2026 · v131, marketplace de la compra, marca desde la IA y "Por completar"
+
+Detalle en `docs/CHANGELOG-V131.md` (`sql/88` aplicada: `ingresos_mercaderia.marketplace`). Falta el informe de compras
+por marketplace: el dato ya se guarda.
+
 ## 07-10-2026 · v130, carga masiva: archivados, buscador, fecha de llegada y ventana ancha
 
 Detalle en `docs/CHANGELOG-V130.md`. La carga masiva no veía los productos archivados (así se iba a duplicar el aire

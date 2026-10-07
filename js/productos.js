@@ -4141,6 +4141,7 @@ function limpiarFormularioIngreso() {
   set('ingCosto', '');
   set('ingDevolucion', '');
   set('ingProveedor', '');
+  set('ingMarketplace', '');
   set('ingReferencia', '');
   set('ingProveedorRut', '');
   ponerAdjuntoDeCompra(null);
@@ -4189,6 +4190,7 @@ function pintarIngresosProducto() {
                   ? escHtml(fechaCorta(i.devolucion_hasta))
                   : '<span style="color:var(--text-muted);">no acepta</span>'}</td>
             <td>${escHtml(i.proveedor || '—')}
+              ${i.marketplace ? `<br><small style="color:var(--text-muted);">vía ${escHtml(i.marketplace)}</small>` : ''}
               ${i.proveedor_rut ? `<br><small style="color:var(--text-muted);">${escHtml(i.proveedor_rut)}</small>` : ''}
               ${i.referencia ? `<br><small style="color:var(--text-muted);">N° ${escHtml(i.referencia)}</small>` : ''}
               ${i.url_documento ? `<br><button type="button" class="btn btn-ghost btn-sm" data-doc-ingreso="${encodeURIComponent(i.url_documento)}" title="Abrir la factura adjunta">📎 Ver factura</button>` : ''}</td>
@@ -4277,6 +4279,7 @@ function compraDelFormulario() {
       ...(precioVenta && Number(precioVenta) > 0 ? { precio_venta: Number(precioVenta) } : {}),
       devolucion_hasta: (document.getElementById('ingDevolucion')?.value || '').trim() || null,
       proveedor: (document.getElementById('ingProveedor')?.value || '').trim() || null,
+      marketplace: (document.getElementById('ingMarketplace')?.value || '').trim() || null,   // v131 (sql/88)
       referencia: (document.getElementById('ingReferencia')?.value || '').trim() || null,
       // v122: la casilla de lotes (PEPS) marcada vale para ESTA compra aunque la ficha no se haya guardado
       ...(document.getElementById('prodUsaLotes')?.checked ? { activar_lotes: true } : {}),

@@ -20,23 +20,34 @@
 
 const CARGA_MASIVA_INSTRUCCIONES = `Te voy a pasar una captura o el texto de un carrito de compra (o de una factura). Saca cada producto y respóndeme SOLO con una lista de texto, una línea por producto, con este formato exacto, separado por barras verticales:
 
-Nombre del producto | Cantidad | Costo por unidad | Enlace
+Nombre del producto | Cantidad | Costo por unidad | Enlace | Marca
 
 Reglas:
 1. Nombre: claro y completo, como para la ficha de una tienda (máximo 90 letras). Incluye marca, modelo, medida y color si aparecen. Sin emojis y sin mayúsculas sostenidas.
 2. Cantidad: cuántas unidades compré, número entero. Si el producto es un pack que se vende cerrado, deja "Pack x6" (o el que sea) en el nombre y pon cuántos packs compré.
 3. Costo por unidad: lo que pagué por CADA unidad, en pesos chilenos, solo el número, sin puntos ni signo $. Si solo aparece el subtotal, divídelo por la cantidad.
 4. Enlace: el link del producto si lo tienes; si no, déjalo vacío.
+4b. Marca: la marca del fabricante si se ve (por ejemplo Kingston o Fiddler). Si no tiene marca o no se ve, déjalo vacío. No pongas el nombre de la tienda como marca.
 5. No inventes nada. Si un dato no se lee bien, escribe un signo ? en su lugar.
 6. No pongas encabezado, numeración, comentarios ni el total.
-7. Si se ve a quién le compré, pon antes de la lista una línea así: PROVEEDOR: nombre
+7. Si se ve a quién le compré (el vendedor o la tienda), pon antes de la lista una línea así: PROVEEDOR: nombre
+7b. Si la compra es en un marketplace (MercadoLibre, Falabella, Paris, Ripley, AliExpress, Temu, Amazon u otro), pon otra línea así: MARKETPLACE: nombre. En ese caso PROVEEDOR es el vendedor o la tienda oficial que aparece dentro del marketplace. Si es una compra directa a una tienda, no pongas esa línea.
 8. Si se ve cuándo llega la compra (por ejemplo "Llega el sábado" o "Llega entre el 15 y el 20"), pon otra línea así: LLEGA: AAAA-MM-DD, con la fecha más lejana que aparezca. Hoy es __HOY__. Si no se ve, no pongas esa línea.
 
 Ejemplo de respuesta:
-PROVEEDOR: MercadoLibre
+PROVEEDOR: Tienda Oficial Fiddler
+MARKETPLACE: MercadoLibre
 LLEGA: 2026-10-10
-Balanza Digital de Baño 180 kg Vidrio Transparente | 30 | 2912 | https://ejemplo.cl/balanza
-Pack x6 Cinta de Embalaje Transparente 300 m | 3 | 8861 |`;
+Aire Comprimido Spray Multipropósito Air Duster 400 ml | 5 | 4990 | https://ejemplo.cl/aire | Fiddler
+Pack x6 Cinta de Embalaje Transparente 300 m | 3 | 8861 | |`;
+
+// Para separar un "VENDEDOR / MERCADOLIBRE" escrito todo junto, como se anotaba antes.
+const CARGA_MASIVA_MARKETPLACES = ['MercadoLibre', 'Falabella', 'Paris', 'Ripley', 'Líder', 'Sodimac', 'AliExpress', 'Temu', 'Shein', 'Amazon'];
+function marketplaceConocidoCargaMasiva(texto) {
+  const llave = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z]/g, '');
+  const t = llave(texto).replace(/^mercadolibrechile$|^meli$|^ml$/, 'mercadolibre');
+  return CARGA_MASIVA_MARKETPLACES.find(m => llave(m) === t) || '';
+}
 
 // Palabras que no sirven para decidir si dos productos son el mismo
 const CARGA_MASIVA_VACIAS = new Set(['para', 'con', 'sin', 'los', 'las', 'del', 'por', 'una', 'uno', 'color', 'negro', 'negra',
@@ -91,6 +102,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const campo = el.dataset.cmCampo;
     if (campo === 'incluir') fila.incluir = el.checked;
     else if (campo === 'nombre') fila.nombre = el.value;
+    else if (campo === 'marca') fila.marca = el.value;
     else if (campo === 'destino') fila.destino = el.value;
     else fila[campo] = el.value === '' ? '' : Number(el.value);
     pintarResumenCargaMasiva();
@@ -166,6 +178,7 @@ function abrirCargaMasiva() {
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
   set('cmInstrucciones', instruccionesCargaMasiva());
   set('cmDevolucion', '');
+  set('cmMarketplace', '');
   set('cmReferencia', '');
   set('cmTexto', '');
   set('cmFechaCompra', todayISO());
@@ -205,6 +218,7 @@ function numeroDeCargaMasiva(texto) {
 function leerTextoCargaMasiva(texto) {
   const filas = [];
   let proveedor = '';
+  let marketplace = '';
   let llegada = '';
   let sinEntender = 0;
   for (const cruda of String(texto || '').split(/\r?\n/)) {
@@ -215,11 +229,18 @@ function leerTextoCargaMasiva(texto) {
     // v130: "LLEGA: 2026-10-10" (opcional). Una fecha que no se entiende se ignora, no frena nada.
     const llega = linea.match(/^\**\s*(?:llega|llegada|fecha de llegada)\s*\**\s*:\s*(.+)$/i);
     if (llega) { llegada = fechaDeCargaMasiva(llega[1]); continue; }
+    // v131: "MARKETPLACE: MercadoLibre" (opcional)
+    const mk = linea.match(/^\**\s*(?:marketplace|plataforma)\s*\**\s*:\s*(.+)$/i);
+    if (mk) { const m = mk[1].replace(/\*/g, '').trim().slice(0, 60); marketplace = marketplaceConocidoCargaMasiva(m) || m; continue; }
     const celdas = linea.replace(/^\|/, '').replace(/\|$/, '').split(linea.includes('|') ? '|' : '\t').map(c => c.trim());
     if (celdas.length < 2 || !celdas[0]) { sinEntender++; continue; }
     if (/^(nombre|producto)/i.test(celdas[0]) && numeroDeCargaMasiva(celdas[1]) === null) continue;   // encabezado
     const enlace = celdas.slice(3).find(c => /^https?:\/\//i.test(c)) || '';
+    // La marca es la 5ª columna; se ignora si es un enlace, un "?" o la palabra de relleno
+    const marcaCruda = (celdas[4] || '').replace(/\*\*/g, '').trim();
+    const marca = /^https?:\/\//i.test(marcaCruda) || /^(\?+|-+|sin marca|n\/?a|ninguna)$/i.test(marcaCruda) ? '' : marcaCruda.slice(0, 80);
     filas.push({
+      marca,
       nombre: celdas[0].replace(/^\d+[.)]\s+/, '').replace(/\*\*/g, '').slice(0, 200),
       cantidad: numeroDeCargaMasiva(celdas[1]) ?? '',
       costo: numeroDeCargaMasiva(celdas[2]) ?? '',
@@ -229,7 +250,17 @@ function leerTextoCargaMasiva(texto) {
       destino: ''
     });
   }
-  return { filas, proveedor, llegada, sinEntender };
+  /* "VENDEDOR / MERCADOLIBRE" en una sola línea (como se anotaba antes): si
+     una de las partes es un marketplace conocido, se separan. */
+  if (!marketplace && /[\/|–-]/.test(proveedor)) {
+    const partes = proveedor.split(/\s*[\/|]\s*|\s+[–-]\s+/).map(p => p.trim()).filter(Boolean);
+    const i = partes.findIndex(p => marketplaceConocidoCargaMasiva(p));
+    if (i >= 0 && partes.length > 1) {
+      marketplace = marketplaceConocidoCargaMasiva(partes[i]);
+      proveedor = partes.filter((_, k) => k !== i).join(' / ');
+    }
+  }
+  return { filas, proveedor, marketplace, llegada, sinEntender };
 }
 
 function palabrasDeCargaMasiva(nombre) {
@@ -258,7 +289,7 @@ function parecidosDeCargaMasiva(nombre) {
 async function revisarTextoCargaMasiva() {
   await cargaMasiva.esperaArchivados;   // los archivados tienen que estar antes de buscar parecidos
   const texto = document.getElementById('cmTexto')?.value || '';
-  const { filas, proveedor, llegada, sinEntender } = leerTextoCargaMasiva(texto);
+  const { filas, proveedor, marketplace, llegada, sinEntender } = leerTextoCargaMasiva(texto);
   if (!filas.length) {
     showToast('No encontré productos en lo pegado. Tiene que venir una línea por producto: Nombre | Cantidad | Costo por unidad', 'err');
     return;
@@ -268,6 +299,8 @@ async function revisarTextoCargaMasiva() {
   cargaMasiva.filas = filas;
   const elProv = document.getElementById('cmProveedor');
   if (elProv && proveedor && !elProv.value) elProv.value = proveedor;
+  const elMk = document.getElementById('cmMarketplace');
+  if (elMk && marketplace && !elMk.value) elMk.value = marketplace;
   /* v130: si la IA leyó cuándo llega, queda puesta la fecha y marcado "por
      llegar" (una fecha de llegada futura es justamente eso). Se puede cambiar. */
   const elLlegada = document.getElementById('cmFechaLlegada');
@@ -310,7 +343,7 @@ function pintarCargaMasiva() {
   tabla.innerHTML = `
     <table class="data-table tabla-carga-masiva">
       <thead><tr>
-        <th></th><th>Producto</th><th>Cantidad</th><th>Costo c/u</th><th>Precio de venta</th><th>¿Ya existe en tu catálogo?</th>
+        <th></th><th>Producto</th><th>Marca</th><th>Cantidad</th><th>Costo c/u</th><th>Precio de venta</th><th>¿Ya existe en tu catálogo?</th>
       </tr></thead>
       <tbody>
         ${cargaMasiva.filas.map((f, i) => `
@@ -318,6 +351,7 @@ function pintarCargaMasiva() {
             <td><input type="checkbox" data-cm-fila="${i}" data-cm-campo="incluir" ${f.incluir ? 'checked' : ''} title="Cargar esta fila"></td>
             <td><input type="text" class="cm-nombre" data-cm-fila="${i}" data-cm-campo="nombre" value="${escHtml(f.nombre)}" maxlength="200">
               ${f.enlace ? `<small class="fila-meta">${escHtml(acortar(f.enlace, 48))}</small>` : ''}</td>
+            <td><input type="text" class="cm-marca" data-cm-fila="${i}" data-cm-campo="marca" value="${escHtml(f.marca || '')}" maxlength="80" placeholder="Sin marca" title="Solo se usa si el producto es nuevo"></td>
             <td><input type="number" class="cm-num" data-cm-fila="${i}" data-cm-campo="cantidad" value="${escHtml(f.cantidad)}" min="1" step="1" ${encargo ? 'disabled' : ''}></td>
             <td><input type="number" class="cm-num" data-cm-fila="${i}" data-cm-campo="costo" value="${escHtml(f.costo)}" min="0" step="1"></td>
             <td><input type="number" class="cm-num" data-cm-fila="${i}" data-cm-campo="precio" value="${escHtml(f.precio)}" min="0" step="1" placeholder="Después"></td>
@@ -374,6 +408,7 @@ async function enviarCargaMasiva() {
     estado: cargaMasiva.estado,
     fecha_compra: document.getElementById('cmFechaCompra')?.value || todayISO(),
     proveedor: (document.getElementById('cmProveedor')?.value || '').trim() || null,
+    marketplace: encargo ? null : ((document.getElementById('cmMarketplace')?.value || '').trim() || null),
     fecha_llegada_estimada: cargaMasiva.estado === 'por_llegar' ? (document.getElementById('cmFechaLlegada')?.value || null) : null,
     // v130: los mismos datos opcionales del formulario de una compra
     devolucion_hasta: encargo ? null : (document.getElementById('cmDevolucion')?.value || null),
@@ -383,6 +418,7 @@ async function enviarCargaMasiva() {
       cantidad: encargo ? 0 : Number(f.cantidad),
       costo_unitario: Number(f.costo) || 0,
       precio_venta: Number(f.precio) || 0,
+      marca: String(f.marca || '').trim(),
       enlace: f.enlace || '',
       producto_id: !encargo && f.destino && f.destino !== 'nuevo' ? Number(f.destino) : null
     }))
@@ -407,7 +443,7 @@ async function enviarCargaMasiva() {
           ${r.estado === 'llego' ? ' El stock ya quedó sumado.' : ''}
           ${(r.resultados || []).some(x => x.desarchivado) ? `<br>📦 Volvieron del archivo: ${(r.resultados || []).filter(x => x.desarchivado).map(x => escHtml(x.nombre)).join(', ')}. Siguen sin publicar.` : ''}
           ${malos.length ? `<br>⚠️ No se pudieron cargar: ${malos.map(m => `${escHtml(m.nombre)} (${escHtml(m.error)})`).join('; ')}` : ''}
-          <br>Les falta foto, descripción, categoría${filas.some(f => !(Number(f.precio) > 0)) ? ', precio de venta' : ''} y publicarlos: están en la lista de Productos.
+          <br>Les falta foto, descripción, categoría${filas.some(f => !(Number(f.precio) > 0)) ? ', precio de venta' : ''} y publicarlos: quedaron en <strong>📋 Por completar</strong> (arriba) y en la lista de Productos.
           ${num(r.total_compra) > 0 && quiereGasto ? `<br><span class="compra-aviso-gasto" style="margin-top:8px;">💸 Esta compra son <strong>${fmtCLP(r.total_compra)}</strong>. Falta guardar el gasto en Finanzas.
             <button type="button" class="btn btn-primary btn-sm" id="btnCmGasto">Abrir el gasto</button></span>` : ''}
           ${num(r.total_compra) > 0 && !quiereGasto ? '<br>🚫 No se anotó ningún gasto por esta compra, como pediste.' : ''}
@@ -422,6 +458,7 @@ async function enviarCargaMasiva() {
     showToast(`${num(r.cargados)} producto(s) cargado(s)`, malos.length ? 'err' : 'ok');
     if (typeof cargarProductos === 'function') await cargarProductos(true);
     if (typeof actualizarAvisoEnCamino === 'function') actualizarAvisoEnCamino();
+    if (typeof actualizarAvisoFichas === 'function') actualizarAvisoFichas();   // v131: aparecen al tiro en "Por completar"
     // Pidió sumar el gasto y todo cargó bien: se abre el gasto ya llenado, sin otro clic
     if (quiereGasto && !malos.length && num(r.total_compra) > 0) abrirGasto();
     cargaMasiva.gasto = null;

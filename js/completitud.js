@@ -93,6 +93,12 @@ const EVALUADORES = {
     falta: p => !(p.peso_kg > 0) || !(p.alto_cm > 0) || !(p.ancho_cm > 0) || !(p.profundidad_cm > 0),
     foco: 'prodPeso'
   },
+  // v131: en el editor basta con "sin publicar": el servidor decide además por stock o por llegar
+  ficha_vacia: {
+    aplica: p => !p.publicado_web && !p.es_servicio && !p.es_repuesto && !p.stock_ilimitado,
+    falta: p => p.imagen_urls.length === 0 && !String(p.descripcion || '').replace(/<[^>]*>/g, '').trim(),
+    foco: 'prodFotoInput'
+  },
   descripcion: {
     aplica: p => p.publicado_web,
     falta: p => !String(p.descripcion || '').replace(/<[^>]*>/g, '').trim(),

@@ -3264,6 +3264,11 @@ function sanearIngreso(body) {
     }
     extras.url_documento = ruta || null;
   }
+  /* sql/88 — por qué plataforma se compró (MercadoLibre, Falabella…), aparte
+     del vendedor. Solo entra si el body lo trae, igual que los de arriba. */
+  if (body?.marketplace !== undefined) {
+    extras.marketplace = String(body.marketplace || '').trim().slice(0, 60) || null;
+  }
 
   /* sql/65 — La factura no puede estar pendiente si el número YA está
      escrito: se apaga sola y no hay que acordarse de desmarcarla. */
@@ -3511,6 +3516,22 @@ const REGLAS_PRODUCTO = [
     falta: p => !(num(p.peso_kg) > 0) || !(num(p.alto_cm) > 0) || !(num(p.ancho_cm) > 0) || !(num(p.profundidad_cm) > 0)
   },
   {
+    /* v131 (dueño, 07-10-2026): lo que entra por carga masiva nace sin foto,
+       descripción ni categoría, y sin publicar. Ninguna regla de arriba lo
+       veía si estaba por llegar o ya tenía precio, así que se perdía de vista.
+       Solo la ficha PELADA (sin foto Y sin descripción): un producto completo
+       que él decidió no publicar no es un pendiente. */
+    clave: 'ficha_vacia',
+    titulo: 'Ficha sin terminar (sin foto ni descripción)',
+    seccion: 'fotos',
+    gravedad: 'pendiente',
+    porque: 'Está cargado pero no se puede publicar: le faltan la foto, la descripción y la categoría.',
+    aplica: p => !p.publicado_web && !p.es_servicio && !p.es_repuesto && !p.stock_ilimitado
+      && (num(p.stock) > 0 || !!p.por_llegar || !!p.es_pedido_encargo),
+    falta: p => (!Array.isArray(p.imagen_urls) || p.imagen_urls.filter(Boolean).length === 0)
+      && !String(p.descripcion || '').trim() && !String(p.descripcion_web || '').trim()
+  },
+  {
     clave: 'descripcion',
     titulo: 'Publicado sin descripción',
     seccion: 'descripcion',
@@ -3548,7 +3569,7 @@ app.get('/api/productos/incompletos', auth(true), async (req, res) => {
       .select('id, nombre, sku, stock, costo_unitario, precio_unitario, precio_a_consultar, ' +
               'peso_kg, alto_cm, ancho_cm, profundidad_cm, imagen_urls, descripcion, descripcion_web, ' +
               'categoria_id, categoria_web, publicado_web, es_servicio, es_repuesto, stock_ilimitado, ' +
-              'archivado, es_borrador')
+              'archivado, es_borrador, por_llegar, es_pedido_encargo')
       .limit(5000);
     if (error) return enviarErrorBD(res, error);
 
@@ -3899,7 +3920,9 @@ app.post('/api/productos/carga-masiva', auth(true), async (req, res) => {
         fecha_compra: fechaCompra, cantidad: f.cantidad, costo_unitario: f.costo_unitario, proveedor,
         nota: String(f.enlace || '').trim().slice(0, 300) || 'Carga masiva',
         // v130: lo mismo que ofrece el formulario de una compra, una vez para toda la carga
-        devolucion_hasta: req.body?.devolucion_hasta, referencia: req.body?.referencia
+        devolucion_hasta: req.body?.devolucion_hasta, referencia: req.body?.referencia,
+        // v131 (sql/88): solo viaja si se escribió, así una carga sin marketplace no depende de la columna
+        ...(String(req.body?.marketplace || '').trim() ? { marketplace: req.body.marketplace } : {})
       });
       if (saneado.error) return enviarError(res, 400, `${etiqueta}: ${saneado.error}`);
       if (!Number.isInteger(saneado.datos.cantidad)) return enviarError(res, 400, `${etiqueta}: la cantidad tiene que ser un número entero`);
@@ -3914,7 +3937,9 @@ app.post('/api/productos/carga-masiva', auth(true), async (req, res) => {
       if (nombresVistos.has(clave)) return enviarError(res, 400, `${etiqueta}: "${nombre}" está dos veces en la lista`);
       nombresVistos.add(clave);
     }
-    items.push({ nombre, productoId, precio, costo, datos });
+    // v131: la marca que leyó la IA. Solo se usa al CREAR; la de un producto que ya existe no se toca.
+    const marca = String(f.marca || '').replace(/^\?+$/, '').trim().slice(0, 80) || null;
+    items.push({ nombre, productoId, precio, costo, datos, marca });
   }
 
   try {
@@ -3944,6 +3969,7 @@ app.post('/api/productos/carga-masiva', auth(true), async (req, res) => {
         if (!producto) {
           const nuevo = sanearProducto({
             nombre: it.nombre, costo_unitario: it.costo, precio_unitario: it.precio, stock: 0,
+            ...(it.marca ? { marca: it.marca } : {}),
             usa_lotes: estado !== 'encargo', publicado_web: false, es_pedido_encargo: estado === 'encargo'
           });
           const { data, error } = await db.from('productos').insert([nuevo]).select(CAMPOS_PRODUCTO_COMPRA).single();

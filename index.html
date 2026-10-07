@@ -2754,6 +2754,11 @@
                   <label for="ingProveedorRut">RUT del proveedor</label>
                   <input type="text" id="ingProveedorRut" maxlength="12" placeholder="Ej: 77.398.220-1" autocomplete="off">
                 </div>
+                <!-- v131 (sql/88): por qué plataforma se compró, aparte del vendedor. -->
+                <div class="field">
+                  <label for="ingMarketplace">Marketplace (opcional)</label>
+                  <input type="text" id="ingMarketplace" maxlength="60" placeholder="Ej: MercadoLibre" list="listaMarketplaces" autocomplete="off">
+                </div>
                 <div class="field">
                   <label for="ingReferencia">N° de factura / guía</label>
                   <input type="text" id="ingReferencia" maxlength="80" placeholder="Opcional">
@@ -7131,7 +7136,9 @@
         <!-- Los mismos datos del formulario de una compra, una vez para toda la carga. -->
         <div class="cm-datos">
           <div class="field"><label for="cmFechaCompra">Fecha de compra</label><input type="date" id="cmFechaCompra"></div>
-          <div class="field"><label for="cmProveedor">Proveedor</label><input type="text" id="cmProveedor" maxlength="80" placeholder="A quién se la compraste"></div>
+          <div class="field"><label for="cmProveedor">Vendedor o proveedor</label><input type="text" id="cmProveedor" maxlength="80" placeholder="A quién se la compraste"></div>
+          <div class="field"><label for="cmMarketplace">Marketplace (opcional)</label><input type="text" id="cmMarketplace" maxlength="60" placeholder="Ej: MercadoLibre" list="listaMarketplaces" autocomplete="off">
+            <datalist id="listaMarketplaces"><option value="MercadoLibre"><option value="Falabella"><option value="Paris"><option value="Ripley"><option value="Líder"><option value="Sodimac"><option value="AliExpress"><option value="Temu"><option value="Shein"><option value="Amazon"></datalist></div>
           <div class="field" id="cmBloqueLlegada" style="display:none;"><label for="cmFechaLlegada">¿Cuándo llega? (opcional)</label><input type="date" id="cmFechaLlegada"></div>
           <div class="field"><label for="cmDevolucion">Puedes devolver hasta (opcional)</label><input type="date" id="cmDevolucion"></div>
           <div class="field"><label for="cmReferencia">N° de pedido o boleta (opcional)</label><input type="text" id="cmReferencia" maxlength="80" placeholder="Ej: 2000012345"></div>

@@ -5013,6 +5013,7 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
 .cm-paso-titulo span { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--blue); color: #fff; font-size: 13px; }
 .tabla-carga-masiva input.cm-nombre { width: 100%; min-width: 220px; }
 .tabla-carga-masiva input.cm-num { width: 96px; }
+.tabla-carga-masiva input.cm-marca { width: 120px; }
 .tabla-carga-masiva select.cm-destino { width: 100%; }
 /* v130: carga masiva ancha y en columnas */
 .modal-box.modal-cm { max-width: min(1380px, 96vw); max-height: 94vh; }
