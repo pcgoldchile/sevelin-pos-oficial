@@ -46,9 +46,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('btnEnCamino')?.addEventListener('click', abrirModalEnCamino);
   document.getElementById('btnCerrarEnCamino')?.addEventListener('click', () => cerrarModal('modalEnCamino'));
+  document.getElementById('btnCancelarEditarPorLlegar')?.addEventListener('click', () => cerrarModal('modalEditarPorLlegar'));
+  document.getElementById('btnGuardarEditarPorLlegar')?.addEventListener('click', guardarEditarPorLlegar);
   document.getElementById('enCaminoLista')?.addEventListener('click', (e) => {
     const recibir = e.target.closest('[data-recibir-camino]');
     if (recibir) { recibirDesdeAviso(Number(recibir.dataset.recibirCamino)); return; }
+    const editar = e.target.closest('[data-editar-camino]');
+    if (editar) { abrirEditarPorLlegar(Number(editar.dataset.editarCamino)); return; }
+    const eliminar = e.target.closest('[data-eliminar-camino]');
+    if (eliminar) { eliminarCompraPorLlegar(Number(eliminar.dataset.eliminarCamino)); return; }
     const ver = e.target.closest('[data-ver-producto-camino]');
     if (ver) {
       cerrarModal('modalEnCamino');
@@ -347,9 +353,98 @@ function pintarEnCamino() {
         <div class="agotado-acciones">
           <button class="btn btn-green btn-sm" data-recibir-camino="${c.id}">📦 Ya llegó</button>
           <button class="btn btn-ghost btn-sm" data-ver-producto-camino="${c.producto_id}">Ver producto</button>
+          ${esAdmin() ? `
+          <button class="btn btn-ghost btn-sm" data-editar-camino="${c.id}" title="Corregir unidades, costo, vendedor o fechas">✏️ Editar</button>
+          <button class="btn btn-ghost btn-sm" data-eliminar-camino="${c.id}" title="Eliminar esta compra: para una cargada por error o repetida" style="color:var(--red);">🗑️ Eliminar</button>` : ''}
         </div>
       </div>`;
   }).join('');
+}
+
+/* EDITAR Y ELIMINAR UNA COMPRA POR LLEGAR (v132, pedido del dueño el
+   10-10-2026: una carga masiva repetida dejó dos compras iguales y no había
+   cómo sacar una). Solo admin: los botones no se dibujan para el trabajador y
+   el servidor lo exige igual (auth de administrador en las dos rutas). */
+function abrirEditarPorLlegar(ingresoId) {
+  if (!esAdmin()) return;
+  const c = (enCaminoCache?.compras || []).find(x => Number(x.id) === Number(ingresoId));
+  if (!c) return;
+  const poner = (id, valor) => { const el = document.getElementById(id); if (el) el.value = valor ?? ''; };
+  poner('eplId', c.id);
+  poner('eplCantidad', num(c.cantidad));
+  poner('eplCosto', num(c.costo_unitario));
+  poner('eplProveedor', c.proveedor || '');
+  poner('eplMarketplace', c.marketplace || '');
+  poner('eplFechaCompra', String(c.fecha_compra || '').slice(0, 10));
+  poner('eplFechaLlegada', String(c.fecha_llegada_estimada || '').slice(0, 10));
+  const titulo = document.getElementById('eplProducto');
+  if (titulo) titulo.textContent = c.producto;
+  document.getElementById('modalEditarPorLlegar')?.classList.add('show');
+}
+
+async function guardarEditarPorLlegar() {
+  if (!esAdmin()) return;
+  const valor = id => document.getElementById(id)?.value.trim() ?? '';
+  const id = Number(valor('eplId'));
+  const c = (enCaminoCache?.compras || []).find(x => Number(x.id) === id);
+  if (!c) return;
+
+  const cantidad = Number(valor('eplCantidad'));
+  const costo = Number(valor('eplCosto'));
+  if (!Number.isInteger(cantidad) || cantidad < 1) { showToast('Las unidades tienen que ser un número entero, de 1 o más', 'err'); return; }
+  if (!(costo >= 0) || valor('eplCosto') === '') { showToast('Escribe el costo por unidad', 'err'); return; }
+  if (!valor('eplFechaCompra')) { showToast('Falta la fecha de la compra', 'err'); return; }
+
+  // Solo viaja lo que cambió: el servidor no toca lo que no recibe
+  const datos = {};
+  if (cantidad !== num(c.cantidad)) datos.cantidad = cantidad;
+  if (costo !== num(c.costo_unitario)) datos.costo_unitario = costo;
+  if (valor('eplProveedor') !== (c.proveedor || '')) datos.proveedor = valor('eplProveedor');
+  if (valor('eplMarketplace') !== (c.marketplace || '')) datos.marketplace = valor('eplMarketplace');
+  if (valor('eplFechaCompra') !== String(c.fecha_compra || '').slice(0, 10)) datos.fecha_compra = valor('eplFechaCompra');
+  if (valor('eplFechaLlegada') !== String(c.fecha_llegada_estimada || '').slice(0, 10)) datos.fecha_llegada_estimada = valor('eplFechaLlegada');
+  if (!Object.keys(datos).length) { cerrarModal('modalEditarPorLlegar'); return; }
+
+  const btn = document.getElementById('btnGuardarEditarPorLlegar');
+  if (btn) btn.disabled = true;
+  try {
+    const r = await API.productos.editarCompraPorLlegar(id, datos);
+    cerrarModal('modalEditarPorLlegar');
+    showToast('Compra corregida', 'ok');
+    if (r?.aviso_gasto) alert(r.aviso_gasto);
+    await actualizarAvisoEnCamino();
+    pintarEnCamino();
+    if (typeof cargarProductos === 'function') cargarProductos(true);
+  } catch (err) {
+    showToast(err.message || 'No se pudo corregir la compra', 'err');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function eliminarCompraPorLlegar(ingresoId) {
+  if (!esAdmin()) return;
+  const c = (enCaminoCache?.compras || []).find(x => Number(x.id) === Number(ingresoId));
+  if (!c) return;
+  if (!confirm(`¿Eliminar la compra de ${num(c.cantidad)} unidad(es) de "${c.producto}"?\n\n` +
+    'Úsalo solo si la cargaste por error o quedó repetida. No cambia el stock. ' +
+    'Si no queda otra compra por llegar de ese producto, deja de aparecer en sevelin.cl/por-llegar.' +
+    (c.compra_id ? '\n\nOjo: tiene un gasto en Finanzas → Gastos. Ese gasto no se borra solo.' : ''))) return;
+
+  try {
+    await API.productos.eliminarIngreso(ingresoId);
+    showToast('Compra eliminada', 'ok');
+    await actualizarAvisoEnCamino();
+    if (!enCaminoCache?.total) {
+      cerrarModal('modalEnCamino');
+      const btn = document.getElementById('btnEnCamino');
+      if (btn) btn.hidden = true;
+    } else pintarEnCamino();
+    if (typeof cargarProductos === 'function') cargarProductos(true);
+  } catch (err) {
+    // El servidor explica por qué no se puede (clientes esperando en la web, reservas pagadas)
+    alert(err.message || 'No se pudo eliminar la compra');
+  }
 }
 
 /* Confirmar desde el aviso, sin entrar al producto. Igual que en el

@@ -2200,6 +2200,8 @@
             <button class="btn btn-outline" id="btnGastosPendientes">🗓️ Gastos pendientes</button>
             <button class="btn btn-outline" id="btnVerNotasCredito" title="Notas de crédito que te emitieron tus proveedores (SII)">🧾 Notas de crédito recibidas</button>
             <button class="btn btn-outline" id="btnExportarCompras">📤 Exportar</button>
+            <!-- v132: cuánto se compra por marketplace, vendedor y marca (js/informe-compras.js) -->
+            <button class="btn btn-outline" id="btnInformeComprasFinanzas" title="Cuánto compras según el marketplace, el vendedor y la marca">🛒 Compras por origen</button>
             <button class="btn btn-primary" id="btnNuevaCompra">➕ Registrar Gasto</button>
             <!-- Movido desde el POS: una merma es un gasto, no una venta.
                  Conserva el id btnMermaPOS para que mermas.js siga
@@ -2323,6 +2325,8 @@
             <button class="btn btn-primary" id="btnNuevoProducto">➕ Nuevo Producto</button>
             <!-- v125: varios productos de una compra, pegando lo que respondió una IA (js/carga-masiva.js) -->
             <button class="btn btn-outline" id="btnCargaMasiva" title="Cargar varios productos de una compra pegando una lista">📋 Carga masiva (pegar)</button>
+            <!-- v132: la misma ventana que en Finanzas → Gastos (js/informe-compras.js) -->
+            <button class="btn btn-outline" id="btnInformeComprasProductos" title="Cuánto compras según el marketplace, el vendedor y la marca">🛒 Compras por origen</button>
             <button class="btn btn-gold" id="btnValorizacion">💎 Valorización de Inventario</button>
             <button class="btn btn-red" id="btnEliminarTodosProductos">🗑️ Eliminar Todos</button>
           </div>
@@ -5850,9 +5854,18 @@
             <option value="Transferencia">Transferencia · sale del banco</option>
             <option value="Tarjeta Débito">Tarjeta Débito · banco</option>
             <option value="Tarjeta Crédito">Tarjeta Crédito · banco</option>
+            <!-- v132: pedido del dueño (10-10-2026). "__otro__" no se guarda: se guarda lo que escriba en compraMetodoOtro. -->
+            <option value="Mercado Pago">Mercado Pago · saldo de la cuenta</option>
+            <option value="__otro__">Otro (escríbelo)…</option>
             <option value="No aplica (merma)">No aplica · merma o ajuste</option>
           </select>
         </div>
+      </div>
+
+      <div class="field hidden" id="compraMetodoOtroWrap">
+        <label for="compraMetodoOtro">¿Con qué otro medio se pagó? *</label>
+        <input type="text" id="compraMetodoOtro" maxlength="40" placeholder="Ej: Cheque, MACH, Tenpo, PayPal…" autocomplete="off">
+        <small class="modal-hint">Se descuenta del saldo de Banco, igual que una transferencia.</small>
       </div>
 
       <!-- Banco: aparece solo cuando el pago NO es en efectivo (balance.js lo alterna) -->
@@ -7168,6 +7181,55 @@
     </div>
   </div>
 
+  <!-- v132: corregir una compra que todavía está por llegar (solo admin) — js/ubicaciones.js -->
+  <div id="modalEditarPorLlegar" class="modal-overlay">
+    <div class="modal-box" style="max-width:560px;">
+      <h2>✏️ Corregir compra por llegar</h2>
+      <p class="modal-hint" id="eplProducto">—</p>
+      <input type="hidden" id="eplId">
+
+      <div class="grid grid-2">
+        <div class="field">
+          <label for="eplCantidad">Unidades que vienen *</label>
+          <input type="number" id="eplCantidad" min="1" step="1">
+        </div>
+        <div class="field">
+          <label for="eplCosto">Costo por unidad, con IVA ($) *</label>
+          <input type="number" id="eplCosto" min="0" step="1">
+        </div>
+      </div>
+      <div class="grid grid-2" style="margin-top:12px;">
+        <div class="field">
+          <label for="eplProveedor">Vendedor</label>
+          <input type="text" id="eplProveedor" maxlength="120" placeholder="A quién se le compró" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="eplMarketplace">Marketplace (opcional)</label>
+          <input type="text" id="eplMarketplace" maxlength="60" placeholder="Ej: MercadoLibre" list="listaMarketplaces" autocomplete="off">
+        </div>
+      </div>
+      <div class="grid grid-2" style="margin-top:12px;">
+        <div class="field">
+          <label for="eplFechaCompra">Fecha de la compra</label>
+          <input type="date" id="eplFechaCompra">
+        </div>
+        <div class="field">
+          <label for="eplFechaLlegada">Llega aproximadamente el</label>
+          <input type="date" id="eplFechaLlegada">
+        </div>
+      </div>
+      <p class="modal-hint" style="margin-top:10px;">
+        No cambia el stock: eso pasa cuando aprietas "📦 Ya llegó". La fecha de llegada es la que ve el cliente en sevelin.cl/por-llegar.
+        Si la compra tiene un gasto en Finanzas, ese gasto no se cambia solo.
+      </p>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarEditarPorLlegar" type="button">Cancelar</button>
+        <button class="btn btn-primary" id="btnGuardarEditarPorLlegar" type="button">Guardar cambios</button>
+      </div>
+    </div>
+  </div>
+
   <!-- CHECKLIST DE FASES DE UNA OT (sql/66) -->
   <div id="modalProtocoloOT" class="modal-overlay">
     <div class="modal-box modal-lg">
@@ -7438,6 +7500,53 @@
     </div>
   </div>
 
+  <!-- v132: compras por marketplace, vendedor y marca — js/informe-compras.js -->
+  <div id="modalInformeCompras" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <h2>🛒 Compras por marketplace, vendedor y marca</h2>
+      <p class="modal-hint" id="informeComprasResumen">—</p>
+
+      <div class="toolbar-group" style="margin:10px 0 6px;">
+        <button class="btn btn-outline btn-sm" type="button" data-rango-compras="mes">Este mes</button>
+        <button class="btn btn-outline btn-sm" type="button" data-rango-compras="3meses">Últimos 3 meses</button>
+        <button class="btn btn-outline btn-sm" type="button" data-rango-compras="anio">Este año</button>
+        <button class="btn btn-outline btn-sm activo" type="button" data-rango-compras="todo">Todo</button>
+      </div>
+      <div class="toolbar-group" style="margin:6px 0 10px;">
+        <button class="btn btn-outline btn-sm activo" type="button" data-vista-compras="porMarketplace">Por marketplace</button>
+        <button class="btn btn-outline btn-sm" type="button" data-vista-compras="porVendedor">Por vendedor</button>
+        <button class="btn btn-outline btn-sm" type="button" data-vista-compras="porMarca">Por marca</button>
+      </div>
+
+      <div class="table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th id="informeComprasColumna">Marketplace</th>
+              <th class="num">Compras</th>
+              <th class="num">Productos</th>
+              <th class="num">Unidades</th>
+              <th class="num">Pagado</th>
+              <th class="num">% del total</th>
+              <th class="num">Última compra</th>
+            </tr>
+          </thead>
+          <tbody id="informeComprasFilas"><tr class="empty-row"><td colspan="7">Sin datos todavía</td></tr></tbody>
+        </table>
+      </div>
+      <p class="modal-hint" id="informeComprasAvisos"></p>
+      <p class="modal-hint">
+        Suma las compras que cargaste con el stock (lo que ya llegó y lo que está por llegar), al costo con IVA.
+        <strong>No es el total de Gastos:</strong> las compras anteriores al 04-10-2026 están como gasto, sin detalle por producto.
+        El marketplace y el vendedor se anotan al cargar la compra; la marca, en la ficha del producto.
+      </p>
+
+      <div class="modal-foot">
+        <button class="btn btn-outline" id="btnCerrarInformeCompras" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- v128: IVA a favor al día — js/utilidades.js -->
   <div id="modalIvaAlDia" class="modal-overlay">
     <div class="modal-box" style="max-width:760px;">
@@ -7675,6 +7784,7 @@
   <script src="js/finanzas-devoluciones.js"></script>   <!-- después de balance.js: usa calcularRango y el panel de Finanzas -->
   <script src="js/devoluciones-seguimiento.js"></script>   <!-- después de finanzas-devoluciones.js: su modal se abre desde ese panel -->
   <script src="js/inteligencia.js"></script>   <!-- después de balance.js: reutiliza calcularRango y el panel de Finanzas -->
+  <script src="js/informe-compras.js"></script>   <!-- después de balance.js: usa cerrarModal -->
   <script src="js/informe-semanal.js"></script>   <!-- después de balance.js: usa el panel de Finanzas y fmtCLP -->
   <script src="js/finanzas-gate.js"></script>   <!-- después de balance/config: intercepta la navegación a Finanzas -->
   <script src="js/reportes.js"></script>

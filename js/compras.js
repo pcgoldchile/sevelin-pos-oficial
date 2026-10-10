@@ -188,13 +188,11 @@ function setupComprasEventListeners() {
      Se muestra/oculta según el método elegido. "No aplica (merma)" tampoco
      pide banco: no es una salida de dinero real. */
   if (elCompraMetodoPago) {
-    const toggleBancoCompra = () => {
-      const m = elCompraMetodoPago.value || 'Efectivo';
-      const pideBanco = m !== 'Efectivo' && m !== 'No aplica (merma)';
-      document.getElementById('compraBancoWrap')?.classList.toggle('hidden', !pideBanco);
-    };
-    elCompraMetodoPago.addEventListener('change', toggleBancoCompra);
-    toggleBancoCompra();
+    elCompraMetodoPago.addEventListener('change', () => {
+      alternarMedioPagoCompra();
+      if (elCompraMetodoPago.value === MEDIO_PAGO_OTRO) document.getElementById('compraMetodoOtro')?.focus();
+    });
+    alternarMedioPagoCompra();
   }
   if (elModalCompra) elModalCompra.addEventListener('click', (e) => { if (e.target === elModalCompra) cerrarModalCompra(); });
 
@@ -486,6 +484,55 @@ function renderComprasTabla(listaOriginal) {
 }
 
 // ---------- Modal de compra ----------
+/* MEDIO DE PAGO DEL GASTO: "Mercado Pago" y "Otro" (v132, pedido del dueño el
+   10-10-2026). El servidor guarda el medio como texto libre y solo "Efectivo"
+   sale del cajón: cualquier otro se descuenta del saldo de Banco. Por eso
+   "Otro" no necesita nada nuevo en la base: se guarda lo que se escriba.
+   La opción "__otro__" del selector nunca viaja al servidor. */
+const MEDIO_PAGO_OTRO = '__otro__';
+
+// Muestra u oculta el banco y el campo "¿cuál otro?" según lo elegido
+function alternarMedioPagoCompra() {
+  if (!elCompraMetodoPago) return;
+  const m = elCompraMetodoPago.value || 'Efectivo';
+  const pideBanco = m !== 'Efectivo' && m !== 'No aplica (merma)';
+  document.getElementById('compraBancoWrap')?.classList.toggle('hidden', !pideBanco);
+  document.getElementById('compraMetodoOtroWrap')?.classList.toggle('hidden', m !== MEDIO_PAGO_OTRO);
+  // Mercado Pago es su propia cuenta: se propone como origen si el campo está vacío
+  // (y se retira si después eligen otro medio, para que no quede "Cheque" con banco Mercado Pago)
+  const banco = document.getElementById('compraBanco');
+  if (!banco) return;
+  if (m === 'Mercado Pago') {
+    if (!banco.value.trim()) { banco.value = 'Mercado Pago'; banco.dataset.propuesto = '1'; }
+  } else if (banco.dataset.propuesto === '1') {
+    if (banco.value === 'Mercado Pago') banco.value = '';
+    delete banco.dataset.propuesto;
+  }
+}
+
+// Deja el formulario mostrando un medio guardado; uno que no está en la lista cae en "Otro"
+function ponerMedioPagoCompra(metodo) {
+  if (!elCompraMetodoPago) return;
+  const valor = String(metodo || '').trim() || 'Efectivo';
+  const enLista = [...elCompraMetodoPago.options].some(o => o.value === valor && o.value !== MEDIO_PAGO_OTRO);
+  elCompraMetodoPago.value = enLista ? valor : MEDIO_PAGO_OTRO;
+  const otro = document.getElementById('compraMetodoOtro');
+  if (otro) otro.value = enLista ? '' : valor;
+  // El banco que venga cargado es del gasto, no una propuesta: no se retira solo
+  delete document.getElementById('compraBanco')?.dataset.propuesto;
+  alternarMedioPagoCompra();
+}
+
+// El medio de pago que se guarda. null = eligió "Otro" y no escribió cuál.
+function leerMedioPagoCompra() {
+  const m = elCompraMetodoPago?.value || 'Efectivo';
+  if (m !== MEDIO_PAGO_OTRO) return m;
+  const escrito = (document.getElementById('compraMetodoOtro')?.value || '').trim().replace(/\s+/g, ' ').slice(0, 40);
+  if (!escrito || escrito === MEDIO_PAGO_OTRO) return null;
+  // "efectivo" escrito a mano es Efectivo: si no, el gasto no saldría del cajón
+  return escrito.toLowerCase() === 'efectivo' ? 'Efectivo' : escrito;
+}
+
 function abrirModalCompra(compra = null, campoFoco = null) {
   if (!esAdmin()) { showToast('Solo el administrador gestiona las compras', 'err'); return; }
   archivosPendientes = { url_documento: null, url_comprobante: null };
@@ -509,7 +556,11 @@ function abrirModalCompra(compra = null, campoFoco = null) {
     if (elCompraDescripcion) elCompraDescripcion.value = compra.descripcion || '';
     /* Los gastos anteriores a la migración 12 no traen medio de pago:
        se asume Efectivo, que es como los contaba el balance hasta ahora. */
-    if (elCompraMetodoPago) elCompraMetodoPago.value = compra.metodo_pago || 'Efectivo';
+    /* El banco se carga ANTES que el medio (v132): el campo no se llenaba al
+       editar y guardaba el banco del último gasto que se había abierto. */
+    const elBancoCompra = document.getElementById('compraBanco');
+    if (elBancoCompra) elBancoCompra.value = compra.banco || '';
+    ponerMedioPagoCompra(compra.metodo_pago);
     if (elCompraUrlDocumento) elCompraUrlDocumento.value = compra.url_documento || '';
     if (elCompraUrlComprobante) elCompraUrlComprobante.value = compra.url_comprobante || '';
     // Crédito fiscal IVA (migración 27)
@@ -533,6 +584,10 @@ function abrirModalCompra(compra = null, campoFoco = null) {
     if (chkFactura) chkFactura.checked = false;
     if (inpIva) inpIva.value = '';
     alternarIvaCompra();
+    // v132: un gasto nuevo no hereda el banco ni el "otro medio" del anterior
+    const elBancoCompra = document.getElementById('compraBanco');
+    if (elBancoCompra) elBancoCompra.value = '';
+    ponerMedioPagoCompra(elCompraMetodoPago?.value === MEDIO_PAGO_OTRO ? 'Efectivo' : elCompraMetodoPago?.value);
   }
 
   actualizarEstadoArchivo('url_documento');
@@ -632,6 +687,13 @@ async function guardarCompra() {
   const costo = Number(elCompraCosto?.value) || 0;
   if (costo <= 0) { showToast('Ingresa el costo total de la compra', 'err'); return; }
 
+  const medioPago = leerMedioPagoCompra();
+  if (!medioPago) {
+    showToast('Escribe con qué otro medio se pagó', 'err');
+    document.getElementById('compraMetodoOtro')?.focus();
+    return;
+  }
+
   const payload = {
     // Viaja como "YYYY-MM-DDTHH:MM"; el backend lo interpreta en hora de Chile
     fecha: elCompraFecha?.value || `${todayISO()}T${horaActualCorta()}`,
@@ -640,7 +702,7 @@ async function guardarCompra() {
     costo_total: costo,
     descripcion: elCompraDescripcion?.value.trim() || null,
     // Define si el gasto sale de la caja física
-    metodo_pago: elCompraMetodoPago?.value || 'Efectivo',
+    metodo_pago: medioPago,
     // Banco de origen (solo si no es efectivo); el backend lo ignora si lo es
     banco: document.getElementById('compraBanco')?.value.trim() || null,
     url_documento: elCompraUrlDocumento?.value.trim() || null,

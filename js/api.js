@@ -178,6 +178,8 @@ const API = {
     sugerirCategoria: (datos) => apiRequest('/productos/sugerir-categoria', { method: 'POST', body: datos }),
     // La mercadería en camino llegó: sube el stock y apaga "por llegar"
     compraRecibida: (ingresoId) => apiRequest(`/ingresos/${ingresoId}/recibida`, { method: 'PUT' }),
+    // v132 — corregir una compra que todavía está por llegar (solo admin)
+    editarCompraPorLlegar: (ingresoId, datos) => apiRequest(`/ingresos/${ingresoId}/por-llegar`, { method: 'PUT', body: datos }),
 
     // Dónde está guardado (sql/60)
     ubicacionesDe: (id) => apiRequest(`/productos/${id}/ubicaciones`),
@@ -655,6 +657,9 @@ const API = {
     f29Historial: () => apiRequest('/finanzas/f29-historial'),
     // Semáforo de IVA con el RCV del SII (sql/51)
     ivaSii: (periodo) => apiRequest('/finanzas/sii/iva' + (periodo ? `?periodo=${encodeURIComponent(periodo)}` : '')),
+    // Compras por marketplace, vendedor y marca (v132)
+    comprasInforme: (desde, hasta) => apiRequest('/finanzas/compras-informe?' +
+      [desde && `desde=${encodeURIComponent(desde)}`, hasta && `hasta=${encodeURIComponent(hasta)}`].filter(Boolean).join('&')),
     siiSincronizar: () => apiRequest('/finanzas/sii/sincronizar', { method: 'POST', body: {} }),
     siiSubirCsv: (datos) => apiRequest('/finanzas/sii/rcv-csv', { method: 'POST', body: datos }),
     ivaRemanenteGuardar: (periodo, monto) => apiRequest(`/finanzas/iva-remanente/${encodeURIComponent(periodo)}`, { method: 'PUT', body: { monto } }),

@@ -4220,12 +4220,166 @@ app.put('/api/ingresos/:id/factura', auth(true), async (req, res) => {
   res.json(data[0]);
 });
 
+/* Eliminar una compra. Solo admin.
+
+   UNA COMPRA "POR LLEGAR" NO SE BORRA A SECAS (v132). El producto lleva la
+   cuenta de lo que viene (`por_llegar`, `stock_por_llegar`): borrar la fila y
+   nada más dejaba la tienda ofreciendo unidades que ya no vienen. El caso
+   real: el 10-10-2026 una carga masiva repetida dejó dos compras del mismo
+   soplador y no había cómo sacar una.
+
+   Y no se elimina si hay clientes de sevelin.cl esperándola (una reserva
+   pagada o un "avísame"): al quedar el producto sin nada por llegar, la tienda
+   les mandaría el correo "ya llegó" por algo que no llegó. Para eso está
+   Editar (corregir cantidad o fecha) o resolver primero esos pedidos. */
 app.delete('/api/ingresos/:id', auth(true), async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id) || id <= 0) return enviarError(res, 400, 'Entrada inválida');
-  const { error } = await db.from('ingresos_mercaderia').delete().eq('id', id);
-  if (error) return enviarErrorBD(res, error);
-  res.json({ ok: true });
+  try {
+    const { data: ing, error: errI } = await db.from('ingresos_mercaderia')
+      .select('id, producto_id, cantidad, en_camino').eq('id', id).maybeSingle();
+    if (errI) throw errI;
+    if (!ing) return enviarError(res, 404, 'Compra no encontrada');
+
+    if (!ing.en_camino) {
+      const { error } = await db.from('ingresos_mercaderia').delete().eq('id', id);
+      if (error) return enviarErrorBD(res, error);
+      return res.json({ ok: true });
+    }
+
+    const { data: producto, error: errP } = await db.from('productos')
+      .select('id, nombre, por_llegar, stock_por_llegar, reservado_web').eq('id', ing.producto_id).maybeSingle();
+    if (errP) throw errP;
+
+    const { data: otras, error: errO } = await db.from('ingresos_mercaderia')
+      .select('id, cantidad').eq('producto_id', ing.producto_id).eq('en_camino', true).neq('id', id);
+    if (errO) throw errO;
+    const vieneAparte = (otras || []).reduce((s, o) => s + num(o.cantidad), 0);
+
+    if (producto) {
+      const reservadas = Math.max(0, num(producto.reservado_web));
+      if (reservadas > vieneAparte) {
+        return enviarError(res, 409, `Hay ${reservadas} unidad(es) de este producto ya pagadas en sevelin.cl esperando esta compra. ` +
+          'No se puede eliminar: corrige la cantidad o la fecha con Editar, o resuelve antes esos pedidos en Página Web → Pedidos Web.');
+      }
+      if (!vieneAparte) {
+        // Sin nada más por llegar, el producto deja de estar "por llegar" y la tienda avisa a la lista de espera
+        const { count, error: errA } = await dbWeb.from('avisos_producto')
+          .select('id', { count: 'exact', head: true }).eq('producto_pos_id', producto.id).eq('estado', 'PENDIENTE');
+        if (errA) {
+          return enviarError(res, 503, 'No se pudo revisar en la tienda si hay clientes esperando este producto. Inténtalo de nuevo en un momento.');
+        }
+        if (num(count) > 0) {
+          return enviarError(res, 409, `${count} cliente(s) de sevelin.cl pidieron que les avises cuando llegue este producto. ` +
+            'Si eliminas la compra, la tienda les mandaría el correo "ya llegó". Corrige la fecha con Editar si se atrasó.');
+        }
+      }
+    }
+
+    const { error: errD } = await db.from('ingresos_mercaderia').delete().eq('id', id);
+    if (errD) return enviarErrorBD(res, errD);
+
+    let cambios = null;
+    if (producto) {
+      cambios = vieneAparte
+        ? { stock_por_llegar: Math.min(Math.max(0, num(producto.stock_por_llegar)), vieneAparte) }
+        : { por_llegar: false, stock_por_llegar: 0, fecha_llegada_estimada: null };
+      const { error: errU } = await db.from('productos').update(cambios).eq('id', producto.id);
+      if (errU) throw errU;
+    }
+    res.json({ ok: true, era_por_llegar: true, queda_por_llegar: vieneAparte > 0, producto: cambios });
+  } catch (error) {
+    return enviarErrorBD(res, error, 'DELETE /api/ingresos/:id');
+  }
+});
+
+/* Corregir una compra que todavía está por llegar (v132). Solo admin.
+   PUT /api/ingresos/:id/por-llegar
+   { cantidad, costo_unitario, proveedor, marketplace, fecha_compra, fecha_llegada_estimada }
+
+   Se manda solo lo que cambia. Una compra ya recibida no se corrige acá: su
+   stock y su capa de costo ya entraron, y eso se arregla con un ajuste.
+
+   `stock_por_llegar` del producto es lo que la tienda todavía puede vender por
+   adelantado, así que se mueve en la misma diferencia que la cantidad, y la
+   cantidad no puede quedar bajo lo que ya se pagó en la web. El gasto de
+   Finanzas ligado NO se toca solo: se avisa para que lo revisen. */
+app.put('/api/ingresos/:id/por-llegar', auth(true), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return enviarError(res, 400, 'Entrada inválida');
+  const b = req.body || {};
+  const esFecha = f => /^\d{4}-\d{2}-\d{2}$/.test(String(f || '')) && String(f) >= '2020-01-01' && !Number.isNaN(Date.parse(String(f)));
+
+  try {
+    const { data: ing, error: errI } = await db.from('ingresos_mercaderia').select('*').eq('id', id).maybeSingle();
+    if (errI) throw errI;
+    if (!ing) return enviarError(res, 404, 'Compra no encontrada');
+    if (!ing.en_camino) return enviarError(res, 400, 'Esa compra ya llegó: acá solo se corrigen las que están por llegar');
+
+    const cambios = {};
+    if (b.cantidad !== undefined) {
+      const cantidad = Number(b.cantidad);
+      if (!Number.isInteger(cantidad) || cantidad < 1 || cantidad > 100000) return enviarError(res, 400, 'La cantidad tiene que ser un número entero, de 1 o más');
+      cambios.cantidad = cantidad;
+    }
+    if (b.costo_unitario !== undefined) {
+      const costo = Math.round(num(b.costo_unitario));
+      if (!(costo >= 0)) return enviarError(res, 400, 'El costo no puede ser negativo');
+      cambios.costo_unitario = costo;
+    }
+    if (b.proveedor !== undefined) cambios.proveedor = String(b.proveedor || '').trim().slice(0, 120) || null;
+    if (b.marketplace !== undefined) cambios.marketplace = String(b.marketplace || '').trim().slice(0, 60) || null;
+    if (b.fecha_compra !== undefined) {
+      if (!esFecha(b.fecha_compra)) return enviarError(res, 400, 'La fecha de compra no es válida');
+      if (String(b.fecha_compra) > fechaHoyChile()) return enviarError(res, 400, 'La fecha de compra no puede ser futura');
+      cambios.fecha_compra = String(b.fecha_compra);
+    }
+    let llegada;   // undefined = no se toca
+    if (b.fecha_llegada_estimada !== undefined) {
+      const f = String(b.fecha_llegada_estimada || '').trim();
+      if (f && !esFecha(f)) return enviarError(res, 400, 'La fecha de llegada no es válida');
+      llegada = f || null;
+    }
+    if (!Object.keys(cambios).length && llegada === undefined) return enviarError(res, 400, 'No hay nada que cambiar');
+
+    const { data: producto, error: errP } = await db.from('productos')
+      .select('id, stock_por_llegar, reservado_web, fecha_llegada_estimada').eq('id', ing.producto_id).maybeSingle();
+    if (errP) throw errP;
+    if (!producto) return enviarError(res, 404, 'Producto no encontrado');
+
+    const cambiosProducto = {};
+    if (cambios.cantidad !== undefined && cambios.cantidad !== num(ing.cantidad)) {
+      const quedan = num(producto.stock_por_llegar) + (cambios.cantidad - num(ing.cantidad));
+      if (quedan < 0) {
+        return enviarError(res, 409, `Ya hay unidades de esta compra pagadas en sevelin.cl: la cantidad no puede bajar de ${num(ing.cantidad) - num(producto.stock_por_llegar)}.`);
+      }
+      cambiosProducto.stock_por_llegar = quedan;
+    }
+    if (llegada !== undefined && llegada !== (producto.fecha_llegada_estimada || null)) cambiosProducto.fecha_llegada_estimada = llegada;
+
+    let fila = ing;
+    if (Object.keys(cambios).length) {
+      const { data, error } = await db.from('ingresos_mercaderia').update(cambios).eq('id', id).select('*').single();
+      if (error) return enviarErrorBD(res, error);
+      fila = data;
+    }
+    if (Object.keys(cambiosProducto).length) {
+      const { error } = await db.from('productos').update(cambiosProducto).eq('id', producto.id);
+      if (error) throw error;
+    }
+
+    const montoAntes = num(ing.cantidad) * num(ing.costo_unitario);
+    const montoAhora = num(fila.cantidad) * num(fila.costo_unitario);
+    res.json({
+      ...fila,
+      producto: cambiosProducto,
+      aviso_gasto: ing.compra_id && montoAntes !== montoAhora
+        ? `Esta compra está ligada a un gasto de Finanzas. Antes sumaba $${Math.round(montoAntes).toLocaleString('es-CL')} y ahora $${Math.round(montoAhora).toLocaleString('es-CL')}: revisa que el gasto calce.`
+        : null
+    });
+  } catch (error) {
+    return enviarErrorBD(res, error, 'PUT /api/ingresos/:id/por-llegar');
+  }
 });
 
 /* ============================================================
@@ -4733,6 +4887,8 @@ app.get('/api/productos/en-camino', auth(true), async (req, res) => {
         cantidad: num(i.cantidad),
         costo_unitario: num(i.costo_unitario),
         proveedor: i.proveedor || null,
+        marketplace: i.marketplace || null,   // v132: los usa "Editar" en la ventana Por llegar
+        compra_id: i.compra_id || null,
         fecha_compra: i.fecha_compra,
         fecha_llegada_estimada: eta,
         dias_para_llegar: eta ? diasEntre(hoy, eta) : null,
@@ -8054,8 +8210,9 @@ async function sanearCompra(body = {}) {
       fecha: fechaHoraDeGasto(body.fecha, body.hora),
       proveedor: (body.proveedor || '').trim() || null,
       clasificacion,
-      // Solo los gastos en efectivo descuentan de la caja física
-      metodo_pago: (body.metodo_pago || 'Efectivo').trim(),
+      // Solo los gastos en efectivo descuentan de la caja física.
+      // Texto libre desde v132 ("Mercado Pago", "Otro: …"): se acota el largo.
+      metodo_pago: String(body.metodo_pago || 'Efectivo').trim().slice(0, 40) || 'Efectivo',
       /* Banco/cuenta de destino: solo tiene sentido si NO es efectivo.
          Si el método es efectivo se fuerza a null para no dejar datos
          inconsistentes ("Efectivo en Santander"). */
@@ -10957,6 +11114,98 @@ async function ivaRealDelRango(desde, hasta) {
     meses: filas
   };
 }
+
+/* INFORME DE COMPRAS POR MARKETPLACE, VENDEDOR Y MARCA (v132, pendiente #80).
+   GET /api/finanzas/compras-informe?desde=&hasta=   (las dos fechas son opcionales)
+
+   Suma las compras de mercadería (`ingresos_mercaderia` confirmadas: lo que
+   ya llegó y lo que está por llegar) de tres maneras: por dónde se compró
+   (marketplace, sql/88), a quién (proveedor) y de qué marca es el producto.
+   El monto es unidades × costo unitario, o sea lo pagado con IVA.
+
+   NO es el total de Finanzas → Gastos: ahí va lo que salió de la cuenta, y
+   solo existe compra por producto desde que el stock se carga con una compra
+   (v118, 04-10-2026). Las compras anteriores están como gasto, sin detalle.
+
+   Los borradores no cuentan (todavía no son una compra). Las fechas
+   imposibles (un año mal tipeado) se devuelven aparte para corregirlas. */
+app.get('/api/finanzas/compras-informe', auth(true), async (req, res) => {
+  const desde = String(req.query?.desde || '').trim();
+  const hasta = String(req.query?.hasta || '').trim();
+  const esFecha = f => /^\d{4}-\d{2}-\d{2}$/.test(f);
+  if ((desde && !esFecha(desde)) || (hasta && !esFecha(hasta))) return enviarError(res, 400, 'Fecha inválida (AAAA-MM-DD)');
+  if (desde && hasta && desde > hasta) return enviarError(res, 400, 'La fecha inicial no puede ser posterior a la final');
+
+  try {
+    let q = db.from('ingresos_mercaderia')
+      .select('id, producto_id, fecha_compra, cantidad, costo_unitario, proveedor, marketplace, en_camino')
+      .eq('estado', 'confirmado').limit(5000);
+    if (desde) q = q.gte('fecha_compra', desde);
+    if (hasta) q = q.lte('fecha_compra', hasta);
+    const { data: ingresosRaw, error } = await q;
+    if (error) return enviarErrorBD(res, error);
+    const ingresos = ingresosRaw || [];
+
+    const idsProducto = [...new Set(ingresos.map(i => i.producto_id).filter(Boolean))];
+    const marcaDe = new Map();
+    const nombreDe = new Map();
+    for (let i = 0; i < idsProducto.length; i += 300) {
+      const { data: prods, error: errP } = await db.from('productos').select('id, nombre, marca').in('id', idsProducto.slice(i, i + 300));
+      if (errP) return enviarErrorBD(res, errP);
+      (prods || []).forEach(p => { marcaDe.set(p.id, String(p.marca || '').trim()); nombreDe.set(p.id, p.nombre); });
+    }
+
+    // Agrupa sin distinguir mayúsculas ("MercadoLibre" y "MERCADOLIBRE" son el mismo); muestra el primero que vio
+    const agrupar = (claveDe, sinDato) => {
+      const grupos = new Map();
+      ingresos.forEach(i => {
+        const texto = String(claveDe(i) || '').trim();
+        const llave = texto ? texto.toLowerCase() : '';
+        const g = grupos.get(llave) || { nombre: texto || sinDato, sinDato: !texto, monto: 0, unidades: 0, compras: 0, porLlegar: 0, productos: new Set(), ultima: null, otros: new Set() };
+        const monto = num(i.cantidad) * num(i.costo_unitario);
+        g.monto += monto;
+        g.unidades += num(i.cantidad);
+        g.compras += 1;
+        if (i.en_camino) g.porLlegar += monto;
+        if (i.producto_id) g.productos.add(i.producto_id);
+        const fecha = String(i.fecha_compra || '').slice(0, 10);
+        if (fecha >= '2020-01-01' && (!g.ultima || fecha > g.ultima)) g.ultima = fecha;
+        grupos.set(llave, g);
+      });
+      return grupos;
+    };
+    const lista = grupos => [...grupos.values()]
+      .map(g => ({ nombre: g.nombre, sinDato: g.sinDato, monto: Math.round(g.monto), unidades: g.unidades, compras: g.compras,
+        porLlegar: Math.round(g.porLlegar), productos: g.productos.size, ultima: g.ultima, detalle: [...g.otros].sort().join(', ') }))
+      .sort((x, y) => y.monto - x.monto);
+
+    const porMarketplace = agrupar(i => i.marketplace, 'Compra directa o sin anotar');
+    const porVendedor = agrupar(i => i.proveedor, 'Vendedor sin anotar');
+    const porMarca = agrupar(i => marcaDe.get(i.producto_id), 'Sin marca');
+    // Al lado de cada vendedor, por dónde se le compró
+    ingresos.forEach(i => {
+      const mp = String(i.marketplace || '').trim();
+      if (mp) porVendedor.get(String(i.proveedor || '').trim().toLowerCase())?.otros.add(mp);
+    });
+
+    const total = ingresos.reduce((s, i) => s + num(i.cantidad) * num(i.costo_unitario), 0);
+    res.json({
+      periodo: { desde: desde || null, hasta: hasta || null },
+      total: Math.round(total),
+      unidades: ingresos.reduce((s, i) => s + num(i.cantidad), 0),
+      compras: ingresos.length,
+      porLlegar: Math.round(ingresos.filter(i => i.en_camino).reduce((s, i) => s + num(i.cantidad) * num(i.costo_unitario), 0)),
+      sinCosto: ingresos.filter(i => !(num(i.costo_unitario) > 0)).length,
+      porMarketplace: lista(porMarketplace),
+      porVendedor: lista(porVendedor),
+      porMarca: lista(porMarca),
+      fechasRaras: ingresos.filter(i => String(i.fecha_compra || '') < '2020-01-01')
+        .map(i => ({ id: i.id, fecha: i.fecha_compra, producto: nombreDe.get(i.producto_id) || `Producto #${i.producto_id}`, proveedor: i.proveedor || null }))
+    });
+  } catch (e) {
+    enviarError(res, 500, e.message || 'No se pudo armar el informe de compras');
+  }
+});
 
 app.get('/api/finanzas/sii/iva', auth(true), async (req, res) => {
   try {

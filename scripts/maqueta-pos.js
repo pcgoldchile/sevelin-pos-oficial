@@ -1001,6 +1001,44 @@ app.get('/api/finanzas/utilidades', (req, res) => {
 });
 app.get('/api/finanzas/iva-remanente', (_req, res) => res.json({ remanente: 0, detalle: [], ajustes: [] }));
 
+// v132: informe de compras por marketplace, vendedor y marca (cifras inventadas, con una fecha imposible para ver el aviso).
+app.get('/api/finanzas/compras-informe', (req, res) => {
+  const fila = (nombre, monto, unidades, compras, extra = {}) => ({ nombre, sinDato: false, monto, unidades, compras, porLlegar: 0, productos: compras, ultima: '2026-10-06', detalle: '', ...extra });
+  res.json({
+    periodo: { desde: req.query.desde || null, hasta: req.query.hasta || null },
+    total: 1647916, unidades: 290, compras: 31, porLlegar: 556041, sinCosto: 0,
+    porMarketplace: [fila('MercadoLibre', 939885, 204, 26, { porLlegar: 556041 }), fila('Compra directa o sin anotar', 708031, 86, 5, { sinDato: true })],
+    porVendedor: [fila('MercadoLibre', 689328, 157, 18, { detalle: 'MercadoLibre' }), fila('NuevaTec', 427009, 1, 1), fila('Vendedor sin anotar', 191042, 103, 4, { sinDato: true }),
+      fila('DC IMPORT20', 41000, 5, 1, { detalle: 'MercadoLibre', porLlegar: 41000, ultima: '2026-10-10' })],
+    porMarca: [fila('Genérica', 538531, 120, 9), fila('Sin marca', 499379, 150, 16, { sinDato: true }), fila('MSI', 427009, 1, 1)],
+    fechasRaras: [{ id: 18, fecha: '0008-08-24', producto: 'Kit Solar De Emergencia Camping <b>USB</b>', proveedor: 'MERCADOLIBRE CHILE LIMITADA' }]
+  });
+});
+
+// v132: por llegar con Editar y Eliminar (solo admin). Dos compras iguales, como el soplador repetido del 10-10-2026.
+const porLlegarMaqueta = [
+  { id: 39, producto_id: 242, producto: 'Soplador eléctrico a batería Mini Jet Turbo con luz LED', cantidad: 5, costo_unitario: 8200, proveedor: 'DC IMPORT20', marketplace: 'MercadoLibre', compra_id: null, fecha_compra: hoyMaqueta(), fecha_llegada_estimada: null, dias_para_llegar: 7, dias_esperando: 0 },
+  { id: 40, producto_id: 242, producto: 'Soplador eléctrico a batería Mini Jet Turbo con luz LED', cantidad: 5, costo_unitario: 8200, proveedor: 'DC IMPORT20', marketplace: 'MercadoLibre', compra_id: 33, fecha_compra: hoyMaqueta(), fecha_llegada_estimada: null, dias_para_llegar: 7, dias_esperando: 0 },
+  { id: 60, producto_id: 333, producto: 'Ventilador Industrial 18" (con clientes esperando)', cantidad: 30, costo_unitario: 9990, proveedor: 'MercadoLibre', marketplace: 'MercadoLibre', compra_id: 29, fecha_compra: hoyMaqueta(), fecha_llegada_estimada: null, dias_para_llegar: -2, dias_esperando: 4 }
+];
+app.get('/api/productos/en-camino', (_req, res) => res.json({
+  total: porLlegarMaqueta.length, vencidos: porLlegarMaqueta.filter(c => c.dias_para_llegar < 0).length, compras: porLlegarMaqueta }));
+app.put('/api/ingresos/:id/por-llegar', (req, res) => {
+  const c = porLlegarMaqueta.find(x => x.id === Number(req.params.id));
+  if (!c) return res.status(404).json({ error: 'Compra no encontrada' });
+  const antes = c.cantidad * c.costo_unitario;
+  Object.assign(c, req.body);
+  const ahora = c.cantidad * c.costo_unitario;
+  res.json({ ...c, aviso_gasto: c.compra_id && antes !== ahora ? `Esta compra está ligada a un gasto de Finanzas. Antes sumaba $${antes.toLocaleString('es-CL')} y ahora $${ahora.toLocaleString('es-CL')}: revisa que el gasto calce.` : null });
+});
+app.delete('/api/ingresos/:id', (req, res) => {
+  const i = porLlegarMaqueta.findIndex(x => x.id === Number(req.params.id));
+  if (i < 0) return res.json({ ok: true });
+  if (porLlegarMaqueta[i].id === 60) return res.status(409).json({ error: '1 cliente(s) de sevelin.cl pidieron que les avises cuando llegue este producto. Si eliminas la compra, la tienda les mandaría el correo "ya llegó". Corrige la fecha con Editar si se atrasó.' });
+  porLlegarMaqueta.splice(i, 1);
+  res.json({ ok: true, era_por_llegar: true });
+});
+
 app.use('/api', (req, res) => {
   const clave = `${req.method} ${req.path}`;
   if (!sinManejar.has(clave)) { sinManejar.add(clave); console.log('[maqueta] sin datos:', clave); }
