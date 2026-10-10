@@ -9265,7 +9265,31 @@ app.get('/api/finanzas/utilidades', auth(true), async (req, res) => {
     const utilidadBruta = ingresos - costoVendido;
 
     // --- IVA ---
-    const iva = calcularIvaDePeriodo(ventas, gastos);
+    /* Manda el IVA real del SII (v132, ver ivaRealDelRango). La cuenta del
+       POS queda en `segunPos` y es el respaldo cuando el SII no tiene datos
+       del período: `fuente` le dice a la pantalla cuál de las dos está viendo. */
+    const ivaPos = calcularIvaDePeriodo(ventas, gastos);
+    let ivaReal = null;
+    try {
+      ivaReal = await ivaRealDelRango(desde, hasta);
+    } catch (errIva) {
+      console.error('Utilidades: no se pudo leer el IVA del SII, se usa el del POS:', errIva.message || errIva);
+    }
+    const iva = ivaReal
+      ? {
+          ...ivaPos,
+          ivaDebito: ivaReal.ivaDebito,
+          ivaCredito: ivaReal.ivaCredito,
+          ivaNeto: ivaReal.ivaDebito - ivaReal.ivaCredito,
+          ivaAPagar: ivaReal.ivaAPagar,
+          remanenteGenerado: Math.max(0, ivaReal.ivaCredito - ivaReal.ivaDebito),
+          fuente: 'sii',
+          parcial: ivaReal.parcial,
+          remanenteEstimado: ivaReal.remanenteEstimado,
+          meses: ivaReal.meses,
+          segunPos: { ivaDebito: ivaPos.ivaDebito, ivaCredito: ivaPos.ivaCredito, ivaAPagar: ivaPos.ivaAPagar }
+        }
+      : { ...ivaPos, fuente: 'pos' };
 
     // --- Gastos, separando fijos de variables (sin doble conteo) ---
     /* Un gasto fijo pagado se guarda como una compra normal con
@@ -9307,7 +9331,7 @@ app.get('/api/finanzas/utilidades', auth(true), async (req, res) => {
     const utilidadNetaTotal = utilidadBruta - comisiones - iva.ivaAPagar - totalGastosOperativos + despachosCobrados;
 
     // Remanente acumulado al cierre del período (contexto para el informe)
-    const { remanente: remanenteIva } = await calcularRemanenteIva(hasta);
+    const remanenteIva = ivaReal ? ivaReal.remanenteAlCierre : (await calcularRemanenteIva(hasta)).remanente;
 
     res.json({
       periodo: { desde, hasta },
@@ -10840,6 +10864,97 @@ async function calcularIvaMes(periodoAAAAMM) {
     configurado: siiConfigurado(),
     certificadoVence: vence,
     ultimaSync: ultimaSync || null
+  };
+}
+
+/* IVA REAL DE UN RANGO DE FECHAS, PARA FINANZAS → UTILIDADES (v132, #76).
+
+   Ese informe restaba "débito del POS − crédito de las compras del POS
+   marcadas con factura". Ninguna compra del POS está marcada así (0 en todo
+   el historial al 10-10-2026), así que restaba el IVA de TODAS las boletas:
+   en septiembre 2026 fueron $226.882 que nunca se pagaron (el F29 cerró con
+   $332.831 a favor). El dueño eligió que mande el SII.
+
+   El IVA se paga por mes calendario, así que se calcula mes por mes:
+     · mes con su F29 anotado y remanente a favor → se pagó $0;
+     · si no, lo que da calcularIvaMes (crédito + remanente anterior − débito).
+   Un rango que toma solo parte de un mes se lleva la parte del IVA a pagar
+   que le toca según sus boletas (o según los días, si ese mes el POS no
+   tiene boletas). Mientras el mes cierre a favor, esa parte es $0.
+
+   El débito y el crédito que se informan son los de los meses COMPLETOS que
+   toca el rango: el SII no los entrega por día.
+
+   Devuelve null si de algún mes no hay ni datos del SII ni F29 (o si el
+   rango pasa de dos años): ahí el informe sigue con la cuenta del POS. */
+async function ivaRealDelRango(desde, hasta) {
+  const meses = [];
+  let [a, m] = String(desde).slice(0, 7).split('-').map(Number);
+  const mesFinal = String(hasta).slice(0, 7);
+  while (meses.length < 24) {
+    const mes = `${a}-${String(m).padStart(2, '0')}`;
+    if (mes > mesFinal) break;
+    meses.push(mes);
+    m++; if (m === 13) { m = 1; a++; }
+  }
+  if (!meses.length || meses[meses.length - 1] !== mesFinal) return null;
+
+  const { data: f29 } = await db.from('iva_remanentes').select('periodo, monto').in('periodo', meses);
+  const cierreF29 = new Map((f29 || []).map(r => [r.periodo, num(r.monto)]));
+
+  const filas = [];
+  for (const mes of meses) {
+    const r = await calcularIvaMes(mes.replace('-', ''));
+    const declarado = cierreF29.has(mes) ? cierreF29.get(mes) : null;
+    if (declarado === null && r.fuenteCredito === 'sin_datos' && r.debitoSii === null) return null;
+
+    const cerroAFavor = declarado !== null && declarado > 0;
+    const aPagarMes = cerroAFavor ? 0 : r.ivaAPagarEstimado;
+    const remanenteFinal = declarado !== null ? declarado : Math.max(0, r.resultado);
+
+    const inicioMes = `${mes}-01`;
+    const finMes = ultimoDiaDelMes(mes);
+    const desdeMes = desde > inicioMes ? desde : inicioMes;
+    const hastaMes = hasta < finMes ? hasta : finMes;
+    const completo = desdeMes === inicioMes && (hastaMes === finMes || (r.esMesActual && hastaMes >= r.hoy));
+
+    let parte = 1;
+    if (aPagarMes > 0 && !completo) {
+      const [am, mm] = mes.split('-').map(Number);
+      const pos = await debitoPosDelMes(am, mm);
+      if (pos.debito > 0) {
+        parte = pos.porDia.filter(d => d.dia >= desdeMes && d.dia <= hastaMes).reduce((s, d) => s + d.iva, 0) / pos.debito;
+      } else {
+        const dia = f => Number(f.slice(8, 10));
+        parte = (dia(hastaMes) - dia(desdeMes) + 1) / dia(finMes);
+      }
+      parte = Math.min(1, Math.max(0, parte));
+    }
+
+    filas.push({
+      mes,
+      debito: r.debito,
+      credito: r.credito,
+      remanenteAnterior: r.remanenteAnterior,
+      aPagarMes,
+      aPagar: Math.round(aPagarMes * parte),
+      remanenteFinal,
+      completo,
+      // 'f29' = mes declarado; 'sii' = mes cerrado sin F29 anotado; 'en_curso' = va hasta hoy
+      fuente: declarado !== null ? 'f29' : (r.esMesActual ? 'en_curso' : 'sii')
+    });
+  }
+
+  const suma = k => filas.reduce((s, f) => s + num(f[k]), 0);
+  const ultimo = filas[filas.length - 1];
+  return {
+    ivaDebito: suma('debito'),
+    ivaCredito: suma('credito'),
+    ivaAPagar: suma('aPagar'),
+    remanenteAlCierre: ultimo.remanenteFinal,
+    remanenteEstimado: ultimo.fuente !== 'f29',
+    parcial: filas.some(f => !f.completo),
+    meses: filas
   };
 }
 

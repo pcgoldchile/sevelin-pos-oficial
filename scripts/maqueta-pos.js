@@ -978,6 +978,29 @@ app.get('/api/finanzas/sii/iva', (_req, res) => {
 });
 app.post('/api/finanzas/sii/sincronizar', (_req, res) => res.json({ ok: true, documentos: 3 }));
 
+// v132: Finanzas → Utilidades con el IVA real del SII. Cifras de septiembre 2026 (las reales, redondeadas):
+// el POS habría restado $226.882 de IVA y al SII se le pagó $0. `?iva=pos` muestra el respaldo sin datos del SII.
+app.get('/api/finanzas/utilidades', (req, res) => {
+  const desde = String(req.query.desde || hoyMaqueta()), hasta = String(req.query.hasta || hoyMaqueta());
+  const ingresos = 2986000, costoVendido = 2104000, comisiones = 21400, operativos = 1109873, bruta = ingresos - costoVendido;
+  const segunPos = { ivaDebito: 226882, ivaCredito: 0, ivaAPagar: 226882 };
+  const delSii = req.query.iva !== 'pos';
+  const iva = delSii
+    ? { ventasConDte: 1421000, ventasSinDte: 1565000, ivaRetenidoSinDte: 249874, ivaDebito: 251952, ivaCredito: 364001,
+        ivaNeto: -112049, ivaAPagar: 0, remanenteGenerado: 112049, fuente: 'sii', parcial: false, remanenteEstimado: false, segunPos,
+        meses: [{ mes: desde.slice(0, 7), debito: 251952, credito: 364001, remanenteAnterior: 219227, aPagarMes: 0, aPagar: 0, remanenteFinal: 332831, completo: true, fuente: 'f29' }] }
+    : { ventasConDte: 1421000, ventasSinDte: 1565000, ivaRetenidoSinDte: 249874, ...segunPos, ivaNeto: 226882, remanenteGenerado: 0, fuente: 'pos' };
+  res.json({
+    periodo: { desde, hasta }, cantidadVentas: 89, ticketPromedio: ingresos / 89,
+    ingresos, costoVendido, utilidadBruta: bruta, margenBruto: (bruta / ingresos) * 100, despachosCobrados: 0,
+    comisiones, iva,
+    gastos: { fijos: 1000000, variables: 109873, operativos, inventario: 602396, total: operativos + 602396, porClasificacion: { 'Gastos Operativos': operativos } },
+    utilidadNetaTotal: bruta - comisiones - iva.ivaAPagar - operativos, margenNetoTotal: 0,
+    remanenteIva: delSii ? 332831 : 0, detalleVentas: [], detalleGastos: []
+  });
+});
+app.get('/api/finanzas/iva-remanente', (_req, res) => res.json({ remanente: 0, detalle: [], ajustes: [] }));
+
 app.use('/api', (req, res) => {
   const clave = `${req.method} ${req.path}`;
   if (!sinManejar.has(clave)) { sinManejar.add(clave); console.log('[maqueta] sin datos:', clave); }

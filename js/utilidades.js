@@ -49,7 +49,8 @@ const UTIL_CAPAS = [
     id: 'Iva',
     etiqueta: 'IVA a pagar al SII',
     corta: 'IVA',
-    detalle: 'IVA débito de las ventas con boleta/factura, menos el crédito fiscal de las compras con factura',
+    // v132 (#76): es el IVA real del SII, no "todas las boletas × 19%"
+    detalle: 'Lo que de verdad se paga: débito de las boletas y facturas, menos el crédito de las facturas de compra y el remanente a favor',
     monto: (inf) => inf.iva.ivaAPagar
   },
   {
@@ -297,22 +298,53 @@ function pintarBloqueIva(inf) {
   const set = (id, valor) => { const el = document.getElementById(id); if (el) el.textContent = valor; };
   const iva = inf.iva;
 
+  /* v132 (#76): manda el SII. El servidor avisa con `fuente` cuál cuenta
+     viene: 'sii' (lo normal) o 'pos' (el SII no tiene datos del período). */
+  const delSii = iva.fuente === 'sii';
+  const meses = delSii ? mesesDelIvaUtil(iva.meses) : '';
+
+  set('utilIvaSubtitulo', delSii
+    ? 'Según el SII: lo que de verdad pagas, contando tus facturas de compra y el crédito a favor'
+    : 'Según el POS: el SII todavía no tiene datos de este período');
+  // El ajuste a mano corrige la cuenta del POS; con el SII el remanente sale del F29
+  document.getElementById('btnUtilAjustarIva')?.classList.toggle('hidden', delSii);
+
   set('utilIvaDebito', fmtCLP(iva.ivaDebito));
-  set('utilIvaDebitoDetalle', `De ${fmtCLP(iva.ventasConDte)} vendidos con boleta o factura`);
+  set('utilIvaDebitoDetalle', delSii
+    ? `Boletas y facturas de ${meses}${iva.parcial ? ' (mes completo)' : ''}`
+    : `De ${fmtCLP(iva.ventasConDte)} vendidos con boleta o factura`);
 
   set('utilIvaCredito', fmtCLP(iva.ivaCredito));
-  set('utilIvaCreditoDetalle', 'IVA de las compras del período respaldadas con factura');
+  set('utilIvaCreditoDetalle', delSii
+    ? `Facturas de compra registradas en el SII en ${meses}${iva.parcial ? ' (mes completo)' : ''}`
+    : 'IVA de las compras del período respaldadas con factura');
 
   set('utilIvaPagar', fmtCLP(iva.ivaAPagar));
-  set('utilIvaPagarDetalle', iva.remanenteGenerado > 0
-    ? `El crédito superó al débito: genera ${fmtCLP(iva.remanenteGenerado)} de remanente`
-    : 'Débito menos crédito fiscal del período');
+  if (delSii) {
+    set('utilIvaPagarDetalle', iva.ivaAPagar > 0
+      ? `El débito superó al crédito y al remanente a favor${iva.parcial ? ': es la parte que les toca a estas fechas' : ''}`
+      : 'Tienes crédito a favor: por este período no pagas IVA');
+  } else {
+    set('utilIvaPagarDetalle', iva.remanenteGenerado > 0
+      ? `El crédito superó al débito: genera ${fmtCLP(iva.remanenteGenerado)} de remanente`
+      : 'Débito menos crédito fiscal del período');
+  }
 
   set('utilIvaRetenido', fmtCLP(iva.ivaRetenidoSinDte));
   set('utilIvaRetenidoDetalle',
     `Contenido en ${fmtCLP(iva.ventasSinDte)} vendidos sin DTE · se registra como utilidad`);
 
-  set('utilIvaRemanente', fmtCLP(utilRemanente?.remanente || 0));
+  set('utilIvaRemanente', fmtCLP(delSii ? num(inf.remanenteIva) : (utilRemanente?.remanente || 0)));
+  set('utilIvaRemanenteDetalle', !delSii ? 'Crédito fiscal disponible a la fecha'
+    : (iva.remanenteEstimado ? 'Crédito a favor estimado al cierre (todavía sin F29)' : 'Crédito a favor al cierre, según el F29'));
+}
+
+// "septiembre 2026" o "agosto 2026 a octubre 2026", desde las filas por mes del servidor
+function mesesDelIvaUtil(filas) {
+  const lista = filas || [];
+  if (!lista.length) return 'el período';
+  const nombre = f => nombreMesIvaSii(String(f.mes).replace('-', ''));
+  return lista.length === 1 ? nombre(lista[0]) : `${nombre(lista[0])} a ${nombre(lista[lista.length - 1])}`;
 }
 
 function pintarBloqueGastos(inf) {
@@ -518,6 +550,7 @@ function exportarUtilidadesExcel() {
   const inf = utilInforme;
   const { activas, utilidad, margen } = utilidadSegunCasillas(inf);
   const aplicada = (capa) => (activas.includes(capa) ? 'Sí' : 'No');
+  const ivaDelSii = inf.iva.fuente === 'sii';   // v132: el IVA viene del SII
 
   const libro = XLSX.utils.book_new();
   const negocio = (typeof NEGOCIO_NOMBRE !== 'undefined' && NEGOCIO_NOMBRE) ? NEGOCIO_NOMBRE : 'Sevelin';
@@ -551,11 +584,11 @@ function exportarUtilidadesExcel() {
     ['DESGLOSE DE IVA', '', '', ''],
     ['Ventas con DTE (boleta/factura)', '', inf.iva.ventasConDte, ''],
     ['Ventas sin DTE', '', inf.iva.ventasSinDte, ''],
-    ['IVA débito fiscal', 'Contenido en las ventas con DTE', inf.iva.ivaDebito, ''],
-    ['IVA crédito fiscal', 'De las compras del período con factura', -inf.iva.ivaCredito, ''],
-    ['IVA a pagar al SII', 'Débito menos crédito (nunca negativo)', inf.iva.ivaAPagar, ''],
+    ['IVA débito fiscal', ivaDelSii ? 'Boletas y facturas según el SII (meses completos)' : 'Contenido en las ventas con DTE', inf.iva.ivaDebito, ''],
+    ['IVA crédito fiscal', ivaDelSii ? 'Facturas de compra registradas en el SII (meses completos)' : 'De las compras del período con factura', -inf.iva.ivaCredito, ''],
+    ['IVA a pagar al SII', ivaDelSii ? 'Débito menos crédito y remanente a favor (nunca negativo)' : 'Débito menos crédito (nunca negativo)', inf.iva.ivaAPagar, ''],
     ['Remanente generado en el período', 'Crédito no usado, se arrastra al mes siguiente', inf.iva.remanenteGenerado, ''],
-    ['Remanente acumulado al cierre', 'Crédito fiscal disponible a la fecha', inf.remanenteIva, ''],
+    ['Remanente acumulado al cierre', ivaDelSii ? (inf.iva.remanenteEstimado ? 'Estimado: todavía sin F29' : 'Según el F29') : 'Crédito fiscal disponible a la fecha', inf.remanenteIva, ''],
     ['IVA retenido como utilidad', 'Contenido en las ventas SIN DTE — ver nota 1', inf.iva.ivaRetenidoSinDte, ''],
     [],
     ['DESGLOSE DE GASTOS', '', '', ''],
@@ -624,7 +657,22 @@ function exportarUtilidadesExcel() {
 
   // --- Hoja 4: IVA mes a mes (el arrastre del remanente) ---
   const detalleIva = utilRemanente?.detalle || [];
-  if (detalleIva.length) {
+  if (ivaDelSii) {
+    // Con el SII no hay ajustes a mano: el arrastre sale del F29 de cada mes
+    const hojaIva = XLSX.utils.json_to_sheet((inf.iva.meses || []).map(m => ({
+      'Mes': m.mes,
+      'Remanente inicial': m.remanenteAnterior === null ? 'Sin dato' : m.remanenteAnterior,
+      'IVA débito': m.debito,
+      'IVA crédito': m.credito,
+      'IVA a pagar del mes': m.aPagarMes,
+      'IVA a pagar de estas fechas': m.aPagar,
+      'Remanente final': m.remanenteFinal,
+      'Fuente': m.fuente === 'f29' ? 'F29' : (m.fuente === 'en_curso' ? 'Mes en curso (va hasta hoy)' : 'SII, sin F29 anotado')
+    })));
+    hojaIva['!cols'] = [{ wch: 12 }, { wch: 18 }, { wch: 14 }, { wch: 14 }, { wch: 20 }, { wch: 26 }, { wch: 17 }, { wch: 28 }];
+    formatearMontosHoja(hojaIva, [1, 2, 3, 4, 5, 6]);
+    XLSX.utils.book_append_sheet(libro, hojaIva, 'IVA mes a mes');
+  } else if (detalleIva.length) {
     const hojaIva = XLSX.utils.json_to_sheet(detalleIva.map(m => ({
       'Mes': m.mes,
       'Remanente inicial': m.remanenteInicial,
@@ -792,9 +840,9 @@ function exportarUtilidadesPDF() {
     body: [
       ['Ventas con DTE (boleta / factura)', fmtCLP(inf.iva.ventasConDte)],
       ['Ventas sin DTE', fmtCLP(inf.iva.ventasSinDte)],
-      ['IVA débito fiscal (ventas con DTE)', fmtCLP(inf.iva.ivaDebito)],
-      ['IVA crédito fiscal (compras con factura)', `- ${fmtCLP(inf.iva.ivaCredito)}`],
-      ['IVA a pagar al SII', fmtCLP(inf.iva.ivaAPagar)],
+      [inf.iva.fuente === 'sii' ? 'IVA débito fiscal (según el SII, meses completos)' : 'IVA débito fiscal (ventas con DTE)', fmtCLP(inf.iva.ivaDebito)],
+      [inf.iva.fuente === 'sii' ? 'IVA crédito fiscal (facturas de compra en el SII)' : 'IVA crédito fiscal (compras con factura)', `- ${fmtCLP(inf.iva.ivaCredito)}`],
+      [inf.iva.fuente === 'sii' ? 'IVA a pagar al SII (descontado el remanente a favor)' : 'IVA a pagar al SII', fmtCLP(inf.iva.ivaAPagar)],
       ['Remanente generado en el período', fmtCLP(inf.iva.remanenteGenerado)],
       ['Remanente acumulado al cierre', fmtCLP(inf.remanenteIva)],
       ['IVA retenido como utilidad (ventas sin DTE) — ver nota 1', fmtCLP(inf.iva.ivaRetenidoSinDte)]
