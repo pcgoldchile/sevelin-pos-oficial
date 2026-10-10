@@ -229,6 +229,10 @@ Cuando el dueño dice "compré esto, ponlo por llegar" **nunca se carga stock**.
   desorden; se arregla tocando la fila otra vez.
 - En pantalla siempre se dice **"por llegar"**, no "en camino" (pedido del dueño). En el código la
   columna sigue llamándose `en_camino`.
+- **Corregir o sacar una compra por llegar (v132):** botón 🚚 "Por llegar" → "✏️ Editar" o "🗑️ Eliminar", solo
+  admin. Apagar `por_llegar` hace que la tienda mande el correo "ya llegó" a la lista de espera: por eso eliminar se
+  bloquea si hay `avisos_producto` pendientes o `reservado_web`. Si hay que hacerlo por SQL, revisar eso antes.
+- `stock_por_llegar` se **pisa**, no se suma, al registrar otra compra por llegar del mismo producto.
 - **Reservas (v126, sql/87):** lo por llegar se puede pagar en sevelin.cl. La reserva baja
   `stock_por_llegar` y sube `productos.reservado_web` (nunca toca `stock`); al apretar "Ya llegó" esas
   unidades no entran al stock. El tope de compra está en `sevelin-tienda/src/lib/por-llegar.ts`: si

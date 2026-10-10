@@ -12,6 +12,21 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 10-10-2026 · v132, IVA real en Utilidades, informe de compras, editar/eliminar lo por llegar y mudanza
+
+Detalle en `docs/CHANGELOG-V132.md`. Sin migración SQL.
+
+- **Local nuevo:** San Rafael 896, Arica, entrada por calle Robinson Rojas (atiende ahí desde el 09-10). La tienda ya lo
+  dice. ⚠️ Falta quitar `TIENDA_LAT`/`TIENDA_LON` de Vercel (pendiente #83): el despacho aún se mide desde Linderos.
+- **Utilidades** resta el IVA real del SII (`ivaRealDelRango`), no el de todas las boletas.
+- **Informe de compras** por marketplace, vendedor y marca: botón "🛒 Compras por origen" en Gastos y en Productos.
+- **Por llegar:** Editar y Eliminar (solo admin). Eliminar ajusta el producto y se bloquea si hay clientes esperando.
+- **Gastos:** medio de pago "Mercado Pago" y "Otro".
+- **Cyber cerrado (#49):** todo volvió al precio normal; 0 monitores vendidos. Los de 19" quedaron a $34.990.
+- **Esperan al dueño:** #70 (11 compras siguen por llegar con fecha vencida), #85 precio de los reacondicionados,
+  #82 enlaces que son un código, #81 compra con fecha del año 0008, #84 F29 (vence 20-10), #72 bloques A a E.
+- **Lunes 12-10:** la auditoría semanal de precios la corre Claude en la sesión (decisión del dueño).
+
 ## 07-10-2026 · v131, marketplace de la compra, marca desde la IA y "Por completar"
 
 Detalle en `docs/CHANGELOG-V131.md` (`sql/88` aplicada: `ingresos_mercaderia.marketplace`). Falta el informe de compras
