@@ -26,6 +26,12 @@ Detalle en `docs/CHANGELOG-V132.md`. Sin migración SQL.
 - **Esperan al dueño:** #70 (11 compras siguen por llegar con fecha vencida), #85 precio de los reacondicionados,
   #82 enlaces que son un código, #81 compra con fecha del año 0008, #84 F29 (vence 20-10), #72 bloques A a E.
 - **Lunes 12-10:** la auditoría semanal de precios la corre Claude en la sesión (decisión del dueño).
+- **Tarde del 10-10:** coordenadas viejas quitadas de Vercel (#83 cerrado); dirección nueva en Merchant Center, WhatsApp
+  Business y Facebook; horario nuevo en todas partes: lunes a domingo de 10:00 a 13:00 y de 14:00 a 21:00 (tienda
+  `6519e43`), y el corte del despacho del mismo día pasó a las 20:00 (tienda `11d22cc`).
+- **Acuerdo con los padres (#87, sin construir):** mercadería de ellos a costo y a crédito ($1M semanal, tope $3M), que
+  hay que poder marcar y medir; pozo de servicios de celulares para el papá (mínimo $1M); arriendo a $400.000 desde
+  noviembre (#86). Faltan 7 respuestas del dueño: están en `docs/PROMPT-SIGUIENTE-SESION.md`.
 
 ## 07-10-2026 · v131, marketplace de la compra, marca desde la IA y "Por completar"
 
