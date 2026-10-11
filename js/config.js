@@ -584,10 +584,11 @@ function pedirPinAdmin({ titulo, mensaje, resumen, textoBoton } = {}) {
     const btnOk = document.getElementById('btnAceptarConfirmarPin');
     const btnCancelar = document.getElementById('btnCancelarConfirmarPin');
 
-    // Sin modal en el DOM se cae a la confirmación básica del navegador
+    /* Sin el modal en la página no se pide el PIN por otra vía: la ventana
+       del navegador lo mostraría en claro. Se cancela y se avisa. */
     if (!modal || !input) {
-      const pin = window.prompt(`${mensaje || 'Confirma esta acción'}\n\nIngresa el PIN de administrador:`);
-      resolve(pin ? pin.trim() : null);
+      showToast('No se pudo abrir la ventana del PIN. Recarga la página.', 'err');
+      resolve(null);
       return;
     }
 

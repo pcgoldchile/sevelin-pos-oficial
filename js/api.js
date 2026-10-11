@@ -178,6 +178,8 @@ const API = {
     sugerirCategoria: (datos) => apiRequest('/productos/sugerir-categoria', { method: 'POST', body: datos }),
     // La mercadería en camino llegó: sube el stock y apaga "por llegar"
     compraRecibida: (ingresoId) => apiRequest(`/ingresos/${ingresoId}/recibida`, { method: 'PUT' }),
+    // v134: una o varias llegadas juntas; cada una puede traer { cantidad_recibida, resto } si llegaron menos
+    marcarLlegadas: (llegadas) => apiRequest('/ingresos/llegadas', { method: 'POST', body: { llegadas } }),
     // v132 — corregir una compra que todavía está por llegar (solo admin)
     editarCompraPorLlegar: (ingresoId, datos) => apiRequest(`/ingresos/${ingresoId}/por-llegar`, { method: 'PUT', body: datos }),
 

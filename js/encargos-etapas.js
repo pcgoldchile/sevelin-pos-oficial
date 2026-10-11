@@ -104,8 +104,10 @@ async function cambiarEtapaEncargo(id, etapa, extra = {}) {
   }
 }
 
-function cancelarEncargoConMotivo(id) {
-  const motivo = (prompt('¿Por qué se cancela? (el proveedor no lo tiene, el cliente desistió…)') || '').trim();
+async function cancelarEncargoConMotivo(id) {
+  const motivo = (await ventanaPreguntar('Por ejemplo: el proveedor no lo tiene, el cliente desistió…', {
+    titulo: '¿Por qué se cancela el encargo?', textoSi: 'Cancelar el encargo', textoNo: 'Volver', placeholder: 'Motivo'
+  }) || '').trim();
   if (!motivo) return;
   cambiarEtapaEncargo(id, 'CANCELADO', { motivo });
 }

@@ -1011,7 +1011,7 @@ async function handleImportarVentas(e) {
     const mensaje = `Se importarán ${ventasNuevas.length} venta(s) respetando fechas, horas y correlativos del archivo.` +
       (conDetalle ? `\n${conDetalle} incluyen detalle de productos: se descontará el stock de los que existan en el catálogo.` : '') +
       '\n¿Continuar?';
-    if (!confirm(mensaje)) { e.target.value = ''; return; }
+    if (!await ventanaConfirmar(mensaje, { titulo: '¿Importar estas ventas?', textoSi: 'Sí, importar' })) { e.target.value = ''; return; }
 
     const r = await API.ventas.importar(ventasNuevas);
 
@@ -1493,9 +1493,9 @@ function renderHistorialTabla(ventas) {
    día, en una venta sin documento (sql/61). El servidor rechaza el resto y
    manda a "Devolver / Anular", que conserva la venta. */
 async function eliminarVentaIndividual(id) {
-  if (!confirm('¿Borrar esta venta del historial?\n\n' +
+  if (!await ventanaConfirmar('¿Borrar esta venta del historial?\n\n' +
                'Solo se pueden borrar ventas de HOY y SIN documento tributario. ' +
-               'Para cualquier otra usa "↩️ Devolver / Anular", que la conserva en el historial.')) return;
+               'Para cualquier otra usa "↩️ Devolver / Anular", que la conserva en el historial.', { peligro: true, textoSi: 'Sí, borrar' })) return;
 
   try {
     await API.ventas.eliminar(id);

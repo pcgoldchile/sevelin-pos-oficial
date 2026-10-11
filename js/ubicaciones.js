@@ -27,6 +27,8 @@ let ubicacionesDelProducto = [];
 let ubicacionFotoPendiente = null;     // dataURL, se sube al crear el lugar
 let intervaloEnCamino = null;
 let enCaminoCache = null;
+const enCaminoMarcadas = new Set();    // v134: compras con la casilla marcada para confirmarlas juntas
+let llegadasPorConfirmar = null;       // v134: { compras, alTerminar } mientras la ventana de llegadas está abierta
 
 const ETIQUETA_TIPO_UBICACION = {
   estante: '🗄️ Estante', caja: '📦 Caja', cajon: '🗃️ Cajón',
@@ -48,6 +50,18 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnCerrarEnCamino')?.addEventListener('click', () => cerrarModal('modalEnCamino'));
   document.getElementById('btnCancelarEditarPorLlegar')?.addEventListener('click', () => cerrarModal('modalEditarPorLlegar'));
   document.getElementById('btnGuardarEditarPorLlegar')?.addEventListener('click', guardarEditarPorLlegar);
+  // v134: marcar varias y confirmarlas juntas
+  document.getElementById('enCaminoTodas')?.addEventListener('change', (e) => marcarTodasEnCamino(e.target.checked));
+  document.getElementById('btnMarcarLlegadas')?.addEventListener('click', recibirMarcadasEnCamino);
+  document.getElementById('enCaminoLista')?.addEventListener('change', (e) => {
+    const casilla = e.target.closest('[data-marcar-camino]');
+    if (casilla) alternarMarcaEnCamino(Number(casilla.dataset.marcarCamino), casilla.checked);
+  });
+  document.getElementById('btnCancelarLlegadas')?.addEventListener('click', cerrarConfirmarLlegadas);
+  document.getElementById('btnConfirmarLlegadas')?.addEventListener('click', confirmarLlegadasEscritas);
+  document.getElementById('llegadasLista')?.addEventListener('input', actualizarResumenLlegadas);
+  document.getElementById('llegadasLista')?.addEventListener('change', actualizarResumenLlegadas);
+
   document.getElementById('enCaminoLista')?.addEventListener('click', (e) => {
     const recibir = e.target.closest('[data-recibir-camino]');
     if (recibir) { recibirDesdeAviso(Number(recibir.dataset.recibirCamino)); return; }
@@ -65,7 +79,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 document.addEventListener('pos:sesion-iniciada', () => {
   if (intervaloEnCamino) { clearInterval(intervaloEnCamino); intervaloEnCamino = null; }
-  if (!esAdmin()) return;
+  // v134: también para el trabajador, que ahora marca las llegadas
   actualizarAvisoEnCamino();
   intervaloEnCamino = setInterval(actualizarAvisoEnCamino, INTERVALO_EN_CAMINO_MS);
 });
@@ -255,7 +269,7 @@ async function guardarProductoEnUbicacion() {
 
 async function quitarDeUbicacion(ubicacionId) {
   if (!editingProductId) return;
-  if (!confirm('¿Este producto ya no se guarda acá?')) return;
+  if (!await ventanaConfirmar('¿Este producto ya no se guarda acá?', { textoSi: 'Sí, quitarlo' })) return;
   try {
     await API.productos.quitarDeUbicacion(editingProductId, ubicacionId);
     ubicacionesDelProducto = await API.productos.ubicacionesDe(editingProductId) || [];
@@ -288,13 +302,19 @@ function proponerLugarDeLaCompra() {
 // El aviso del header: mercadería en camino
 // ============================================================
 
+/* v134: el trabajador también ve el botón y marca llegadas (pedido del
+   dueño, 11-10-2026). El servidor no le manda costos; Editar, Eliminar y
+   "Ver producto" siguen siendo del admin. */
 async function actualizarAvisoEnCamino() {
   const btn = document.getElementById('btnEnCamino');
   const texto = document.getElementById('textoEnCamino');
-  if (!btn || !texto || !tokenActual() || !esAdmin()) return;
+  if (!btn || !texto || !tokenActual()) return;
   try {
     enCaminoCache = await API.productos.enCamino();
     const total = Number(enCaminoCache?.total) || 0;
+    // Una casilla marcada de una compra que ya no está no puede quedar contando
+    const vivas = new Set((enCaminoCache?.compras || []).map(c => Number(c.id)));
+    enCaminoMarcadas.forEach(id => { if (!vivas.has(id)) enCaminoMarcadas.delete(id); });
     if (!total) { btn.hidden = true; return; }
 
     const vencidos = Number(enCaminoCache?.vencidos) || 0;
@@ -312,6 +332,7 @@ async function actualizarAvisoEnCamino() {
 
 function abrirModalEnCamino() {
   if (!enCaminoCache?.total) return;
+  enCaminoMarcadas.clear();
   pintarEnCamino();
   document.getElementById('modalEnCamino')?.classList.add('show');
 }
@@ -328,7 +349,11 @@ function pintarEnCamino() {
         + (enCaminoCache.vencidos ? ` · ${enCaminoCache.vencidos} ya deberían estar acá.` : '.')
       : 'No hay nada por llegar.';
   }
-  if (!compras.length) { cont.innerHTML = '<p class="modal-hint">Nada por llegar.</p>'; return; }
+  if (!compras.length) {
+    cont.innerHTML = '<p class="modal-hint">Nada por llegar.</p>';
+    pintarBarraEnCamino();
+    return;
+  }
 
   cont.innerHTML = compras.map(c => {
     const d = c.dias_para_llegar;
@@ -340,25 +365,67 @@ function pintarEnCamino() {
       : d === 0 ? '<span style="color:var(--gold);">llega hoy</span>'
       : d === 1 ? 'llega mañana'
       : `llega en ${d} días`;
+    const marcada = enCaminoMarcadas.has(Number(c.id));
+    // El costo solo viene para el admin
+    const costo = c.costo_unitario === undefined ? '' : ` · ${fmtCLP(c.costo_unitario)} c/u`;
 
     return `
-      <div class="agotado-fila">
+      <div class="agotado-fila${marcada ? ' camino-marcada' : ''}">
         <div class="agotado-cabecera">
+          <input type="checkbox" class="camino-casilla" data-marcar-camino="${c.id}" ${marcada ? 'checked' : ''}
+                 aria-label="Marcar que llegó: ${escHtml(c.producto)}">
           <div class="agotado-datos">
             <strong>${escHtml(c.producto)}</strong>
-            <small>${num(c.cantidad)} unidad(es) · ${fmtCLP(c.costo_unitario)} c/u${c.proveedor ? ' · ' + escHtml(c.proveedor) : ''}</small>
+            <small>${num(c.cantidad)} unidad(es)${costo}${c.proveedor ? ' · ' + escHtml(c.proveedor) : ''}</small>
             <small>Comprada hace ${num(c.dias_esperando)} día(s) · ${cuando}</small>
           </div>
         </div>
         <div class="agotado-acciones">
           <button class="btn btn-green btn-sm" data-recibir-camino="${c.id}">📦 Ya llegó</button>
-          <button class="btn btn-ghost btn-sm" data-ver-producto-camino="${c.producto_id}">Ver producto</button>
           ${esAdmin() ? `
+          <button class="btn btn-ghost btn-sm" data-ver-producto-camino="${c.producto_id}">Ver producto</button>
           <button class="btn btn-ghost btn-sm" data-editar-camino="${c.id}" title="Corregir unidades, costo, vendedor o fechas">✏️ Editar</button>
           <button class="btn btn-ghost btn-sm" data-eliminar-camino="${c.id}" title="Eliminar esta compra: para una cargada por error o repetida" style="color:var(--red);">🗑️ Eliminar</button>` : ''}
         </div>
       </div>`;
   }).join('');
+  pintarBarraEnCamino();
+}
+
+/* La barra de arriba ("Marcar todas") y el botón verde del pie. */
+function pintarBarraEnCamino() {
+  const compras = enCaminoCache?.compras || [];
+  const marcadas = compras.filter(c => enCaminoMarcadas.has(Number(c.id)));
+  const barra = document.getElementById('enCaminoBarra');
+  const todas = document.getElementById('enCaminoTodas');
+  const texto = document.getElementById('enCaminoMarcadasTexto');
+  const btn = document.getElementById('btnMarcarLlegadas');
+
+  // Con una sola compra no hay nada que juntar: basta su botón "Ya llegó"
+  if (barra) barra.style.display = compras.length > 1 ? '' : 'none';
+  if (todas) {
+    todas.checked = compras.length > 0 && marcadas.length === compras.length;
+    todas.indeterminate = marcadas.length > 0 && marcadas.length < compras.length;
+  }
+  const unidades = marcadas.reduce((s, c) => s + num(c.cantidad), 0);
+  if (texto) texto.textContent = marcadas.length ? `${marcadas.length} marcada(s) · ${unidades} unidad(es)` : 'Marca las que llegaron y confírmalas juntas.';
+  if (btn) {
+    btn.style.display = compras.length > 1 ? '' : 'none';
+    btn.disabled = marcadas.length === 0;
+    btn.textContent = marcadas.length ? `📦 Marcar llegadas (${marcadas.length})` : '📦 Marcar llegadas';
+  }
+}
+
+function alternarMarcaEnCamino(id, marcada) {
+  if (marcada) enCaminoMarcadas.add(Number(id)); else enCaminoMarcadas.delete(Number(id));
+  document.querySelector(`[data-marcar-camino="${Number(id)}"]`)?.closest('.agotado-fila')?.classList.toggle('camino-marcada', marcada);
+  pintarBarraEnCamino();
+}
+
+function marcarTodasEnCamino(marcar) {
+  enCaminoMarcadas.clear();
+  if (marcar) (enCaminoCache?.compras || []).forEach(c => enCaminoMarcadas.add(Number(c.id)));
+  pintarEnCamino();
 }
 
 /* EDITAR Y ELIMINAR UNA COMPRA POR LLEGAR (v132, pedido del dueño el
@@ -411,7 +478,7 @@ async function guardarEditarPorLlegar() {
     const r = await API.productos.editarCompraPorLlegar(id, datos);
     cerrarModal('modalEditarPorLlegar');
     showToast('Compra corregida', 'ok');
-    if (r?.aviso_gasto) alert(r.aviso_gasto);
+    if (r?.aviso_gasto) await ventanaAviso(r.aviso_gasto, { titulo: 'Revisa el gasto en Finanzas' });
     await actualizarAvisoEnCamino();
     pintarEnCamino();
     if (typeof cargarProductos === 'function') cargarProductos(true);
@@ -426,14 +493,18 @@ async function eliminarCompraPorLlegar(ingresoId) {
   if (!esAdmin()) return;
   const c = (enCaminoCache?.compras || []).find(x => Number(x.id) === Number(ingresoId));
   if (!c) return;
-  if (!confirm(`¿Eliminar la compra de ${num(c.cantidad)} unidad(es) de "${c.producto}"?\n\n` +
-    'Úsalo solo si la cargaste por error o quedó repetida. No cambia el stock. ' +
+  const seguro = await ventanaConfirmar(
+    `${c.producto} · ${num(c.cantidad)} unidad(es)\n\n` +
+    'Úsalo solo si la cargaste por error o quedó repetida. No cambia el stock.\n\n' +
     'Si no queda otra compra por llegar de ese producto, deja de aparecer en sevelin.cl/por-llegar.' +
-    (c.compra_id ? '\n\nOjo: tiene un gasto en Finanzas → Gastos. Ese gasto no se borra solo.' : ''))) return;
+    (c.compra_id ? '\n\nOjo: tiene un gasto en Finanzas → Gastos. Ese gasto no se borra solo.' : ''),
+    { titulo: '¿Eliminar esta compra por llegar?', peligro: true, textoSi: 'Sí, eliminar' });
+  if (!seguro) return;
 
   try {
     await API.productos.eliminarIngreso(ingresoId);
     showToast('Compra eliminada', 'ok');
+    enCaminoMarcadas.delete(Number(ingresoId));
     await actualizarAvisoEnCamino();
     if (!enCaminoCache?.total) {
       cerrarModal('modalEnCamino');
@@ -443,29 +514,202 @@ async function eliminarCompraPorLlegar(ingresoId) {
     if (typeof cargarProductos === 'function') cargarProductos(true);
   } catch (err) {
     // El servidor explica por qué no se puede (clientes esperando en la web, reservas pagadas)
-    alert(err.message || 'No se pudo eliminar la compra');
+    await ventanaAviso(err.message || 'No se pudo eliminar la compra', { titulo: 'No se puede eliminar', peligro: true });
   }
 }
 
-/* Confirmar desde el aviso, sin entrar al producto. Igual que en el
-   editor, esto le avisa por correo a quienes lo reservaron, así que se
-   confirma antes. */
-async function recibirDesdeAviso(ingresoId) {
-  const c = (enCaminoCache?.compras || []).find(x => Number(x.id) === Number(ingresoId));
-  if (!c) return;
-  if (!confirm(`¿Llegaron las ${num(c.cantidad)} unidades de "${c.producto}"?\n\nSe suman al stock y, si no queda nada más por llegar de ese producto, la tienda le avisa por correo a quienes lo estaban esperando.`)) return;
+// ============================================================
+// Confirmar llegadas: una o varias, con cuántas unidades llegaron
+// ============================================================
 
+/* Confirmar desde el aviso, sin entrar al producto. Esto le avisa por correo
+   a quienes lo reservaron, así que se confirma antes — con la ventana propia
+   del POS, que además deja decir "llegaron menos". */
+function recibirDesdeAviso(ingresoId) {
+  const c = (enCaminoCache?.compras || []).find(x => Number(x.id) === Number(ingresoId));
+  if (c) abrirConfirmarLlegadas([c]);
+}
+
+function recibirMarcadasEnCamino() {
+  const marcadas = (enCaminoCache?.compras || []).filter(c => enCaminoMarcadas.has(Number(c.id)));
+  if (!marcadas.length) { showToast('Marca al menos una compra', 'err'); return; }
+  abrirConfirmarLlegadas(marcadas);
+}
+
+/* `compras`: [{ id, producto, cantidad, proveedor? }]. `alTerminar(resultados)`
+   corre después de confirmar, para que quien abrió la ventana refresque lo
+   suyo (la ficha del producto, por ejemplo). */
+function abrirConfirmarLlegadas(compras, alTerminar) {
+  const modal = document.getElementById('modalLlegadas');
+  const lista = document.getElementById('llegadasLista');
+  if (!modal || !lista || !Array.isArray(compras) || !compras.length) return;
+  llegadasPorConfirmar = { compras, alTerminar: typeof alTerminar === 'function' ? alTerminar : null };
+
+  const titulo = document.getElementById('llegadasTitulo');
+  if (titulo) titulo.textContent = compras.length === 1 ? '¿Llegó esta mercadería?' : `¿Llegaron estas ${compras.length} compras?`;
+
+  lista.innerHTML = compras.map(c => {
+    const total = num(c.cantidad);
+    return `
+      <div class="llegada-fila" data-llegada="${Number(c.id)}" data-total="${total}">
+        <div class="llegada-cabecera">
+          <div class="llegada-nombre">
+            <strong>${escHtml(c.producto)}</strong>
+            <small>Vienen ${total} unidad(es)${c.proveedor ? ' · ' + escHtml(c.proveedor) : ''}</small>
+          </div>
+          <label class="llegada-cuantas">Llegaron
+            <input type="number" inputmode="numeric" min="1" max="${total}" step="1" value="${total}" data-llegaron="${Number(c.id)}">
+            de ${total}
+          </label>
+        </div>
+        <div class="llegada-resto" data-resto-de="${Number(c.id)}" style="display:none;">
+          <p data-resto-texto></p>
+          <div class="antes-opciones">
+            <label class="antes-opcion"><input type="radio" name="llegadaResto${Number(c.id)}" value="esperar" checked> Siguen por llegar</label>
+            <label class="antes-opcion"><input type="radio" name="llegadaResto${Number(c.id)}" value="no_llega"> No van a llegar</label>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  actualizarResumenLlegadas();
+  modal.classList.add('show');
+  document.addEventListener('keydown', teclaEnLlegadas, true);
+  setTimeout(() => document.getElementById('btnConfirmarLlegadas')?.focus(), 40);
+}
+
+function cerrarConfirmarLlegadas() {
+  document.getElementById('modalLlegadas')?.classList.remove('show');
+  document.removeEventListener('keydown', teclaEnLlegadas, true);
+  llegadasPorConfirmar = null;
+}
+
+/* Esc cierra ESTA ventana aunque haya otra abierta más abajo en la página
+   (la ficha del producto): el Esc general cierra la última del documento. */
+function teclaEnLlegadas(e) {
+  if (e.key !== 'Escape' || !llegadasPorConfirmar) return;
+  if (document.getElementById('ventanaDialogo')?.classList.contains('show')) return;
+  e.preventDefault(); e.stopPropagation();
+  cerrarConfirmarLlegadas();
+}
+
+/* Lee lo escrito en cada fila. `error` trae el primer problema, con la fila
+   que hay que corregir. */
+function leerLlegadasEscritas() {
+  const filas = Array.from(document.querySelectorAll('#llegadasLista .llegada-fila'));
+  const llegadas = [];
+  for (const fila of filas) {
+    const id = Number(fila.dataset.llegada);
+    const total = num(fila.dataset.total);
+    const input = fila.querySelector('[data-llegaron]');
+    const escrito = String(input?.value ?? '').trim();
+    const llegaron = Number(escrito);
+    if (escrito === '' || !Number.isInteger(llegaron) || llegaron < 1 || llegaron > total) {
+      return { error: `Escribe cuántas llegaron: un número entre 1 y ${total}. Si no llegó ninguna, sácala de la lista.`, input };
+    }
+    const resto = llegaron < total ? (fila.querySelector('input[type="radio"]:checked')?.value || 'esperar') : null;
+    llegadas.push({ id, total, llegaron, resto });
+  }
+  return { llegadas };
+}
+
+function actualizarResumenLlegadas() {
+  const resumen = document.getElementById('llegadasResumen');
+  const btn = document.getElementById('btnConfirmarLlegadas');
+  let entran = 0, esperan = 0, noLlegan = 0, validas = 0;
+
+  document.querySelectorAll('#llegadasLista .llegada-fila').forEach(fila => {
+    const total = num(fila.dataset.total);
+    const escrito = String(fila.querySelector('[data-llegaron]')?.value ?? '').trim();
+    const llegaron = Number(escrito);
+    const ok = escrito !== '' && Number.isInteger(llegaron) && llegaron >= 1 && llegaron <= total;
+    const faltan = ok ? total - llegaron : 0;
+    const caja = fila.querySelector('.llegada-resto');
+    fila.classList.toggle('llegada-parcial', faltan > 0);
+    if (caja) {
+      caja.style.display = faltan > 0 ? '' : 'none';
+      const texto = caja.querySelector('[data-resto-texto]');
+      if (texto) texto.textContent = faltan === 1 ? 'Falta 1 unidad. ¿Qué pasa con ella?' : `Faltan ${faltan} unidades. ¿Qué pasa con ellas?`;
+    }
+    if (!ok) return;
+    validas += 1;
+    entran += llegaron;
+    if (faltan > 0) {
+      if (fila.querySelector('input[type="radio"]:checked')?.value === 'no_llega') noLlegan += faltan;
+      else esperan += faltan;
+    }
+  });
+
+  if (resumen) {
+    const partes = [`Entran <b>${entran}</b> unidad(es) al stock`];
+    if (esperan) partes.push(esperan === 1 ? '1 sigue por llegar' : `${esperan} siguen por llegar`);
+    if (noLlegan) partes.push(noLlegan === 1 ? '1 no va a llegar' : `${noLlegan} no van a llegar`);
+    resumen.innerHTML = partes.join(' · ') + '.';
+  }
+  if (btn) btn.textContent = validas > 1 ? `Sí, llegaron las ${validas}` : 'Sí, llegó';
+}
+
+async function confirmarLlegadasEscritas() {
+  const pendiente = llegadasPorConfirmar;
+  if (!pendiente) return;
+  const { llegadas, error, input } = leerLlegadasEscritas();
+  if (error) { showToast(error, 'err'); input?.focus(); input?.select?.(); return; }
+
+  const btn = document.getElementById('btnConfirmarLlegadas');
+  if (btn) btn.disabled = true;
   try {
-    const r = await API.productos.compraRecibida(ingresoId);
-    showToast(`${c.producto}: llegó, stock ${num(r.stock_nuevo)}`, 'ok');
-    // v126 (sql/87): unidades que ya se habían pagado en la web mientras venían
-    if (num(r?.apartadas_web) > 0) alert(`${num(r.apartadas_web)} unidad(es) de "${c.producto}" ya estaban vendidas en sevelin.cl: apártalas, no entraron al stock. Mira Página Web → Pedidos Web.`);
-    if (r?.aviso_tienda) setTimeout(() => showToast(r.aviso_tienda, 'ok'), 1800);
+    const r = await API.productos.marcarLlegadas(llegadas.map(l => ({
+      id: l.id,
+      ...(l.resto ? { cantidad_recibida: l.llegaron, resto: l.resto } : {})
+    })));
+    const resultados = r?.resultados || [];
+    const nombreDe = id => pendiente.compras.find(c => Number(c.id) === Number(id))?.producto || `Compra #${id}`;
+    cerrarConfirmarLlegadas();
+
+    const buenas = resultados.filter(x => x.ok);
+    const malas = resultados.filter(x => !x.ok);
+    buenas.forEach(x => enCaminoMarcadas.delete(Number(x.id)));
+    if (buenas.length) {
+      showToast(buenas.length === 1
+        ? `${nombreDe(buenas[0].id)}: llegó, stock ${num(buenas[0].stock_nuevo)}`
+        : `Llegaron ${num(r.unidades)} unidad(es) de ${buenas.length} compras`, 'ok');
+    }
+
+    /* Lo que hay que LEER se muestra en una ventana, no en un aviso que se
+       va solo: una compra que no entró, unidades ya vendidas en la web que
+       hay que apartar, o plata que no llegó. */
+    const hayQueLeer = malas.length || buenas.some(x => num(x.apartadas_web) > 0 || x.aviso_gasto || x.aviso_capas);
+    if (hayQueLeer) {
+      const filas = resultados.map(x => {
+        if (!x.ok) return `<li class="mal"><strong>${escHtml(nombreDe(x.id))}</strong>: no se confirmó. ${escHtml(x.error || '')}</li>`;
+        const avisos = [];
+        if (num(x.apartadas_web) > 0) avisos.push(`${num(x.apartadas_web)} unidad(es) ya estaban vendidas en sevelin.cl: apártalas, no entraron al stock. Mira Página Web → Pedidos Web.`);
+        if (x.aviso_gasto) avisos.push(x.aviso_gasto);
+        if (x.aviso_capas) avisos.push(x.aviso_capas);
+        return `<li><strong>${escHtml(nombreDe(x.id))}</strong>: entraron ${num(x.llegaron) - num(x.apartadas_web)}, stock ${num(x.stock_nuevo)}`
+          + (num(x.faltan) > 0 ? `. Faltaron ${num(x.faltan)}: ${x.resto === 'no_llega' ? 'no van a llegar' : 'siguen por llegar'}` : '')
+          + avisos.map(a => `<small>${escHtml(a)}</small>`).join('') + '</li>';
+      }).join('');
+      await ventanaAviso('', {
+        titulo: malas.length ? `${malas.length} compra(s) no se confirmaron` : 'Llegadas confirmadas: lee esto',
+        detalleHtml: `<ul class="llegada-resultado">${filas}</ul>`,
+        peligro: malas.length > 0
+      });
+    } else if (buenas.some(x => x.aviso_tienda)) {
+      setTimeout(() => showToast('La tienda avisa por correo a quienes esperaban lo que ya no está por llegar', 'ok'), 1800);
+    }
+
     await actualizarAvisoEnCamino();
-    if (!enCaminoCache?.total) cerrarModal('modalEnCamino');
-    else pintarEnCamino();
-    if (typeof cargarProductos === 'function') cargarProductos(true);
+    if (!enCaminoCache?.total) {
+      cerrarModal('modalEnCamino');
+      const btnCamino = document.getElementById('btnEnCamino');
+      if (btnCamino) btnCamino.hidden = true;
+    } else if (document.getElementById('modalEnCamino')?.classList.contains('show')) pintarEnCamino();
+    if (esAdmin() && typeof cargarProductos === 'function') cargarProductos(true);
+    if (pendiente.alTerminar) await pendiente.alTerminar(resultados);
   } catch (err) {
     showToast(err.message || 'No se pudo confirmar la llegada', 'err');
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }

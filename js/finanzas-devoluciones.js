@@ -227,7 +227,8 @@ function pintarDetalleDevoluciones() {
 async function marcarNotaCredito(id, emitida) {
   let folio = null;
   if (emitida) {
-    folio = prompt('Folio de la Nota de Crédito (opcional, puedes dejarlo vacío):') ?? null;
+    folio = await ventanaPreguntar('Es opcional: puedes dejarlo vacío.', { titulo: 'Folio de la Nota de Crédito', textoSi: 'Marcar como emitida', numerico: true, maximo: 20 });
+    if (folio === null) return;   // canceló: no se marca nada
     if (folio !== null) folio = String(folio).trim();
   }
   try {

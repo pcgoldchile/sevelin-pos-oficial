@@ -160,7 +160,7 @@ function renderLotesModal(productoId, lotes) {
 }
 
 async function quitarLote(productoId, loteId) {
-  if (!confirm('¿Eliminar esta capa? Su stock vivo se descontará del producto.')) return;
+  if (!await ventanaConfirmar('¿Eliminar esta capa?\n\nSu stock vivo se descontará del producto.', { peligro: true })) return;
 
   try {
     const r = await API.productos.eliminarLote_capa(productoId, loteId);

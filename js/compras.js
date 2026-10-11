@@ -748,10 +748,10 @@ async function guardarCompra() {
         if (cambioMetodo) detalle += `\n• El gasto pasará de descontarse de ${canalAntes} a ${canalAhora}.`;
         if (cambioMonto) detalle += `\n• El monto cambia de ${fmtCLP(num(antes.costo_total))} a ${fmtCLP(num(payload.costo_total))}.`;
 
-        const ok = window.confirm(
+        const ok = await ventanaConfirmar(
           `Este cambio moverá los saldos de tus canales:` + detalle +
-          `\n\n¿Deseas recalcular automáticamente los saldos (Efectivo/Banco)?\n\n` +
-          `Aceptar = guardar y recalcular.\nCancelar = no guardar.`
+          `\n\nSi sigues, se guarda el gasto y los saldos de Efectivo y Banco se recalculan solos.`,
+          { titulo: '¿Guardar y recalcular los saldos?', textoSi: 'Guardar y recalcular', textoNo: 'No guardar' }
         );
         if (!ok) { if (elBtnGuardarCompra) elBtnGuardarCompra.disabled = false; return; }
       }
@@ -1131,7 +1131,7 @@ async function eliminarClasificacion(id) {
   const aviso = clasif.usos > 0
     ? `"${clasif.nombre}" tiene ${clasif.usos} gasto(s) asociados.\n\nNo se eliminará: se desactivará para conservar el historial contable. ¿Continuar?`
     : `¿Eliminar la clasificación "${clasif.nombre}"?`;
-  if (!confirm(aviso)) return;
+  if (!await ventanaConfirmar(aviso, clasif.usos > 0 ? { titulo: 'Esta clasificación tiene gastos', textoSi: 'Sí, desactivar' } : { peligro: true })) return;
 
   try {
     const r = await API.compras.eliminarClasificacion(clasif.id);

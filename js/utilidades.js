@@ -1186,7 +1186,7 @@ async function subirCsvIvaSii(e) {
   const sugerido = ivaSiiActual && ivaSiiActual.periodo
     ? `${ivaSiiActual.periodo.slice(0, 4)}-${ivaSiiActual.periodo.slice(4)}`
     : todayISO().slice(0, 7);
-  const periodo = prompt('¿De qué mes es este RCV de compras? (AAAA-MM)', sugerido);
+  const periodo = await ventanaPreguntar('Escríbelo como AAAA-MM, por ejemplo 2026-09.', { titulo: '¿De qué mes es este RCV de compras?', valor: sugerido, placeholder: 'AAAA-MM', maximo: 7 });
   if (!periodo) return;
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(periodo.trim())) { showToast('Escribe el mes como AAAA-MM, por ejemplo 2026-09', 'err'); return; }
 
@@ -1401,8 +1401,10 @@ async function sincronizarIvaAlDia() {
 async function editarRemanenteIvaSii() {
   const d = ivaSiiActual;
   if (!d) return;
-  const valor = prompt(`Remanente de crédito fiscal que quedó de ${d.remanentePeriodo} (código 77 del F29):`,
-    d.remanenteAnterior === null ? '' : String(d.remanenteAnterior));
+  const valor = await ventanaPreguntar('Es el código 77 del F29. Escribe solo el número.', {
+    titulo: `Remanente de crédito fiscal de ${d.remanentePeriodo}`,
+    valor: d.remanenteAnterior === null ? '' : String(d.remanenteAnterior), numerico: true, maximo: 15, textoSi: 'Guardar'
+  });
   if (valor === null) return;
   const monto = Number(String(valor).replace(/[^\d]/g, ''));
   if (!Number.isFinite(monto)) { showToast('Escribe solo el número', 'err'); return; }

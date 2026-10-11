@@ -258,11 +258,11 @@ async function confirmarDevolucion() {
     /* Los avisos que exigen una acción suya NO van en un toast que se
        desvanece: se quedan en pantalla hasta que los lea. */
     if (r.requiere_nota_credito) {
-      alert(`Recuerda emitir la NOTA DE CRÉDITO en el SII.\n\n` +
+      await ventanaAviso(`Recuerda emitir la NOTA DE CRÉDITO en el SII.\n\n` +
             `Esta venta emitió ${r.tipo_dte} por ${fmtCLP(r.monto)}. ` +
             `El POS ya dejó el registro, pero el documento lo emites tú en el sitio del SII.`);
     }
-    if (r.aviso_caja) alert('⚠️ ' + r.aviso_caja);
+    if (r.aviso_caja) await ventanaAviso(r.aviso_caja, { titulo: 'Revisa la caja' });
 
     /* Lo que no volvió al stock se dio de baja solo, con su costo real.
        Se avisa porque es plata que se va del mes: el dueño tiene que

@@ -554,9 +554,10 @@ async function eliminarActivo(id) {
   const activo = activosLista.find(a => a.id === id);
   if (!activo) return;
 
-  if (!confirm(
+  if (!await ventanaConfirmar(
     `¿Deshacer el registro de "${activo.nombre}"?\n\n` +
-    `${num(activo.cantidad)} unidad(es) vuelven al stock, como si nunca hubieras apartado nada.`
+    `${num(activo.cantidad)} unidad(es) vuelven al stock, como si nunca hubieras apartado nada.`,
+    { textoSi: 'Sí, deshacer' }
   )) return;
 
   try {

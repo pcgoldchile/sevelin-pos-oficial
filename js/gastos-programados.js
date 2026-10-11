@@ -145,7 +145,7 @@ async function agregarProgramado() {
 }
 
 async function cancelarProgramado(id) {
-  if (!confirm('¿Cancelar este gasto programado? No se cargará a Gastos cuando llegue su fecha.')) return;
+  if (!await ventanaConfirmar('¿Cancelar este gasto programado?\n\nNo se cargará a Gastos cuando llegue su fecha.', { peligro: true, textoSi: 'Sí, cancelarlo', textoNo: 'Volver' })) return;
   try {
     await API.compras.cancelarProgramado(id);
     showToast('Gasto programado cancelado', 'ok');

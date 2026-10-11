@@ -236,7 +236,7 @@
       </button>
       <!-- Mercadería comprada que todavía no llega (sql/59). Rojo cuando la
            fecha estimada ya pasó: eso hay que confirmarlo o corregirlo. -->
-      <button id="btnEnCamino" class="btn-notificaciones btn-camino admin-only" title="Mercadería comprada que todavía no llega" hidden>
+      <button id="btnEnCamino" class="btn-notificaciones btn-camino" title="Mercadería comprada que todavía no llega" hidden>
         <span class="chip-punto" aria-hidden="true"></span><span id="textoEnCamino">Por llegar</span>
       </button>
       <!-- Plata devuelta en efectivo que no quedó en ninguna caja (sql/61).
@@ -7379,9 +7379,33 @@
     <div class="modal-box" style="max-width:740px;">
       <h2>🚚 Mercadería por llegar</h2>
       <p class="modal-hint" id="enCaminoResumen">—</p>
+      <!-- v134: marcar varias de una vez -->
+      <div class="camino-barra" id="enCaminoBarra">
+        <label class="camino-todas"><input type="checkbox" class="camino-casilla" id="enCaminoTodas"> Marcar todas</label>
+        <span class="modal-hint" id="enCaminoMarcadasTexto" style="margin:0;"></span>
+      </div>
       <div id="enCaminoLista" style="max-height:52vh; overflow:auto;"></div>
       <div class="modal-foot">
         <button class="btn btn-ghost" id="btnCerrarEnCamino" type="button">Cerrar</button>
+        <button class="btn btn-green" id="btnMarcarLlegadas" type="button" disabled>📦 Marcar llegadas</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- v134: confirmar una o varias llegadas, con cuántas unidades llegaron de cada una — js/ubicaciones.js -->
+  <div id="modalLlegadas" class="modal-overlay" style="z-index:10050;">
+    <div class="modal-box" style="max-width:620px;">
+      <div class="ventana-cabeza">
+        <span class="ventana-icono" aria-hidden="true">📦</span>
+        <h2 id="llegadasTitulo">¿Llegó esta mercadería?</h2>
+      </div>
+      <p class="modal-hint">Revisa cuántas unidades llegaron de cada una. Si llegaron menos, cambia el número.</p>
+      <div class="llegada-lista" id="llegadasLista"></div>
+      <div class="llegada-resumen" id="llegadasResumen"></div>
+      <p class="llegada-nota">Las unidades se suman al stock. Si de un producto no queda nada más por llegar, la tienda le avisa por correo a quienes lo estaban esperando.</p>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarLlegadas" type="button">Cancelar</button>
+        <button class="btn btn-green" id="btnConfirmarLlegadas" type="button">Sí, llegaron</button>
       </div>
     </div>
   </div>
@@ -7940,6 +7964,7 @@
   <!-- Orden importante: api.js y config.js primero -->
   <script src="js/api.js"></script>
   <script src="js/config.js"></script>
+  <script src="js/ventanas.js"></script>   <!-- v134: confirmar, avisar y preguntar con diseño; reemplaza confirm/alert/prompt del navegador -->
   <script src="js/auth.js"></script>
   <script src="js/inactividad-global.js"></script>
   <script src="js/pinpad.js"></script>

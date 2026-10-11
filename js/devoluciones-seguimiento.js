@@ -162,7 +162,7 @@ async function guardarSeguimientoDevolucion() {
     /* El ajuste se avisa aparte y con claridad: es plata, y es SU decisión.
        No se aplica nada acá. */
     if (r.ajuste_propuesto) {
-      alert('El POS calculó que ' + fmtCLP(r.ajuste_propuesto.monto) + ' dejaron de ser pérdida.\n\n' +
+      await ventanaAviso('El POS calculó que ' + fmtCLP(r.ajuste_propuesto.monto) + ' dejaron de ser pérdida.\n\n' +
             'NO se descontó nada todavía. Tienes que aprobarlo tú desde el aviso ' +
             '"📮 Seguimiento de devoluciones" del header.');
     }
@@ -254,7 +254,7 @@ function abrirModalAvisosSeguimiento() {
 }
 
 async function resolverAjusteSeguimiento(id, aprobar) {
-  if (aprobar && !confirm('Esto va a descontar esa plata de la pérdida anotada en el mes. ¿Aplicarlo?')) return;
+  if (aprobar && !await ventanaConfirmar('Esto va a descontar esa plata de la pérdida anotada en el mes. ¿Aplicarlo?', { titulo: '¿Aplicar el ajuste?', textoSi: 'Sí, aplicarlo' })) return;
   try {
     const r = await API.devoluciones.resolverAjuste(id, aprobar);
     showToast(r.aplicado

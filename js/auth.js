@@ -122,6 +122,8 @@ function aplicarRol(rol) {
 function mostrarLogin() {
   if (!elModalLogin) return;
   elModalLogin.classList.add('show');
+  // v134: una confirmación abierta no puede quedar encima del PIN (js/ventanas.js)
+  if (typeof descartarVentanaDialogo === 'function') descartarVentanaDialogo();
   setTimeout(() => elPinInput?.focus(), 60);
 }
 

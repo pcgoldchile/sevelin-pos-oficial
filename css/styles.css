@@ -5110,3 +5110,54 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
 .antes-resultado b { color: var(--green); font-size: 15px; }
 .padres-subtitulo { font-size: 14px; font-weight: 700; color: var(--text-100); margin: 22px 0 8px; }
 #padresPozoMes { height: 2.6rem; padding: 0 .7rem; border-radius: .75rem; border: 1px solid var(--border); background: var(--surface-soft); color: var(--text-100); }
+
+/* Ventanas de confirmar, avisar y preguntar (v134, js/ventanas.js): reemplazan a
+   confirm(), alert() y prompt() del navegador. Van por encima de cualquier modal. */
+.ventana-dialogo { z-index: 10200; }
+.ventana-dialogo .modal-box { max-width: 480px; }
+.ventana-cabeza { display: flex; align-items: center; gap: 12px; }
+.ventana-cabeza h2 { font-size: 18px; line-height: 1.3; margin: 0; }
+.ventana-icono {
+    flex: none; width: 38px; height: 38px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 19px; font-weight: 800; line-height: 1;
+    background: var(--tint-blue); color: var(--blue); border: 1px solid rgba(var(--blue-rgb), .4);
+}
+.ventana-icono-peligro { background: var(--tint-red); color: var(--red); border-color: rgba(239, 68, 68, .45); }
+.ventana-icono-aviso { background: var(--tint-gold); color: var(--gold); border-color: rgba(var(--gold-rgb), .45); }
+.ventana-cuerpo { margin-top: 14px; font-size: 14px; line-height: 1.5; color: var(--text-300); overflow-wrap: anywhere; }
+.ventana-cuerpo p { margin: 0; }
+.ventana-cuerpo p + p { margin-top: 10px; }
+.ventana-campo { margin-top: 14px; }
+
+/* Mercadería por llegar (v134): casillas para marcar varias y la ventana que confirma la llegada */
+.camino-barra { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 12px 0 10px; }
+.camino-todas { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--text-300); cursor: pointer; }
+.camino-casilla { width: 20px; height: 20px; margin: 2px 0 0; padding: 0; flex: none; accent-color: var(--blue); cursor: pointer; }
+#enCaminoLista .agotado-fila + .agotado-fila { margin-top: 10px; }
+#enCaminoLista .agotado-fila.camino-marcada { border-color: rgba(var(--blue-rgb), .6); background: var(--tint-blue); }
+.llegada-lista { display: flex; flex-direction: column; gap: 10px; max-height: 50vh; overflow: auto; margin-top: 14px; }
+.llegada-fila { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; background: var(--surface-soft); }
+.llegada-fila.llegada-parcial { border-color: rgba(var(--gold-rgb), .55); }
+.llegada-cabecera { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.llegada-nombre { min-width: 0; }
+.llegada-nombre strong { display: block; color: var(--text-100); overflow-wrap: anywhere; }
+.llegada-nombre small { color: var(--text-muted); font-size: 12.5px; }
+.llegada-cuantas { flex: none; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-muted); white-space: nowrap; }
+.llegada-cuantas input {
+    width: 76px; height: 40px; text-align: center; font-size: 16px; font-weight: 700;
+    border-radius: 10px; border: 1px solid var(--border-strong); background: var(--bg-900); color: var(--text-100);
+}
+.llegada-resto { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border-strong); }
+.llegada-resto p { margin: 0 0 8px; font-size: 13px; color: var(--gold); font-weight: 600; }
+.llegada-resumen { margin-top: 14px; padding: 10px 14px; border-radius: 12px; background: var(--tint-green); color: var(--text-100); font-size: 14px; }
+.llegada-resumen b { color: var(--green); }
+.llegada-nota { margin-top: 10px; font-size: 12.5px; color: var(--text-muted); line-height: 1.45; }
+.llegada-resultado { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.llegada-resultado li { padding: 9px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-soft); font-size: 13.5px; }
+.llegada-resultado li.mal { border-color: rgba(239, 68, 68, .5); color: var(--red); }
+.llegada-resultado li small { display: block; margin-top: 3px; color: var(--gold); }
+@media (max-width: 560px) {
+    .llegada-cabecera { flex-direction: column; }
+    .llegada-cuantas { width: 100%; justify-content: space-between; }
+}

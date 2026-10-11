@@ -4042,6 +4042,207 @@ app.post('/api/productos/carga-masiva', auth(true), async (req, res) => {
   }
 });
 
+/* v134 (dueño, 11-10-2026): "si de 10 llegan 8… o llegaron las 8 y se esperan
+   2 todavía". El núcleo de "Ya llegó" quedó en una función porque ahora lo
+   usan dos rutas: la de una compra y la de varias marcadas juntas.
+
+   `cantidadRecibida` vacío = llegó la compra entera. Si llegaron menos,
+   `resto` dice qué pasa con las que faltan:
+     · 'esperar'  → siguen por llegar: la compra se parte en dos filas, la que
+                    llegó (recibida) y la que falta (todavía en camino).
+     · 'no_llega' → el proveedor mandó menos: la compra queda por lo que llegó.
+
+   No hay transacciones en supabase-js. Por eso lo primero que se escribe es
+   "esta compra ya no está en camino", con la condición en_camino = true: dos
+   clics a la vez (o el dueño y un trabajador marcando lo mismo) no suman el
+   stock dos veces, porque solo uno de los dos alcanza a tomarla. Si un paso
+   posterior falla, se deshace lo anterior en orden inverso.
+
+   Devuelve { error: { estado, mensaje } } o { resultado }. */
+async function recibirCompraPorLlegar(id, opciones = {}) {
+  const rechazo = (estado, mensaje) => ({ error: { estado, mensaje } });
+  if (!Number.isFinite(id) || id <= 0) return rechazo(400, 'Entrada inválida');
+
+  const { data: ing, error: errI } = await db.from('ingresos_mercaderia')
+    .select('*').eq('id', id).maybeSingle();
+  if (errI) throw errI;
+  if (!ing) return rechazo(404, 'Compra no encontrada');
+  if (!ing.en_camino) return rechazo(400, 'Esa compra no estaba marcada como en camino');
+
+  const total = num(ing.cantidad);
+  let llegaron = total;
+  const cruda = opciones.cantidadRecibida;
+  if (cruda !== undefined && cruda !== null && String(cruda).trim() !== '') {
+    llegaron = Number(cruda);
+    if (!Number.isFinite(llegaron) || llegaron <= 0) return rechazo(400, 'Las unidades que llegaron tienen que ser 1 o más');
+    if (llegaron > total) {
+      return rechazo(400, `Esta compra es de ${total} unidad(es): no pueden haber llegado ${llegaron}. Si te mandaron de más, corrige la cantidad con Editar antes de confirmar.`);
+    }
+    if (llegaron < total && !Number.isInteger(llegaron)) return rechazo(400, 'Las unidades que llegaron tienen que ser un número entero');
+  }
+  const faltan = total - llegaron;
+  const resto = faltan > 0 ? (opciones.resto === 'no_llega' ? 'no_llega' : 'esperar') : null;
+
+  const { data: producto, error: errP } = await db.from('productos')
+    .select('id, nombre, stock, usa_lotes, stock_ilimitado, costo_unitario, reservado_web, stock_por_llegar')
+    .eq('id', ing.producto_id).maybeSingle();
+  if (errP) throw errP;
+  if (!producto) return rechazo(404, 'Producto no encontrado');
+
+  // ¿Qué más viene de este mismo producto, aparte de esta compra?
+  const { data: otras, error: errO } = await db.from('ingresos_mercaderia')
+    .select('id, cantidad').eq('producto_id', producto.id).eq('en_camino', true).neq('id', id);
+  if (errO) throw errO;
+  const vieneAparte = (otras || []).reduce((s, o) => s + num(o.cantidad), 0);
+
+  /* v126 (sql/87) — unidades de esta compra que ya se pagaron en sevelin.cl
+     mientras venían en camino. Tienen dueño: no entran al stock para la
+     venta. El costo de esa venta ya quedó anotado al pagar. */
+  const reservadas = producto.stock_ilimitado ? 0 : Math.max(0, num(producto.reservado_web));
+  const apartadas = Math.min(reservadas, llegaron);
+  const reservadasQueSiguen = reservadas - apartadas;
+
+  /* Lo que todavía viene después de esto: lo de otras compras y, si se
+     esperan, las que faltan de esta. */
+  const sigueViniendo = vieneAparte + (resto === 'esperar' ? faltan : 0);
+  if (reservadasQueSiguen > sigueViniendo) {
+    return rechazo(409, `Hay ${reservadasQueSiguen} unidad(es) de "${producto.nombre}" ya pagadas en sevelin.cl que quedarían sin producto. ` +
+      'Marca que las que faltan siguen por llegar, o resuelve antes esos pedidos en Página Web → Pedidos Web.');
+  }
+  const quedanEnCamino = sigueViniendo > 0;
+
+  const ahora = new Date().toISOString();
+  const deshacer = [];   // pasos para volver atrás si algo falla a medio camino
+  try {
+    // 1) Tomar la compra. Si otro clic llegó antes, no devuelve fila.
+    const cambiosIngreso = { en_camino: false, recibido_en: ahora };
+    if (faltan > 0) {
+      cambiosIngreso.cantidad = llegaron;
+      const apunte = resto === 'esperar'
+        ? `Llegaron ${llegaron} de ${total}; las otras ${faltan} siguen por llegar.`
+        : `Llegaron ${llegaron} de ${total}; las otras ${faltan} no llegaron.`;
+      cambiosIngreso.nota = [ing.nota, apunte].filter(Boolean).join(' · ').slice(0, 300);
+    }
+    const { data: tomada, error: errT } = await db.from('ingresos_mercaderia')
+      .update(cambiosIngreso).eq('id', id).eq('en_camino', true).select('id');
+    if (errT) throw errT;
+    if (!Array.isArray(tomada) || !tomada.length) return rechazo(409, 'Esa compra ya fue marcada como recibida');
+    deshacer.push(() => db.from('ingresos_mercaderia')
+      .update({ en_camino: true, recibido_en: null, cantidad: total, nota: ing.nota || null }).eq('id', id));
+
+    // 2) Las que faltan y se esperan: una compra aparte, todavía en camino
+    let restoId = null;
+    if (resto === 'esperar') {
+      const { id: _id, creado_en: _creado, recibido_en: _recibido, ...copia } = ing;
+      const { data: fila, error: errR } = await db.from('ingresos_mercaderia').insert([{
+        ...copia,
+        cantidad: faltan,
+        en_camino: true,
+        nota: [ing.nota, `Resto de una compra de ${total}: ya llegaron ${llegaron}.`].filter(Boolean).join(' · ').slice(0, 300)
+      }]).select('id').single();
+      if (errR) throw errR;
+      restoId = fila.id;
+      deshacer.push(() => db.from('ingresos_mercaderia').delete().eq('id', restoId));
+    }
+
+    /* 3) La capa PEPS se crea ahora y no al comprar: antes de llegar no hay
+       unidades que consumir, y una capa con stock que no existe haría que
+       una venta tomara el costo de mercadería que todavía viaja. */
+    let lote = null;
+    if (producto.usa_lotes) {
+      const { data, error } = await db.from('producto_lotes').insert([{
+        producto_id: producto.id,
+        cantidad: llegaron,
+        cantidad_inicial: llegaron,
+        costo_unitario: num(ing.costo_unitario),
+        referencia: ing.referencia || null
+      }]).select().single();
+      if (error) throw error;
+      lote = data;
+      deshacer.push(() => db.from('producto_lotes').delete().eq('id', lote.id));
+    }
+
+    // 4) El producto: stock, reservas y si sigue "por llegar"
+    const sumar = !producto.stock_ilimitado;
+    const stockNuevo = sumar ? num(producto.stock) + llegaron - apartadas : num(producto.stock);
+    const cambios = {};
+    if (sumar) { cambios.stock = stockNuevo; cambios.stock_actualizado_en = ahora; }
+    if (apartadas > 0) cambios.reservado_web = reservadasQueSiguen;
+    if (num(producto.costo_unitario) === 0 && num(ing.costo_unitario) > 0) {
+      cambios.costo_unitario = num(ing.costo_unitario);
+    }
+    if (!quedanEnCamino) {
+      cambios.por_llegar = false;
+      cambios.stock_por_llegar = 0;
+      cambios.fecha_llegada_estimada = null;
+    } else {
+      /* La tienda no puede vender por adelantado más de lo que de verdad
+         sigue viniendo y no tiene dueño. Solo baja: un tope menor que puso
+         el dueño a mano se respeta. */
+      const tope = Math.max(0, sigueViniendo - reservadasQueSiguen);
+      if (num(producto.stock_por_llegar) > tope) cambios.stock_por_llegar = tope;
+    }
+    if (Object.keys(cambios).length) {
+      const { error } = await db.from('productos').update(cambios).eq('id', producto.id);
+      if (error) throw error;
+    }
+
+    /* 5) Las apartadas salen de las capas igual que salen del stock. Va al
+       final y no se deshace: si falla, el stock ya quedó bien y solo queda una
+       capa con unidades de más, que se avisa. */
+    let avisoCapas = null;
+    if (lote && apartadas > 0) {
+      const { error: errCapas } = await db.rpc('fifo_consumir', { p_producto_id: producto.id, p_cantidad: apartadas });
+      if (errCapas) {
+        console.error('[POR LLEGAR] no se descontaron las apartadas de las capas:', producto.id, errCapas.message);
+        avisoCapas = `No se pudieron descontar de las capas de costo las ${apartadas} unidad(es) apartadas. Revísalas en la ficha del producto.`;
+      }
+    }
+
+    const montoQueNoLlego = resto === 'no_llega' ? faltan * num(ing.costo_unitario) : 0;
+    return {
+      resultado: {
+        ok: true,
+        id,
+        producto_id: producto.id,
+        producto: producto.nombre,
+        llegaron,
+        faltan,
+        resto,
+        resto_id: restoId,
+        stock_nuevo: stockNuevo,
+        lote,
+        // v126: unidades que ya estaban vendidas por la web; hay que apartarlas para su dueño
+        apartadas_web: apartadas,
+        quedan_en_camino: quedanEnCamino,
+        // Lo que la tienda todavía puede vender por adelantado, para refrescar la ficha abierta
+        stock_por_llegar: cambios.stock_por_llegar !== undefined ? cambios.stock_por_llegar : num(producto.stock_por_llegar),
+        // La tienda avisa por correo a los que reservaron cuando esto se apaga
+        aviso_tienda: quedanEnCamino ? null : 'El producto dejó de estar "por llegar": la tienda avisa a quienes lo esperaban.',
+        aviso_capas: avisoCapas,
+        // El gasto de Finanzas no se toca solo; se ve solo con permiso de costos
+        aviso_gasto: ing.compra_id && montoQueNoLlego > 0
+          ? `Faltaron ${faltan} unidad(es) que suman $${Math.round(montoQueNoLlego).toLocaleString('es-CL')}. La compra está ligada a un gasto de Finanzas: revisa que calce o pide la devolución de esa plata.`
+          : null
+      }
+    };
+  } catch (error) {
+    for (const paso of deshacer.reverse()) {
+      try { const r = await paso(); if (r?.error) console.error('[POR LLEGAR] no se pudo deshacer un paso:', id, r.error.message); }
+      catch (e) { console.error('[POR LLEGAR] no se pudo deshacer un paso:', id, e.message); }
+    }
+    throw error;
+  }
+}
+
+/* Lo que ve de una llegada quien no puede ver costos: sin la capa (trae el
+   costo) y sin el aviso del gasto de Finanzas. */
+function llegadaParaRol(resultado, rol) {
+  if (!resultado || rol === 'admin') return resultado;
+  const { lote, aviso_gasto, aviso_capas, ...visible } = resultado;
+  return { ...visible, lote: lote ? { id: lote.id } : null };
+}
+
 /* La mercadería en camino LLEGÓ (sql/59).
    ------------------------------------------------------------
    Recién acá sube el stock, y recién acá el producto deja de estar "por
@@ -4050,90 +4251,64 @@ app.post('/api/productos/carga-masiva', auth(true), async (req, res) => {
    una fecha estimada no es una caja sobre el mostrador.
 
    Si el producto tiene OTRA compra todavía en camino, `por_llegar` se
-   queda encendido: sigue habiendo mercadería que no ha llegado. */
-app.put('/api/ingresos/:id/recibida', auth(true), async (req, res) => {
-  const id = Number(req.params.id);
-  if (!Number.isFinite(id) || id <= 0) return enviarError(res, 400, 'Entrada inválida');
+   queda encendido: sigue habiendo mercadería que no ha llegado.
 
+   v134: también la puede marcar el trabajador (pedido del dueño, 11-10-2026);
+   sigue siendo un clic de una persona, nunca automático. Body opcional:
+   { cantidad_recibida, resto: 'esperar' | 'no_llega' }. */
+app.put('/api/ingresos/:id/recibida', auth(), async (req, res) => {
   try {
-    const { data: ing, error: errI } = await db.from('ingresos_mercaderia')
-      .select('*').eq('id', id).maybeSingle();
-    if (errI) throw errI;
-    if (!ing) return enviarError(res, 404, 'Compra no encontrada');
-    if (!ing.en_camino) return enviarError(res, 400, 'Esa compra no estaba marcada como en camino');
-
-    const { data: producto, error: errP } = await db.from('productos')
-      .select('id, stock, usa_lotes, stock_ilimitado, costo_unitario, reservado_web').eq('id', ing.producto_id).maybeSingle();
-    if (errP) throw errP;
-    if (!producto) return enviarError(res, 404, 'Producto no encontrado');
-
-    /* v126 (sql/87) — unidades de esta compra que ya se pagaron en sevelin.cl
-       mientras venían en camino. Tienen dueño: no entran al stock para la
-       venta. El costo de esa venta ya quedó anotado al pagar. */
-    const apartadas = producto.stock_ilimitado ? 0 : Math.min(Math.max(0, num(producto.reservado_web)), num(ing.cantidad));
-
-    /* La capa PEPS se crea ahora y no al comprar: antes de llegar no hay
-       unidades que consumir, y una capa con stock que no existe haría que
-       una venta tomara el costo de mercadería que todavía viaja. */
-    let lote = null;
-    if (producto.usa_lotes) {
-      const { data, error } = await db.from('producto_lotes').insert([{
-        producto_id: producto.id,
-        cantidad: num(ing.cantidad),
-        cantidad_inicial: num(ing.cantidad),
-        costo_unitario: num(ing.costo_unitario),
-        referencia: ing.referencia || null
-      }]).select().single();
-      if (error) throw error;
-      lote = data;
-      // Las apartadas salen de las capas igual que salen del stock.
-      if (apartadas > 0) {
-        const { error: errCapas } = await db.rpc('fifo_consumir', { p_producto_id: producto.id, p_cantidad: apartadas });
-        if (errCapas) throw errCapas;
-      }
-    }
-
-    const sumar = !producto.stock_ilimitado;
-    const stockNuevo = sumar ? num(producto.stock) + num(ing.cantidad) - apartadas : num(producto.stock);
-
-    const { error: errU } = await db.from('ingresos_mercaderia')
-      .update({ en_camino: false, recibido_en: new Date().toISOString() }).eq('id', id);
-    if (errU) throw errU;
-
-    // ¿Queda algo más en camino de este mismo producto?
-    const { data: otras } = await db.from('ingresos_mercaderia')
-      .select('id').eq('producto_id', producto.id).eq('en_camino', true).limit(1);
-    const quedanEnCamino = Array.isArray(otras) && otras.length > 0;
-
-    const cambios = {};
-    if (sumar) { cambios.stock = stockNuevo; cambios.stock_actualizado_en = new Date().toISOString(); }
-    if (apartadas > 0) cambios.reservado_web = Math.max(0, num(producto.reservado_web) - apartadas);
-    if (num(producto.costo_unitario) === 0 && num(ing.costo_unitario) > 0) {
-      cambios.costo_unitario = num(ing.costo_unitario);
-    }
-    if (!quedanEnCamino) {
-      cambios.por_llegar = false;
-      cambios.stock_por_llegar = 0;
-      cambios.fecha_llegada_estimada = null;
-    }
-    if (Object.keys(cambios).length) {
-      const { error } = await db.from('productos').update(cambios).eq('id', producto.id);
-      if (error) throw error;
-    }
-
-    res.json({
-      ok: true,
-      stock_nuevo: stockNuevo,
-      lote,
-      // v126: unidades que ya estaban vendidas por la web; hay que apartarlas para su dueño
-      apartadas_web: apartadas,
-      quedan_en_camino: quedanEnCamino,
-      // La tienda avisa por correo a los que reservaron cuando esto se apaga
-      aviso_tienda: quedanEnCamino ? null : 'El producto dejó de estar "por llegar": la tienda avisa a quienes lo esperaban.'
+    const { error, resultado } = await recibirCompraPorLlegar(Number(req.params.id), {
+      cantidadRecibida: req.body?.cantidad_recibida,
+      resto: req.body?.resto
     });
+    if (error) return enviarError(res, error.estado, error.mensaje);
+    res.json(llegadaParaRol(resultado, req.usuario.rol));
   } catch (error) {
     return enviarErrorBD(res, error, 'PUT /api/ingresos/:id/recibida');
   }
+});
+
+/* Varias llegadas de una vez (v134): las casillas de "Mercadería por llegar".
+   POST /api/ingresos/llegadas  { llegadas: [{ id, cantidad_recibida?, resto? }] }
+
+   Van UNA POR UNA y en orden, nunca en paralelo: dos compras del mismo
+   producto leen y escriben el mismo stock. Una que falle no detiene a las
+   demás; se responde fila por fila para que se vea cuál entró y cuál no. */
+const TOPE_LLEGADAS_JUNTAS = 60;
+
+app.post('/api/ingresos/llegadas', auth(), async (req, res) => {
+  const pedidas = Array.isArray(req.body?.llegadas) ? req.body.llegadas : [];
+  if (!pedidas.length) return enviarError(res, 400, 'Marca al menos una compra');
+  if (pedidas.length > TOPE_LLEGADAS_JUNTAS) return enviarError(res, 400, `Son demasiadas de una vez: marca hasta ${TOPE_LLEGADAS_JUNTAS}`);
+
+  const vistos = new Set();
+  for (const p of pedidas) {
+    const id = Number(p?.id);
+    if (!Number.isInteger(id) || id <= 0) return enviarError(res, 400, 'Hay una compra que no es válida: vuelve a abrir la lista');
+    if (vistos.has(id)) return enviarError(res, 400, 'Una compra viene dos veces en la lista');
+    vistos.add(id);
+  }
+
+  const resultados = [];
+  for (const p of pedidas) {
+    const id = Number(p.id);
+    try {
+      const { error, resultado } = await recibirCompraPorLlegar(id, { cantidadRecibida: p.cantidad_recibida, resto: p.resto });
+      if (error) resultados.push({ ok: false, id, error: error.mensaje });
+      else resultados.push(llegadaParaRol(resultado, req.usuario.rol));
+    } catch (error) {
+      console.error('[POR LLEGAR] llegada fallida:', id, error.message);
+      resultados.push({ ok: false, id, error: 'No se pudo confirmar esta llegada. Inténtalo de nuevo.' });
+    }
+  }
+  const buenas = resultados.filter(r => r.ok);
+  res.json({
+    confirmadas: buenas.length,
+    fallidas: resultados.length - buenas.length,
+    unidades: buenas.reduce((s, r) => s + num(r.llegaron), 0),
+    resultados
+  });
 });
 
 /* Cerrar una entrada: se devolvió, se vendió o se liquidó. No se borra —
@@ -4883,7 +5058,7 @@ app.put('/api/productos/:id/relacionados', auth(true), async (req, res) => {
    en rojo. Sin fecha estimada no hay atraso posible — una compra sin ETA
    no está atrasada, solo no se sabe.
    ============================================================ */
-app.get('/api/productos/en-camino', auth(true), async (req, res) => {
+app.get('/api/productos/en-camino', auth(), async (req, res) => {
   try {
     const { data: ingresos, error } = await db.from('ingresos_mercaderia')
       .select('*').eq('en_camino', true).order('fecha_compra').limit(300);
@@ -4927,7 +5102,8 @@ app.get('/api/productos/en-camino', auth(true), async (req, res) => {
     res.json({
       total: compras.length,
       vencidos: compras.filter(c => c.dias_para_llegar !== null && c.dias_para_llegar < 0).length,
-      compras
+      // v134: el trabajador marca llegadas, pero no ve cuánto costó cada compra ni su gasto
+      compras: req.usuario.rol === 'admin' ? compras : compras.map(({ costo_unitario, compra_id, ...visible }) => visible)
     });
   } catch (e) {
     enviarError(res, 500, e.message || 'No se pudo revisar la mercadería en camino');

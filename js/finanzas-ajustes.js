@@ -291,16 +291,12 @@ async function agregarAporte() {
    (el endpoint lo exige) y se confirma el descuento. */
 async function borrarAporte(id, monto, metodo) {
   const canal = esMetodoEfectivo(metodo) ? 'Efectivo' : 'Banco';
-  const ok = window.confirm(
-    `¿Borrar este aporte de ${fmtCLP(monto)}?\n\n` +
-    `Al borrarlo, ese monto se DESCONTARÁ automáticamente del saldo de ${canal}, ` +
-    `porque el aporte dejará de contar.\n\n` +
-    `Esta acción no se puede deshacer.`
-  );
-  if (!ok) return;
-
-  // El endpoint exige PIN de admin
-  const pin = window.prompt('Confirma tu PIN de administrador para borrar el aporte:');
+  // El endpoint exige PIN de admin: la misma ventana confirma y lo pide
+  const pin = await pedirPinAdmin({
+    titulo: `¿Borrar este aporte de ${fmtCLP(monto)}?`,
+    mensaje: `Al borrarlo, ese monto se descuenta solo del saldo de ${canal}, porque el aporte deja de contar. No se puede deshacer.`,
+    textoBoton: '🗑️ Sí, borrar el aporte'
+  });
   if (!pin) return;
 
   try {

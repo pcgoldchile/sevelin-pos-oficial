@@ -452,7 +452,7 @@ async function reenviarQrCorreoOT() {
 async function generarQrNuevoOT() {
   const ot = otDelPreview();
   if (!ot) return;
-  if (ot.token_retiro && !confirm('¿Generar un QR nuevo? El QR anterior dejará de servir de inmediato.')) return;
+  if (ot.token_retiro && !await ventanaConfirmar('¿Generar un QR nuevo?\n\nEl QR anterior dejará de servir de inmediato.', { textoSi: 'Sí, generar otro' })) return;
   try {
     const nueva = await API.ot.qrNuevo(ot.id);
     const i = ordenesList.findIndex(o => String(o.id) === String(ot.id));
@@ -530,7 +530,9 @@ async function copiarTextoParaWhatsApp(texto, mensajeOk) {
   } catch (_) { /* último recurso más abajo */ }
 
   // 3) Último recurso: se muestra el texto para copiarlo a mano
-  window.prompt('Copia este texto y envíalo por WhatsApp:', texto);
+  ventanaPreguntar('El navegador no dejó copiarlo solo. Selecciona el texto y cópialo.', {
+    titulo: 'Copia este texto y envíalo por WhatsApp', valor: texto, maximo: 5000, textoSi: 'Listo', textoNo: 'Cerrar'
+  });
 }
 
 /* ============================================================
@@ -716,7 +718,7 @@ function renderOrdenesTabla(lista) {
 }
 
 async function eliminarOrden(id) {
-  if (!confirm('¿Eliminar esta orden de trabajo? Esta acción no se puede deshacer.')) return;
+  if (!await ventanaConfirmar('¿Eliminar esta orden de trabajo?\n\nEsta acción no se puede deshacer.', { peligro: true })) return;
   try {
     await API.ot.eliminar(id);
     showToast('Orden eliminada', 'ok');
@@ -1097,7 +1099,7 @@ async function quitarSelloOT(selloId) {
   const ot = ultimaOTCreada;
   const sello = (ot?.sellos || []).find(s => String(s.id) === String(selloId));
   if (!ot || !sello) return;
-  if (!confirm(`¿Quitar el sello ${sello.numero_serie} de ${ot.numero_ot}?`)) return;
+  if (!await ventanaConfirmar(`¿Quitar el sello ${sello.numero_serie} de ${ot.numero_ot}?`, { peligro: true, textoSi: 'Sí, quitarlo' })) return;
   try {
     await API.ot.quitarSello(ot.id, sello.id);
     ot.sellos = ot.sellos.filter(s => s.id !== sello.id);

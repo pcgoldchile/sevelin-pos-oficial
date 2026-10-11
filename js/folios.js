@@ -29,7 +29,7 @@ async function guardarFolioDeVenta(ventaId, folio, tipo) {
     return await API.ventas.guardarFolio(ventaId, datos);
   } catch (err) {
     if (err.codigo !== 'folio_repetido') throw err;
-    if (!confirm(`${err.message}\n\n¿Guardarlo igual en esta venta?`)) throw new Error('No se guardó el N°');
+    if (!await ventanaConfirmar(`${err.message}\n\n¿Guardarlo igual en esta venta?`, { titulo: 'Ese N° ya está en otra venta', textoSi: 'Sí, guardarlo igual' })) throw new Error('No se guardó el N°');
     return API.ventas.guardarFolio(ventaId, { ...datos, repetido: true });
   }
 }

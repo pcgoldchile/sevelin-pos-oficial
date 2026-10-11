@@ -593,7 +593,7 @@ async function confirmarCerrarCaja() {
   /* No se puede advertir de una diferencia grande antes de cerrar: sería
      revelar lo esperado, que es justo lo que el arqueo ciego evita. Se
      confirma el conteo y el resultado se muestra DESPUÉS. */
-  if (!confirm(`Vas a cerrar la caja con ${fmtCLP(contado)} contados.\n\nEl cierre no se puede deshacer. ¿Confirmas el conteo?`)) return;
+  if (!await ventanaConfirmar(`Vas a cerrar la caja con ${fmtCLP(contado)} contados.\n\nEl cierre no se puede deshacer. ¿Confirmas el conteo?`, { textoSi: 'Sí, cerrar la caja' })) return;
 
   const btn = document.getElementById('btnConfirmarCerrarCaja');
   if (btn) btn.disabled = true;
@@ -851,7 +851,7 @@ async function borrarGastoFijo(gasto) {
   if (!gasto) return;
   /* Se sugiere pausar antes de borrar: lo habitual es que el gasto vuelva
      (temporada, corte temporal de un servicio) y borrarlo pierde el dato. */
-  if (!confirm(`¿Eliminar "${gasto.nombre}" definitivamente?\n\nSi solo dejará de pagarse un tiempo, conviene pausarlo con ⏸️ en vez de borrarlo.`)) return;
+  if (!await ventanaConfirmar(`¿Eliminar "${gasto.nombre}" definitivamente?\n\nSi solo dejará de pagarse un tiempo, conviene pausarlo con ⏸️ en vez de borrarlo.`, { peligro: true })) return;
 
   try {
     await API.balance.eliminarGastoFijo(gasto.id);

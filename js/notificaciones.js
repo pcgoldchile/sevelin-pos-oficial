@@ -640,7 +640,7 @@ async function confirmarBorradorCompra(id) {
 }
 
 async function descartarBorradorCompra(id) {
-  if (!confirm('¿Descartar este aviso? Se usa cuando el stock subió por algo que no fue una compra (un ajuste de inventario, por ejemplo). No cambia el stock.')) return;
+  if (!await ventanaConfirmar('¿Descartar este aviso?\n\nSe usa cuando el stock subió por algo que no fue una compra (un ajuste de inventario, por ejemplo). No cambia el stock.', { textoSi: 'Sí, descartar' })) return;
   try {
     await API.productos.eliminarIngreso(id);
     showToast('Aviso descartado', 'ok');
@@ -927,9 +927,10 @@ async function marcarFacturaRecibida(ingresoId) {
   const f = (facturasPendientesCache?.facturas || []).find(x => Number(x.id) === Number(ingresoId));
   if (!f) return;
 
-  const numero = prompt(
-    `N° de la factura de "${f.producto}"${f.proveedor ? ' (' + f.proveedor + ')' : ''}:\n\n` +
-    'Déjalo vacío si al final no hubo factura — igual sale del aviso.', '');
+  const numero = await ventanaPreguntar(
+    `"${f.producto}"${f.proveedor ? ' (' + f.proveedor + ')' : ''}\n\n` +
+    'Déjalo vacío si al final no hubo factura: igual sale del aviso.',
+    { titulo: 'N° de la factura', textoSi: 'Guardar', maximo: 80 });
   if (numero === null) return;   // canceló
 
   try {

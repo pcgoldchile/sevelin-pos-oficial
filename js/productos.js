@@ -1872,14 +1872,14 @@ function aplicarFichaGenerada() {
    descripción directo en el editor (sin pasar por la ficha de la IA), se
    ofrece generar el SEO. Una sola vez por edición, solo si no tiene SEO y la
    descripción ya tiene cuerpo: no por cada palabra que se pega. */
-function ofrecerSeoTrasPegarDescripcion() {
+async function ofrecerSeoTrasPegarDescripcion() {
   if (seoIAOfrecido || hayContenidoSeo()) return;
   const texto = editorDescripcion ? editorDescripcion.getText().trim() : '';
   if (texto.length < 200) return;
   const nombre = elProdNombre?.value.trim() || '';
   if (!nombre || nombreProvisorioDeProducto(nombre)) return;   // el SEO se arma con el nombre
   seoIAOfrecido = true;
-  if (confirm('Pegaste una descripción. ¿Generar el SEO (título y descripción para Google) con IA?\n\nQueda en la tarjeta SEO para que lo revises antes de guardar.')) {
+  if (await ventanaConfirmar('Pegaste una descripción. ¿Generar el título y la descripción para Google con IA?\n\nQueda en la tarjeta SEO para que lo revises antes de guardar.', { titulo: '¿Generar el SEO con IA?', textoSi: 'Sí, generar', textoNo: 'Ahora no' })) {
     generarSeoConIA();
   }
 }
@@ -3190,7 +3190,7 @@ async function quitarFotoProducto(idx) {
   const lista = fotosActivas();
   const url = lista[idx];
   if (!url) return;
-  if (!confirm('¿Quitar esta foto?')) return;
+  if (!await ventanaConfirmar('¿Quitar esta foto?', { peligro: true, textoSi: 'Sí, quitarla' })) return;
 
   // Modo creación: solo vive en memoria, no hay nada que borrar en el servidor.
   if (!editingProductId) {
@@ -3314,7 +3314,7 @@ function aplicarSeleccionCategoria() {
 
 // ---------- Eliminar ----------
 async function eliminarProducto(id) {
-  if (!confirm('¿Eliminar este producto del inventario?')) return;
+  if (!await ventanaConfirmar('¿Eliminar este producto del inventario?', { peligro: true })) return;
 
   try {
     await API.productos.eliminar(id);
@@ -3339,7 +3339,7 @@ async function eliminarProducto(id) {
 async function archivarProducto(id, fuente) {
   const producto = (fuente || productsList).find(p => String(p.id) === String(id));
   if (!producto) return;
-  if (!confirm(`Archivar "${producto.nombre}"? Deja de aparecer en el POS y en la tienda web, pero conserva su historial de ventas.`)) return;
+  if (!await ventanaConfirmar(`"${producto.nombre}"\n\nDeja de aparecer en el POS y en la tienda web, pero conserva su historial de ventas.`, { titulo: '¿Archivar este producto?', textoSi: 'Sí, archivar' })) return;
 
   try {
     await API.productos.actualizar(id, { nombre: producto.nombre, archivado: true });
@@ -3356,7 +3356,7 @@ async function archivarProducto(id, fuente) {
 async function desarchivarProducto(id, fuente) {
   const producto = (fuente || productosArchivadosCache || []).find(p => String(p.id) === String(id));
   if (!producto) return;
-  if (!confirm(`¿Desarchivar "${producto.nombre}"? Vuelve a aparecer en el POS, la venta y la tienda web.`)) return;
+  if (!await ventanaConfirmar(`"${producto.nombre}"\n\nVuelve a aparecer en el POS, la venta y la tienda web.`, { titulo: '¿Desarchivar este producto?', textoSi: 'Sí, desarchivar' })) return;
 
   try {
     await API.productos.actualizar(id, { nombre: producto.nombre, archivado: false });
@@ -3387,9 +3387,11 @@ async function alternarArchivadoDesdeEditor() {
   const nombre = (elProdNombre?.value || '').trim() || 'este producto';
 
   const mensajeConfirmacion = nuevoEstado
-    ? `¿Archivar "${nombre}"? Deja de aparecer en el POS y en la tienda web, pero conserva su historial de ventas.`
-    : `¿Desarchivar "${nombre}"? Vuelve a aparecer en el POS, la venta y la tienda web.`;
-  if (!confirm(mensajeConfirmacion)) return;
+    ? `"${nombre}"\n\nDeja de aparecer en el POS y en la tienda web, pero conserva su historial de ventas.`
+    : `"${nombre}"\n\nVuelve a aparecer en el POS, la venta y la tienda web.`;
+  if (!await ventanaConfirmar(mensajeConfirmacion, nuevoEstado
+    ? { titulo: '¿Archivar este producto?', textoSi: 'Sí, archivar' }
+    : { titulo: '¿Desarchivar este producto?', textoSi: 'Sí, desarchivar' })) return;
 
   try {
     await API.productos.actualizar(editingProductId, { nombre, archivado: nuevoEstado });
@@ -3925,19 +3927,20 @@ document.addEventListener('DOMContentLoaded', () => {
 /* "Ya llegó": sube el stock y, si no queda nada más en camino, apaga el
    "por llegar" del producto — lo que hace que la tienda le avise por
    correo a quienes lo reservaron. Por eso se confirma antes. */
-async function recibirCompraEnCamino(id) {
+function recibirCompraEnCamino(id) {
   const ing = ingresosDelProducto.find(x => Number(x.id) === Number(id));
   if (!ing) return;
-  if (!confirm(`¿Llegaron las ${num(ing.cantidad)} unidades?
+  /* v134: la confirmación, el "llegaron menos" y los avisos son los de la
+     ventana de Mercadería por llegar; acá solo se refresca la ficha. */
+  abrirConfirmarLlegadas(
+    [{ id: ing.id, producto: (elProdNombre?.value || '').trim() || 'Este producto', cantidad: ing.cantidad, proveedor: ing.proveedor }],
+    (resultados) => refrescarFichaTrasLlegada(resultados.find(x => x.ok && Number(x.id) === Number(id)))
+  );
+}
 
-Se suman al stock y, si no queda nada más por llegar, la tienda le avisa por correo a quienes lo estaban esperando.`)) return;
-
+async function refrescarFichaTrasLlegada(r) {
+  if (!r) return;
   try {
-    const r = await API.productos.compraRecibida(id);
-    showToast(`Llegó: stock ${num(r.stock_nuevo)}`, 'ok');
-    if (num(r?.apartadas_web) > 0) alert(`${num(r.apartadas_web)} unidad(es) ya estaban vendidas en sevelin.cl: apártalas, no entraron al stock. Mira Página Web → Pedidos Web.`);
-    if (r?.aviso_tienda) setTimeout(() => showToast(r.aviso_tienda, 'ok'), 1800);
-
     const elStock = document.getElementById('prodStock');
     if (elStock) elStock.value = num(r.stock_nuevo);
     if (!r.quedan_en_camino) {
@@ -3947,6 +3950,10 @@ Se suman al stock y, si no queda nada más por llegar, la tienda le avisa por co
       if (cuantas) cuantas.value = '';
       const fecha = document.getElementById('prodFechaLlegada');
       if (fecha) fecha.value = '';
+    } else {
+      // Llegó una parte: el formulario no puede guardar después el número viejo
+      const cuantas = document.getElementById('prodStockPorLlegar');
+      if (cuantas && r.stock_por_llegar !== undefined) cuantas.value = num(r.stock_por_llegar);
     }
 
     ingresosDelProducto = await API.productos.listarIngresos(editingProductId) || [];
@@ -4416,7 +4423,7 @@ async function cerrarIngresoProducto(id, motivo) {
 
 async function borrarIngresoProducto(id) {
   // Borrar es distinto de cerrar: esto es para un registro mal cargado.
-  if (!confirm('¿Borrar este registro de compra? Se usa solo cuando lo cargaste mal — si la compra existió, marca "Devuelta" o "Vendida" en vez de borrarla.')) return;
+  if (!await ventanaConfirmar('¿Borrar este registro de compra?\n\nSe usa solo cuando lo cargaste mal. Si la compra existió, marca "Devuelta" o "Vendida" en vez de borrarla.', { peligro: true, textoSi: 'Sí, borrar' })) return;
   try {
     await API.productos.eliminarIngreso(id);
     showToast('Registro borrado', 'ok');

@@ -430,7 +430,7 @@ async function copiarErroresSalud() {
 }
 
 async function limpiarErroresSalud() {
-  if (!confirm('¿Borrar todo el registro de errores del POS y de la tienda? Úsalo después de revisar y corregir lo que aparece.')) return;
+  if (!await ventanaConfirmar('¿Borrar todo el registro de errores?\n\nSon los errores del POS y de la tienda. Úsalo después de revisar y corregir lo que aparece.', { peligro: true, textoSi: 'Sí, borrar' })) return;
   try {
     await API.saludSistema.limpiarErrores();
     showToast('Registro de errores limpio', 'ok');
@@ -987,7 +987,7 @@ async function reenviarCatalogoFaltante() {
   const faltantes = [...(catalogoWebCache?.faltantes || []), ...(catalogoWebCache?.sobrantes || []).filter(x => x.reenviable)];
   if (!faltantes.length) return;
 
-  if (!confirm(`¿Reenviar ${faltantes.length} producto(s) a sevelin.cl?\n\nSe vuelve a disparar la sincronización de cada uno.`)) return;
+  if (!await ventanaConfirmar(`¿Reenviar ${faltantes.length} producto(s) a sevelin.cl?\n\nSe vuelve a disparar la sincronización de cada uno.`, { textoSi: 'Sí, reenviar' })) return;
 
   const btn = document.getElementById('btnReenviarCatalogoWeb');
   if (btn) btn.disabled = true;

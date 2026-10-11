@@ -418,7 +418,7 @@ async function guardarEncargo() {
     await cargarEncargos();
 
     // Al crear con seña se ofrece el comprobante de inmediato
-    if (!editandoEncargoId && abono > 0 && confirm('¿Imprimir el comprobante de abono?')) {
+    if (!editandoEncargoId && abono > 0 && await ventanaConfirmar('¿Imprimir el comprobante de abono?', { textoSi: 'Sí, imprimir', textoNo: 'No' })) {
       imprimirComprobanteEncargo(encargo, abono);
     }
   } catch (err) {
@@ -430,7 +430,7 @@ async function guardarEncargo() {
 }
 
 async function eliminarEncargo(id) {
-  if (!confirm('¿Eliminar este encargo y su historial de abonos? Esta acción no se puede deshacer.')) return;
+  if (!await ventanaConfirmar('¿Eliminar este encargo y su historial de abonos?\n\nEsta acción no se puede deshacer.', { peligro: true })) return;
   try {
     await API.encargos.eliminar(id);
     showToast('Encargo eliminado', 'ok');
@@ -508,8 +508,10 @@ async function entregarEncargo(encargo) {
   const pregunta = saldo > 0
     ? `${encargo.cliente_nombre} todavía debe ${fmtCLP(saldo)}. ¿Marcar igual como entregado?`
     : `¿Marcar como entregado a ${encargo.cliente_nombre}?`;
-  if (!confirm(pregunta)) return;
-  const nota = prompt('Nota de entrega (opcional): quién retiró, condiciones, etc.') || '';
+  if (!await ventanaConfirmar(pregunta, { textoSi: 'Sí, entregado' })) return;
+  const nota = await ventanaPreguntar('Quién retiró, condiciones, etc. Puedes dejarlo vacío.', {
+    titulo: 'Nota de entrega (opcional)', textoSi: 'Guardar', textoNo: 'Sin nota'
+  }) || '';
 
   try {
     const r = await API.encargos.entregar(encargo.id, { nota });
@@ -596,7 +598,7 @@ async function confirmarAbono() {
     cerrarModalAbono();
     await cargarEncargos();
 
-    if (confirm('¿Imprimir el comprobante de abono?')) imprimirComprobanteEncargo(actualizado, monto);
+    if (await ventanaConfirmar('¿Imprimir el comprobante de abono?', { textoSi: 'Sí, imprimir', textoNo: 'No' })) imprimirComprobanteEncargo(actualizado, monto);
   } catch (err) {
     console.error('Error al registrar el abono:', err.message || err);
     showToast(err.message || 'No se pudo registrar el abono', 'err');

@@ -449,7 +449,7 @@ async function guardarRepuesto() {
 }
 
 async function eliminarRepuesto(id) {
-  if (!confirm('¿Eliminar este repuesto del inventario de taller?')) return;
+  if (!await ventanaConfirmar('¿Eliminar este repuesto del inventario de taller?', { peligro: true })) return;
   try {
     await API.repuestos.eliminar(id);
     showToast('Repuesto eliminado', 'ok');
@@ -575,7 +575,7 @@ async function guardarRenombreCategoria(tipo, id, nuevoNombre) {
 
 async function eliminarValorCatalogo(tipo, id) {
   const cfg = configCatalogo(tipo);
-  if (!confirm(`¿Eliminar esta ${cfg.etiqueta} de la lista?`)) return;
+  if (!await ventanaConfirmar(`¿Eliminar esta ${cfg.etiqueta} de la lista?`, { peligro: true })) return;
 
   try {
     await API.repuestos[cfg.eliminar](id);

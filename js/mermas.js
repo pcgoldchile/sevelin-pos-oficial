@@ -212,10 +212,11 @@ async function confirmarMerma() {
   if (!observacion) { showToast('La observación / motivo es obligatoria', 'err'); elMermaObservacion?.focus(); return; }
 
   const costoTotal = cantidad * mermaItem.costo;
-  if (!confirm(
+  if (!await ventanaConfirmar(
     `¿Confirmas dar de baja ${cantidad} × ${mermaItem.etiqueta}?\n\n` +
     `Se descontará del inventario y se registrará un gasto de ${fmtCLP(costoTotal)} ` +
-    `en la clasificación "Mermas / Pérdidas de Inventario".`
+    `en la clasificación "Mermas / Pérdidas de Inventario".`,
+    { titulo: '¿Dar de baja esta mercadería?', textoSi: 'Sí, dar de baja' }
   )) return;
 
   if (elBtnConfirmarMerma) elBtnConfirmarMerma.disabled = true;

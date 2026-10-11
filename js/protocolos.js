@@ -68,9 +68,11 @@ function guardarNombreTecnico(nombre) {
   try { localStorage.setItem(CLAVE_NOMBRE_TECNICO, nombre); } catch (_) { /* modo privado */ }
 }
 
-function pedirNombreTecnico() {
+async function pedirNombreTecnico() {
   const actual = nombreTecnicoGuardado();
-  const nombre = prompt('¿Quién está trabajando en el taller?\n\nQueda registrado en cada fase que taches.', actual);
+  const nombre = await ventanaPreguntar('Queda registrado en cada fase que taches.', {
+    titulo: '¿Quién está trabajando en el taller?', valor: actual, placeholder: 'Tu nombre', maximo: 80, textoSi: 'Guardar'
+  });
   if (nombre === null) return actual;          // canceló
   const limpio = nombre.trim().slice(0, 80);
   guardarNombreTecnico(limpio);
@@ -213,7 +215,7 @@ function pintarChecklistOT() {
 async function alternarFaseOT(faseId, completada, checkbox) {
   let nombre = nombreTecnicoGuardado();
   if (!nombre) {
-    nombre = pedirNombreTecnico();
+    nombre = await pedirNombreTecnico();
     if (!nombre) {
       // Sin nombre no se bloquea: el rol igual queda registrado.
       nombre = '';

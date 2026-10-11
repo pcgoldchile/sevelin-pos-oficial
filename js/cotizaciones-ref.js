@@ -121,7 +121,7 @@ async function guardarCotizacionRef() {
 
 async function eliminarCotizacionRef(id) {
   const c = cotizacionesRefLista.find(x => Number(x.id) === Number(id));
-  if (!c || !confirm(`¿Eliminar "${c.equipo} · ${c.trabajo}" de las cotizaciones aproximadas?`)) return;
+  if (!c || !await ventanaConfirmar(`¿Eliminar "${c.equipo} · ${c.trabajo}" de las cotizaciones aproximadas?`, { peligro: true })) return;
   try {
     await API.cotizacionesRef.eliminar(id);
     showToast('Precio eliminado', 'ok');

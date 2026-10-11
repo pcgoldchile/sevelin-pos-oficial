@@ -1024,8 +1024,42 @@ const porLlegarMaqueta = [
   { id: 40, producto_id: 242, producto: 'Soplador eléctrico a batería Mini Jet Turbo con luz LED', cantidad: 5, costo_unitario: 8200, proveedor: 'DC IMPORT20', marketplace: 'MercadoLibre', compra_id: 33, fecha_compra: hoyMaqueta(), fecha_llegada_estimada: null, dias_para_llegar: 7, dias_esperando: 0 },
   { id: 60, producto_id: 333, producto: 'Ventilador Industrial 18" (con clientes esperando)', cantidad: 30, costo_unitario: 9990, proveedor: 'MercadoLibre', marketplace: 'MercadoLibre', compra_id: 29, fecha_compra: hoyMaqueta(), fecha_llegada_estimada: null, dias_para_llegar: -2, dias_esperando: 4 }
 ];
+// v134: el trabajador también ve la lista, sin costos ni el gasto ligado.
 app.get('/api/productos/en-camino', (_req, res) => res.json({
-  total: porLlegarMaqueta.length, vencidos: porLlegarMaqueta.filter(c => c.dias_para_llegar < 0).length, compras: porLlegarMaqueta }));
+  total: porLlegarMaqueta.length, vencidos: porLlegarMaqueta.filter(c => c.dias_para_llegar < 0).length,
+  compras: app.locals.rolMaqueta === 'trabajador' ? porLlegarMaqueta.map(({ costo_unitario, compra_id, ...v }) => v) : porLlegarMaqueta }));
+// v134: "Ya llegó" de una o de varias, con "llegaron menos". Imita al servidor: lo que vale es api/index.js.
+// La compra 60 (el ventilador) trae 3 unidades ya vendidas en la web, para ver el aviso de "apártalas".
+let sigPorLlegar = 900;
+function recibirEnMaqueta(id, cantidadRecibida, resto) {
+  const i = porLlegarMaqueta.findIndex(x => x.id === Number(id));
+  if (i < 0) return { ok: false, id: Number(id), error: 'Esa compra ya fue marcada como recibida' };
+  const c = porLlegarMaqueta[i];
+  const total = c.cantidad;
+  const llegaron = cantidadRecibida === undefined || cantidadRecibida === null || cantidadRecibida === '' ? total : Number(cantidadRecibida);
+  if (!Number.isInteger(llegaron) || llegaron < 1 || llegaron > total) return { ok: false, id: c.id, error: `Esta compra es de ${total} unidad(es): no pueden haber llegado ${cantidadRecibida}.` };
+  const faltan = total - llegaron;
+  const modo = faltan > 0 ? (resto === 'no_llega' ? 'no_llega' : 'esperar') : null;
+  const apartadas = c.id === 60 ? Math.min(3, llegaron) : 0;
+  porLlegarMaqueta.splice(i, 1);
+  if (modo === 'esperar') porLlegarMaqueta.push({ ...c, id: sigPorLlegar++, cantidad: faltan });
+  const quedan = porLlegarMaqueta.some(x => x.producto_id === c.producto_id);
+  const r = { ok: true, id: c.id, producto_id: c.producto_id, producto: c.producto, llegaron, faltan, resto: modo, stock_nuevo: llegaron - apartadas,
+    apartadas_web: apartadas, quedan_en_camino: quedan, stock_por_llegar: quedan ? faltan : 0,
+    aviso_tienda: quedan ? null : 'El producto dejó de estar "por llegar": la tienda avisa a quienes lo esperaban.',
+    aviso_gasto: c.compra_id && modo === 'no_llega' ? `Faltaron ${faltan} unidad(es) que suman $${(faltan * c.costo_unitario).toLocaleString('es-CL')}. La compra está ligada a un gasto de Finanzas: revisa que calce o pide la devolución de esa plata.` : null };
+  if (app.locals.rolMaqueta === 'trabajador') delete r.aviso_gasto;
+  return r;
+}
+app.put('/api/ingresos/:id/recibida', (req, res) => {
+  const r = recibirEnMaqueta(req.params.id, req.body?.cantidad_recibida, req.body?.resto);
+  return r.ok ? res.json(r) : res.status(409).json({ error: r.error });
+});
+app.post('/api/ingresos/llegadas', (req, res) => {
+  const resultados = (req.body?.llegadas || []).map(l => recibirEnMaqueta(l.id, l.cantidad_recibida, l.resto));
+  const buenas = resultados.filter(r => r.ok);
+  res.json({ confirmadas: buenas.length, fallidas: resultados.length - buenas.length, unidades: buenas.reduce((s, r) => s + r.llegaron, 0), resultados });
+});
 app.put('/api/ingresos/:id/por-llegar', (req, res) => {
   const c = porLlegarMaqueta.find(x => x.id === Number(req.params.id));
   if (!c) return res.status(404).json({ error: 'Compra no encontrada' });
