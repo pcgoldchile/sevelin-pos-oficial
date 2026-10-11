@@ -624,6 +624,22 @@ const API = {
     eliminar: (id) => apiRequest(`/ot/${id}`, { method: 'DELETE' })
   },
 
+  /* ---------- Acuerdo con los padres (sql/90, v133): solo admin ---------- */
+  padres: {
+    resumen: (mes) => apiRequest('/padres/resumen' + (mes ? `?mes=${encodeURIComponent(mes)}` : '')),
+    guardarAcuerdo: (cambios) => apiRequest('/padres/acuerdo', { method: 'PUT', body: cambios }),
+    // monto null = la línea deja de ir al pozo
+    corregirPozo: (itemId, monto) => apiRequest(`/padres/pozo/${itemId}`, { method: 'PUT', body: { monto } })
+  },
+
+  /* ---------- Cotizaciones aproximadas del taller (sql/90, v133) ---------- */
+  cotizacionesRef: {
+    listar: () => apiRequest('/cotizaciones-ref'),
+    crear: (datos) => apiRequest('/cotizaciones-ref', { method: 'POST', body: datos }),
+    actualizar: (id, datos) => apiRequest(`/cotizaciones-ref/${id}`, { method: 'PUT', body: datos }),
+    eliminar: (id) => apiRequest(`/cotizaciones-ref/${id}`, { method: 'DELETE' })
+  },
+
   /* ---------- Finanzas y balance ---------- */
   balance: {
     // Todo el panel llega calculado del servidor en una sola llamada

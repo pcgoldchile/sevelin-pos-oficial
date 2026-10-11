@@ -5092,3 +5092,21 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
 .modo-guiado #btnAsistenteRevisar { display: none !important; }
 .asistente-paso.saltable { cursor: pointer; }
 .asistente-paso.saltable:hover { border-color: var(--border-strong); color: var(--text-100); }
+
+/* Acuerdo con los padres (v133, sql/90): pregunta de antes de cobrar y panel Mis padres */
+.antes-seccion { font-size: 15px; font-weight: 700; color: var(--text-100); margin: 18px 0 8px; }
+.antes-linea { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-top: 10px; background: var(--surface-soft); }
+.antes-linea-titulo { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.antes-linea-titulo span { font-weight: 700; white-space: nowrap; }
+.antes-opciones { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.antes-opcion { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 999px; cursor: pointer; font-size: 13.5px; white-space: nowrap; flex: none; }
+.antes-opcion:has(input:checked) { border-color: var(--blue); background: var(--tint-blue); color: var(--text-100); font-weight: 700; }
+.antes-opcion input { width: 16px; height: 16px; margin: 0; padding: 0; flex: none; accent-color: var(--blue); }
+.antes-extra { margin-top: 10px; max-width: 260px; }
+.antes-extra label { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; color: var(--text-muted); }
+.antes-iva { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 13px; cursor: pointer; }
+.antes-iva input { width: 17px; height: 17px; accent-color: var(--blue); }
+.antes-resultado { margin-top: 10px; font-size: 13.5px; color: var(--text-muted); }
+.antes-resultado b { color: var(--green); font-size: 15px; }
+.padres-subtitulo { font-size: 14px; font-weight: 700; color: var(--text-100); margin: 22px 0 8px; }
+#padresPozoMes { height: 2.6rem; padding: 0 .7rem; border-radius: .75rem; border: 1px solid var(--border); background: var(--surface-soft); color: var(--text-100); }

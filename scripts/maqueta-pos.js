@@ -464,7 +464,8 @@ app.post('/api/ventas/:id/cambiar-producto', (req, res) => {
 app.post('/api/ventas', (req, res) => {
   const b = req.body || {};
   const items = (b.items || []).map((it, i) => ({ id: Date.now() + i, nombre: it.nombre, cantidad: it.cantidad, precio_unitario: it.precio_unitario,
-    costo_unitario: it.costo_unitario || 0, subtotal: it.precio_unitario * it.cantidad, serial_number: it.serial_number || null }));
+    costo_unitario: it.costo_unitario || 0, subtotal: it.precio_unitario * it.cantidad, serial_number: it.serial_number || null,
+    pozo: it.pozo || null, propietario: it.propietario || null }));   // v133: lo que mandó la caja
   // v123 (sql/86): descuento y redondeo hacia arriba, con las reglas del servidor real (el que vale es api/index.js).
   const subtotal = items.reduce((a, it) => a + it.subtotal, 0);
   const valorDesc = Math.max(0, Number(b.descuento_valor) || 0);
@@ -899,6 +900,8 @@ const gastosMaqueta = [];
 app.get('/api/compras/clasificaciones', (_req, res) => res.json([
   { id: 1, nombre: 'Gastos Operativos (Servicios, Arriendo, Sueldos, etc.)', activo: true },
   { id: 2, nombre: 'Mercadería / Productos para Reventa', activo: true },
+  { id: 3, nombre: 'Mercadería de mis padres', activo: true },
+  { id: 4, nombre: 'Pozo de mi papá (servicios de celulares)', activo: true },
 ]));
 app.post('/api/compras', (req, res) => { const g = { id: gastosMaqueta.length + 1, ...req.body }; gastosMaqueta.push(g); res.status(201).json(g); });
 app.get('/api/compras', (_req, res) => res.json(gastosMaqueta));
@@ -1037,6 +1040,96 @@ app.delete('/api/ingresos/:id', (req, res) => {
   if (porLlegarMaqueta[i].id === 60) return res.status(409).json({ error: '1 cliente(s) de sevelin.cl pidieron que les avises cuando llegue este producto. Si eliminas la compra, la tienda les mandaría el correo "ya llegó". Corrige la fecha con Editar si se atrasó.' });
   porLlegarMaqueta.splice(i, 1);
   res.json({ ok: true, era_por_llegar: true });
+});
+
+// v133 (sql/90): acuerdo con los padres. Un servicio del papá, un producto de los padres y uno de los dos,
+// más el panel Finanzas → Mis padres y las cotizaciones aproximadas del taller. Cifras inventadas.
+productos.push(
+  { ...productos[0], id: 9275, sku: null, codigo_barras: null, nombre: 'Cambio de Pantalla para Celulares (Todas las Marcas)', precio_unitario: 60000, costo_unitario: 0,
+    stock: 0, stock_ilimitado: true, es_servicio: true, va_al_pozo: true, categoria_web: 'Servicios Técnicos', imagen_urls: [] },
+  { ...productos[0], id: 9301, sku: null, codigo_barras: null, nombre: 'Cargador Tipo C 20W (de mis padres)', precio_unitario: 6990, costo_unitario: 3000, stock: 15, propietario: 'PADRES', imagen_urls: [] },
+  { ...productos[0], id: 9302, sku: null, codigo_barras: null, nombre: 'Audífonos In-Ear con cable (los tenemos los dos)', precio_unitario: 3990, costo_unitario: 1500, stock: 9, propietario: 'AMBOS', imagen_urls: [] }
+);
+const acuerdoMaqueta = { tope_mercaderia: 3000000, cuota_semanal: 1000000, pozo_minimo_mensual: 1000000, pozo_desde: null };
+const pozoMaqueta = [
+  { item_id: 501, venta_id: 301, numero_orden: 301, fecha: hoyMaqueta(), nombre: 'Cambio de Pantalla para Celulares (Todas las Marcas)', cobrado: 60000, pozo: 40000, nota: 'Menos el repuesto ($20.000)', devuelto: 0 },
+  { item_id: 502, venta_id: 302, numero_orden: 302, fecha: hoyMaqueta(), nombre: 'Limpieza Interna de Puerto de Carga', cobrado: 10000, pozo: 8403, nota: 'Todo lo cobrado, sin el IVA', devuelto: 0 }
+];
+const sinPozoMaqueta = [
+  { item_id: 503, venta_id: 303, numero_orden: 303, fecha: hoyMaqueta(), nombre: 'Formateo e instalación de Windows', cobrado: 25000 }
+];
+app.get('/api/padres/resumen', (req, res) => {
+  const hoy = hoyMaqueta();
+  const mes = /^\d{4}-\d{2}$/.test(String(req.query.mes || '')) ? String(req.query.mes) : hoy.slice(0, 7);
+  const delMes = mes === hoy.slice(0, 7);
+  const [a, m] = mes.split('-').map(Number);
+  const diasMes = new Date(Date.UTC(a, m, 0)).getUTCDate();
+  const activo = !!acuerdoMaqueta.pozo_desde && delMes;
+  const inicio = activo ? Number(acuerdoMaqueta.pozo_desde.slice(8)) : 0;
+  const diasActivos = activo ? diasMes - inicio + 1 : 0;
+  const diasCorridos = activo ? Number(hoy.slice(8)) - inicio + 1 : 0;
+  const minimoMes = activo ? Math.round(acuerdoMaqueta.pozo_minimo_mensual * diasActivos / diasMes) : 0;
+  const minimoALaFecha = activo ? Math.round(minimoMes * diasCorridos / diasActivos) : 0;
+  const juntado = delMes ? pozoMaqueta.reduce((s, l) => s + l.pozo, 0) : 0;
+  const esDe = (g, texto) => String(g.clasificacion || '').includes(texto);
+  const comoFila = (g) => ({ id: g.id, fecha: String(g.fecha || hoy).slice(0, 10), monto: Number(g.costo_total) || 0, descripcion: g.descripcion || null, metodo_pago: g.metodo_pago || null });
+  const pagos = gastosMaqueta.filter(g => esDe(g, 'Mercadería de mis padres')).map(comoFila);
+  const entregas = delMes ? gastosMaqueta.filter(g => esDe(g, 'Pozo de mi papá')).map(comoFila) : [];
+  const pagado = pagos.reduce((s, p) => s + p.monto, 0);
+  const entregado = entregas.reduce((s, e) => s + e.monto, 0);
+  const vendido = 2840000;
+  res.json({
+    hoy, acuerdo: acuerdoMaqueta,
+    clasificaciones: { mercaderia: 'Mercadería de mis padres', pozo: 'Pozo de mi papá (servicios de celulares)' },
+    mercaderia: {
+      vendido, devuelto: 0, unidades: 312, costo_vendido: 1310000, tope: acuerdoMaqueta.tope_mercaderia,
+      falta_para_tope: Math.max(0, acuerdoMaqueta.tope_mercaderia - vendido), aviso_tope: vendido >= acuerdoMaqueta.tope_mercaderia,
+      pagado, por_pagar: Math.max(0, acuerdoMaqueta.tope_mercaderia - pagado), cuota_semanal: acuerdoMaqueta.cuota_semanal, pagos,
+      productos: { cantidad: 2, de_los_dos: 1, unidades_en_stock: 24, valor_venta_stock: 140760, sin_costo: 1 },
+      ventas: [{ item_id: 601, venta_id: 304, numero_orden: 304, fecha: hoy, nombre: 'Cargador Tipo C 20W (de mis padres)', cantidad: 2, monto: 13980 }],
+      ventas_total: 1
+    },
+    pozo: {
+      mes, desde: mes + '-01', hasta: mes + '-' + String(diasMes).padStart(2, '0'), activo, inicio: activo ? acuerdoMaqueta.pozo_desde : null,
+      juntado, minimo_mes: minimoMes, minimo_a_la_fecha: minimoALaFecha, dias_activos: diasActivos, dias_corridos: diasCorridos,
+      entregado, saldo_anterior: 0, sugerido_hoy: Math.max(0, Math.max(juntado, minimoALaFecha) - entregado),
+      falta_para_minimo: Math.max(0, minimoMes - juntado),
+      lineas: delMes ? pozoMaqueta : [], servicios_sin_pozo: delMes ? sinPozoMaqueta : [], entregas
+    }
+  });
+});
+app.put('/api/padres/acuerdo', (req, res) => { Object.assign(acuerdoMaqueta, req.body); res.json(acuerdoMaqueta); });
+app.put('/api/padres/pozo/:itemId', (req, res) => {
+  const id = Number(req.params.itemId);
+  const monto = Number(req.body?.monto) || 0;
+  const i = pozoMaqueta.findIndex(l => l.item_id === id);
+  const j = sinPozoMaqueta.findIndex(l => l.item_id === id);
+  if (i >= 0 && monto > 0) Object.assign(pozoMaqueta[i], { pozo: monto, nota: 'Corregido a mano en Finanzas' });
+  else if (i >= 0) sinPozoMaqueta.push({ ...pozoMaqueta.splice(i, 1)[0] });
+  else if (j >= 0 && monto > 0) pozoMaqueta.push({ ...sinPozoMaqueta.splice(j, 1)[0], pozo: monto, nota: 'Corregido a mano en Finanzas', devuelto: 0 });
+  res.json({ id, pozo_monto: monto > 0 ? monto : null });
+});
+const cotizacionesRefMaqueta = [
+  { id: 1, equipo: 'Samsung A07', trabajo: 'Cambio de parlante', precio: 15000, costo_repuesto: 4000, nota: null, actualizado_en: new Date().toISOString() },
+  { id: 2, equipo: 'Samsung A15', trabajo: 'Cambio de pantalla', precio: 45000, costo_repuesto: 22000, nota: 'Con marco sube $5.000', actualizado_en: new Date().toISOString() },
+  { id: 3, equipo: 'iPhone 11', trabajo: 'Cambio de batería', precio: 30000, costo_repuesto: null, nota: null, actualizado_en: new Date().toISOString() }
+];
+app.get('/api/cotizaciones-ref', (_req, res) => res.json(app.locals.rolMaqueta === 'trabajador'
+  ? cotizacionesRefMaqueta.map(({ costo_repuesto, ...c }) => c) : cotizacionesRefMaqueta));
+app.post('/api/cotizaciones-ref', (req, res) => {
+  const c = { id: Math.max(0, ...cotizacionesRefMaqueta.map(x => x.id)) + 1, ...req.body, actualizado_en: new Date().toISOString() };
+  cotizacionesRefMaqueta.push(c);
+  res.status(201).json(c);
+});
+app.put('/api/cotizaciones-ref/:id', (req, res) => {
+  const c = cotizacionesRefMaqueta.find(x => x.id === Number(req.params.id));
+  if (!c) return res.status(404).json({ error: 'Esa cotización ya no existe' });
+  res.json(Object.assign(c, req.body, { actualizado_en: new Date().toISOString() }));
+});
+app.delete('/api/cotizaciones-ref/:id', (req, res) => {
+  const i = cotizacionesRefMaqueta.findIndex(x => x.id === Number(req.params.id));
+  if (i >= 0) cotizacionesRefMaqueta.splice(i, 1);
+  res.json({ ok: true });
 });
 
 app.use('/api', (req, res) => {

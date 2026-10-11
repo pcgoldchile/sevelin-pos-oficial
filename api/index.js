@@ -1053,7 +1053,10 @@ const CAMPOS_PRODUCTO = [
   // Borrador autocreado al agregar la primera foto de un producto nuevo
   // (ver crearBorradorProducto() en js/productos.js y sql/34-borrador-
   // productos.sql) — false en cualquier guardado real desde el formulario.
-  'es_borrador'
+  'es_borrador',
+  // Acuerdo con los padres (sql/90): de quién es la mercadería y si es un
+  // servicio que hace el papá (su pozo).
+  'propietario', 'va_al_pozo'
 ];
 
 /* Normaliza el código de barras: SOLO dígitos.
@@ -1234,7 +1237,19 @@ function sanearProducto(body = {}) {
     p.meses_garantia = v >= 0 ? Math.round(v) : 6;
   }
 
+  // --- Acuerdo con los padres (sql/90) ---
+  // Un valor que no se reconoce cae a MIO: nunca le suma a la cuenta de los padres por error.
+  if (p.propietario !== undefined) p.propietario = propietarioDeFicha(p.propietario);
+  if (body.va_al_pozo !== undefined) p.va_al_pozo = !!body.va_al_pozo;
+
   return p;
+}
+
+/* De quién es un producto según su ficha (sql/90): MIO, PADRES o AMBOS. */
+const PROPIETARIOS_FICHA = ['MIO', 'PADRES', 'AMBOS'];
+function propietarioDeFicha(valor) {
+  const v = String(valor || '').trim().toUpperCase();
+  return PROPIETARIOS_FICHA.includes(v) ? v : 'MIO';
 }
 
 /* Limpieza masiva del catálogo. Arregla de una vez los productos que ya
@@ -5411,14 +5426,16 @@ async function normalizarItems(items, rolSolicitante) {
   // hechas no se mueven, mismo criterio que el snapshot de nombre/sku.
   let costosCatalogo = {};
   let garantiaCatalogo = {};
+  const propietarioCatalogo = {};   // sql/90: de quién es cada producto según su ficha
   const ids = [...new Set(lista.map(i => i.producto_id).filter(Boolean))];
   if (ids.length) {
     // Sin catálogo no se valida el costo del trabajador ni la garantía: mejor fallar que guardar a ciegas.
-    const { data, error } = await db.from('productos').select('id, costo_unitario, condicion, meses_garantia').in('id', ids);
+    const { data, error } = await db.from('productos').select('id, costo_unitario, condicion, meses_garantia, propietario').in('id', ids);
     if (error) throw new Error(error.message);
     (data || []).forEach(p => {
       costosCatalogo[p.id] = num(p.costo_unitario);
       garantiaCatalogo[p.id] = { condicion: p.condicion || null, meses_garantia: p.meses_garantia ?? 6 };
+      propietarioCatalogo[p.id] = propietarioDeFicha(p.propietario);
     });
   }
 
@@ -5479,8 +5496,77 @@ async function normalizarItems(items, rolSolicitante) {
       // Módulo Garantías: sin producto de catálogo (ítem escrito a mano)
       // queda sin condición y con el default de 6 meses.
       condicion: garantia?.condicion ?? null,
-      meses_garantia: garantia?.meses_garantia ?? 6
+      meses_garantia: garantia?.meses_garantia ?? 6,
+      // Acuerdo con los padres (sql/90): foto de quién era la unidad vendida.
+      propietario: propietarioDeLinea(it.producto_id ? propietarioCatalogo[it.producto_id] : null, it.propietario),
+      // Lo que eligió la caja sobre el pozo; se convierte en pesos después de
+      // totalizar (aplicarPozo) y nunca llega a la base con este nombre.
+      _pozo: it.pozo && typeof it.pozo === 'object' ? it.pozo : null
     };
+  });
+}
+
+/* ============================================================
+   ACUERDO CON LOS PADRES (sql/90, v133)
+   ------------------------------------------------------------
+   Dos cuentas que viven en cada línea de venta:
+     · propietario: MIO o PADRES. La ficha manda; solo cuando el producto es
+       de los dos (AMBOS) o la línea se escribió a mano vale lo que diga la
+       caja. Sin dato es MIO: nunca le suma a la cuenta de los padres por error.
+     · pozo_monto: pesos de un SERVICIO que son del pozo del papá.
+   ============================================================ */
+function propietarioDeLinea(deLaFicha, pedido) {
+  if (deLaFicha === 'PADRES' || deLaFicha === 'MIO') return deLaFicha;
+  return String(pedido || '').trim().toUpperCase() === 'PADRES' ? 'PADRES' : 'MIO';
+}
+
+const IVA_DIVISOR = 1.19;
+
+/* Cuánto de una línea va al pozo. `base` es lo cobrado por esa línea con el
+   descuento de la venta ya repartido.
+     TODO            → todo lo cobrado
+     MENOS_REPUESTO  → lo cobrado menos el repuesto que puso el dueño
+     OTRO            → el monto que escribió quien cobra (tal cual, sin tocar el IVA)
+   `sin_iva`: el IVA de la boleta lo pone el papá, así que al pozo entra el neto. */
+function calcularPozoLinea(base, pozo) {
+  const nada = { pozo_monto: null, pozo_nota: null };
+  const cobrado = Math.round(num(base));
+  if (!pozo || cobrado <= 0) return nada;
+
+  const modo = String(pozo.modo || '').trim().toUpperCase();
+  let monto;
+  let nota;
+  if (modo === 'TODO') {
+    monto = cobrado;
+    nota = 'Todo lo cobrado';
+  } else if (modo === 'MENOS_REPUESTO') {
+    const repuesto = Math.min(cobrado, Math.max(0, Math.round(num(pozo.repuesto))));
+    monto = cobrado - repuesto;
+    nota = `Menos el repuesto ($${repuesto.toLocaleString('es-CL')})`;
+  } else if (modo === 'OTRO') {
+    monto = Math.min(cobrado, Math.max(0, Math.round(num(pozo.monto))));
+    return monto > 0 ? { pozo_monto: monto, pozo_nota: 'Monto puesto a mano' } : nada;
+  } else {
+    return nada;
+  }
+
+  if (pozo.sin_iva === true) {
+    monto = Math.round(monto / IVA_DIVISOR);
+    nota += ', sin el IVA';
+  }
+  return monto > 0 ? { pozo_monto: monto, pozo_nota: nota } : nada;
+}
+
+/* Pone pozo_monto y pozo_nota en cada línea y quita la marca interna _pozo.
+   Solo los servicios van al pozo. El descuento de la venta se reparte en
+   proporción: si se cobró 10% menos, al pozo va 10% menos. */
+function aplicarPozo(items, totales) {
+  const subtotal = items.reduce((a, i) => a + num(i.subtotal), 0);
+  const factor = subtotal > 0 ? Math.max(0, subtotal - num(totales?.descuento_monto)) / subtotal : 1;
+  items.forEach(it => {
+    const pozo = it._pozo;
+    delete it._pozo;
+    Object.assign(it, it.es_servicio ? calcularPozoLinea(num(it.subtotal) * factor, pozo) : { pozo_monto: null, pozo_nota: null });
   });
 }
 
@@ -6259,7 +6345,7 @@ app.post('/api/ventas/:id/cambiar-producto', auth(true), async (req, res) => {
       db.from('ventas').select('id, numero_orden, estado, total, costo_total, utilidad').eq('id', ventaId).maybeSingle(),
       db.from('venta_items').select('*').eq('id', itemId).eq('venta_id', ventaId).maybeSingle(),
       db.from('productos')
-        .select('id, nombre, sku, costo_unitario, stock, usa_lotes, stock_ilimitado, es_servicio, archivado, condicion, meses_garantia')
+        .select('id, nombre, sku, costo_unitario, stock, usa_lotes, stock_ilimitado, es_servicio, archivado, condicion, meses_garantia, propietario')
         .eq('id', nuevoId).maybeSingle()
     ]);
     if (ventaR.error) throw new Error(ventaR.error.message);
@@ -6305,7 +6391,9 @@ app.post('/api/ventas/:id/cambiar-producto', auth(true), async (req, res) => {
       condicion: nuevo.condicion || null,
       meses_garantia: nuevo.meses_garantia ?? 6,
       // El precio mayorista era del producto original, no de este.
-      precio_tipo: 'NORMAL'
+      precio_tipo: 'NORMAL',
+      // sql/90: la unidad entregada es del dueño del producto nuevo (de los dos = del dueño)
+      propietario: propietarioDeLinea(propietarioDeFicha(nuevo.propietario), null)
     }).eq('id', linea.id).select().maybeSingle();
 
     if (errLinea || !lineaNueva) {
@@ -6467,6 +6555,8 @@ app.post('/api/ventas', auth(), async (req, res) => {
     const { consumos } = ventaExistente ? { consumos: [] } : await aplicarCostosFifo(items);
 
     const totales = totalizar(items, descuentoMonto, ajusteRedondeo);
+    // sql/90: cuánto de cada servicio va al pozo del papá (con el descuento ya repartido)
+    aplicarPozo(items, totales);
 
     // "Por Pagar" deja la venta PENDIENTE: no suma a totales hasta que se cobre.
     const metodoPago = req.body?.metodo_pago || 'Efectivo';
@@ -6924,6 +7014,27 @@ app.put('/api/ventas/:id', auth(true), exigirPinAdmin, async (req, res) => {
         descuento_valor: descuentoMonto > 0 ? descuentoValor : 0
       });
       if (teniaRedondeo && !(ajusteRedondeo > 0)) cambios.ajuste_redondeo = 0;
+
+      /* Acuerdo con los padres (sql/90): editar una venta borra y vuelve a
+         escribir sus líneas. Cada línea conserva de quién era y lo que fue al
+         pozo, emparejada con la anterior por producto (o por nombre si se
+         escribió a mano); el pozo nunca queda mayor que lo cobrado ahora. El
+         pozo se corrige en Finanzas → Mis padres, no acá. */
+      const { data: lineasAntes, error: errAntes } = await db.from('venta_items')
+        .select('id, producto_id, nombre, propietario, pozo_monto, pozo_nota').eq('venta_id', id).order('id');
+      if (errAntes) throw new Error(errAntes.message);
+      const porEmparejar = [...(lineasAntes || [])];
+      items.forEach(it => {
+        delete it._pozo;
+        const i = porEmparejar.findIndex(a => it.producto_id
+          ? Number(a.producto_id) === Number(it.producto_id)
+          : (!a.producto_id && a.nombre === it.nombre));
+        const antes = i >= 0 ? porEmparejar.splice(i, 1)[0] : null;
+        if (antes?.propietario) it.propietario = antes.propietario;
+        const pozoAntes = num(antes?.pozo_monto);
+        it.pozo_monto = pozoAntes > 0 && it.es_servicio ? Math.min(pozoAntes, num(it.subtotal)) : null;
+        it.pozo_nota = it.pozo_monto ? (antes.pozo_nota || null) : null;
+      });
 
       const { error: errDel } = await db.from('venta_items').delete().eq('venta_id', id);
       if (errDel) throw new Error(errDel.message);
@@ -11876,7 +11987,9 @@ const CAMPOS_OT = [
   'cliente_nombre', 'cliente_rut', 'cliente_telefono', 'cliente_correo', 'cliente_direccion',
   'dispositivo_categoria', 'dispositivo_modelo', 'dispositivo_sn', 'dispositivo_enciende', 'dispositivo_pin',
   'cargador_deja', 'cargador_tipo', 'cargador_voltaje', 'cargador_amperaje', 'cargador_cable',
-  'accesorios', 'falla_reportada', 'obs_cliente', 'obs_tecnico', 'obs_internas', 'acepta_responsabilidad'
+  'accesorios', 'falla_reportada', 'obs_cliente', 'obs_tecnico', 'obs_internas', 'acepta_responsabilidad',
+  // sql/90: el trabajo lo hace el papá del dueño (recordatorio para el pozo al cobrar)
+  'de_padres'
 ];
 
 function sanearOT(body = {}) {
@@ -11888,6 +12001,8 @@ function sanearOT(body = {}) {
   if (!ot.falla_reportada || !String(ot.falla_reportada).trim()) return { error: 'Describe la falla reportada' };
 
   ['cargador_deja', 'cargador_cable', 'acepta_responsabilidad'].forEach(k => { ot[k] = !!ot[k]; });
+  // Solo si viene: una pestaña abierta con la versión anterior no la apaga al guardar.
+  if (ot.de_padres !== undefined) ot.de_padres = !!ot.de_padres;
   ['cargador_voltaje', 'cargador_amperaje'].forEach(k => { ot[k] = ot[k] === undefined || ot[k] === '' ? null : num(ot[k]); });
   Object.keys(ot).forEach(k => { if (typeof ot[k] === 'string') ot[k] = ot[k].trim() || null; });
 
@@ -16758,6 +16873,410 @@ app.get('/api/pos/informe-semanal', auth(true), async (req, res) => {
     });
   } catch (error) {
     return enviarErrorBD(res, error, 'GET /api/pos/informe-semanal');
+  }
+});
+
+/* ============================================================
+   ACUERDO CON LOS PADRES: PANEL "MIS PADRES" (sql/90, v133)
+   ------------------------------------------------------------
+   Solo admin. Son dos cuentas que no se mezclan:
+     1. MERCADERÍA: cuánto se ha vendido de lo que entregaron los padres,
+        contado al PRECIO DE VENTA (decisión del dueño, 11-10-2026), contra
+        el tope del acuerdo; y cuánto se les ha pagado (gastos con la
+        clasificación CLASIF_PADRES_MERCADERIA).
+     2. POZO DEL PAPÁ: lo que juntaron sus servicios (venta_items.pozo_monto),
+        el mínimo garantizado del mes y lo entregado (gastos con la
+        clasificación CLASIF_PADRES_POZO).
+   No guarda saldos: todo se recalcula desde las ventas y los gastos, así
+   una venta anulada, una devolución o un gasto corregido se reflejan solos.
+   ============================================================ */
+const CLASIF_PADRES_MERCADERIA = 'Mercadería de mis padres';
+const CLASIF_PADRES_POZO = 'Pozo de mi papá (servicios de celulares)';
+
+/* Trae todas las filas de una consulta en páginas de 1000 (tope de PostgREST).
+   `armarConsulta` devuelve la consulta ya ordenada, sin range. */
+async function padresTraerTodo(armarConsulta) {
+  let filas = [];
+  for (let desde = 0; ; desde += 1000) {
+    const { data, error } = await armarConsulta().range(desde, desde + 999);
+    if (error) throw new Error(error.message);
+    filas = filas.concat(data || []);
+    if (!data || data.length < 1000 || filas.length > 50000) return filas;
+  }
+}
+
+/* Filas de `tabla` cuyo `columna` está en `ids`, de a 150 por consulta (una
+   lista larga en la URL la rechaza el servidor). */
+async function padresTraerPorIds(tabla, columnas, columna, ids, filtrar) {
+  const unicos = [...new Set((ids || []).filter(Boolean))];
+  let filas = [];
+  for (let i = 0; i < unicos.length; i += 150) {
+    const tanda = unicos.slice(i, i + 150);
+    const parte = await padresTraerTodo(() => {
+      const q = db.from(tabla).select(columnas).in(columna, tanda).order('id');
+      return filtrar ? filtrar(q) : q;
+    });
+    filas = filas.concat(parte);
+  }
+  return filas;
+}
+
+async function leerAcuerdoPadres() {
+  const { data, error } = await db.from('acuerdo_padres').select('*').eq('id', 1).maybeSingle();
+  if (error) throw new Error(error.message);
+  return {
+    tope_mercaderia: num(data?.tope_mercaderia ?? 3000000),
+    cuota_semanal: num(data?.cuota_semanal ?? 1000000),
+    pozo_minimo_mensual: num(data?.pozo_minimo_mensual ?? 1000000),
+    pozo_desde: data?.pozo_desde ? String(data.pozo_desde).slice(0, 10) : null
+  };
+}
+
+/* Días entre dos fechas 'AAAA-MM-DD', contando las dos puntas. */
+function diasEntreInclusive(desde, hasta) {
+  return Math.round((Date.parse(`${hasta}T00:00:00Z`) - Date.parse(`${desde}T00:00:00Z`)) / 86400000) + 1;
+}
+
+/* Mínimo garantizado del pozo en un mes 'AAAA-MM'.
+   El mes en que parte el acuerdo se prorratea desde ese día, y dentro del mes
+   el mínimo "a la fecha" crece parejo: así el papá recibe algo todos los días
+   y el dueño no llega al último día debiendo el millón entero. */
+function minimoPozoDelMes(mes, acuerdo, hoy) {
+  const primero = `${mes}-01`;
+  const ultimo = ultimoDiaDelMes(mes);
+  const desde = acuerdo.pozo_desde;
+  if (!desde || desde > ultimo) return { activo: false, inicio: null, minimo_mes: 0, minimo_a_la_fecha: 0, dias_activos: 0, dias_corridos: 0 };
+
+  const inicio = desde > primero ? desde : primero;
+  const diasMes = diasEntreInclusive(primero, ultimo);
+  const diasActivos = diasEntreInclusive(inicio, ultimo);
+  const minimoMes = Math.round(acuerdo.pozo_minimo_mensual * diasActivos / diasMes);
+  const corte = hoy > ultimo ? ultimo : hoy;
+  const diasCorridos = corte < inicio ? 0 : diasEntreInclusive(inicio, corte);
+  return {
+    activo: true,
+    inicio,
+    minimo_mes: minimoMes,
+    minimo_a_la_fecha: Math.round(minimoMes * diasCorridos / diasActivos),
+    dias_activos: diasActivos,
+    dias_corridos: diasCorridos
+  };
+}
+
+/* Lo cobrado por una línea con el descuento de su venta repartido en
+   proporción (total = subtotal − descuento + redondeo, ver totalizar). */
+function factorDescuentoVenta(venta) {
+  const descuento = num(venta?.descuento_monto);
+  if (descuento <= 0) return 1;
+  const subtotal = num(venta.total) + descuento - num(venta.ajuste_redondeo);
+  return subtotal > 0 ? Math.max(0, subtotal - descuento) / subtotal : 1;
+}
+
+app.get('/api/padres/resumen', auth(true), async (req, res) => {
+  try {
+    const hoy = fechaHoyChile();
+    const mes = /^\d{4}-(0[1-9]|1[0-2])$/.test(String(req.query?.mes || '')) ? String(req.query.mes) : hoy.slice(0, 7);
+    const primero = `${mes}-01`;
+    const ultimo = ultimoDiaDelMes(mes);
+    const acuerdo = await leerAcuerdoPadres();
+
+    const [lineasPadres, lineasPozo, gastos, productos, ventasMes] = await Promise.all([
+      padresTraerTodo(() => db.from('venta_items')
+        .select('id, venta_id, producto_id, nombre, cantidad, subtotal, costo_unitario')
+        .eq('propietario', 'PADRES').order('id')),
+      padresTraerTodo(() => db.from('venta_items')
+        .select('id, venta_id, nombre, cantidad, subtotal, pozo_monto, pozo_nota')
+        .not('pozo_monto', 'is', null).order('id')),
+      padresTraerTodo(() => db.from('compras')
+        .select('id, fecha, costo_total, descripcion, metodo_pago, clasificacion')
+        .in('clasificacion', [CLASIF_PADRES_MERCADERIA, CLASIF_PADRES_POZO]).order('id')),
+      padresTraerTodo(() => db.from('productos')
+        .select('id, nombre, stock, costo_unitario, precio_unitario, propietario, stock_ilimitado, archivado')
+        .in('propietario', ['PADRES', 'AMBOS']).order('id')),
+      padresTraerTodo(() => db.from('ventas')
+        .select('id, numero_orden, fecha, estado, total, descuento_monto, ajuste_redondeo')
+        .eq('estado', 'PAGADA').gte('fecha', primero).lte('fecha', ultimo).order('id'))
+    ]);
+
+    // Cabeceras de las ventas de esas líneas, y lo que se devolvió de cada línea
+    const idsVenta = [...lineasPadres, ...lineasPozo].map(l => l.venta_id);
+    const idsLinea = [...lineasPadres, ...lineasPozo].map(l => l.id);
+    const [ventasLineas, devueltos] = await Promise.all([
+      padresTraerPorIds('ventas', 'id, numero_orden, fecha, estado, total, descuento_monto, ajuste_redondeo', 'id', idsVenta),
+      padresTraerPorIds('devolucion_items', 'id, venta_item_id, monto', 'venta_item_id', idsLinea)
+    ]);
+    const ventaDe = new Map([...ventasLineas, ...ventasMes].map(v => [Number(v.id), v]));
+    const devueltoDe = new Map();
+    devueltos.forEach(d => devueltoDe.set(Number(d.venta_item_id), (devueltoDe.get(Number(d.venta_item_id)) || 0) + num(d.monto)));
+    const cuenta = (l) => ventaDe.get(Number(l.venta_id))?.estado === 'PAGADA';
+
+    /* ---------- 1. Mercadería de los padres ---------- */
+    let vendido = 0, costoVendido = 0, unidades = 0, devuelto = 0;
+    const ventasPadres = [];
+    lineasPadres.filter(cuenta).forEach(l => {
+      const venta = ventaDe.get(Number(l.venta_id));
+      const cobrado = Math.round(num(l.subtotal) * factorDescuentoVenta(venta));
+      const dev = Math.min(cobrado, Math.round(devueltoDe.get(Number(l.id)) || 0));
+      vendido += cobrado - dev;
+      devuelto += dev;
+      costoVendido += num(l.costo_unitario) * num(l.cantidad);
+      unidades += num(l.cantidad);
+      ventasPadres.push({
+        item_id: l.id, venta_id: l.venta_id, numero_orden: venta.numero_orden, fecha: venta.fecha,
+        nombre: l.nombre, cantidad: num(l.cantidad), monto: cobrado - dev
+      });
+    });
+    ventasPadres.sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : b.item_id - a.item_id));
+
+    const pagos = gastos.filter(g => g.clasificacion === CLASIF_PADRES_MERCADERIA)
+      .map(g => ({ id: g.id, fecha: fechaChileDeTs(g.fecha), monto: num(g.costo_total), descripcion: g.descripcion || null, metodo_pago: g.metodo_pago || null }))
+      .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
+    const pagado = pagos.reduce((a, p) => a + p.monto, 0);
+
+    const vigentes = productos.filter(p => !p.archivado);
+    const conStock = vigentes.filter(p => !p.stock_ilimitado && num(p.stock) > 0);
+
+    /* ---------- 2. Pozo del papá ---------- */
+    const pozoNeto = (l) => {
+      const dev = devueltoDe.get(Number(l.id)) || 0;
+      const proporcion = num(l.subtotal) > 0 ? Math.min(1, dev / num(l.subtotal)) : 0;
+      return Math.round(num(l.pozo_monto) * (1 - proporcion));
+    };
+    const juntadoPorMes = new Map();
+    const lineasDelMes = [];
+    lineasPozo.filter(cuenta).forEach(l => {
+      const venta = ventaDe.get(Number(l.venta_id));
+      const neto = pozoNeto(l);
+      const m = String(venta.fecha).slice(0, 7);
+      juntadoPorMes.set(m, (juntadoPorMes.get(m) || 0) + neto);
+      if (m === mes) {
+        lineasDelMes.push({
+          item_id: l.id, venta_id: l.venta_id, numero_orden: venta.numero_orden, fecha: venta.fecha,
+          nombre: l.nombre, cobrado: num(l.subtotal), pozo: neto, nota: l.pozo_nota || null,
+          devuelto: Math.round(devueltoDe.get(Number(l.id)) || 0)
+        });
+      }
+    });
+    lineasDelMes.sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : b.item_id - a.item_id));
+
+    const entregasTodas = gastos.filter(g => g.clasificacion === CLASIF_PADRES_POZO)
+      .map(g => ({ id: g.id, fecha: fechaChileDeTs(g.fecha), monto: num(g.costo_total), descripcion: g.descripcion || null, metodo_pago: g.metodo_pago || null }));
+    const entregas = entregasTodas.filter(e => e.fecha >= primero && e.fecha <= ultimo)
+      .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
+    const entregado = entregas.reduce((a, e) => a + e.monto, 0);
+
+    /* Lo que quedó debiéndose (o adelantado) de los meses anteriores: en cada
+       mes cerrado al papá le toca lo mayor entre lo juntado y el mínimo. */
+    const mesesConMovimiento = [...juntadoPorMes.keys(), ...entregasTodas.map(e => e.fecha.slice(0, 7))];
+    if (acuerdo.pozo_desde) mesesConMovimiento.push(acuerdo.pozo_desde.slice(0, 7));
+    const primerMes = mesesConMovimiento.sort()[0] || mes;
+    let saldoAnterior = 0;
+    for (let m = primerMes; m < mes; m = sumarMeses(`${m}-01`, 1).slice(0, 7)) {
+      const leToca = Math.max(juntadoPorMes.get(m) || 0, minimoPozoDelMes(m, acuerdo, ultimoDiaDelMes(m)).minimo_mes);
+      const leDieron = entregasTodas.filter(e => e.fecha.slice(0, 7) === m).reduce((a, e) => a + e.monto, 0);
+      saldoAnterior += leToca - leDieron;
+    }
+
+    const minimo = minimoPozoDelMes(mes, acuerdo, hoy);
+    const juntado = juntadoPorMes.get(mes) || 0;
+    const leTocaALaFecha = Math.max(juntado, minimo.minimo_a_la_fecha);
+
+    // Servicios del mes que no fueron al pozo: por si faltó marcar alguno al cobrar
+    const idsVentasMes = ventasMes.map(v => v.id);
+    const serviciosSinPozo = (await padresTraerPorIds('venta_items', 'id, venta_id, nombre, cantidad, subtotal', 'venta_id', idsVentasMes,
+      q => q.eq('es_servicio', true).is('pozo_monto', null)))
+      .map(l => {
+        const venta = ventaDe.get(Number(l.venta_id));
+        return { item_id: l.id, venta_id: l.venta_id, numero_orden: venta?.numero_orden, fecha: venta?.fecha, nombre: l.nombre, cobrado: num(l.subtotal) };
+      })
+      .sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : b.item_id - a.item_id));
+
+    res.json({
+      hoy,
+      acuerdo,
+      clasificaciones: { mercaderia: CLASIF_PADRES_MERCADERIA, pozo: CLASIF_PADRES_POZO },
+      mercaderia: {
+        vendido, devuelto, unidades, costo_vendido: costoVendido,
+        tope: acuerdo.tope_mercaderia,
+        falta_para_tope: Math.max(0, acuerdo.tope_mercaderia - vendido),
+        aviso_tope: acuerdo.tope_mercaderia > 0 && vendido >= acuerdo.tope_mercaderia,
+        pagado,
+        por_pagar: Math.max(0, acuerdo.tope_mercaderia - pagado),
+        cuota_semanal: acuerdo.cuota_semanal,
+        pagos,
+        productos: {
+          cantidad: vigentes.length,
+          de_los_dos: vigentes.filter(p => p.propietario === 'AMBOS').length,
+          unidades_en_stock: conStock.reduce((a, p) => a + num(p.stock), 0),
+          valor_venta_stock: conStock.reduce((a, p) => a + num(p.stock) * num(p.precio_unitario), 0),
+          sin_costo: vigentes.filter(p => !p.stock_ilimitado && num(p.costo_unitario) <= 0).length
+        },
+        ventas: ventasPadres.slice(0, 30),
+        ventas_total: ventasPadres.length
+      },
+      pozo: {
+        mes, desde: primero, hasta: ultimo,
+        activo: minimo.activo,
+        inicio: minimo.inicio,
+        juntado,
+        minimo_mes: minimo.minimo_mes,
+        minimo_a_la_fecha: minimo.minimo_a_la_fecha,
+        dias_activos: minimo.dias_activos,
+        dias_corridos: minimo.dias_corridos,
+        entregado,
+        saldo_anterior: saldoAnterior,
+        sugerido_hoy: Math.max(0, saldoAnterior + leTocaALaFecha - entregado),
+        // Lo que el dueño terminaría poniendo de su bolsillo si el mes cerrara así
+        falta_para_minimo: Math.max(0, minimo.minimo_mes - juntado),
+        lineas: lineasDelMes,
+        servicios_sin_pozo: serviciosSinPozo.slice(0, 40),
+        entregas
+      }
+    });
+  } catch (err) {
+    return enviarErrorBD(res, err, 'GET /api/padres/resumen');
+  }
+});
+
+/* Cambia los números del acuerdo. Solo lo que viene en el cuerpo. */
+app.put('/api/padres/acuerdo', auth(true), async (req, res) => {
+  try {
+    const cambios = {};
+    for (const campo of ['tope_mercaderia', 'cuota_semanal', 'pozo_minimo_mensual']) {
+      if (req.body?.[campo] === undefined) continue;
+      const v = Math.round(num(req.body[campo]));
+      if (v < 0 || v > 100000000) return enviarError(res, 400, 'Ese monto no es válido');
+      cambios[campo] = v;
+    }
+    if (req.body?.pozo_desde !== undefined) {
+      const f = String(req.body.pozo_desde || '').trim();
+      if (f && !/^\d{4}-\d{2}-\d{2}$/.test(f)) return enviarError(res, 400, 'La fecha de inicio del pozo no es válida');
+      cambios.pozo_desde = f || null;
+    }
+    if (!Object.keys(cambios).length) return enviarError(res, 400, 'No hay nada que cambiar');
+    cambios.actualizado_en = new Date().toISOString();
+
+    const { error } = await db.from('acuerdo_padres').upsert([{ id: 1, ...cambios }], { onConflict: 'id' });
+    if (error) return enviarErrorBD(res, error);
+    res.json(await leerAcuerdoPadres());
+  } catch (err) {
+    return enviarErrorBD(res, err, 'PUT /api/padres/acuerdo');
+  }
+});
+
+/* Corrige lo que una línea de venta aporta al pozo (o la saca, o la suma si
+   no se marcó al cobrar). El monto llega ya decidido por el dueño. */
+app.put('/api/padres/pozo/:itemId', auth(true), async (req, res) => {
+  try {
+    const itemId = Number(req.params.itemId);
+    if (!Number.isInteger(itemId) || itemId <= 0) return enviarError(res, 400, 'Línea de venta inválida');
+
+    const { data: linea, error: errLinea } = await db.from('venta_items')
+      .select('id, venta_id, nombre, subtotal, es_servicio').eq('id', itemId).maybeSingle();
+    if (errLinea) return enviarErrorBD(res, errLinea);
+    if (!linea) return enviarError(res, 404, 'Esa línea de venta ya no existe');
+    if (!linea.es_servicio) return enviarError(res, 409, 'Al pozo solo van los servicios');
+
+    const { data: venta, error: errVenta } = await db.from('ventas').select('id, estado').eq('id', linea.venta_id).maybeSingle();
+    if (errVenta) return enviarErrorBD(res, errVenta);
+    if (!venta || venta.estado === 'ANULADA') return enviarError(res, 409, 'Esa venta está anulada');
+
+    const quitar = req.body?.monto === null || req.body?.monto === '' || num(req.body?.monto) <= 0;
+    const monto = quitar ? null : Math.round(num(req.body.monto));
+    if (monto !== null && monto > num(linea.subtotal)) {
+      return enviarError(res, 400, `Al pozo no puede ir más de lo cobrado por ese servicio (${num(linea.subtotal)})`);
+    }
+
+    const { data, error } = await db.from('venta_items')
+      .update({ pozo_monto: monto, pozo_nota: monto === null ? null : 'Corregido a mano en Finanzas' })
+      .eq('id', itemId).select('id, pozo_monto, pozo_nota').maybeSingle();
+    if (error) return enviarErrorBD(res, error);
+    res.json(data);
+  } catch (err) {
+    return enviarErrorBD(res, err, 'PUT /api/padres/pozo/:itemId');
+  }
+});
+
+/* ============================================================
+   COTIZACIONES APROXIMADAS DEL TALLER (sql/90, v133)
+   ------------------------------------------------------------
+   Lista de precios de referencia por equipo y trabajo, para responderle al
+   cliente en el mostrador sin llamar al técnico. La leen y la llenan todos;
+   el costo del repuesto solo lo ve y lo escribe el admin; borrar, solo admin.
+   No es una cotización formal ni toca precios de productos.
+   ============================================================ */
+function sanearCotizacionReferencia(body = {}, esAdministrador) {
+  const equipo = String(body.equipo || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+  const trabajo = String(body.trabajo || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+  if (!equipo) return { error: 'Escribe el equipo (por ejemplo: Samsung A07)' };
+  if (!trabajo) return { error: 'Escribe el trabajo (por ejemplo: Cambio de parlante)' };
+
+  const precio = Math.round(num(body.precio));
+  if (!(precio > 0)) return { error: 'Escribe el precio aproximado' };
+
+  const datos = { equipo, trabajo, precio, nota: String(body.nota || '').trim().slice(0, 300) || null };
+  if (esAdministrador && body.costo_repuesto !== undefined) {
+    const costo = Math.round(num(body.costo_repuesto));
+    datos.costo_repuesto = body.costo_repuesto === null || body.costo_repuesto === '' || costo < 0 ? null : costo;
+  }
+  return { datos };
+}
+
+app.get('/api/cotizaciones-ref', auth(), async (req, res) => {
+  try {
+    const filas = await padresTraerTodo(() => db.from('cotizaciones_referencia').select('*').order('equipo').order('trabajo').order('id'));
+    const admin = req.usuario?.rol === 'admin';
+    res.json(admin ? filas : filas.map(({ costo_repuesto, ...f }) => f));
+  } catch (err) {
+    return enviarErrorBD(res, err, 'GET /api/cotizaciones-ref');
+  }
+});
+
+app.post('/api/cotizaciones-ref', auth(), async (req, res) => {
+  try {
+    const admin = req.usuario?.rol === 'admin';
+    const { datos, error: errDatos } = sanearCotizacionReferencia(req.body, admin);
+    if (errDatos) return enviarError(res, 400, errDatos);
+
+    const { data, error } = await db.from('cotizaciones_referencia')
+      .insert([{ ...datos, actualizado_por: req.usuario?.rol || null }]).select().single();
+    if (error) return enviarErrorBD(res, error);
+    if (!admin) delete data.costo_repuesto;
+    res.status(201).json(data);
+  } catch (err) {
+    return enviarErrorBD(res, err, 'POST /api/cotizaciones-ref');
+  }
+});
+
+app.put('/api/cotizaciones-ref/:id', auth(), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return enviarError(res, 400, 'Cotización inválida');
+    const admin = req.usuario?.rol === 'admin';
+    const { datos, error: errDatos } = sanearCotizacionReferencia(req.body, admin);
+    if (errDatos) return enviarError(res, 400, errDatos);
+
+    const { data, error } = await db.from('cotizaciones_referencia')
+      .update({ ...datos, actualizado_por: req.usuario?.rol || null, actualizado_en: new Date().toISOString() })
+      .eq('id', id).select().maybeSingle();
+    if (error) return enviarErrorBD(res, error);
+    if (!data) return enviarError(res, 404, 'Esa cotización ya no existe');
+    if (!admin) delete data.costo_repuesto;
+    res.json(data);
+  } catch (err) {
+    return enviarErrorBD(res, err, 'PUT /api/cotizaciones-ref/:id');
+  }
+});
+
+app.delete('/api/cotizaciones-ref/:id', auth(true), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return enviarError(res, 400, 'Cotización inválida');
+    const { error } = await db.from('cotizaciones_referencia').delete().eq('id', id);
+    if (error) return enviarErrorBD(res, error);
+    res.json({ ok: true });
+  } catch (err) {
+    return enviarErrorBD(res, err, 'DELETE /api/cotizaciones-ref/:id');
   }
 });
 

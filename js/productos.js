@@ -83,6 +83,9 @@ const elProdStockActualizado = document.getElementById('prodStockActualizado');
 const elProdMedidasActualizado = document.getElementById('prodMedidasActualizado');
 const elProdStockIlimitado = document.getElementById('prodStockIlimitado');
 const elProdEsServicio = document.getElementById('prodEsServicio');   // sql/52
+// Acuerdo con los padres (sql/90, v133): de quién es y si es un servicio del papá
+const elProdPropietario = document.getElementById('prodPropietario');
+const elProdVaAlPozo = document.getElementById('prodVaAlPozo');
 const elGridProdStockControl = document.getElementById('gridProdStockControl');
 const elProdPeso = document.getElementById('prodPeso');
 const elProdPesoUnidad = document.getElementById('prodPesoUnidad');   // kg | g (ver actualizarLecturaPeso)
@@ -441,6 +444,7 @@ function setupProductosEventListeners() {
       aplicarStockIlimitadoProductoUI();
     }
   });
+  if (elProdEsServicio) elProdEsServicio.addEventListener('change', pintarVaAlPozoProducto);
   if (elBtnCerrarValorizacion) elBtnCerrarValorizacion.addEventListener('click', cerrarValorizacion);
   if (elModalValorizacion) {
     elModalValorizacion.addEventListener('click', (e) => { if (e.target === elModalValorizacion) cerrarValorizacion(); });
@@ -1508,6 +1512,16 @@ async function generarTextoConIA(destino) {
    espera de 35-70 s por un cambio de pestaña.
    ============================================================ */
 
+/* "Lo hace mi papá" (sql/90) solo se ofrece en un servicio: un producto
+   físico nunca va al pozo. Al desmarcar "Es un servicio" se apaga solo. */
+function pintarVaAlPozoProducto() {
+  const item = document.getElementById('itemProdVaAlPozo');
+  if (!item || !elProdVaAlPozo) return;
+  const esServicio = !!(elProdEsServicio && elProdEsServicio.checked);
+  item.style.display = esServicio ? '' : 'none';
+  if (!esServicio) elProdVaAlPozo.checked = false;
+}
+
 // Si está en "pegar" o vino del botón automático: cambia qué hace "Usar esta ficha"
 let fichaGeneradaPegada = false;
 
@@ -1989,6 +2003,9 @@ function abrirModalProducto(producto = null) {
     if (elProdSinAlertaStock) elProdSinAlertaStock.checked = producto.alerta_stock === false;
     if (elProdStockIlimitado) elProdStockIlimitado.checked = !!producto.stock_ilimitado;
     if (elProdEsServicio) elProdEsServicio.checked = !!producto.es_servicio;
+    if (elProdPropietario) elProdPropietario.value = ['PADRES', 'AMBOS'].includes(producto.propietario) ? producto.propietario : 'MIO';
+    if (elProdVaAlPozo) elProdVaAlPozo.checked = !!producto.va_al_pozo;
+    pintarVaAlPozoProducto();
     if (elProdUsaLotes) elProdUsaLotes.checked = !!producto.usa_lotes;
     if (elProdStockActualizado) {
       elProdStockActualizado.textContent = producto.stock_actualizado_en
@@ -2072,6 +2089,9 @@ function abrirModalProducto(producto = null) {
     if (elProdUsaLotes) elProdUsaLotes.checked = true;
     if (elProdStockIlimitado) elProdStockIlimitado.checked = false;
     if (elProdEsServicio) elProdEsServicio.checked = false;
+    if (elProdPropietario) elProdPropietario.value = 'MIO';
+    if (elProdVaAlPozo) elProdVaAlPozo.checked = false;
+    pintarVaAlPozoProducto();
     if (elProdStockActualizado) elProdStockActualizado.textContent = 'Última actualización de stock: se registrará al guardar.';
     if (elProdMedidasActualizado) elProdMedidasActualizado.textContent = 'Última actualización de medidas y peso: se registrará al guardar.';
     // Pedido explícito del dueño: un producto nuevo nace marcado para
@@ -2304,6 +2324,9 @@ function construirPayloadProducto() {
     alerta_stock: !(elProdSinAlertaStock && elProdSinAlertaStock.checked),
     stock_ilimitado: !!(elProdStockIlimitado && elProdStockIlimitado.checked),
     es_servicio: !!(elProdEsServicio && elProdEsServicio.checked),
+    // sql/90: de quién es la mercadería; y el pozo del papá solo aplica a un servicio
+    propietario: elProdPropietario?.value || 'MIO',
+    va_al_pozo: !!(elProdVaAlPozo && elProdVaAlPozo.checked && elProdEsServicio && elProdEsServicio.checked),
     // Interruptor de costos por lote (PEPS). Apagado salvo que el admin lo marque.
     usa_lotes: !!(elProdUsaLotes && elProdUsaLotes.checked),
     // peso/medidas NO van acá: se guardan con "📏 Guardar medidas", que pide

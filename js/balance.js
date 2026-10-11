@@ -93,6 +93,8 @@ function mostrarPanelFinanzas(nombre) {
   /* Activos de uso interno (js/activos.js): se abre en "En uso", que es lo
      único accionable. El histórico completo está detrás del chip "Todos". */
   if (nombre === 'activos' && typeof cargarActivos === 'function') cargarActivos();
+  // Mis padres (js/acuerdo-padres.js, sql/90): se recalcula entero cada vez que se entra
+  if (nombre === 'padres' && typeof cargarPanelPadres === 'function') cargarPanelPadres();
   // Balance no tenía rama acá: nunca se refrescaba al entrar, así que
   // mostraba lo último que quedó cargado (por defecto "Este mes", ver
   // cargarBalance) hasta que el usuario apretaba "Hoy" a mano. Ahora cada

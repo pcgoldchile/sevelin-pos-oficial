@@ -293,7 +293,8 @@ function leerFormularioOT() {
     obs_cliente: val('otObsCliente'),
     obs_tecnico: val('otObsTecnico'),
     obs_internas: val('otObsInternas'),   // privadas: nunca se imprimen
-    acepta_responsabilidad: chk('otAceptaResponsabilidad')
+    acepta_responsabilidad: chk('otAceptaResponsabilidad'),
+    de_padres: chk('otDePadres')   // sql/90: lo hace el papá del dueño
   };
 }
 
@@ -303,7 +304,7 @@ function limpiarFormularioOT() {
    'otCargadorAmperaje', 'otAccesorios', 'otFallaReportada', 'otObsCliente', 'otObsTecnico']
     .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
 
-  ['otCargadorDeja', 'otCargadorCable'].forEach(id => { const el = document.getElementById(id); if (el) el.checked = false; });
+  ['otCargadorDeja', 'otCargadorCable', 'otDePadres'].forEach(id => { const el = document.getElementById(id); if (el) el.checked = false; });
   const acepta = document.getElementById('otAceptaResponsabilidad');
   if (acepta) acepta.checked = true;
   if (elOtCargadorDatos) elOtCargadorDatos.style.display = 'none';
@@ -676,6 +677,7 @@ function renderOrdenesTabla(lista) {
       <td>${escHtml(o.dispositivo_categoria || '')} ${escHtml(o.dispositivo_modelo || '')}${o.dispositivo_sn ? `<br><small style="color:var(--text-muted);">S/N: ${escHtml(o.dispositivo_sn)}</small>` : ''}</td>
       <td>${escHtml((o.falla_reportada || '').slice(0, 70))}${(o.falla_reportada || '').length > 70 ? '…' : ''}</td>
       <td><span class="badge ${pendiente ? 'badge-gold' : 'badge-green'}">${o.estado}</span>
+          ${o.de_padres ? '<span class="badge badge-blue" title="Lo hace mi papá: al cobrarlo, marca cuánto va a su pozo">👨‍🔧 Papá</span>' : ''}
           ${typeof insigniaAvanceOT === 'function' ? insigniaAvanceOT(o.id) : ''}</td>
       <td>
         <div class="cell-actions">

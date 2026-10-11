@@ -614,13 +614,17 @@ function abrirModalCompra(compra = null, campoFoco = null) {
    después de una compra de mercadería, para no escribir dos veces el monto
    ni olvidar el gasto. La factura, el IVA y el medio de pago los completa
    el dueño: por eso se abre el formulario y no se guarda nada solo. */
-async function abrirGastoPrellenado({ monto, descripcion, proveedor, documento } = {}) {
-  if (!clasificacionesList.length) await cargarClasificaciones();
+async function abrirGastoPrellenado({ monto, descripcion, proveedor, documento, clasificacion } = {}) {
+  /* `clasificacion` (v133): el panel Mis padres pide la suya por nombre. Si
+     todavía no está en la lista (se creó después de cargarla), se recarga. */
+  const tieneClasificacion = () => clasificacionesList.some(c => c.nombre === clasificacion);
+  if (!clasificacionesList.length || (clasificacion && !tieneClasificacion())) await cargarClasificaciones();
   abrirModalCompra(null);
   if (elCompraCosto) elCompraCosto.value = Math.round(num(monto)) || '';
   if (elCompraDescripcion) elCompraDescripcion.value = descripcion || '';
   if (elCompraProveedor) elCompraProveedor.value = proveedor || '';
-  const mercaderia = [...(elCompraClasificacion?.options || [])].find(o => /mercader/i.test(o.value));
+  const opciones = [...(elCompraClasificacion?.options || [])];
+  const mercaderia = (clasificacion && opciones.find(o => o.value === clasificacion)) || opciones.find(o => /mercader/i.test(o.value));
   if (mercaderia && elCompraClasificacion) elCompraClasificacion.value = mercaderia.value;
   // v120: la factura que ya se adjuntó a la compra no se sube dos veces.
   if (documento && elCompraUrlDocumento) { elCompraUrlDocumento.value = documento; actualizarEstadoArchivo('url_documento'); }

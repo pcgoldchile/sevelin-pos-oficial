@@ -151,6 +151,7 @@
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="gastos">Gastos</button>
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="fijos">Gastos Fijos</button>
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="activos">Activos de uso interno</button>
+          <button class="nav-subitem" data-view="view-finanzas" data-subtab="padres">Mis padres</button>
         </div>
       </div>
 
@@ -159,6 +160,7 @@
         <div class="nav-subitems">
           <button class="nav-subitem" data-view="view-taller" data-subtab="ot">Órdenes de Trabajo</button>
           <button class="nav-subitem" data-view="view-taller" data-subtab="repuestos">Repuestos Taller</button>
+          <button class="nav-subitem" data-view="view-taller" data-subtab="cotizaciones-ref">Cotizaciones aproximadas</button>
         </div>
       </div>
 
@@ -419,6 +421,14 @@
                          vendió en productos vs. en servicios. -->
                     <label for="checkEsServicio" class="caja-check" title="Para separar en Finanzas cuánto se vendió en productos vs. en servicios">
                       <input type="checkbox" id="checkEsServicio" class="w-4 h-4 accent-blue-600"> Es un servicio
+                    </label>
+                  </div>
+                  <div class="flex items-end">
+                    <!-- sql/90 (v133): acuerdo con los padres. En un producto del catálogo
+                         manda su ficha (queda fijo); se puede marcar en lo escrito a mano
+                         y en un producto que tienen los dos. -->
+                    <label for="checkItemDePadres" class="caja-check" title="Lo vendido de tus padres se suma en Finanzas → Mis padres">
+                      <input type="checkbox" id="checkItemDePadres" class="w-4 h-4 accent-blue-600"> De mis padres
                     </label>
                   </div>
                 </div>
@@ -684,6 +694,7 @@
       <nav class="subtabs" id="subtabsTaller">
         <button class="subtab activo" data-subtab="ot">🔧 Órdenes de Trabajo</button>
         <button class="subtab" data-subtab="repuestos">🔩 Repuestos Taller</button>
+        <button class="subtab" data-subtab="cotizaciones-ref">💬 Cotizaciones aprox.</button>
       </nav>
 
       <div class="panel-taller activo" data-panel-taller="ot">
@@ -830,6 +841,14 @@
             <textarea id="otObsInternas" rows="2" placeholder="Ej: se aplicó reflow, software X usado, cuidado con el flex del conector"></textarea>
           </div>
 
+          <!-- sql/90 (v133): recordatorio para el pozo del papá. La plata se cuenta al cobrar en la caja. -->
+          <div style="margin-top:16px;">
+            <label class="sn-toggle" style="width:fit-content;">
+              <input type="checkbox" id="otDePadres">
+              👨‍🔧 Este trabajo lo hace mi papá (va a su pozo al cobrarlo)
+            </label>
+          </div>
+
           <div style="margin-top:16px;">
             <label class="sn-toggle" style="width:fit-content;">
               <input type="checkbox" id="otAceptaResponsabilidad" checked>
@@ -892,6 +911,39 @@
       </div>
     
       </div>
+
+<!-- sql/90 (v133): cotizaciones aproximadas — js/cotizaciones-ref.js. Precios de
+     referencia por equipo y trabajo. No toca productos ni órdenes. -->
+<div class="panel-taller" data-panel-taller="cotizaciones-ref">
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>💬 Cotizaciones aproximadas</h2>
+        <p class="subtitle">Precios de referencia por equipo y trabajo, para responderle al cliente al tiro. El precio final lo confirma quien repara.</p>
+      </div>
+      <button class="btn btn-primary" id="btnNuevaCotizacionRef">➕ Agregar precio</button>
+    </div>
+    <div class="field" style="max-width:420px;">
+      <input type="search" id="cotizacionRefBuscar" placeholder="Buscar equipo o trabajo: A07, pantalla, batería…" autocomplete="off" aria-label="Buscar en las cotizaciones aproximadas">
+    </div>
+    <div class="table-wrapper" style="margin-top:12px;">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Equipo</th>
+            <th>Trabajo</th>
+            <th>Precio aprox.</th>
+            <th id="cotizacionRefThCosto">Repuesto</th>
+            <th>Nota</th>
+            <th>Actualizado</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="cotizacionRefBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
 
 <div class="panel-taller" data-panel-taller="repuestos">
       <div class="card">
@@ -1053,6 +1105,7 @@
         <button class="subtab" data-subtab="gastos">📑 Gastos</button>
         <button class="subtab" data-subtab="fijos">🔁 Gastos Fijos</button>
         <button class="subtab" data-subtab="activos">🛠️ Activos</button>
+        <button class="subtab" data-subtab="padres">👪 Mis padres</button>
       </nav>
 
       <!-- ============================================================
@@ -1961,6 +2014,43 @@
         </div>
       </div>
 
+      <!-- sql/90 (v133): acuerdo con los padres — js/acuerdo-padres.js. Dos cuentas
+           separadas: la mercadería que entregaron y el pozo de servicios del papá.
+           No guarda saldos: todo sale de las ventas y de los gastos. -->
+      <div class="panel-finanzas" data-panel-finanzas="padres">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>📦 Mercadería de mis padres</h2>
+              <p class="subtitle">Lo que vendes de ellos, contado al precio de venta, y lo que les has pagado.</p>
+            </div>
+            <div class="toolbar-group">
+              <button class="btn btn-outline" id="btnPadresAjustes">⚙️ Números del acuerdo</button>
+              <button class="btn btn-primary" id="btnPadresPagar">💵 Registrar pago a mis padres</button>
+            </div>
+          </div>
+          <div id="padresAvisoTope"></div>
+          <div class="kpi-grid" id="padresMercaderiaKpis"></div>
+          <div id="padresMercaderiaDetalle"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>👨‍🔧 Pozo de mi papá</h2>
+              <p class="subtitle">Lo que juntan sus servicios de celulares cobrados en la caja. Si no llega al mínimo del mes, la diferencia la pones tú.</p>
+            </div>
+            <div class="toolbar-group">
+              <input type="month" id="padresPozoMes" aria-label="Mes del pozo">
+              <button class="btn btn-primary" id="btnPadresEntregar">💵 Entregar a mi papá</button>
+            </div>
+          </div>
+          <div id="padresPozoAviso"></div>
+          <div class="kpi-grid" id="padresPozoKpis"></div>
+          <div id="padresPozoDetalle"></div>
+        </div>
+      </div>
+
       <div class="panel-finanzas" data-panel-finanzas="fijos">
         <div class="card">
           <div class="card-head">
@@ -2509,6 +2599,19 @@
             <small class="fila-meta">Quien fabrica el producto. Un cargador <em>para</em> HP no es marca HP: eso es genérico.</small>
           </div>
 
+          <!-- sql/90 (v133): acuerdo con los padres. Lo vendido "de mis padres" se
+               suma en Finanzas → Mis padres; "de los dos" hace que la caja
+               pregunte de quién es la unidad. -->
+          <div class="field" id="campoProdPropietario" style="margin-top:12px;">
+            <label for="prodPropietario">¿De quién es?</label>
+            <select id="prodPropietario">
+              <option value="MIO">Mía</option>
+              <option value="PADRES">De mis padres</option>
+              <option value="AMBOS">De los dos (la caja pregunta al vender)</option>
+            </select>
+            <small class="fila-meta">Lo que vendas de tus padres se cuenta para el aviso de los $3.000.000.</small>
+          </div>
+
           <!-- v117 (dueño, 03-10-2026): la Descripción vivía en su propia tarjeta al final
                de la página y había que bajar hasta allá en cada producto. Ahora va acá,
                junto al nombre. Conserva data-seccion="descripcion" para que el aviso de
@@ -2871,6 +2974,11 @@
             <label class="check-item" style="margin-top:8px;">
               <input type="checkbox" id="prodEsServicio">
               <span>🔧 Es un servicio (mano de obra: en el POS se vende marcado como servicio, esté o no en la tienda)</span>
+            </label>
+            <!-- sql/90 (v133): servicio que hace el papá. Al venderlo la caja pregunta cuánto va a su pozo. -->
+            <label class="check-item" id="itemProdVaAlPozo" style="margin-top:8px;">
+              <input type="checkbox" id="prodVaAlPozo">
+              <span>👨‍🔧 Lo hace mi papá (al cobrarlo, la caja pregunta cuánto va a su pozo)</span>
             </label>
             <div class="grid grid-2" id="gridProdStockControl" style="margin-top:12px;">
               <div class="field">
@@ -4066,6 +4174,99 @@
       <div class="modal-foot">
         <button class="btn btn-ghost" id="btnCancelarCerrarCaja">Cancelar</button>
         <button class="btn btn-primary" id="btnConfirmarCerrarCaja">Cerrar caja</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- sql/90 (v133): antes de elegir el medio de pago — js/acuerdo-padres.js.
+       Pregunta cuánto de cada servicio va al pozo del papá y de quién es la
+       unidad de un producto que tienen los dos. -->
+  <div id="modalAntesDeCobrar" class="modal-overlay">
+    <div class="modal-box">
+      <h2>Antes de cobrar</h2>
+      <div id="antesDeCobrarCuerpo"></div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnAntesDeCobrarCancelar">Cancelar</button>
+        <button class="btn btn-primary" id="btnAntesDeCobrarSeguir">Continuar al pago</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalAcuerdoPadres" class="modal-overlay">
+    <div class="modal-box modal-sm">
+      <h2>⚙️ Números del acuerdo</h2>
+      <p class="modal-hint">Cámbialos solo si cambia lo conversado con tus padres.</p>
+      <div class="field" style="margin-top:14px;">
+        <label for="acuerdoTope">Avisarme cuando lo vendido de ellos llegue a</label>
+        <input type="number" id="acuerdoTope" min="0" step="10000">
+      </div>
+      <div class="field">
+        <label for="acuerdoCuota">Pago por semana a mis padres</label>
+        <input type="number" id="acuerdoCuota" min="0" step="10000">
+      </div>
+      <div class="field">
+        <label for="acuerdoPozoMinimo">Mínimo del pozo de mi papá al mes</label>
+        <input type="number" id="acuerdoPozoMinimo" min="0" step="10000">
+      </div>
+      <div class="field">
+        <label for="acuerdoPozoDesde">El pozo corre desde</label>
+        <input type="date" id="acuerdoPozoDesde">
+        <small class="fila-meta">Vacío = todavía no parte. El primer mes el mínimo se cuenta desde ese día.</small>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnAcuerdoCancelar">Cancelar</button>
+        <button class="btn btn-primary" id="btnAcuerdoGuardar">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalCorregirPozo" class="modal-overlay">
+    <div class="modal-box modal-sm">
+      <h2>Corregir el pozo</h2>
+      <p class="modal-hint" id="corregirPozoResumen"></p>
+      <div class="field" style="margin-top:14px;">
+        <label for="corregirPozoMonto">¿Cuánto de este servicio va al pozo?</label>
+        <input type="number" id="corregirPozoMonto" min="0" step="1">
+        <small class="fila-meta">Déjalo en 0 para sacarlo del pozo.</small>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCorregirPozoCancelar">Cancelar</button>
+        <button class="btn btn-primary" id="btnCorregirPozoGuardar">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- sql/90 (v133): agregar o corregir un precio de referencia — js/cotizaciones-ref.js -->
+  <div id="modalCotizacionRef" class="modal-overlay">
+    <div class="modal-box modal-sm">
+      <h2 id="cotizacionRefTitulo">Agregar precio aproximado</h2>
+      <div class="field" style="margin-top:14px;">
+        <label for="cotizacionRefEquipo">Equipo</label>
+        <input type="text" id="cotizacionRefEquipo" maxlength="80" placeholder="Samsung A07" list="listaEquiposCotizacion" autocomplete="off">
+        <datalist id="listaEquiposCotizacion"></datalist>
+      </div>
+      <div class="field">
+        <label for="cotizacionRefTrabajo">Trabajo</label>
+        <input type="text" id="cotizacionRefTrabajo" maxlength="80" placeholder="Cambio de parlante" list="listaTrabajosCotizacion" autocomplete="off">
+        <datalist id="listaTrabajosCotizacion"></datalist>
+      </div>
+      <div class="grid grid-2">
+        <div class="field">
+          <label for="cotizacionRefPrecio">Precio aproximado al cliente</label>
+          <input type="number" id="cotizacionRefPrecio" min="0" step="500" placeholder="15000">
+        </div>
+        <div class="field" id="cotizacionRefCostoWrap">
+          <label for="cotizacionRefCosto">Costo del repuesto <span class="opcional">(opcional)</span></label>
+          <input type="number" id="cotizacionRefCosto" min="0" step="500">
+        </div>
+      </div>
+      <div class="field">
+        <label for="cotizacionRefNota">Nota <span class="opcional">(opcional)</span></label>
+        <input type="text" id="cotizacionRefNota" maxlength="300" placeholder="Ej: con marco sube $5.000">
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCotizacionRefCancelar">Cancelar</button>
+        <button class="btn btn-primary" id="btnCotizacionRefGuardar">Guardar</button>
       </div>
     </div>
   </div>
@@ -7790,6 +7991,8 @@
   <script src="js/inteligencia.js"></script>   <!-- después de balance.js: reutiliza calcularRango y el panel de Finanzas -->
   <script src="js/informe-compras.js"></script>   <!-- después de balance.js: usa cerrarModal -->
   <script src="js/informe-semanal.js"></script>   <!-- después de balance.js: usa el panel de Finanzas y fmtCLP -->
+  <script src="js/acuerdo-padres.js"></script>   <!-- v133 (sql/90): después de pos.js, compras.js y balance.js: pregunta de la caja y panel Mis padres -->
+  <script src="js/cotizaciones-ref.js"></script>   <!-- v133 (sql/90): Taller → Cotizaciones aproximadas; usa cerrarModal de balance.js -->
   <script src="js/finanzas-gate.js"></script>   <!-- después de balance/config: intercepta la navegación a Finanzas -->
   <script src="js/reportes.js"></script>
   <script src="js/print.js"></script>

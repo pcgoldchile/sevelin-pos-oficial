@@ -36,6 +36,7 @@ const elItemPrecio = document.getElementById('itemPrecio');
 const elCheckSN = document.getElementById('checkTieneSN');
 const elItemSN = document.getElementById('itemSN');
 const elCheckEsServicio = document.getElementById('checkEsServicio');
+const elCheckItemDePadres = document.getElementById('checkItemDePadres');   // sql/90
 const elItemFotoPreview = document.getElementById('itemFotoPreview');
 
 // Muestra/oculta la miniatura junto al nombre del producto en "Ingresar
@@ -414,6 +415,7 @@ function seleccionarProductoCatalogo(producto, opciones = {}) {
   // productos vs. servicios. La marca propia existe porque un servicio que
   // no se publica en la tienda no tiene categoría web (15-09-2026).
   if (elCheckEsServicio) elCheckEsServicio.checked = !!producto.es_servicio || producto.categoria_web === 'Servicios Técnicos';
+  pintarCheckDePadres(producto);
 
   actualizarUtilidadPreview();
 
@@ -430,6 +432,16 @@ function seleccionarProductoCatalogo(producto, opciones = {}) {
   if (modoEdicion && elItemCantidad) {
     setTimeout(() => { elItemCantidad.focus(); elItemCantidad.select(); }, 60);
   }
+}
+
+/* Casilla "De mis padres" (sql/90). Con un producto del catálogo manda su
+   ficha y la casilla queda fija; se puede marcar a mano cuando el producto lo
+   tienen los dos, o cuando el ítem se escribe a mano (sin producto). */
+function pintarCheckDePadres(producto) {
+  if (!elCheckItemDePadres) return;
+  const ficha = producto ? (producto.propietario || 'MIO') : null;
+  elCheckItemDePadres.checked = ficha === 'PADRES';
+  elCheckItemDePadres.disabled = ficha === 'MIO' || ficha === 'PADRES';
 }
 
 /* Muestra u oculta el campo de número de serie. Se centraliza aquí
@@ -462,6 +474,7 @@ function agregarItemAlCarrito() {
   const tieneSN = !!(elCheckSN && elCheckSN.checked);
   const numeroSerie = tieneSN ? (elItemSN?.value || '').trim() : '';
   const esServicio = !!(elCheckEsServicio && elCheckEsServicio.checked);
+  const dePadres = !!(elCheckItemDePadres && elCheckItemDePadres.checked);   // sql/90
 
   if (!nombre) { showToast('Ingresa el nombre del producto', 'err'); return; }
   if (cantidad <= 0) { showToast('La cantidad debe ser mayor a 0', 'err'); return; }
@@ -484,7 +497,8 @@ function agregarItemAlCarrito() {
   const igual = producto && !numeroSerie && cart.find(i =>
     i.producto_id === producto.id && !i.serial_number &&
     (i.precio_unitario === precio || (i.precio_tipo === 'MAYORISTA' && i.precio_normal === precio)) &&
-    i.costo_unitario === costo && i.es_servicio === esServicio);
+    i.costo_unitario === costo && i.es_servicio === esServicio &&
+    (i.propietario === 'PADRES') === dePadres);
 
   if (igual) {
     igual.cantidad += cantidad;
@@ -511,6 +525,12 @@ function agregarItemAlCarrito() {
       // Segundo escalón (sql/81): más barato desde más unidades.
       precio_mayorista_2: producto ? (Number(producto.precio_mayorista_2) || null) : null,
       mayorista_desde_2: producto ? (Number(producto.mayorista_desde_2) || null) : null,
+      // Acuerdo con los padres (sql/90): lo que dice la ficha, para la pregunta de
+      // antes de cobrar (js/acuerdo-padres.js). El servidor decide con la ficha, no con esto.
+      propietario_ficha: producto ? (producto.propietario || 'MIO') : null,
+      va_al_pozo: !!producto?.va_al_pozo,
+      // Lo marcado en la casilla "De mis padres": vale en lo escrito a mano y en un producto de los dos
+      propietario: dePadres ? 'PADRES' : 'MIO',
       // Solo para el carrito (fotos y el "+" que pide S/N); normalizarItems() los descarta
       requiere_sn: !!producto?.requiere_sn,
       imagen_urls: producto ? (producto.imagen_urls || []).filter(Boolean) : []
@@ -991,6 +1011,7 @@ function limpiarFormularioItem() {
   if (elItemSN) elItemSN.value = '';
   alternarCampoSN(false);
   if (elCheckEsServicio) elCheckEsServicio.checked = false;
+  pintarCheckDePadres(null);
   mostrarFotoItem(null);
   if (elBuscarProducto) elBuscarProducto.value = '';
   productoSeleccionado = null;
@@ -1232,7 +1253,9 @@ function renderCart() {
       const detalle = [
         `${fmtCLP(item.precio_unitario)} c/u`,
         item.serial_number ? `S/N ${escHtml(item.serial_number)}` : (item.requiere_sn ? 'sin S/N' : ''),
-        item.es_servicio ? 'Servicio' : ''
+        item.es_servicio ? 'Servicio' : '',
+        // sql/90: lo que dice la ficha, o lo marcado a mano / elegido antes de cobrar
+        (item.propietario_ficha === 'PADRES' || (item.propietario_ficha !== 'MIO' && item.propietario === 'PADRES')) ? 'De mis padres' : ''
       ].filter(Boolean).join(' · ') + detalleMayoristaLinea(item, idx) + chipMargenLinea(idx) + enlaceEncargoFaltante(item, idx);
       /* Costo y margen (solo admin) van en un renglón propio a todo el ancho
          del carrito: dentro de la columna del producto, que es angosta, se
@@ -1510,6 +1533,13 @@ async function abrirModalPago() {
   try { seguir = await confirmarMargenAntesDeCobrar(); }
   finally { revisandoMargenParaCobrar = false; }
   if (!seguir) { enfocarBuscador(); return; }
+  if (cart.length === 0) return;
+
+  // sql/90: pozo del papá y productos que tienen los dos. Sin nada que preguntar, pasa de largo.
+  if (typeof preguntarAntesDeCobrar === 'function' && !(await preguntarAntesDeCobrar(cart, totalesCarrito()))) {
+    enfocarBuscador();
+    return;
+  }
   if (cart.length === 0) return;
 
   /* El total a cobrar, con el descuento y el redondeo ya aplicados. Antes
