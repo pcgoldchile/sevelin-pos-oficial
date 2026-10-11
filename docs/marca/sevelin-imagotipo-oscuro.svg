@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 800" width="1600" height="800">
+  <rect width="1600" height="800" fill="#05070D"/>
+  <g transform="translate(148.70000000000005 260) scale(1.4)"><rect width="200" height="200" rx="46" fill="#2563EB"/><g transform="translate(100 100) scale(1.2) translate(-100 -100)">
+    <path d="M132 66 H88 a17 17 0 0 0 0 34 H112 a17 17 0 0 1 0 34 H68" fill="none" stroke="#FFFFFF" stroke-width="19" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="132" cy="66" r="14.5" fill="#FFFFFF"/><circle cx="132" cy="66" r="5.5" fill="#2563EB"/>
+    <circle cx="68" cy="134" r="14.5" fill="#FFFFFF"/><circle cx="68" cy="134" r="5.5" fill="#2563EB"/>
+  </g></g>
+  <g transform="translate(512.7 270) scale(2.6)"><g fill="none" stroke="#FFFFFF" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"><path transform="translate(0 0)" d="M38 20 H17 a15 15 0 0 0 0 30 H23 a15 15 0 0 1 0 30 H2"/><path transform="translate(63 0)" d="M34 20 H0 V80 H34 M0 50 H27"/><path transform="translate(120 0)" d="M0 20 L22 80 L44 20"/><path transform="translate(187 0)" d="M34 20 H0 V80 H34 M0 50 H27"/><path transform="translate(244 0)" d="M0 20 V80 H31"/><path transform="translate(298 0)" d="M0 20 V80"/><path transform="translate(321 0)" d="M0 80 V20 L40 80 V20"/></g></g>
+</svg>

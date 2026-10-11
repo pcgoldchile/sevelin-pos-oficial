@@ -12,6 +12,26 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 11-10-2026 · Sin versión nueva: precios, enlaces por nombre, diseño del acuerdo y logo
+
+Sin cambios de código en el POS ni migración SQL. Solo datos, un cambio en la tienda y documentos.
+
+- **Monitores reacondicionados (#85, cerrado):** los de 19" a $39.990; HP 22" V223 y ViewSonic 22" a $49.990; HP 21,5"
+  V214a a $49.990; Samsung 22" VGA/DVI a $54.990. Se quitó la oferta vencida del Cyber en los dos últimos.
+- **Enlaces por nombre (#82, cerrado):** en 32 productos el código que estaba en `sku` pasó a `codigo_barras` y el `sku`
+  quedó vacío; la tienda arma el enlace con nombre más número y redirige los 32 viejos (tienda `7620af4`,
+  `src/lib/enlaces-codigo.ts`, lista cerrada). Al 11-10 son **136 productos publicados sin SKU**. Falta revisar Merchant
+  Center (#88): 14 de esos productos cambian de identificador en el feed.
+- **Kit Solar (#81, cerrado):** el ingreso #18 tenía fecha del año 0008; es 24-08-2026.
+- **Acuerdo con los padres (#87):** diseño mostrado al dueño, **nada construido**. Faltan su OK y 4 respuestas (tope al
+  costo o al precio de venta, IVA del pozo, entrega diaria o semanal, precio del cambio de batería de celular).
+- **Logo:** dos rondas de propuestas en `docs/marca/`. El dueño se quedó, por ahora, con uno que hizo en ChatGPT
+  (hexágono en diagonal con la S, y el nombre inclinado con rayas). No hay archivo vectorial todavía.
+- **Pago con tarjeta en la tienda (#93, sin empezar):** el dueño cobró $19.990 por el link de Haulmer (comisión $265) y
+  quiere ofrecerlo en sevelin.cl. Hay que investigar si Haulmer da pasarela, comparar con Webpay y recomendar.
+- **Venta sin anotar (#92):** ese Power Bank LinkOn no está en el POS; el stock sigue en 20.
+- **Lunes 12-10:** auditoría semanal de precios y Merchant Center.
+
 ## 10-10-2026 · v132, IVA real en Utilidades, informe de compras, editar/eliminar lo por llegar y mudanza
 
 Detalle en `docs/CHANGELOG-V132.md`. Sin migración SQL.
