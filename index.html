@@ -5362,6 +5362,8 @@
         <div class="pago-maquina-botones" role="group" aria-label="Máquina de tarjetas">
           <button type="button" class="entrega-tipo-btn pago-maquina-btn" data-maquina="TUU">TUU</button>
           <button type="button" class="entrega-tipo-btn pago-maquina-btn" data-maquina="BANCHILE">Banco de Chile</button>
+          <!-- sql/89 (v133): el cliente pagó con tarjeta en tuu.cl/sevelin, sin máquina -->
+          <button type="button" class="entrega-tipo-btn pago-maquina-btn" data-maquina="LINK_TUU">Link de pago</button>
         </div>
       </div>
 
@@ -6456,6 +6458,7 @@
           <select id="encargoMaquinaTarjeta" class="maquina-abono" style="display:none;" aria-label="Máquina de tarjetas del abono">
             <option value="TUU">Máquina TUU</option>
             <option value="BANCHILE">Máquina Banco de Chile</option>
+            <option value="LINK_TUU">Link de pago (Haulmer)</option>
           </select>
         </div>
       </div>
@@ -6506,6 +6509,7 @@
           <select id="abonoMaquinaTarjeta" class="maquina-abono" style="display:none;" aria-label="Máquina de tarjetas del abono">
             <option value="TUU">Máquina TUU</option>
             <option value="BANCHILE">Máquina Banco de Chile</option>
+            <option value="LINK_TUU">Link de pago (Haulmer)</option>
           </select>
         </div>
       </div>

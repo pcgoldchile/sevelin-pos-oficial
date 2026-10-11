@@ -388,15 +388,21 @@ function metodoPagaComision(metodo) {
    en $2 por transacción: revisarla un par de veces al año basta.
    Tarjetas extranjeras (2,79% + 0,0099 UF) y prepago (1,08% + 0,0014 UF) no
    tienen medio de pago propio en el POS: se cobran como débito o crédito.
-   Espejo en js/config.js (solo para previsualizar). */
-const MAQUINAS_TARJETA = ['TUU', 'BANCHILE'];
+   Espejo en js/config.js (solo para previsualizar).
+
+   LINK DE PAGO DE HAULMER (sql/89, v133): el cliente paga con su tarjeta en
+   tuu.cl/sevelin, sin máquina. Es la misma cuenta TUU y la misma tarifa
+   (dato real del 10-10-2026: $19.990 pagó $223 + IVA = $265), así que
+   LINK_TUU cae en la fórmula de TUU; se guarda aparte para saber cuánto
+   entra por el link. */
+const MAQUINAS_TARJETA = ['TUU', 'BANCHILE', 'LINK_TUU'];
 const UF_REFERENCIA_COMISION = 41082;
 const TARIFA_BANCHILE = {
   'Tarjeta Débito': { tasa: 0.006, fijoUf: 0.0015 },
   'Tarjeta Crédito': { tasa: 0.0153, fijoUf: 0.0018 }
 };
 
-/* Devuelve 'TUU', 'BANCHILE' o null (no vino o no se reconoce). */
+/* Devuelve 'TUU', 'BANCHILE', 'LINK_TUU' o null (no vino o no se reconoce). */
 function maquinaTarjetaValida(valor) {
   const v = String(valor || '').trim().toUpperCase();
   return MAQUINAS_TARJETA.includes(v) ? v : null;

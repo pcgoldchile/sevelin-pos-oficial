@@ -70,8 +70,10 @@ function metodoPagaComision(metodo) {
 
 /* Segunda máquina de tarjetas: Banchile Pagos (sql/79, v108). Espejo de
    api/index.js: débito 0,6% + 0,0015 UF y crédito 1,53% + 0,0018 UF, con IVA
-   (lo que Banchile descuenta del abono). */
-const NOMBRE_MAQUINA_TARJETA = { TUU: 'TUU', BANCHILE: 'Banco de Chile' };
+   (lo que Banchile descuenta del abono).
+   LINK_TUU (sql/89, v133) es el link de pago de Haulmer: misma tarifa que la
+   máquina TUU, por eso calcularComisionPos no lo distingue. */
+const NOMBRE_MAQUINA_TARJETA = { TUU: 'TUU', BANCHILE: 'Banco de Chile', LINK_TUU: 'Link de pago (Haulmer)' };
 const UF_REFERENCIA_COMISION = 41082;
 const TARIFA_BANCHILE = {
   'Tarjeta Débito': { tasa: 0.006, fijoUf: 0.0015 },

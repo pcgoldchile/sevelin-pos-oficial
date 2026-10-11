@@ -43,8 +43,13 @@ function leerMaquinaTarjeta() {
 }
 
 function elegirMaquinaTarjeta(maquina) {
-  maquinaTarjetaElegida = maquina === 'BANCHILE' ? 'BANCHILE' : 'TUU';
-  try { localStorage.setItem(CLAVE_MAQUINA_TARJETA, maquinaTarjetaElegida); } catch (_) {}
+  maquinaTarjetaElegida = NOMBRE_MAQUINA_TARJETA[maquina] ? maquina : 'TUU';
+  /* El link de pago (sql/89) vale solo para este cobro y no se recuerda: es
+     la excepción, y si quedara elegido la próxima tarjeta pasada por la
+     máquina se anotaría como link sin que nadie lo note. */
+  if (maquinaTarjetaElegida !== 'LINK_TUU') {
+    try { localStorage.setItem(CLAVE_MAQUINA_TARJETA, maquinaTarjetaElegida); } catch (_) {}
+  }
   renderMaquinaTarjeta();
   /* Solo cambia el texto de las tarjetas: repintar los botones borraría lo
      que ya está elegido o resaltado con el teclado. */
@@ -58,9 +63,10 @@ function elegirMaquinaTarjeta(maquina) {
 function descripcionTarjeta(metodo) {
   const total = Number(configPago?.total) || 0;
   const maquina = NOMBRE_MAQUINA_TARJETA[maquinaTarjetaElegida] || 'TUU';
+  const porLink = maquinaTarjetaElegida === 'LINK_TUU';
   return esAdmin() && total > 0
-    ? `Máquina ${maquina} · comisión ${fmtCLP(calcularComisionPos(metodo, total, maquinaTarjetaElegida))}`
-    : `Por la máquina ${maquina}`;
+    ? `${porLink ? maquina : `Máquina ${maquina}`} · comisión ${fmtCLP(calcularComisionPos(metodo, total, maquinaTarjetaElegida))}`
+    : (porLink ? `Por el ${maquina.toLowerCase()}` : `Por la máquina ${maquina}`);
 }
 
 function renderMaquinaTarjeta() {
@@ -165,6 +171,8 @@ function abrirSelectorPago(opciones) {
   if (elPagoDteBox) elPagoDteBox.style.display = 'none';
   elegirTipoDte('SIN DTE');
 
+  // Cada cobro parte en la máquina de siempre: el link no se arrastra (sql/89).
+  maquinaTarjetaElegida = leerMaquinaTarjeta();
   renderMaquinaTarjeta();
   renderMetodosPago();
   if (elModalPago) elModalPago.classList.add('show');
