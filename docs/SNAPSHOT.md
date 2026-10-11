@@ -12,6 +12,29 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 11-10-2026 (tarde) · v133, link de pago, acuerdo con los padres y cotizaciones aproximadas
+
+Detalle en `docs/CHANGELOG-V133.md`. Migraciones `sql/89` y `sql/90` aplicadas. POS `fcca6f1` y `8fbd6f3`.
+
+- **Link de pago de Haulmer:** tercera opción al cobrar con tarjeta (`maquina_tarjeta = LINK_TUU`, tarifa de TUU). No
+  se recuerda para el cobro siguiente. La venta del Power Bank del 10-10 quedó como la **#264** (#92, cerrado).
+- **Acuerdo con los padres (#87, construido):** "¿De quién es?" y "Lo hace mi papá" en la ficha; casilla "De mis padres"
+  y ventana "Antes de cobrar" en la caja; **Finanzas → Mis padres** con la cuenta de la mercadería (al precio de venta,
+  aviso a los $3.000.000) y el pozo del mes (mínimo prorrateado, entrega sugerida del día). Pagos y entregas son gastos
+  con clasificación propia. `venta_items.propietario` y `pozo_monto`; un trigger cubre la venta web y los encargos.
+  **Sin datos todavía:** ningún producto está marcado de los padres, ningún servicio como del papá, y el pozo no ha
+  partido (`acuerdo_padres.pozo_desde` vacío). Eso lo hace el dueño (#94).
+- **Taller → Cotizaciones aproximadas:** lista de precios de referencia por equipo y trabajo (vacía).
+- **Pago con tarjeta en sevelin.cl (#93, investigado):** se recomendó el **Pago Online de TUU** por API
+  (`developers.tuu.cl/docs/payment-intent`), más barato que Webpay (en $19.990: TUU $265, Webpay $354 o $545). Falta el
+  OK del dueño y que TUU le dé `account_id` y `secret`. Nada construido en la tienda.
+- **Mayoristas:** las 2 solicitudes pendientes se aprobaron a pedido del dueño (sin verificar por WhatsApp) y la tienda
+  les mandó el correo. Son las primeras cuentas reales: sirven para la prueba de punta a punta (#28).
+- **Cambio de batería de celular:** no hay precios publicados de Arica. Se le propuso mano de obra fija más la batería
+  ("desde $20.000"). Él decide; el servicio todavía no existe en el catálogo.
+- **Logo:** pidió pasarlo a vector; falta que mande la imagen (#95).
+- **Lunes 12-10:** auditoría semanal de precios y Merchant Center (#88).
+
 ## 11-10-2026 · Sin versión nueva: precios, enlaces por nombre, diseño del acuerdo y logo
 
 Sin cambios de código en el POS ni migración SQL. Solo datos, un cambio en la tienda y documentos.
@@ -23,13 +46,10 @@ Sin cambios de código en el POS ni migración SQL. Solo datos, un cambio en la 
   `src/lib/enlaces-codigo.ts`, lista cerrada). Al 11-10 son **136 productos publicados sin SKU**. Falta revisar Merchant
   Center (#88): 14 de esos productos cambian de identificador en el feed.
 - **Kit Solar (#81, cerrado):** el ingreso #18 tenía fecha del año 0008; es 24-08-2026.
-- **Acuerdo con los padres (#87):** diseño mostrado al dueño, **nada construido**. Faltan su OK y 4 respuestas (tope al
-  costo o al precio de venta, IVA del pozo, entrega diaria o semanal, precio del cambio de batería de celular).
+- **Acuerdo con los padres (#87):** construido esa misma tarde (v133, ver arriba).
 - **Logo:** dos rondas de propuestas en `docs/marca/`. El dueño se quedó, por ahora, con uno que hizo en ChatGPT
   (hexágono en diagonal con la S, y el nombre inclinado con rayas). No hay archivo vectorial todavía.
-- **Pago con tarjeta en la tienda (#93, sin empezar):** el dueño cobró $19.990 por el link de Haulmer (comisión $265) y
-  quiere ofrecerlo en sevelin.cl. Hay que investigar si Haulmer da pasarela, comparar con Webpay y recomendar.
-- **Venta sin anotar (#92):** ese Power Bank LinkOn no está en el POS; el stock sigue en 20.
+- **Pago con tarjeta en la tienda (#93)** y **venta sin anotar (#92):** resueltos esa misma tarde (v133, ver arriba).
 - **Lunes 12-10:** auditoría semanal de precios y Merchant Center.
 
 ## 10-10-2026 · v132, IVA real en Utilidades, informe de compras, editar/eliminar lo por llegar y mudanza
