@@ -53,6 +53,15 @@
         "C:\\Users\\Usuario\\Desktop\\sevelin-tienda\\scripts\\maqueta-tienda.mjs"
       ],
       "port": 3100
+    },
+    {
+      "name": "tienda-maqueta-webpay",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:\\Users\\Usuario\\Desktop\\sevelin-tienda\\scripts\\maqueta-tienda.mjs",
+        "--webpay"
+      ],
+      "port": 3100
     }
   ]
 }

@@ -15,7 +15,10 @@
    admin-only (ver index.html, nav-btn "🌐 Página Web").
    ============================================================ */
 
-const ESTADOS_NOTIFICACION_PEDIDOS_WEB = 'PAGADO,ERROR_STOCK_SIN_DESPACHO';
+/* v134: también los CREADO, para contar los que esperan que el dueño confirme
+   un pago con tarjeta hecho por el link (los demás CREADO no cuentan: son
+   carritos que no terminaron de pagar por Khipu). */
+const ESTADOS_NOTIFICACION_PEDIDOS_WEB = 'PAGADO,ERROR_STOCK_SIN_DESPACHO,CREADO';
 const INTERVALO_NOTIFICACIONES_MS = 60 * 1000;
 
 const elBtnNotificaciones = document.getElementById('btnNotificaciones');
@@ -47,9 +50,17 @@ async function actualizarNotificaciones() {
 
   try {
     const pedidos = await API.pedidosWeb.listar(ESTADOS_NOTIFICACION_PEDIDOS_WEB);
-    const cantidad = Array.isArray(pedidos) ? pedidos.length : 0;
+    const lista = Array.isArray(pedidos) ? pedidos : [];
+    const porConfirmar = lista.filter(p => p.estado === 'CREADO' && p.metodo_pago === 'LINK_TUU').length;
+    const porPreparar = lista.filter(p => p.estado !== 'CREADO').length;
+    const cantidad = porPreparar + porConfirmar;
     elBadgeNotificaciones.textContent = `(${cantidad})`;
     elBtnNotificaciones?.classList.toggle('tiene-pendientes', cantidad > 0);
+    if (elBtnNotificaciones) {
+      elBtnNotificaciones.title = porConfirmar
+        ? `${porConfirmar} pedido(s) esperan que confirmes un pago con tarjeta${porPreparar ? ` · ${porPreparar} por preparar` : ''}`
+        : 'Pedidos web por preparar';
+    }
   } catch (err) {
     // Silencioso a propósito (mismo criterio que verificarBackend()): un
     // fallo puntual de este sondeo cada 60s no debe interrumpir al

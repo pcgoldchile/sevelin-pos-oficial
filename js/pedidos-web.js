@@ -114,7 +114,13 @@ const ETIQUETAS_ESTADO_PEDIDO_WEB = {
   ERROR_STOCK_SIN_DESPACHO: { txt: '🚨 Pagado, sin stock — revisar', clase: 'badge-red' }
 };
 
-function badgeEstadoPedidoWeb(estado) {
+function badgeEstadoPedidoWeb(estado, pedido) {
+  /* v134 (supabase/42 de la tienda): un pedido que eligió pagar con tarjeta
+     por el link de Haulmer no es un carrito olvidado. Está esperando que el
+     dueño confirme la plata, y eso se tiene que ver a la primera. */
+  if (estado === 'CREADO' && pedido?.metodo_pago === 'LINK_TUU') {
+    return '<span class="badge badge-gold">💳 Espera que confirmes el pago</span>';
+  }
   const info = ETIQUETAS_ESTADO_PEDIDO_WEB[estado] || { txt: estado, clase: 'badge-soft' };
   return `<span class="badge ${info.clase}">${info.txt}</span>`;
 }
@@ -155,12 +161,20 @@ function retiroAgendadoPedidoWeb(p) {
 }
 
 function badgeMedioPagoPedidoWeb(p) {
+  const metodo = String(p.metodo_pago || '').toUpperCase();
+  // Sin pago todavía: se dice cómo ELIGIÓ pagar solo si fue por el link, que es el que hay que confirmar a mano
+  if (p.estado === 'CREADO' && metodo === 'LINK_TUU') return '<span class="badge badge-soft">💳 Link de pago</span>';
   if (['CREADO', 'FALLIDO', 'EXPIRADO'].includes(p.estado)) {
     return '<span style="color:var(--text-muted);">—</span>';
   }
-  const metodo = String(p.metodo_pago || '').toUpperCase();
   if (metodo === 'KHIPU') return '<span class="badge badge-soft">🏦 Khipu</span>';
   if (metodo === 'FLOW') return '<span class="badge badge-soft">💳 Flow</span>';
+  /* Tarjeta en la tienda (v134): por el link de Haulmer o por Webpay. El
+     detalle dice si fue débito o crédito. */
+  if (metodo === 'LINK_TUU' || metodo === 'WEBPAY') {
+    const tipo = p.pago_detalle?.tipo === 'CREDITO' ? 'crédito' : p.pago_detalle?.tipo === 'PREPAGO' ? 'prepago' : 'débito';
+    return `<span class="badge badge-soft">💳 ${metodo === 'WEBPAY' ? 'Webpay' : 'Link de pago'} · ${tipo}</span>`;
+  }
   return '<span class="badge badge-soft">' + escHtml(p.metodo_pago || 'Otro') + '</span>';
 }
 
@@ -189,7 +203,17 @@ function renderPedidosWebTabla(lista) {
     const puedeMarcarEntregado = ['PREPARANDO', 'ENVIADO'].includes(p.estado);
     // v129: correo "listo para retiro". Mientras quede algún producto sin avisar.
     const puedeAvisarRetiro = estadoAvisoRetiroPedidoWeb(p).faltan > 0;
-    const accion = puedeDespachar
+    /* v134: un pedido que espera pago se puede confirmar a mano cuando la
+       plata entró por el link de Haulmer. Destacado si el cliente eligió el
+       link; discreto si eligió otro medio y terminó pagando por ahí. */
+    const esperaPago = p.estado === 'CREADO';
+    const eligioLink = p.metodo_pago === 'LINK_TUU';
+    const accion = esperaPago && esAdmin()
+      ? `<div class="cell-actions" style="justify-content:flex-end;">
+           <button class="btn ${eligioLink ? 'btn-green' : 'btn-outline'} btn-sm" data-confirmar-pago-web="${p.id}"
+                   title="Úsalo cuando veas en tu cuenta de Haulmer el pago con tarjeta de este pedido">${eligioLink ? '✅ Confirmar pago' : 'Pagó por el link'}</button>
+         </div>`
+      : puedeDespachar
       ? `<div class="cell-actions" style="justify-content:flex-end;">
            <button class="btn btn-outline btn-sm" data-pedido-web="${p.id}">Gestionar</button>
            ${puedeAvisarRetiro ? `<button class="btn btn-outline btn-sm" style="color:var(--cyan);border-color:rgba(34,211,238,.4);" data-listo-retiro="${p.id}">📣 Listo para retiro</button>` : ''}
@@ -210,7 +234,7 @@ function renderPedidosWebTabla(lista) {
       <td>${badgeMedioPagoPedidoWeb(p)}</td>
       <td>${escHtml(p.metodo_envio || '—')}${retiroAgendadoPedidoWeb(p)}${entregaExtraPedidoWeb(p)}${tracking}</td>
       <td class="num">${fmtCLP(p.total)}</td>
-      <td>${badgeEstadoPedidoWeb(p.estado)}</td>
+      <td>${badgeEstadoPedidoWeb(p.estado, p)}</td>
       <td style="text-align:right;">${accion}</td>
     </tr>`;
   }).join('');
@@ -230,6 +254,117 @@ function renderPedidosWebTabla(lista) {
   elPedidosWebTableBody.querySelectorAll('[data-listo-retiro]').forEach(btn => {
     btn.addEventListener('click', () => abrirModalListoRetiro(btn.dataset.listoRetiro));
   });
+
+  elPedidosWebTableBody.querySelectorAll('[data-confirmar-pago-web]').forEach(btn => {
+    btn.addEventListener('click', () => abrirModalConfirmarPagoWeb(btn.dataset.confirmarPagoWeb));
+  });
+}
+
+/* ============================================================
+   CONFIRMAR UN PAGO CON TARJETA HECHO POR EL LINK (v134)
+   ------------------------------------------------------------
+   Pedido del dueño (11-10-2026): mientras llega Webpay, la tienda ofrece
+   "Pagar con tarjeta" con su link de Haulmer. El link no avisa cuando alguien
+   paga, así que el pedido queda esperando hasta que él lo confirma acá.
+
+   Se pide escribir el monto que llegó: en el link lo escribe el cliente a
+   mano, y es la única forma de notar un pago por otro monto antes de dar el
+   pedido por pagado. El servidor lo compara igual.
+   ============================================================ */
+let pedidoWebIdConfirmarPago = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+  const modal = document.getElementById('modalConfirmarPagoWeb');
+  document.getElementById('btnConfirmarPagoWebVolver')?.addEventListener('click', cerrarModalConfirmarPagoWeb);
+  document.getElementById('btnConfirmarPagoWebOk')?.addEventListener('click', confirmarPagoWeb);
+  document.getElementById('confirmarPagoWebMonto')?.addEventListener('input', pintarCalceConfirmarPagoWeb);
+  modal?.addEventListener('click', (e) => { if (e.target === modal) cerrarModalConfirmarPagoWeb(); });
+});
+
+function abrirModalConfirmarPagoWeb(id) {
+  if (!esAdmin()) return;
+  const pedido = pedidosWebList.find(p => String(p.id) === String(id));
+  if (!pedido) return;
+  pedidoWebIdConfirmarPago = pedido.id;
+
+  const poner = (elId, texto) => { const el = document.getElementById(elId); if (el) el.textContent = texto; };
+  poner('confirmarPagoWebPedido', `Pedido ${pedido.numero_pedido}`);
+  poner('confirmarPagoWebCliente', [
+    [pedido.cliente_nombre, pedido.cliente_apellido].filter(Boolean).join(' ') || 'Cliente',
+    pedido.cliente_telefono, pedido.cliente_email
+  ].filter(Boolean).join(' · '));
+  poner('confirmarPagoWebTotal', fmtCLP(pedido.total));
+  poner('confirmarPagoWebItems', (pedido.items || []).map(it => `${it.nombre} × ${it.cantidad}`).join(' · '));
+
+  const monto = document.getElementById('confirmarPagoWebMonto');
+  if (monto) monto.value = '';
+  const ref = document.getElementById('confirmarPagoWebReferencia');
+  if (ref) ref.value = '';
+  const debito = document.querySelector('input[name="confirmarPagoWebTipo"][value="DEBITO"]');
+  if (debito) debito.checked = true;
+  pintarCalceConfirmarPagoWeb();
+
+  document.getElementById('modalConfirmarPagoWeb')?.classList.add('show');
+  setTimeout(() => monto?.focus(), 60);
+}
+
+function cerrarModalConfirmarPagoWeb() {
+  document.getElementById('modalConfirmarPagoWeb')?.classList.remove('show');
+  pedidoWebIdConfirmarPago = null;
+}
+
+/* Dice al tiro si lo escrito calza con el pedido, y recién ahí deja confirmar. */
+function pintarCalceConfirmarPagoWeb() {
+  const pedido = pedidosWebList.find(p => String(p.id) === String(pedidoWebIdConfirmarPago));
+  const aviso = document.getElementById('confirmarPagoWebCalce');
+  const btn = document.getElementById('btnConfirmarPagoWebOk');
+  if (!pedido || !aviso || !btn) return;
+  const escrito = String(document.getElementById('confirmarPagoWebMonto')?.value || '').replace(/[^\d]/g, '');
+  const monto = Number(escrito);
+  const total = Math.round(num(pedido.total));
+  btn.disabled = !(escrito && monto === total);
+  if (!escrito) { aviso.textContent = ''; aviso.style.color = ''; return; }
+  if (monto === total) {
+    aviso.textContent = '✓ Calza con el pedido.';
+    aviso.style.color = 'var(--green)';
+  } else {
+    aviso.textContent = monto < total
+      ? `No calza: faltan ${fmtCLP(total - monto)}. Pídele la diferencia antes de confirmar.`
+      : `No calza: sobran ${fmtCLP(monto - total)}. Revisa que sea el pedido correcto.`;
+    aviso.style.color = 'var(--red)';
+  }
+}
+
+async function confirmarPagoWeb() {
+  const id = pedidoWebIdConfirmarPago;
+  const pedido = pedidosWebList.find(p => String(p.id) === String(id));
+  if (!pedido) return;
+  const monto = Number(String(document.getElementById('confirmarPagoWebMonto')?.value || '').replace(/[^\d]/g, ''));
+  const tipo = document.querySelector('input[name="confirmarPagoWebTipo"]:checked')?.value || 'DEBITO';
+  const referencia = (document.getElementById('confirmarPagoWebReferencia')?.value || '').trim();
+
+  const btn = document.getElementById('btnConfirmarPagoWebOk');
+  if (btn) { btn.disabled = true; btn.textContent = 'Confirmando…'; }
+  try {
+    const r = await API.pedidosWeb.confirmarPago(id, { tipo, monto_recibido: monto, referencia });
+    cerrarModalConfirmarPagoWeb();
+    if (r?.sin_stock) {
+      await ventanaAviso(
+        `El pago del pedido ${pedido.numero_pedido} quedó confirmado, pero el POS no tenía stock para descontar.\n\n` +
+        'El pedido aparece como "Pagado, sin stock — revisar". Consigue el producto, ofrécele un cambio o devuélvele la plata: nada de eso se hace solo.',
+        { titulo: 'Pagado, pero sin stock', peligro: true });
+    } else {
+      showToast(`Pago del pedido ${pedido.numero_pedido} confirmado${r?.correo_cliente ? ' · el cliente ya recibió su correo' : ''}`, 'ok');
+    }
+    await cargarPedidosWeb();
+    if (typeof actualizarNotificaciones === 'function') actualizarNotificaciones();
+  } catch (err) {
+    // El servidor explica por qué no (otro monto, ya confirmado, la tienda no respondió)
+    await ventanaAviso(err.message || 'No se pudo confirmar el pago', { titulo: 'No se confirmó el pago', peligro: true });
+    cargarPedidosWeb();
+  } finally {
+    if (btn) { btn.textContent = '✅ Sí, llegó el pago'; pintarCalceConfirmarPagoWeb(); }
+  }
 }
 
 /* ============================================================

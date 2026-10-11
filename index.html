@@ -3537,6 +3537,7 @@
             <div class="toolbar-group">
               <div class="chip-group" id="pedidosWebChips">
                 <button class="chip active" data-estado="">Todos</button>
+                <button class="chip" data-estado="CREADO" title="Pedidos que todavía no se pagan. Los que eligieron tarjeta por tu link de pago esperan que confirmes la plata.">Esperando pago</button>
                 <button class="chip" data-estado="PAGADO">Por preparar</button>
                 <button class="chip" data-estado="PREPARANDO">Preparando</button>
                 <button class="chip" data-estado="ENVIADO">Enviados</button>
@@ -5196,6 +5197,52 @@
       <div class="modal-foot">
         <button class="btn btn-ghost" id="btnCancelarPedidoWebVolver" type="button">Volver</button>
         <button class="btn btn-red" id="btnCancelarPedidoWebConfirmar" type="button">Sí, cancelar pedido</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- v134: confirmar un pago con tarjeta hecho por el link de Haulmer (supabase/42 de la tienda). js/pedidos-web.js -->
+  <div id="modalConfirmarPagoWeb" class="modal-overlay">
+    <div class="modal-box" style="max-width:520px;">
+      <div class="ventana-cabeza">
+        <span class="ventana-icono" aria-hidden="true">💳</span>
+        <h2>¿Llegó el pago con tarjeta?</h2>
+      </div>
+      <p class="modal-hint">Confírmalo solo cuando veas el pago en tu cuenta de Haulmer o en el comprobante del cliente. Al confirmar se anota la venta, baja el stock y el cliente recibe su correo.</p>
+
+      <div class="llegada-fila" style="margin-top:14px;">
+        <div class="llegada-cabecera">
+          <div class="llegada-nombre">
+            <strong id="confirmarPagoWebPedido">—</strong>
+            <small id="confirmarPagoWebCliente">—</small>
+          </div>
+          <strong id="confirmarPagoWebTotal" style="font-size:22px; color:var(--valor); white-space:nowrap;">—</strong>
+        </div>
+        <p class="llegada-nota" id="confirmarPagoWebItems" style="margin-top:8px;"></p>
+      </div>
+
+      <div class="field" style="margin-top:14px;">
+        <label for="confirmarPagoWebMonto">Monto que te llegó ($) *</label>
+        <input type="text" inputmode="numeric" id="confirmarPagoWebMonto" autocomplete="off" placeholder="Escríbelo tal como aparece en Haulmer">
+        <small id="confirmarPagoWebCalce" style="font-size:12.5px; min-height:18px;"></small>
+      </div>
+
+      <div class="field" style="margin-top:6px;">
+        <label>El cliente pagó con</label>
+        <div class="antes-opciones" style="margin-top:0;">
+          <label class="antes-opcion"><input type="radio" name="confirmarPagoWebTipo" value="DEBITO" checked> Débito</label>
+          <label class="antes-opcion"><input type="radio" name="confirmarPagoWebTipo" value="CREDITO"> Crédito</label>
+        </div>
+      </div>
+
+      <div class="field" style="margin-top:12px;">
+        <label for="confirmarPagoWebReferencia">Referencia (opcional)</label>
+        <input type="text" id="confirmarPagoWebReferencia" maxlength="120" autocomplete="off" placeholder="N° de operación o una nota para ti">
+      </div>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnConfirmarPagoWebVolver" type="button">Volver</button>
+        <button class="btn btn-green" id="btnConfirmarPagoWebOk" type="button" disabled>✅ Sí, llegó el pago</button>
       </div>
     </div>
   </div>

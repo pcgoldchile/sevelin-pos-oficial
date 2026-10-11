@@ -395,14 +395,26 @@ function metodoPagaComision(metodo) {
    (dato real del 10-10-2026: $19.990 pagó $223 + IVA = $265), así que
    LINK_TUU cae en la fórmula de TUU; se guarda aparte para saber cuánto
    entra por el link. */
-const MAQUINAS_TARJETA = ['TUU', 'BANCHILE', 'LINK_TUU'];
+const MAQUINAS_TARJETA = ['TUU', 'BANCHILE', 'LINK_TUU', 'WEBPAY'];
 const UF_REFERENCIA_COMISION = 41082;
 const TARIFA_BANCHILE = {
   'Tarjeta Débito': { tasa: 0.006, fijoUf: 0.0015 },
   'Tarjeta Crédito': { tasa: 0.0153, fijoUf: 0.0018 }
 };
 
-/* Devuelve 'TUU', 'BANCHILE', 'LINK_TUU' o null (no vino o no se reconoce). */
+/* WEBPAY PLUS de Transbank (sql/91, v134): pago con tarjeta en sevelin.cl. No
+   es una máquina: es por dónde entra la plata de una venta web.
+   Tarifa vigente desde el 01-09-2026 (anotada el 11-10-2026): débito 1,49% y
+   crédito 2,29%, más IVA, con un mínimo por transacción de 0,00226 UF en
+   débito y 0,003515 UF en crédito. Prepago se anota como débito.
+   OJO: todavía no hay contrato firmado ni un abono real con que compararla.
+   Con la primera liquidación de Transbank hay que revisar que calce. */
+const TARIFA_WEBPAY = {
+  'Tarjeta Débito': { tasa: 0.0149, minimoUf: 0.00226 },
+  'Tarjeta Crédito': { tasa: 0.0229, minimoUf: 0.003515 }
+};
+
+/* Devuelve 'TUU', 'BANCHILE', 'LINK_TUU', 'WEBPAY' o null (no vino o no se reconoce). */
 function maquinaTarjetaValida(valor) {
   const v = String(valor || '').trim().toUpperCase();
   return MAQUINAS_TARJETA.includes(v) ? v : null;
@@ -418,6 +430,10 @@ function calcularComisionPos(metodo, total, maquina) {
   if (maquinaTarjetaValida(maquina) === 'BANCHILE') {
     const tarifa = TARIFA_BANCHILE[String(metodo).trim()];
     return Math.round((monto * tarifa.tasa + tarifa.fijoUf * UF_REFERENCIA_COMISION) * IVA_COMISION);
+  }
+  if (maquinaTarjetaValida(maquina) === 'WEBPAY') {
+    const tarifa = TARIFA_WEBPAY[String(metodo).trim()];
+    return Math.round(Math.max(monto * tarifa.tasa, tarifa.minimoUf * UF_REFERENCIA_COMISION) * IVA_COMISION);
   }
   return Math.round((monto * COMISION_POS_TASA + COMISION_POS_FIJO) * IVA_COMISION);
 }
@@ -14874,6 +14890,21 @@ app.post('/api/interno/registrar-venta-web', authSync, async (req, res) => {
 
     const totales = totalizar(lineas, 0);
     const fecha = fechaHoyChile();
+
+    /* v134 — PAGO CON TARJETA EN LA TIENDA (supabase/42 de sevelin-tienda): por
+       el link de pago de Haulmer o por Webpay. La tienda dice si fue débito o
+       crédito y por dónde entró; la comisión se calcula ACÁ, con las tarifas
+       del POS, sobre lo que de verdad se cobró (productos más despacho). Va en
+       comision_pos, igual que una tarjeta pasada en el local, para que todos
+       los informes que ya restan esa comisión la vean sin tocar nada.
+       Cualquier otro medio que mande la tienda se anota como transferencia. */
+    const metodoWebPedido = String(req.body?.metodo_pago || '').trim();
+    const metodoWeb = metodoPagaComision(metodoWebPedido) ? metodoWebPedido : 'Transferencia';
+    const maquinaWeb = metodoPagaComision(metodoWeb) ? maquinaTarjetaValida(req.body?.maquina_tarjeta) : null;
+    const despachoWeb = String(req.body?.tipo_entrega || '').toLowerCase() === 'despacho' ? Math.max(0, Math.round(num(req.body?.envio_cobrado))) : 0;
+    const cobradoWeb = num(req.body?.monto_cobrado) > 0 ? Math.round(num(req.body.monto_cobrado)) : num(totales.total) + despachoWeb;
+    const comisionTarjetaWeb = maquinaWeb ? calcularComisionPos(metodoWeb, cobradoWeb, maquinaWeb) : 0;
+
     const cabecera = {
       fecha,
       hora: horaChileActual(),
@@ -14883,15 +14914,17 @@ app.post('/api/interno/registrar-venta-web', authSync, async (req, res) => {
       cliente_correo: (req.body?.cliente_correo || '').trim().toLowerCase() || null,
       // Khipu es una transferencia bancaria: el cliente autoriza el pago
       // desde su banco. Se guarda como tal para que cuadre con la cartola.
-      metodo_pago: (req.body?.metodo_pago || 'Transferencia'),
+      metodo_pago: metodoWeb,
       estado: 'PAGADA',
       fecha_pago: new Date().toISOString(),
-      metodo_pago_final: (req.body?.metodo_pago || 'Transferencia'),
+      metodo_pago_final: metodoWeb,
       tipo_dte: null,
       ...totales,
       descuento_tipo: null,
       descuento_valor: 0,
-      comision_pos: 0,
+      comision_pos: comisionTarjetaWeb,
+      // Solo viaja con tarjeta: una venta por transferencia no depende de esta columna
+      ...(maquinaWeb ? { maquina_tarjeta: maquinaWeb } : {}),
       pago_mixto: false,
       impreso: false,
       // Mismo normalizador que las ventas de caja: retiro deja el envío
@@ -15147,6 +15180,75 @@ app.put('/api/pos/pedidos-web/:id', auth(true), async (req, res) => {
   }
 
   res.json({ ...data, stock_repuesto: stockRepuesto, reservas_liberadas: lineasYaLiberadas.size, correo_enviado: correoEnviado });
+});
+
+/* CONFIRMAR UN PAGO CON TARJETA HECHO POR EL LINK DE PAGO (v134, supabase/42).
+   ------------------------------------------------------------
+   Pedido del dueño (11-10-2026): mientras Transbank habilita Webpay, la
+   tienda ofrece "Pagar con tarjeta" con su link de Haulmer. Ese link no le
+   avisa nada a nadie: el pedido queda esperando y el dueño, cuando ve la
+   plata en su cuenta, aprieta este botón. Recién ahí la tienda anota la
+   venta, baja el stock y le escribe al cliente.
+
+   Es la única prueba de pago que tiene ese pedido, así que:
+     · solo administrador;
+     · hay que escribir el MONTO que llegó, y tiene que ser el del pedido. En
+       el link el monto lo escribe el cliente a mano: quien pagó $1.800 por un
+       pedido de $18.000 no puede quedar con el pedido confirmado;
+     · solo sirve para un pedido que sigue esperando pago.
+   Todo lo demás lo hace la tienda (POST /api/pos/confirmar-pago), que tiene
+   el candado contra una doble confirmación. */
+app.post('/api/pos/pedidos-web/:id/confirmar-pago', auth(true), async (req, res) => {
+  const tipo = String(req.body?.tipo || '').trim().toUpperCase();
+  if (!['DEBITO', 'CREDITO'].includes(tipo)) return enviarError(res, 400, 'Indica si el cliente pagó con débito o con crédito');
+  const montoRecibido = Math.round(num(req.body?.monto_recibido));
+  if (!(montoRecibido > 0)) return enviarError(res, 400, 'Escribe el monto que te llegó');
+  const referencia = String(req.body?.referencia || '').trim().slice(0, 120);
+
+  const url = String(TIENDA_NOTIFICAR_ENTREGA_URL || '').replace(/notificar-entrega\/?$/, 'confirmar-pago');
+  if (!url || url === TIENDA_NOTIFICAR_ENTREGA_URL || !SYNC_SECRET) {
+    return enviarError(res, 503, 'Falta configurar la conexión con la tienda para confirmar el pago');
+  }
+
+  const { data: pedido, error } = await dbWeb.from('pedidos_web')
+    .select('id, numero_pedido, estado, total').eq('id', req.params.id).maybeSingle();
+  if (error) return enviarErrorBD(res, error, 'Pedidos Web');
+  if (!pedido) return enviarError(res, 404, 'Pedido no encontrado');
+  if (pedido.estado !== 'CREADO') return enviarError(res, 409, 'Este pedido ya no está esperando pago. Actualiza la lista.');
+
+  const total = Math.round(num(pedido.total));
+  if (montoRecibido !== total) {
+    const clp = n => '$' + Math.round(n).toLocaleString('es-CL');
+    return enviarError(res, 409, `El pedido ${pedido.numero_pedido} es por ${clp(total)} y escribiste ${clp(montoRecibido)}: no calza. ` +
+      (montoRecibido < total
+        ? 'Pídele al cliente la diferencia antes de confirmar.'
+        : 'Revisa que sea el pedido correcto. Si pagó de más, coordina la devolución antes de confirmar.'));
+  }
+
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-sync-secret': SYNC_SECRET },
+      body: JSON.stringify({ numero_pedido: pedido.numero_pedido, tipo, referencia })
+    });
+    const cuerpo = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      const mensaje = cuerpo.error || `la tienda respondió ${resp.status}`;
+      if (resp.status !== 409) await registrarErrorSalud({ ruta: 'confirmar pago de pedido web', mensaje: pedido.numero_pedido + ': ' + mensaje });
+      return enviarError(res, resp.status === 409 ? 409 : 502, resp.status === 409 ? mensaje : 'La tienda no pudo confirmar el pago: ' + mensaje);
+    }
+    res.json({
+      ok: true,
+      numero_pedido: pedido.numero_pedido,
+      estado: cuerpo.estado || 'PAGADO',
+      sin_stock: cuerpo.sin_stock === true,
+      correo_cliente: cuerpo.correo_cliente === true
+    });
+  } catch (err) {
+    console.error('[Pedidos Web] No se pudo confirmar el pago:', req.params.id, ':', err.message);
+    await registrarErrorSalud({ ruta: 'confirmar pago de pedido web', mensaje: pedido.numero_pedido + ': no se pudo contactar a la tienda (' + err.message + ')' });
+    return enviarError(res, 502, 'No se pudo contactar a la tienda. El pedido sigue esperando pago: inténtalo de nuevo.');
+  }
 });
 
 /* AVISO "LISTO PARA RETIRO" (v129, supabase/41 de la tienda).

@@ -464,7 +464,9 @@ const API = {
     },
     actualizar: (id, cambios) => apiRequest(`/pos/pedidos-web/${id}`, { method: 'PUT', body: cambios }),
     // v129: correo "listo para retiro" por los productos marcados (supabase/41 de la tienda)
-    listoRetiro: (id, skus) => apiRequest(`/pos/pedidos-web/${id}/listo-retiro`, { method: 'POST', body: { skus } })
+    listoRetiro: (id, skus) => apiRequest(`/pos/pedidos-web/${id}/listo-retiro`, { method: 'POST', body: { skus } }),
+    // v134: el pago con tarjeta por el link de Haulmer ya llegó (supabase/42 de la tienda)
+    confirmarPago: (id, datos) => apiRequest(`/pos/pedidos-web/${id}/confirmar-pago`, { method: 'POST', body: datos })
   },
 
   /* Cotizaciones que el cliente se armó solo en la tienda (supabase/35 de

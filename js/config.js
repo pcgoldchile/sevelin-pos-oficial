@@ -73,11 +73,17 @@ function metodoPagaComision(metodo) {
    (lo que Banchile descuenta del abono).
    LINK_TUU (sql/89, v133) es el link de pago de Haulmer: misma tarifa que la
    máquina TUU, por eso calcularComisionPos no lo distingue. */
-const NOMBRE_MAQUINA_TARJETA = { TUU: 'TUU', BANCHILE: 'Banco de Chile', LINK_TUU: 'Link de pago (Haulmer)' };
+const NOMBRE_MAQUINA_TARJETA = { TUU: 'TUU', BANCHILE: 'Banco de Chile', LINK_TUU: 'Link de pago (Haulmer)', WEBPAY: 'Webpay (tienda web)' };
 const UF_REFERENCIA_COMISION = 41082;
 const TARIFA_BANCHILE = {
   'Tarjeta Débito': { tasa: 0.006, fijoUf: 0.0015 },
   'Tarjeta Crédito': { tasa: 0.0153, fijoUf: 0.0018 }
+};
+/* Webpay Plus de Transbank (sql/91, v134): pago con tarjeta en sevelin.cl.
+   Espejo de api/index.js: débito 1,49% y crédito 2,29%, más IVA, con mínimo. */
+const TARIFA_WEBPAY = {
+  'Tarjeta Débito': { tasa: 0.0149, minimoUf: 0.00226 },
+  'Tarjeta Crédito': { tasa: 0.0229, minimoUf: 0.003515 }
 };
 
 function calcularComisionPos(metodo, total, maquina) {
@@ -87,6 +93,10 @@ function calcularComisionPos(metodo, total, maquina) {
   if (maquina === 'BANCHILE') {
     const tarifa = TARIFA_BANCHILE[String(metodo).trim()];
     return Math.round((monto * tarifa.tasa + tarifa.fijoUf * UF_REFERENCIA_COMISION) * IVA_COMISION);
+  }
+  if (maquina === 'WEBPAY') {
+    const tarifa = TARIFA_WEBPAY[String(metodo).trim()];
+    return Math.round(Math.max(monto * tarifa.tasa, tarifa.minimoUf * UF_REFERENCIA_COMISION) * IVA_COMISION);
   }
   return Math.round((monto * COMISION_POS_TASA + COMISION_POS_FIJO) * IVA_COMISION);
 }
