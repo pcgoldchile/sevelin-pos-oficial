@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 763.0 875.4" role="img" aria-label="Sevelin">
+  <title>Sevelin</title>
+  <defs><linearGradient id="sevelinAzul" gradientUnits="userSpaceOnUse" x1="32.0" y1="233.8" x2="707.6" y2="684.4"><stop offset="0" stop-color="#73FCFD"/><stop offset="0.08" stop-color="#41FBFD"/><stop offset="0.174" stop-color="#06E7FD"/><stop offset="0.267" stop-color="#01B7FD"/><stop offset="0.36" stop-color="#019FFD"/><stop offset="0.453" stop-color="#0093FD"/><stop offset="0.547" stop-color="#007DFD"/><stop offset="0.639" stop-color="#0067FD"/><stop offset="0.733" stop-color="#0055FD"/><stop offset="0.825" stop-color="#004CFD"/><stop offset="1" stop-color="#0058FD"/></linearGradient></defs>
+  <path d="M381.5 32.0 L731.0 233.8 L731.0 420.3 L376.2 215.4 L260.1 282.5 L731.0 554.3 L731.0 648.6 L393.6 843.4 L32.0 634.6 L32.0 440.5 L420.0 664.5 L500.3 618.1 L32.0 347.7 L32.0 233.8 Z" fill="url(#sevelinAzul)"/>
+</svg>

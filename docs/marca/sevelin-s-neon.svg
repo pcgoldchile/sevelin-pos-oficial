@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1254 1254" role="img" aria-label="Sevelin">
+  <title>Sevelin</title>
+  <defs>
+    <linearGradient id="sevelinAzul" gradientUnits="userSpaceOnUse" x1="276.5" y1="415.3" x2="952.1" y2="866.0"><stop offset="0" stop-color="#73FCFD"/><stop offset="0.08" stop-color="#41FBFD"/><stop offset="0.174" stop-color="#06E7FD"/><stop offset="0.267" stop-color="#01B7FD"/><stop offset="0.36" stop-color="#019FFD"/><stop offset="0.453" stop-color="#0093FD"/><stop offset="0.547" stop-color="#007DFD"/><stop offset="0.639" stop-color="#0067FD"/><stop offset="0.733" stop-color="#0055FD"/><stop offset="0.825" stop-color="#004CFD"/><stop offset="1" stop-color="#0058FD"/></linearGradient>
+    <radialGradient id="sevelinFondo" cx="50%" cy="50%" r="70%"><stop offset="0" stop-color="#020722"/><stop offset="1" stop-color="#00020E"/></radialGradient>
+    <linearGradient id="sevelinFilo" gradientUnits="userSpaceOnUse" x1="276.5" y1="415.3" x2="952.1" y2="866.0"><stop offset="0" stop-color="#F4FFFF"/><stop offset="0.45" stop-color="#B4F3FF"/><stop offset="1" stop-color="#6FA6FF"/></linearGradient>
+    <filter id="sevelinBrilloAncho" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="52"/></filter>
+    <filter id="sevelinBrilloMedio" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="24"/></filter>
+    <filter id="sevelinBrilloCorto" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="9"/></filter>
+  </defs>
+  <rect width="1254" height="1254" fill="url(#sevelinFondo)"/>
+  <path d="M626.0 213.5 L975.5 415.4 L975.5 601.8 L620.7 397.0 L504.6 464.0 L975.5 735.9 L975.5 830.1 L638.1 1024.9 L276.5 816.2 L276.5 622.0 L664.5 846.0 L744.8 799.6 L276.5 529.3 L276.5 415.3 Z" fill="url(#sevelinAzul)" opacity="0.4" filter="url(#sevelinBrilloAncho)"/>
+  <path d="M276.5 529.3 L276.5 415.3 L626.0 213.5 L975.5 415.4 L975.5 601.8 M975.5 735.9 L975.5 830.1 L638.1 1024.9 L276.5 816.2 L276.5 622.0" fill="none" stroke="url(#sevelinAzul)" stroke-width="30" opacity="0.9" filter="url(#sevelinBrilloMedio)"/>
+  <path d="M276.5 529.3 L276.5 415.3 L626.0 213.5 L975.5 415.4 L975.5 601.8 M975.5 735.9 L975.5 830.1 L638.1 1024.9 L276.5 816.2 L276.5 622.0" fill="none" stroke="url(#sevelinAzul)" stroke-width="16" filter="url(#sevelinBrilloCorto)"/>
+  <path d="M975.5 601.8 L620.7 397.0 L504.6 464.0 L975.5 735.9 Z M276.5 622.0 L664.5 846.0 L744.8 799.6 L276.5 529.3 Z" fill="#01041A"/>
+  <path d="M626.0 213.5 L975.5 415.4 L975.5 601.8 L620.7 397.0 L504.6 464.0 L975.5 735.9 L975.5 830.1 L638.1 1024.9 L276.5 816.2 L276.5 622.0 L664.5 846.0 L744.8 799.6 L276.5 529.3 L276.5 415.3 Z" fill="url(#sevelinAzul)"/>
+  <path d="M276.5 529.3 L276.5 415.3 L626.0 213.5 L975.5 415.4 L975.5 601.8" fill="none" stroke="url(#sevelinFilo)" stroke-width="4" stroke-linejoin="miter"/>
+  <path d="M975.5 735.9 L975.5 830.1 L638.1 1024.9 L276.5 816.2 L276.5 622.0" fill="none" stroke="url(#sevelinFilo)" stroke-width="4" stroke-linejoin="miter"/>
+</svg>

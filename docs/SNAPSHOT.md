@@ -12,6 +12,26 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 11-10-2026 (noche) · Sin versión nueva: decisiones del dueño, logo en vector y tres encargos para la próxima sesión
+
+Nada de código. Ese día el mismo mensaje corrió en **dos chats a la vez** (uno era copia del otro): el primero hizo la
+v133 de abajo; el segundo solo investigó y, ya con el primero terminado, recibió estas respuestas.
+
+- **Pago con tarjeta (#93, decidido):** el dueño va con **Webpay Plus** y termina él "Hazte cliente" en Transbank;
+  mientras tanto quiere un botón "Pagar con tarjeta" que abra su link `tuu.cl/sevelin` y que se apague cuando Webpay
+  esté encendido. Lo construye Claude (#96). Los dos chats recomendaron distinto (uno Webpay, el otro el Pago Online de
+  TUU, que sí tiene documentación pública): se le dijo, y queda una pregunta en el prompt por si prefiere TUU primero.
+  El link no acepta el monto por la dirección (probado): el cliente lo escribe.
+- **Logo (#95, cerrado):** el símbolo que hizo en ChatGPT quedó en vector en `docs/marca/sevelin-s-*` (color, negro,
+  blanco y neón, en SVG y PNG, más su imagen original). Falta el nombre "SEVELIN" y su OK para ponerlo en la tienda y
+  el POS (#99).
+- **Por llegar (#97, sin construir):** marcar varias "Ya llegó" de una vez, ventana de confirmación con diseño en vez
+  del aviso del navegador, y que los trabajadores también puedan marcar.
+- **Usuarios del POS (#98, sin construir):** usuarios con nombre y PIN propio, permisos por casillas y registro de
+  quién hizo cada cambio. Hoy solo existen `ADMIN_PIN` y `WORKER_PIN` y el token lleva solo el rol. Admin: Carlos Silva
+  y Alejandro Silva; trabajadores: Carlos Silva Sagardia, Alejandra Jiron y Benjamin Rojas. Las preguntas abiertas
+  están en `docs/PROMPT-SIGUIENTE-SESION.md`.
+
 ## 11-10-2026 (tarde) · v133, link de pago, acuerdo con los padres y cotizaciones aproximadas
 
 Detalle en `docs/CHANGELOG-V133.md`. Migraciones `sql/89` y `sql/90` aplicadas. POS `fcca6f1` y `8fbd6f3`.
