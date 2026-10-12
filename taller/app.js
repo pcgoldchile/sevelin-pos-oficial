@@ -336,6 +336,26 @@
     };
   }
 
+  /* ---------- Instalar en el teléfono ----------
+     En Android, Chrome avisa con `beforeinstallprompt` cuando la página se puede instalar como app:
+     se guarda ese aviso y se ofrece un botón. Donde el aviso no llega (iPhone, o si ya se descartó),
+     en el ingreso queda un enlace con los pasos a mano. Ya instalada, no se muestra nada. */
+  let avisoInstalar = null;
+  const yaInstalada = () => (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+  function zonaInstalar(conAyuda) {
+    if (yaInstalada()) return '';
+    if (avisoInstalar) return '<button type="button" class="btn-instalar" data-a="instalar">📲 Instalar en este teléfono</button>';
+    return conAyuda ? '<button type="button" class="btn-enlace" data-a="comoinstalar">¿Cómo la instalo en el teléfono?</button>' : '';
+  }
+  /* Solo se repinta ese rincón: repintar todo borraría lo que se esté escribiendo. */
+  function pintarZonaInstalar() {
+    const $zona = document.getElementById('zonaInstalar');
+    if ($zona) $zona.innerHTML = zonaInstalar(S.vista === 'login');
+  }
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); avisoInstalar = e; pintarZonaInstalar(); });
+  window.addEventListener('appinstalled', () => { avisoInstalar = null; pintarZonaInstalar(); aviso('Lista: búscala en tu pantalla de inicio'); });
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { /* sin service worker igual funciona */ });
+
   /* ---------- Piezas de pantalla ---------- */
   const barra = (titulo, { atras = false, derecha = '' } = {}) => `<header class="barra">
       ${atras ? '<button type="button" class="barra-btn" data-a="volver" aria-label="Volver">‹ Volver</button>' : '<img src="icono-192.png" alt="">'}
@@ -361,6 +381,7 @@
         <button type="submit" class="btn-principal" id="btnEntrar">Entrar</button>
       </form>
       <p class="pie">El RUT queda recordado en este teléfono. El PIN no.</p>
+      <div class="zona-instalar" id="zonaInstalar">${zonaInstalar(true)}</div>
     </div>`;
   }
 
@@ -413,6 +434,7 @@
           ${S.admin ? `<button type="button" role="tab" class="${S.pestana === 'cuentas' ? 'on' : ''}" data-a="pestana" data-v="cuentas">Cuentas</button>` : ''}
         </div>
         ${contenido}
+        <div class="zona-instalar" id="zonaInstalar">${zonaInstalar(false)}</div>
       </main>`;
   }
 
@@ -987,5 +1009,22 @@
     }
   }
   ACCIONES.reintentar = () => { arrancar(); return false; };
+  ACCIONES.instalar = async () => {
+    if (!avisoInstalar) return false;
+    const pedido = avisoInstalar;
+    avisoInstalar = null;               // el aviso de Chrome sirve una sola vez
+    pedido.prompt();
+    try { await pedido.userChoice; } catch (_) { /* cerró la ventana de Chrome */ }
+    pintarZonaInstalar();
+    return false;
+  };
+  ACCIONES.comoinstalar = async () => {
+    await ventana({
+      titulo: 'Instalar en el teléfono',
+      texto: 'En Android: abre esta página en Chrome, toca los tres puntos de arriba a la derecha y elige "Instalar aplicación" o "Agregar a pantalla principal". Queda con el ícono de Sevelin, como cualquier app. En iPhone: en Safari, botón Compartir y "Agregar a inicio".',
+      si: 'Entendido', no: ''
+    });
+    return false;
+  };
   arrancar();
 })();

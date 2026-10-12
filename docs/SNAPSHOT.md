@@ -27,7 +27,10 @@ Detalle en `docs/CHANGELOG-V135.md` (y la v134 del 11-10 en `docs/CHANGELOG-V134
 - **Lo cobrado en la app no crea una venta en el POS** (decisión de Claude, dicha al dueño).
 - **v134 (11-10, noche):** Por llegar con varias llegadas y ventanas propias, publicado (`b0b2e24`). Pago con
   tarjeta construido y **sin publicar** (POS `ce4f5a5`, tienda `32ce25f`; faltan `sql/91` y `supabase/42`).
-- **Ojo al publicar:** el commit de la v135 va encima del de pago con tarjeta. Un push del POS publica los dos.
+- **Al publicar:** en local quedaron en este orden: la app del taller (v135) y encima el pago con tarjeta (v134).
+  Se puede publicar solo la app (`git push origin <su commit>:main`) o los dos (`git push`).
+- **Instalación:** la app trae botón "Instalar" para Android (Chrome) y un service worker que no guarda caché.
+  El dueño preguntó por "el archivo para instalar": el APK es opcional y se genera después de publicar.
 - Tabla de pendientes: #70 y #84 descartados a pedido del dueño, #28 cerrado, #72 pasa a Claude ("sí, ordena").
 - No se hizo: la auditoría de precios del lunes (#88), el logo en tienda y POS (#99), ordenar categorías (#72), el
   marcador de Facebook (#91), la respuesta a la reseña (#89) ni las lluvias de ideas que pidió el 11-10.

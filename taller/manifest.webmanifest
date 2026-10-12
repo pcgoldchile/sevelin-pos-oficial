@@ -3,6 +3,7 @@
   "short_name": "Taller",
   "description": "Registro de servicios técnicos de Sevelin",
   "lang": "es-CL",
+  "id": "/taller/",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

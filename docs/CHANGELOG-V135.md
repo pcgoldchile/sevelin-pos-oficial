@@ -26,6 +26,11 @@ No comparte scripts con el POS (trae sus ayudantes) y no tiene scripts dentro de
 - **Listas que crecen:** "+ Otro" agrega un repuesto o una calidad; el lugar de compra se recuerda solo.
 - **Pendientes y Cobrados**, "Entregar y cobrar", "Corregir" y, para el admin, "Anular" y la pestaña **Cuentas**.
 - Ventanas propias para confirmar (nunca las del navegador).
+- **Instalación en Android:** botón "📲 Instalar en este teléfono" cuando Chrome avisa que se puede
+  (`beforeinstallprompt`), y un enlace con los pasos a mano si no. `taller/sw.js` es un service worker que **no
+  guarda nada en caché**: existe solo para que Chrome la ofrezca como app. El archivo APK (para pasarlo de teléfono
+  en teléfono) es otro camino: se genera envolviendo la página ya publicada, y pide permitir "instalar apps
+  desconocidas" en cada teléfono. No se hizo.
 
 ### 2. Las cuentas (`cuentasDeTrabajoTaller` en `api/index.js`)
 Salen de tres hechos de cada trabajo: **de quién es**, **quién puso plata** y **quién recibió el pago**.
@@ -89,7 +94,9 @@ el saldo neto entre personas, anota devoluciones (y las anula), y el resumen del
 
 ## Para publicar (con OK del dueño)
 1. `npx supabase db query --file sql/92-usuarios-y-taller.sql --linked` (debe decir 0 tablas nuevas sin RLS).
-2. Push del POS. Arrastra el commit del pago con tarjeta (`ce4f5a5`, v134): publicar todo junto o separarlo antes.
+2. Push del POS. Los commits quedaron ordenados para elegir: primero la app del taller y **encima** el pago con
+   tarjeta. Solo la app: `git push origin <commit de la app>:main`. Los dos: `git push`. La copia del orden
+   original quedó en la rama local `respaldo-orden-12-10`.
 3. En el POS: Usuarios → crear a cada persona con su RUT y PIN, y marcar quién es el dueño y quién C. Patricio.
 4. En cada teléfono: abrir `https://sevelin-pos-oficial.vercel.app/taller/` y "Agregar a pantalla de inicio".
 

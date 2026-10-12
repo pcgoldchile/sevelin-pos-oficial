@@ -55,6 +55,12 @@ button { cursor: pointer; }
 .ingreso .error { background: #3a1418; color: #ffb4b4; border-radius: 12px; padding: 10px 12px; margin-top: 14px; font-size: 14.5px; }
 .ingreso .btn-principal { margin-top: 22px; }
 .ingreso .pie { text-align: center; color: #7f8ca6; font-size: 13px; margin-top: 22px; }
+/* Instalar en el teléfono */
+.zona-instalar { text-align: center; margin-top: 16px; }
+.zona-instalar:empty { display: none; }
+.btn-instalar { width: 100%; border-radius: var(--radio); padding: 14px; font-size: 16px; font-weight: 700; background: var(--azul-suave); color: #0843b8; border: 1.5px solid #b9d0ff; }
+.ingreso .btn-instalar { background: #16223d; color: #fff; border-color: #2f4170; }
+.ingreso .btn-enlace { color: #8fb6ff; }
 
 /* ---------- Botones ---------- */
 .btn-principal, .btn-secundario, .btn-peligro {
