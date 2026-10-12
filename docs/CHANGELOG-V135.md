@@ -1,7 +1,9 @@
 # v135 · App del taller para el celular y usuarios con RUT y PIN (12-10-2026)
 
-> **Estado: construido y probado en maqueta, SIN PUBLICAR.** Falta el OK del dueño para aplicar `sql/92` y hacer push.
-> Pendientes #100 (la app) y #98 (usuarios; queda la mitad). Mismo día: el pozo de C. Patricio partió (ver abajo).
+> **Estado: PUBLICADA el 12-10-2026** (POS `e68c001` y `8e91aec`; `sql/92` aplicada). El dueño eligió publicar solo la
+> app (el pago con tarjeta sigue sin publicar) e instalarla desde Chrome, sin archivo APK.
+> **Falta de él:** crear los usuarios en el POS (botón Usuarios) e instalarla en los 4 teléfonos. Pendientes #100 y
+> #98 (usuarios; queda la mitad). Mismo día: el pozo de C. Patricio partió y se anotó el pago 1 de 3 a sus padres.
 
 ## Qué pidió el dueño
 
@@ -92,7 +94,10 @@ el saldo neto entre personas, anota devoluciones (y las anula), y el resumen del
 - **No probado:** en un teléfono real, "Agregar a pantalla de inicio" en Android o iPhone, ni contra la base real.
   No hay capturas: la ventana del navegador de pruebas estaba oculta y se verificó leyendo la página.
 
-## Para publicar (con OK del dueño)
+## Cómo se publicó (12-10-2026) y qué falta
+
+Hechos los pasos 1 y 2 (solo la app). Verificado en producción: `/taller/` y sus archivos responden, las rutas
+nuevas piden sesión (401) y el ingreso responde bien con datos inventados. Faltan los pasos 3 y 4, que son del dueño.
 1. `npx supabase db query --file sql/92-usuarios-y-taller.sql --linked` (debe decir 0 tablas nuevas sin RLS).
 2. Push del POS. Los commits quedaron ordenados para elegir: primero la app del taller y **encima** el pago con
    tarjeta. Solo la app: `git push origin <commit de la app>:main`. Los dos: `git push`. La copia del orden

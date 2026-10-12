@@ -12,23 +12,26 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
-## 12-10-2026 · v135 SIN PUBLICAR: app del taller para el celular y usuarios con RUT y PIN
+## 12-10-2026 · v135 publicada: app del taller para el celular y usuarios con RUT y PIN
 
 Detalle en `docs/CHANGELOG-V135.md` (y la v134 del 11-10 en `docs/CHANGELOG-V134.md`).
 
 - **App del taller (#100):** `/taller/`, instalable desde el navegador del celular. Registro paso a paso de cada
   servicio (equipo, repuesto, calidad de pantalla, stock o compra, viaje, quién puso la plata, quién desarmó,
-  instaló y probó, cobro) y las cuentas de quién le devuelve a quién. Construida y probada en `taller-maqueta`.
-  **Falta el OK del dueño para aplicar `sql/92` y publicar.**
+  instaló y probó, cobro) y las cuentas de quién le devuelve a quién. **Publicada el 12-10-2026** (`sql/92`
+  aplicada, POS `8e91aec`). Falta que el dueño cree los usuarios (POS → Usuarios) y la instale en los 4 teléfonos
+  desde Chrome. No está probada en un teléfono real.
 - **Usuarios (#98, la mitad):** tabla `usuarios`, ingreso con RUT y PIN en `POST /api/login` y ventana Usuarios en
   el POS. Falta que el POS mismo pida RUT y PIN, los permisos por casillas y el registro de cambios.
+- **Pago a los padres:** el dueño pasó $1.000.000 el 12-10-2026 (pago 1 de 3, por transferencia). Lo anotó Claude a
+  pedido suyo como gasto #35, "Mercadería de mis padres". Siguen $1.000.000 por semana hasta $3.000.000.
 - **Pozo:** partió el 12-10-2026 a pedido del dueño (`pozo_desde`, ya en producción). En pantalla ahora dice
   "C. Patricio". Lo cobrado en la app por trabajos de él suma a su pozo; lo que puso otro no.
 - **Lo cobrado en la app no crea una venta en el POS** (decisión de Claude, dicha al dueño).
 - **v134 (11-10, noche):** Por llegar con varias llegadas y ventanas propias, publicado (`b0b2e24`). Pago con
   tarjeta construido y **sin publicar** (POS `ce4f5a5`, tienda `32ce25f`; faltan `sql/91` y `supabase/42`).
-- **Al publicar:** en local quedaron en este orden: la app del taller (v135) y encima el pago con tarjeta (v134).
-  Se puede publicar solo la app (`git push origin <su commit>:main`) o los dos (`git push`).
+- **Pago con tarjeta, sin publicar:** es el único commit local que va delante de `origin/main`. Un `git push` lo
+  publica: antes hay que aplicar `sql/91` y `supabase/42`, y tener el OK del dueño.
 - **Instalación:** la app trae botón "Instalar" para Android (Chrome) y un service worker que no guarda caché.
   El dueño preguntó por "el archivo para instalar": el APK es opcional y se genera después de publicar.
 - Tabla de pendientes: #70 y #84 descartados a pedido del dueño, #28 cerrado, #72 pasa a Claude ("sí, ordena").
