@@ -190,6 +190,11 @@
         <button class="theme-toggle" id="btnTema" title="Cambiar tema" aria-label="Cambiar tema">🌙</button>
         <button class="btn btn-outline btn-sm" id="btnLogout" title="Cerrar sesión">🚪 Cerrar Sesión</button>
       </div>
+      <!-- v135 (sql/92): usuarios con RUT y PIN, y la app del taller para el celular -->
+      <div class="sidebar-foot-actions sidebar-foot-extra">
+        <button class="btn btn-outline btn-sm admin-only" id="btnUsuarios" title="Quién entra y con qué PIN">👥 Usuarios</button>
+        <a class="btn btn-outline btn-sm" id="btnAbrirTaller" href="/taller/" target="_blank" rel="noopener" title="App del taller para el celular: registrar servicios técnicos">📱 App del taller</a>
+      </div>
     </div>
   </aside>
 
@@ -845,7 +850,7 @@
           <div style="margin-top:16px;">
             <label class="sn-toggle" style="width:fit-content;">
               <input type="checkbox" id="otDePadres">
-              👨‍🔧 Este trabajo lo hace mi papá (va a su pozo al cobrarlo)
+              👨‍🔧 Este trabajo lo hace C. Patricio (va a su pozo al cobrarlo)
             </label>
           </div>
 
@@ -2037,12 +2042,12 @@
         <div class="card">
           <div class="card-head">
             <div>
-              <h2>👨‍🔧 Pozo de mi papá</h2>
+              <h2>👨‍🔧 Pozo de C. Patricio</h2>
               <p class="subtitle">Lo que juntan sus servicios de celulares cobrados en la caja. Si no llega al mínimo del mes, la diferencia la pones tú.</p>
             </div>
             <div class="toolbar-group">
               <input type="month" id="padresPozoMes" aria-label="Mes del pozo">
-              <button class="btn btn-primary" id="btnPadresEntregar">💵 Entregar a mi papá</button>
+              <button class="btn btn-primary" id="btnPadresEntregar">💵 Entregar a C. Patricio</button>
             </div>
           </div>
           <div id="padresPozoAviso"></div>
@@ -2978,7 +2983,7 @@
             <!-- sql/90 (v133): servicio que hace el papá. Al venderlo la caja pregunta cuánto va a su pozo. -->
             <label class="check-item" id="itemProdVaAlPozo" style="margin-top:8px;">
               <input type="checkbox" id="prodVaAlPozo">
-              <span>👨‍🔧 Lo hace mi papá (al cobrarlo, la caja pregunta cuánto va a su pozo)</span>
+              <span>👨‍🔧 Lo hace C. Patricio (al cobrarlo, la caja pregunta cuánto va a su pozo)</span>
             </label>
             <div class="grid grid-2" id="gridProdStockControl" style="margin-top:12px;">
               <div class="field">
@@ -4205,7 +4210,7 @@
         <input type="number" id="acuerdoCuota" min="0" step="10000">
       </div>
       <div class="field">
-        <label for="acuerdoPozoMinimo">Mínimo del pozo de mi papá al mes</label>
+        <label for="acuerdoPozoMinimo">Mínimo del pozo de C. Patricio al mes</label>
         <input type="number" id="acuerdoPozoMinimo" min="0" step="10000">
       </div>
       <div class="field">
@@ -7392,6 +7397,52 @@
     </div>
   </div>
 
+  <!-- v135 (sql/92): usuarios con RUT y PIN. Solo admin — js/usuarios.js -->
+  <div id="modalUsuarios" class="modal-overlay">
+    <div class="modal-box" style="max-width:860px;">
+      <h2>👥 Usuarios</h2>
+      <p class="modal-hint">Cada persona entra con su RUT y su PIN. Hoy sirven para la <a href="/taller/" target="_blank" rel="noopener">app del taller</a> del celular; al POS se sigue entrando con el PIN general. Solo un administrador crea usuarios y cambia un PIN.</p>
+      <div id="usuariosAviso"></div>
+      <div id="usuariosLista"></div>
+      <h3 class="antes-seccion" id="usuarioFormTitulo">Nuevo usuario</h3>
+      <input type="hidden" id="usuarioId">
+      <div class="grid grid-2">
+        <div class="field">
+          <label for="usuarioNombre">Nombre, como se ve en pantalla *</label>
+          <input type="text" id="usuarioNombre" maxlength="60" placeholder="C. Alejandro Silva" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="usuarioRut">RUT *</label>
+          <input type="text" id="usuarioRut" maxlength="12" placeholder="12.345.678-5" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="usuarioRol">Tipo *</label>
+          <select id="usuarioRol">
+            <option value="trabajador">Trabajador</option>
+            <option value="admin">Administrador (ve las cuentas y crea usuarios)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="usuarioPapel">En las cuentas del taller</label>
+          <select id="usuarioPapel">
+            <option value="">Una persona más</option>
+            <option value="DUENO">Es el dueño de Sevelin</option>
+            <option value="PAPA">Es C. Patricio (el del pozo)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="usuarioPin" id="usuarioPinEtiqueta">PIN (4 a 8 números) *</label>
+          <input type="password" id="usuarioPin" inputmode="numeric" maxlength="8" placeholder="••••" autocomplete="new-password">
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnUsuariosCerrar" type="button">Cerrar</button>
+        <button class="btn btn-ghost" id="btnUsuarioLimpiar" type="button">Limpiar</button>
+        <button class="btn btn-primary" id="btnUsuarioGuardar" type="button">Crear usuario</button>
+      </div>
+    </div>
+  </div>
+
   <!-- v134: confirmar una o varias llegadas, con cuántas unidades llegaron de cada una — js/ubicaciones.js -->
   <div id="modalLlegadas" class="modal-overlay" style="z-index:10050;">
     <div class="modal-box" style="max-width:620px;">
@@ -8018,6 +8069,7 @@
   <script src="js/informe-semanal.js"></script>   <!-- después de balance.js: usa el panel de Finanzas y fmtCLP -->
   <script src="js/acuerdo-padres.js"></script>   <!-- v133 (sql/90): después de pos.js, compras.js y balance.js: pregunta de la caja y panel Mis padres -->
   <script src="js/cotizaciones-ref.js"></script>   <!-- v133 (sql/90): Taller → Cotizaciones aproximadas; usa cerrarModal de balance.js -->
+  <script src="js/usuarios.js"></script>   <!-- v135 (sql/92): usuarios con RUT y PIN; usa ventanaConfirmar de ventanas.js -->
   <script src="js/finanzas-gate.js"></script>   <!-- después de balance/config: intercepta la navegación a Finanzas -->
   <script src="js/reportes.js"></script>
   <script src="js/print.js"></script>

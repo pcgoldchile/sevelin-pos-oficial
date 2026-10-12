@@ -604,8 +604,11 @@ function sumarMeses(fechaISO, n) {
   return `${anio}-${String(mes + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
 }
 
-function firmarToken(rol) {
-  return jwt.sign({ rol }, JWT_SECRET || 'dev-secret-cambiar', { expiresIn: TOKEN_TTL });
+/* `usuario` viene cuando entró con RUT y PIN (sql/92): el token dice quién es.
+   Con el PIN general del POS el token lleva solo el rol, como siempre. */
+function firmarToken(rol, usuario = null) {
+  const datos = usuario ? { rol, uid: usuario.id, nombre: usuario.nombre } : { rol };
+  return jwt.sign(datos, JWT_SECRET || 'dev-secret-cambiar', { expiresIn: TOKEN_TTL });
 }
 
 // Autenticación por JWT. requiereAdmin = true bloquea a los trabajadores.
@@ -930,6 +933,8 @@ async function validarPinAdmin(req, pin) {
    SESIÓN
    ============================================================ */
 app.post('/api/login', frenoLogin, async (req, res) => {
+  // v135 (sql/92): con RUT entra una persona con su propio PIN
+  if (String(req.body?.rut ?? '').trim()) return loginDeUsuario(req, res);
   const pin = String(req.body?.pin || '').trim();
   const { ip, reg } = req._registroIntento || {};
 
@@ -952,7 +957,7 @@ app.post('/api/login', frenoLogin, async (req, res) => {
 
 // Permite al frontend saber si el token guardado sigue siendo válido
 app.get('/api/me', auth(), (req, res) => {
-  res.json({ rol: req.usuario.rol, negocio: NEGOCIO_NOMBRE });
+  res.json({ rol: req.usuario.rol, negocio: NEGOCIO_NOMBRE, uid: req.usuario.uid || null, nombre: req.usuario.nombre || null });
 });
 
 /* ============================================================
@@ -17067,7 +17072,9 @@ app.get('/api/pos/informe-semanal', auth(true), async (req, res) => {
    una venta anulada, una devolución o un gasto corregido se reflejan solos.
    ============================================================ */
 const CLASIF_PADRES_MERCADERIA = 'Mercadería de mis padres';
-const CLASIF_PADRES_POZO = 'Pozo de mi papá (servicios de celulares)';
+const CLASIF_PADRES_POZO = 'Pozo de C. Patricio (servicios de celulares)';
+// Hasta sql/92 se llamaba así. Se sigue leyendo por si queda algún gasto con el nombre anterior.
+const CLASIF_PADRES_POZO_ANTERIOR = 'Pozo de mi papá (servicios de celulares)';
 
 /* Trae todas las filas de una consulta en páginas de 1000 (tope de PostgREST).
    `armarConsulta` devuelve la consulta ya ordenada, sin range. */
@@ -17165,7 +17172,7 @@ app.get('/api/padres/resumen', auth(true), async (req, res) => {
         .not('pozo_monto', 'is', null).order('id')),
       padresTraerTodo(() => db.from('compras')
         .select('id, fecha, costo_total, descripcion, metodo_pago, clasificacion')
-        .in('clasificacion', [CLASIF_PADRES_MERCADERIA, CLASIF_PADRES_POZO]).order('id')),
+        .in('clasificacion', [CLASIF_PADRES_MERCADERIA, CLASIF_PADRES_POZO, CLASIF_PADRES_POZO_ANTERIOR]).order('id')),
       padresTraerTodo(() => db.from('productos')
         .select('id, nombre, stock, costo_unitario, precio_unitario, propietario, stock_ilimitado, archivado')
         .in('propietario', ['PADRES', 'AMBOS']).order('id')),
@@ -17233,9 +17240,25 @@ app.get('/api/padres/resumen', auth(true), async (req, res) => {
         });
       }
     });
-    lineasDelMes.sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : b.item_id - a.item_id));
+    /* v135 (sql/92): los trabajos de C. Patricio cobrados en la app del taller.
+       Lo que cobró él mismo ya lo tiene en la mano: cuenta como juntado y
+       también como recibido, para no sugerir entregarle plata que ya tiene. */
+    const enManoPorMes = new Map();
+    (await pozoDeLaAppTaller()).forEach(a => {
+      juntadoPorMes.set(a.mes, (juntadoPorMes.get(a.mes) || 0) + a.aporte);
+      enManoPorMes.set(a.mes, (enManoPorMes.get(a.mes) || 0) + a.en_su_mano);
+      if (a.mes === mes) {
+        lineasDelMes.push({
+          item_id: null, trabajo_id: a.trabajo_id, venta_id: null, numero_orden: null, fecha: a.fecha, origen: 'APP',
+          nombre: a.nombre, cobrado: a.cobrado, pozo: a.aporte, devuelto: 0,
+          nota: (a.puesto_por_otros > 0 ? `Menos $${a.puesto_por_otros.toLocaleString('es-CL')} que puso otro` : 'Todo lo cobrado') +
+            (a.en_su_mano > 0 ? ' · lo cobró él' : '')
+        });
+      }
+    });
+    lineasDelMes.sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : (b.item_id || 0) - (a.item_id || 0)));
 
-    const entregasTodas = gastos.filter(g => g.clasificacion === CLASIF_PADRES_POZO)
+    const entregasTodas = gastos.filter(g => g.clasificacion === CLASIF_PADRES_POZO || g.clasificacion === CLASIF_PADRES_POZO_ANTERIOR)
       .map(g => ({ id: g.id, fecha: fechaChileDeTs(g.fecha), monto: num(g.costo_total), descripcion: g.descripcion || null, metodo_pago: g.metodo_pago || null }));
     const entregas = entregasTodas.filter(e => e.fecha >= primero && e.fecha <= ultimo)
       .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
@@ -17249,13 +17272,14 @@ app.get('/api/padres/resumen', auth(true), async (req, res) => {
     let saldoAnterior = 0;
     for (let m = primerMes; m < mes; m = sumarMeses(`${m}-01`, 1).slice(0, 7)) {
       const leToca = Math.max(juntadoPorMes.get(m) || 0, minimoPozoDelMes(m, acuerdo, ultimoDiaDelMes(m)).minimo_mes);
-      const leDieron = entregasTodas.filter(e => e.fecha.slice(0, 7) === m).reduce((a, e) => a + e.monto, 0);
+      const leDieron = entregasTodas.filter(e => e.fecha.slice(0, 7) === m).reduce((a, e) => a + e.monto, 0) + (enManoPorMes.get(m) || 0);
       saldoAnterior += leToca - leDieron;
     }
 
     const minimo = minimoPozoDelMes(mes, acuerdo, hoy);
     const juntado = juntadoPorMes.get(mes) || 0;
     const leTocaALaFecha = Math.max(juntado, minimo.minimo_a_la_fecha);
+    const enSuMano = enManoPorMes.get(mes) || 0;
 
     // Servicios del mes que no fueron al pozo: por si faltó marcar alguno al cobrar
     const idsVentasMes = ventasMes.map(v => v.id);
@@ -17301,7 +17325,8 @@ app.get('/api/padres/resumen', auth(true), async (req, res) => {
         dias_corridos: minimo.dias_corridos,
         entregado,
         saldo_anterior: saldoAnterior,
-        sugerido_hoy: Math.max(0, saldoAnterior + leTocaALaFecha - entregado),
+        en_su_mano: enSuMano,
+        sugerido_hoy: Math.max(0, saldoAnterior + leTocaALaFecha - entregado - enSuMano),
         // Lo que el dueño terminaría poniendo de su bolsillo si el mes cerrara así
         falta_para_minimo: Math.max(0, minimo.minimo_mes - juntado),
         lineas: lineasDelMes,
@@ -17455,6 +17480,834 @@ app.delete('/api/cotizaciones-ref/:id', auth(true), async (req, res) => {
     return enviarErrorBD(res, err, 'DELETE /api/cotizaciones-ref/:id');
   }
 });
+
+/* ============================================================
+   USUARIOS CON RUT Y PIN (sql/92, v135)
+   ------------------------------------------------------------
+   Cada persona entra con su RUT y su PIN (dueño, 11-10-2026). El PIN
+   general del POS sigue funcionando: nadie se queda afuera mientras se
+   crean los usuarios. Solo un admin crea usuarios y les pone o cambia
+   el PIN ("solamente yo puedo crear usuarios... yo creo los PIN").
+   El PIN se guarda con scrypt y sal propia; nunca vuelve al navegador.
+   ============================================================ */
+const PIN_USUARIO_RE = /^\d{4,8}$/;
+const BLOQUEO_USUARIO_MS = 15 * 60 * 1000;
+const COLUMNAS_USUARIO = 'id, nombre, rut, rol, papel_taller, activo, pin_hash, intentos_fallidos, bloqueado_hasta, ultimo_ingreso_en';
+
+function hashPinUsuario(pin) {
+  const sal = crypto.randomBytes(16);
+  return `scrypt$${sal.toString('base64')}$${crypto.scryptSync(String(pin), sal, 32).toString('base64')}`;
+}
+function pinDeUsuarioCalza(pin, guardado) {
+  const [tipo, sal, resumen] = String(guardado || '').split('$');
+  if (tipo !== 'scrypt' || !sal || !resumen) return false;
+  const esperado = Buffer.from(resumen, 'base64');
+  if (!esperado.length) return false;
+  return crypto.timingSafeEqual(esperado, crypto.scryptSync(String(pin), Buffer.from(sal, 'base64'), esperado.length));
+}
+/* Se compara contra esto cuando el RUT no existe, para que la respuesta
+   tarde lo mismo que con un usuario de verdad. */
+const HASH_PIN_DE_RELLENO = hashPinUsuario(crypto.randomBytes(8).toString('hex'));
+
+function rutDeUsuario(crudo) {
+  const { rut, error } = rutDeProveedor(crudo);
+  if (error || !rut) return { error: 'El RUT no es válido: escríbelo con su dígito verificador (ej: 12.345.678-5)' };
+  return { rut };
+}
+
+function usuarioPublico(u) {
+  return {
+    id: u.id, nombre: u.nombre, rut: u.rut, rol: u.rol, papel_taller: u.papel_taller || null,
+    activo: u.activo !== false, tiene_pin: !!u.pin_hash,
+    bloqueado: !!u.bloqueado_hasta && Date.parse(u.bloqueado_hasta) > Date.now(),
+    ultimo_ingreso_en: u.ultimo_ingreso_en || null
+  };
+}
+
+/* Ingreso con RUT y PIN. Lo llama POST /api/login cuando viene un RUT.
+   Dos frenos: el de la IP (el mismo del PIN general) y el del usuario
+   (5 fallos seguidos lo bloquean 15 minutos, venga de la IP que venga). */
+async function loginDeUsuario(req, res) {
+  try {
+    const pin = String(req.body?.pin || '').trim();
+    const { ip, reg } = req._registroIntento || {};
+    const { rut } = rutDeUsuario(req.body?.rut);
+
+    let usuario = null;
+    if (rut) {
+      const { data, error } = await db.from('usuarios').select(COLUMNAS_USUARIO).eq('rut', rut).maybeSingle();
+      if (error) return enviarErrorBD(res, error, 'POST /api/login (usuario)');
+      usuario = data && data.activo !== false ? data : null;
+    }
+    if (usuario?.bloqueado_hasta && Date.parse(usuario.bloqueado_hasta) > Date.now()) {
+      return enviarError(res, 429, 'Ese usuario quedó bloqueado por varios intentos fallidos. Espera 15 minutos o pide que te cambien el PIN.');
+    }
+
+    const calza = pinDeUsuarioCalza(pin, usuario?.pin_hash || HASH_PIN_DE_RELLENO) && !!usuario?.pin_hash && PIN_USUARIO_RE.test(pin);
+    if (!calza) {
+      if (reg) {
+        reg.n += 1;
+        if (reg.n >= 5) { reg.hasta = Date.now() + 60 * 1000; reg.n = 0; }
+        await guardarRegistroIntentos(ip, reg);
+      }
+      if (usuario) {
+        const fallos = (Number(usuario.intentos_fallidos) || 0) + 1;
+        await db.from('usuarios').update(fallos >= 5
+          ? { intentos_fallidos: 0, bloqueado_hasta: new Date(Date.now() + BLOQUEO_USUARIO_MS).toISOString() }
+          : { intentos_fallidos: fallos }).eq('id', usuario.id);
+      }
+      return enviarError(res, 401, 'RUT o PIN incorrecto');
+    }
+
+    if (reg) { reg.n = 0; await guardarRegistroIntentos(ip, reg); }
+    await db.from('usuarios').update({ intentos_fallidos: 0, bloqueado_hasta: null, ultimo_ingreso_en: new Date().toISOString() }).eq('id', usuario.id);
+    res.json({
+      token: firmarToken(usuario.rol, usuario), rol: usuario.rol, negocio: NEGOCIO_NOMBRE, expiraEn: TOKEN_TTL,
+      usuario: { id: usuario.id, nombre: usuario.nombre, papel_taller: usuario.papel_taller || null }
+    });
+  } catch (err) {
+    return enviarErrorBD(res, err, 'POST /api/login (usuario)');
+  }
+}
+
+/* Lee lo que viene en el cuerpo al crear o editar un usuario. Devuelve
+   { cambios } con solo lo que vino, o { error }. */
+function leerDatosDeUsuario(body, esNuevo) {
+  const cambios = {};
+  if (esNuevo || body?.nombre !== undefined) {
+    const nombre = String(body?.nombre || '').replace(/\s+/g, ' ').trim();
+    if (nombre.length < 2 || nombre.length > 60) return { error: 'Escribe el nombre como quieres que se vea (ej: C. Alejandro Silva)' };
+    cambios.nombre = nombre;
+  }
+  if (esNuevo || body?.rut !== undefined) {
+    const { rut, error } = rutDeUsuario(body?.rut);
+    if (error) return { error };
+    cambios.rut = rut;
+  }
+  if (esNuevo || body?.rol !== undefined) {
+    if (!['admin', 'trabajador'].includes(body?.rol)) return { error: 'Elige si es administrador o trabajador' };
+    cambios.rol = body.rol;
+  }
+  if (body?.papel_taller !== undefined) {
+    const papel = body.papel_taller || null;
+    if (papel !== null && !['DUENO', 'PAPA'].includes(papel)) return { error: 'Ese papel en el taller no existe' };
+    cambios.papel_taller = papel;
+  }
+  if (body?.activo !== undefined) cambios.activo = body.activo === true;
+  const pin = body?.pin === undefined || body?.pin === null ? '' : String(body.pin).trim();
+  if (esNuevo || pin) {
+    if (!PIN_USUARIO_RE.test(pin)) return { error: 'El PIN son entre 4 y 8 números' };
+    cambios.pin_hash = hashPinUsuario(pin);
+    cambios.intentos_fallidos = 0;
+    cambios.bloqueado_hasta = null;
+  }
+  if (body?.desbloquear === true) { cambios.intentos_fallidos = 0; cambios.bloqueado_hasta = null; }
+  return { cambios };
+}
+
+/* El RUT no se repite, y "dueño" y "C. Patricio" son una sola persona cada
+   uno: si se le da ese papel a otro, se le quita al que lo tenía. */
+async function prepararUsuario(cambios, idPropio) {
+  if (cambios.rut) {
+    const { data, error } = await db.from('usuarios').select('id').eq('rut', cambios.rut);
+    if (error) throw new Error(error.message);
+    if ((data || []).some(u => Number(u.id) !== Number(idPropio))) return 'Ya existe un usuario con ese RUT';
+  }
+  if (cambios.papel_taller) {
+    const { data, error } = await db.from('usuarios').select('id').eq('papel_taller', cambios.papel_taller);
+    if (error) throw new Error(error.message);
+    for (const otro of (data || []).filter(u => Number(u.id) !== Number(idPropio))) {
+      const { error: errQuitar } = await db.from('usuarios').update({ papel_taller: null, actualizado_en: new Date().toISOString() }).eq('id', otro.id);
+      if (errQuitar) throw new Error(errQuitar.message);
+    }
+  }
+  return null;
+}
+
+app.get('/api/usuarios', auth(true), async (_req, res) => {
+  try {
+    const { data, error } = await db.from('usuarios').select(COLUMNAS_USUARIO).order('id');
+    if (error) return enviarErrorBD(res, error, 'GET /api/usuarios');
+    res.json((data || []).map(usuarioPublico));
+  } catch (err) {
+    return enviarErrorBD(res, err, 'GET /api/usuarios');
+  }
+});
+
+app.post('/api/usuarios', auth(true), async (req, res) => {
+  try {
+    const { cambios, error: errDatos } = leerDatosDeUsuario(req.body, true);
+    if (errDatos) return enviarError(res, 400, errDatos);
+    const choque = await prepararUsuario(cambios, null);
+    if (choque) return enviarError(res, 409, choque);
+    const { data, error } = await db.from('usuarios').insert([{ activo: true, ...cambios }]).select(COLUMNAS_USUARIO).single();
+    if (error) return error.code === '23505' ? enviarError(res, 409, 'Ya existe un usuario con ese RUT') : enviarErrorBD(res, error, 'POST /api/usuarios');
+    res.status(201).json(usuarioPublico(data));
+  } catch (err) {
+    return enviarErrorBD(res, err, 'POST /api/usuarios');
+  }
+});
+
+app.put('/api/usuarios/:id', auth(true), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return enviarError(res, 400, 'Usuario inválido');
+    const { cambios, error: errDatos } = leerDatosDeUsuario(req.body, false);
+    if (errDatos) return enviarError(res, 400, errDatos);
+    if (!Object.keys(cambios).length) return enviarError(res, 400, 'No hay nada que cambiar');
+    const choque = await prepararUsuario(cambios, id);
+    if (choque) return enviarError(res, 409, choque);
+    const { data, error } = await db.from('usuarios')
+      .update({ ...cambios, actualizado_en: new Date().toISOString() }).eq('id', id).select(COLUMNAS_USUARIO);
+    if (error) return error.code === '23505' ? enviarError(res, 409, 'Ya existe un usuario con ese RUT') : enviarErrorBD(res, error, 'PUT /api/usuarios/:id');
+    if (!data?.length) return enviarError(res, 404, 'Ese usuario no existe');
+    res.json(usuarioPublico(data[0]));
+  } catch (err) {
+    return enviarErrorBD(res, err, 'PUT /api/usuarios/:id');
+  }
+});
+
+/* ============================================================
+   TALLER: LA APP DEL CELULAR (sql/92, v135)
+   ------------------------------------------------------------
+   Registro rápido de cada servicio técnico (dueño, 12-10-2026): equipo,
+   repuestos, de dónde salieron y cuánto costaron, el viaje, quién puso
+   la plata, quién desarmó, instaló y probó, y el cobro.
+
+   LAS CUENTAS (cuentasDeTrabajoTaller) salen de tres hechos de cada
+   trabajo: de quién es, quién puso plata y quién recibió el pago.
+     · Quien recibió la plata le devuelve a cada uno lo que puso.
+     · Lo que queda es del dueño del trabajo.
+     · Si el trabajo es de C. Patricio y se cobró en la app, lo que queda
+       va a su pozo (sql/90): lo que puso otro NO va al pozo.
+   Nada de esto crea una venta en el POS: lo cobrado en la app vive aquí.
+   ============================================================ */
+const TALLER_EQUIPOS = ['CELULAR', 'COMPUTADOR', 'OTRO'];
+const TALLER_MEDIOS = ['EFECTIVO', 'TRANSFERENCIA', 'TARJETA'];
+const COLUMNAS_TRABAJO_TALLER = 'id, equipo_tipo, equipo_modelo, cliente, nota, dueno_id, va_al_pozo, viaje_monto, viaje_pagado_por, ' +
+  'desarmo_id, instalo_id, probo_id, estado, precio_acordado, cobrado_monto, cobrado_medio, cobrado_donde, cobrado_recibio, ' +
+  'cobrado_fecha, cobrado_en, cobrado_por, venta_numero, anulado_motivo, registrado_por, creado_en, actualizado_en';
+const COLUMNAS_REPUESTO_TALLER = 'id, trabajo_id, nombre, calidad, origen, costo, lugar, pagado_por';
+
+/* Sesión para la app. Con usuario (RUT y PIN) se lee su ficha al día: un
+   usuario desactivado deja de entrar aunque su sesión siga viva. Con el
+   PIN general del POS no hay persona: se puede mirar, no registrar. */
+function authTaller(soloAdmin = false) {
+  const base = auth(false);
+  return (req, res, next) => base(req, res, async () => {
+    try {
+      req.persona = null;
+      const uid = Number(req.usuario?.uid);
+      if (uid) {
+        const { data, error } = await db.from('usuarios').select('id, nombre, rol, papel_taller, activo').eq('id', uid).maybeSingle();
+        if (error) return enviarErrorBD(res, error, 'authTaller');
+        if (!data || data.activo === false) return enviarError(res, 401, 'Tu usuario ya no está activo');
+        req.persona = data;
+      }
+      req.esAdminTaller = (req.persona ? req.persona.rol : req.usuario.rol) === 'admin';
+      if (soloAdmin && !req.esAdminTaller) return enviarError(res, 403, 'Esta acción es solo para el administrador');
+      next();
+    } catch (err) {
+      return enviarErrorBD(res, err, 'authTaller');
+    }
+  });
+}
+const SIN_PERSONA_TALLER = 'Entra a la app con tu RUT y tu PIN para registrar: así queda anotado quién fue';
+
+async function contextoTaller() {
+  const { data, error } = await db.from('usuarios').select('id, nombre, rol, papel_taller, activo').order('id');
+  if (error) throw new Error(error.message);
+  const personas = data || [];
+  const activa = (papel) => personas.find(p => p.papel_taller === papel && p.activo !== false) || null;
+  return {
+    personas,
+    activos: new Set(personas.filter(p => p.activo !== false).map(p => Number(p.id))),
+    dueno: activa('DUENO'),
+    papa: activa('PAPA')
+  };
+}
+
+/* Las cuentas de UN trabajo. No toca la base: solo suma.
+   Devuelve cuánto costó, quién puso cuánto, la ganancia y quién le debe a
+   quién. `deudas` solo existe cuando el trabajo ya se cobró; antes, lo que
+   puso otro queda en `por_devolver` (se devuelve cuando se cobre). */
+function cuentasDeTrabajoTaller(t, repuestos) {
+  const puesto = new Map();
+  const sumar = (quien, monto) => { if (quien && monto > 0) puesto.set(Number(quien), (puesto.get(Number(quien)) || 0) + monto); };
+  let costoRepuestos = 0;
+  (repuestos || []).forEach(r => { const c = Math.round(num(r.costo)); costoRepuestos += c; sumar(r.pagado_por, c); });
+  const viaje = Math.round(num(t.viaje_monto));
+  sumar(t.viaje_pagado_por, viaje);
+
+  const dueno = Number(t.dueno_id);
+  const puestoPorOtros = [...puesto].filter(([quien]) => quien !== dueno).reduce((a, [, m]) => a + m, 0);
+  const r = {
+    costo_repuestos: costoRepuestos, costo_viaje: viaje, costo_total: costoRepuestos + viaje,
+    puesto: [...puesto].map(([persona_id, monto]) => ({ persona_id, monto })),
+    puesto_por_otros: puestoPorOtros,
+    ganancia: null, aporte_pozo: 0, en_mano_del_dueno: 0, deudas: [], por_devolver: []
+  };
+  if (t.estado !== 'COBRADO') {
+    if (t.estado === 'PENDIENTE') r.por_devolver = [...puesto].filter(([quien]) => quien !== dueno).map(([a, monto]) => ({ a, monto }));
+    return r;
+  }
+
+  const cobrado = Math.round(num(t.cobrado_monto));
+  const recibio = Number(t.cobrado_recibio);
+  const enLaApp = t.cobrado_donde !== 'CAJA_POS';
+  r.ganancia = cobrado - r.costo_total;
+  const deber = (de, a, monto, motivo) => { if (de !== a && monto > 0) r.deudas.push({ de, a, monto, motivo }); };
+
+  // 1. Quien recibió la plata le devuelve a cada uno lo que puso.
+  puesto.forEach((monto, quien) => { if (quien !== dueno && quien !== recibio) deber(recibio, quien, monto, 'PUSO'); });
+
+  // 2. Lo que queda es del dueño del trabajo.
+  const parte = cobrado - puestoPorOtros;
+  if (recibio === dueno) {
+    if (t.va_al_pozo && enLaApp) { r.aporte_pozo = Math.max(0, parte); r.en_mano_del_dueno = r.aporte_pozo; }
+  } else if (parte < 0) {
+    deber(dueno, recibio, -parte, 'FALTO');           // se cobró menos de lo que otros pusieron
+  } else if (t.va_al_pozo) {
+    if (enLaApp) r.aporte_pozo = parte;               // lo tiene Sevelin: se le entrega por el pozo
+  } else {
+    deber(recibio, dueno, parte, 'COBRO');
+  }
+  return r;
+}
+
+const enteroTaller = (v) => Math.round(num(v));
+const textoTaller = (v, tope) => { const s = String(v ?? '').replace(/\s+/g, ' ').trim(); return s ? s.slice(0, tope) : null; };
+
+/* Valida el cuerpo de un trabajo. Devuelve { trabajo, repuestos } listos
+   para guardar, o { error }. */
+function leerTrabajoTaller(body, ctx) {
+  if (!TALLER_EQUIPOS.includes(body?.equipo_tipo)) return { error: 'Elige si es celular, computador u otro equipo' };
+  const modelo = textoTaller(body?.equipo_modelo, 80);
+  if (!modelo) return { error: 'Escribe la marca y el modelo del equipo' };
+
+  const esDelPapa = body?.es_del_papa === true;
+  const dueno = esDelPapa ? ctx.papa : ctx.dueno;
+  if (!dueno) {
+    return { error: 'Falta decir en el POS quién es ' + (esDelPapa ? 'C. Patricio' : 'el dueño de Sevelin') + ': Usuarios, casilla "En las cuentas del taller"' };
+  }
+  const persona = (v, etiqueta) => {
+    if (v === null || v === undefined || v === '') return { id: null };
+    return ctx.activos.has(Number(v)) ? { id: Number(v) } : { error: `${etiqueta}: esa persona no existe o está desactivada` };
+  };
+
+  if (body?.repuestos !== undefined && !Array.isArray(body.repuestos)) return { error: 'La lista de repuestos no es válida' };
+  const lista = body?.repuestos || [];
+  if (lista.length > 8) return { error: 'Son demasiados repuestos para un solo trabajo (máximo 8)' };
+  const repuestos = [];
+  for (const crudo of lista) {
+    const nombre = textoTaller(crudo?.nombre, 60);
+    if (!nombre) return { error: 'Hay un repuesto sin nombre' };
+    const origen = crudo?.origen === 'STOCK' ? 'STOCK' : 'COMPRA';
+    const costo = enteroTaller(crudo?.costo);
+    if (!Number.isFinite(costo) || costo < 0 || costo > 5000000) return { error: `${nombre}: el costo no es válido` };
+    const pago = persona(crudo?.pagado_por, nombre);
+    if (pago.error) return { error: pago.error };
+    // Lo que estaba en stock y nadie dice de quién era, era de Sevelin.
+    const pagadoPor = pago.id || (origen === 'STOCK' ? (ctx.dueno?.id || null) : null);
+    if (costo > 0 && !pagadoPor) return { error: `${nombre}: falta decir quién puso la plata` };
+    repuestos.push({
+      nombre, calidad: textoTaller(crudo?.calidad, 60), origen, costo,
+      lugar: origen === 'COMPRA' ? textoTaller(crudo?.lugar, 60) : null,
+      pagado_por: pagadoPor
+    });
+  }
+
+  const viaje = enteroTaller(body?.viaje_monto);
+  if (!Number.isFinite(viaje) || viaje < 0 || viaje > 200000) return { error: 'El monto del viaje no es válido' };
+  const pagoViaje = persona(body?.viaje_pagado_por, 'Bencina');
+  if (pagoViaje.error) return { error: pagoViaje.error };
+  if (viaje > 0 && !pagoViaje.id) return { error: 'Falta decir quién puso la bencina' };
+
+  const manos = {};
+  for (const [campo, etiqueta] of [['desarmo_id', 'Quién desarmó'], ['instalo_id', 'Quién instaló'], ['probo_id', 'Quién probó']]) {
+    const p = persona(body?.[campo], etiqueta);
+    if (p.error) return { error: p.error };
+    manos[campo] = p.id;
+  }
+
+  let precio = null;
+  if (body?.precio_acordado !== undefined && body?.precio_acordado !== null && String(body.precio_acordado).trim() !== '') {
+    precio = enteroTaller(body.precio_acordado);
+    if (!Number.isFinite(precio) || precio < 0 || precio > 20000000) return { error: 'El precio acordado no es válido' };
+  }
+
+  return {
+    trabajo: {
+      equipo_tipo: body.equipo_tipo, equipo_modelo: modelo,
+      cliente: textoTaller(body?.cliente, 80), nota: textoTaller(body?.nota, 300),
+      dueno_id: dueno.id, va_al_pozo: esDelPapa,
+      viaje_monto: viaje, viaje_pagado_por: viaje > 0 ? pagoViaje.id : null,
+      ...manos, precio_acordado: precio
+    },
+    repuestos
+  };
+}
+
+/* Valida un cobro. La plata la recibe Sevelin o C. Patricio; si se cobró
+   en la caja del POS, la recibió Sevelin. */
+function leerCobroTaller(cobro, ctx, persona) {
+  const monto = enteroTaller(cobro?.monto);
+  if (cobro?.monto === undefined || cobro?.monto === null || String(cobro.monto).trim() === '' || !Number.isFinite(monto) || monto < 0 || monto > 20000000) {
+    return { error: 'Escribe cuánto se cobró' };
+  }
+  if (!TALLER_MEDIOS.includes(cobro?.medio)) return { error: 'Elige cómo pagó el cliente' };
+  const donde = cobro?.donde === 'CAJA_POS' ? 'CAJA_POS' : 'APP';
+  if (!ctx.dueno) return { error: 'Falta decir en el POS quién es el dueño de Sevelin: Usuarios, casilla "En las cuentas del taller"' };
+  let recibio = ctx.dueno.id;
+  if (donde === 'APP') {
+    recibio = Number(cobro?.recibio);
+    if (![ctx.dueno.id, ctx.papa?.id].filter(Boolean).map(Number).includes(recibio)) return { error: 'Falta decir quién recibió la plata' };
+  }
+  return {
+    cobro: {
+      estado: 'COBRADO', cobrado_monto: monto, cobrado_medio: cobro.medio, cobrado_donde: donde, cobrado_recibio: recibio,
+      cobrado_fecha: fechaHoyChile(), cobrado_en: new Date().toISOString(), cobrado_por: persona.id,
+      venta_numero: donde === 'CAJA_POS' ? textoTaller(cobro?.venta_numero, 20) : null
+    }
+  };
+}
+
+/* Lo que ve cada uno de un trabajo. El admin ve todo. Los demás ven el
+   detalle de los trabajos donde participan; del resto, solo qué equipo es
+   y en qué está (para saber qué hay pendiente de entrega), sin plata. */
+function trabajoTallerPara(t, repuestos, persona, esAdmin) {
+  const mios = (repuestos || []).filter(r => Number(r.trabajo_id) === Number(t.id));
+  const yo = Number(persona?.id);
+  const participa = esAdmin || (yo && [t.registrado_por, t.dueno_id, t.desarmo_id, t.instalo_id, t.probo_id, t.viaje_pagado_por,
+    t.cobrado_recibio, t.cobrado_por, ...mios.map(r => r.pagado_por)].some(x => Number(x) === yo));
+  if (!participa) {
+    return {
+      id: t.id, equipo_tipo: t.equipo_tipo, equipo_modelo: t.equipo_modelo, estado: t.estado, va_al_pozo: !!t.va_al_pozo,
+      registrado_por: t.registrado_por, creado_en: t.creado_en, limitado: true,
+      repuestos: mios.map(r => ({ nombre: r.nombre, calidad: r.calidad }))
+    };
+  }
+  const cuentas = cuentasDeTrabajoTaller(t, mios);
+  if (!esAdmin) { delete cuentas.aporte_pozo; delete cuentas.en_mano_del_dueno; }   // el pozo lo ve solo el admin
+  return {
+    ...t, viaje_monto: Math.round(num(t.viaje_monto)), limitado: false,
+    puede_editar: esAdmin || t.estado === 'PENDIENTE',
+    repuestos: mios.map(({ trabajo_id, ...r }) => ({ ...r, costo: Math.round(num(r.costo)) })),
+    cuentas
+  };
+}
+
+async function repuestosDeTrabajosTaller(ids) {
+  return padresTraerPorIds('taller_trabajo_repuestos', COLUMNAS_REPUESTO_TALLER, 'trabajo_id', ids);
+}
+
+async function anotarHistorialTaller(trabajoId, req, accion, detalle) {
+  const { error } = await db.from('taller_historial').insert([{
+    trabajo_id: trabajoId, usuario_id: req.persona?.id || null,
+    usuario_nombre: req.persona?.nombre || 'Administrador (PIN general del POS)', accion, detalle: detalle || null
+  }]);
+  if (error) console.error('[TALLER] no se pudo anotar el historial del trabajo', trabajoId, '-', error.message);
+}
+
+/* Los lugares de compra se recuerdan solos para ofrecerlos como botón. */
+async function recordarLugaresTaller(repuestos, persona) {
+  const lugares = [...new Set(repuestos.map(r => r.lugar).filter(Boolean))];
+  if (!lugares.length) return;
+  try {
+    const { data } = await db.from('taller_catalogo').select('id, nombre').eq('tipo', 'LUGAR');
+    const ya = new Set((data || []).map(l => String(l.nombre).trim().toLowerCase()));
+    const nuevos = lugares.filter(l => !ya.has(l.toLowerCase()));
+    if (nuevos.length) await db.from('taller_catalogo').insert(nuevos.map(nombre => ({ tipo: 'LUGAR', equipo: null, nombre, orden: 500, activo: true, creado_por: persona?.id || null })));
+  } catch (err) {
+    console.error('[TALLER] no se pudo recordar el lugar de compra:', err.message);
+  }
+}
+
+/* Todo lo que la app necesita al abrir. */
+app.get('/api/taller/inicio', authTaller(), async (req, res) => {
+  try {
+    const ctx = await contextoTaller();
+    const [{ data: catalogo, error: errCat }, { data: recientes, error: errRec }] = await Promise.all([
+      db.from('taller_catalogo').select('id, tipo, equipo, nombre, orden').eq('activo', true).order('orden').order('id'),
+      db.from('taller_trabajos').select('id, equipo_tipo, equipo_modelo').order('id', { ascending: false }).limit(150)
+    ]);
+    if (errCat || errRec) return enviarErrorBD(res, errCat || errRec, 'GET /api/taller/inicio');
+    const vistos = new Set();
+    const modelos = [];
+    (recientes || []).forEach(t => {
+      const clave = `${t.equipo_tipo}|${String(t.equipo_modelo).toLowerCase()}`;
+      if (!vistos.has(clave) && modelos.length < 40) { vistos.add(clave); modelos.push({ equipo: t.equipo_tipo, modelo: t.equipo_modelo }); }
+    });
+    res.json({
+      hoy: fechaHoyChile(),
+      yo: req.persona ? { id: req.persona.id, nombre: req.persona.nombre, papel_taller: req.persona.papel_taller || null } : null,
+      admin: req.esAdminTaller,
+      personas: ctx.personas.map(p => ({ id: p.id, nombre: p.nombre, papel_taller: p.papel_taller || null, activo: p.activo !== false })),
+      dueno_id: ctx.dueno?.id || null,
+      papa_id: ctx.papa?.id || null,
+      catalogo: (catalogo || []).map(({ orden, ...c }) => c),
+      modelos
+    });
+  } catch (err) {
+    return enviarErrorBD(res, err, 'GET /api/taller/inicio');
+  }
+});
+
+/* Agrega un repuesto, una calidad de pantalla o un lugar a las listas. */
+app.post('/api/taller/catalogo', authTaller(), async (req, res) => {
+  try {
+    if (!req.persona) return enviarError(res, 403, SIN_PERSONA_TALLER);
+    const tipo = req.body?.tipo;
+    if (!['REPUESTO', 'CALIDAD_PANTALLA', 'LUGAR'].includes(tipo)) return enviarError(res, 400, 'Esa lista no existe');
+    const nombre = textoTaller(req.body?.nombre, 60);
+    if (!nombre) return enviarError(res, 400, 'Escribe el nombre');
+    const equipo = tipo === 'REPUESTO' ? req.body?.equipo : null;
+    if (tipo === 'REPUESTO' && !TALLER_EQUIPOS.includes(equipo)) return enviarError(res, 400, 'Falta decir en qué equipo va ese repuesto');
+
+    const { data: mismos, error: errBuscar } = await db.from('taller_catalogo').select('id, tipo, equipo, nombre, activo').eq('tipo', tipo);
+    if (errBuscar) return enviarErrorBD(res, errBuscar, 'POST /api/taller/catalogo');
+    const previo = (mismos || []).find(c => (c.equipo || null) === (equipo || null) && String(c.nombre).trim().toLowerCase() === nombre.toLowerCase());
+    if (previo) {
+      if (previo.activo === false) await db.from('taller_catalogo').update({ activo: true }).eq('id', previo.id);
+      return res.json({ id: previo.id, tipo, equipo: previo.equipo || null, nombre: previo.nombre });
+    }
+    const { data, error } = await db.from('taller_catalogo')
+      .insert([{ tipo, equipo, nombre, orden: 500, activo: true, creado_por: req.persona.id }]).select('id, tipo, equipo, nombre').single();
+    if (error) return enviarErrorBD(res, error, 'POST /api/taller/catalogo');
+    res.status(201).json(data);
+  } catch (err) {
+    return enviarErrorBD(res, err, 'POST /api/taller/catalogo');
+  }
+});
+
+/* Saca una opción de las listas (no la borra: los trabajos viejos la conservan). */
+app.delete('/api/taller/catalogo/:id', authTaller(true), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return enviarError(res, 400, 'Opción inválida');
+    const { error } = await db.from('taller_catalogo').update({ activo: false }).eq('id', id);
+    if (error) return enviarErrorBD(res, error, 'DELETE /api/taller/catalogo/:id');
+    res.json({ ok: true });
+  } catch (err) {
+    return enviarErrorBD(res, err, 'DELETE /api/taller/catalogo/:id');
+  }
+});
+
+app.get('/api/taller/trabajos', authTaller(), async (req, res) => {
+  try {
+    const ver = String(req.query?.ver || 'pendientes');
+    let consulta = db.from('taller_trabajos').select(COLUMNAS_TRABAJO_TALLER);
+    if (ver === 'cobrados') consulta = consulta.eq('estado', 'COBRADO').order('cobrado_en', { ascending: false }).limit(80);
+    else if (ver === 'anulados' && req.esAdminTaller) consulta = consulta.eq('estado', 'ANULADO').order('id', { ascending: false }).limit(80);
+    else consulta = consulta.eq('estado', 'PENDIENTE').order('id', { ascending: false }).limit(200);
+    const { data, error } = await consulta;
+    if (error) return enviarErrorBD(res, error, 'GET /api/taller/trabajos');
+    const repuestos = await repuestosDeTrabajosTaller((data || []).map(t => t.id));
+    res.json((data || []).map(t => trabajoTallerPara(t, repuestos, req.persona, req.esAdminTaller)));
+  } catch (err) {
+    return enviarErrorBD(res, err, 'GET /api/taller/trabajos');
+  }
+});
+
+async function leerTrabajoTallerPorId(id) {
+  const { data, error } = await db.from('taller_trabajos').select(COLUMNAS_TRABAJO_TALLER).eq('id', id).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+  return { trabajo: data, repuestos: await repuestosDeTrabajosTaller([id]) };
+}
+
+app.get('/api/taller/trabajos/:id', authTaller(), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return enviarError(res, 400, 'Trabajo inválido');
+    const hallado = await leerTrabajoTallerPorId(id);
+    if (!hallado) return enviarError(res, 404, 'Ese trabajo no existe');
+    const vista = trabajoTallerPara(hallado.trabajo, hallado.repuestos, req.persona, req.esAdminTaller);
+    if (!vista.limitado) {
+      const { data: historial, error } = await db.from('taller_historial').select('id, usuario_nombre, accion, detalle, creado_en').eq('trabajo_id', id).order('id');
+      if (error) return enviarErrorBD(res, error, 'GET /api/taller/trabajos/:id');
+      vista.historial = req.esAdminTaller ? (historial || []) : (historial || []).map(({ detalle, ...h }) => h);
+    }
+    res.json(vista);
+  } catch (err) {
+    return enviarErrorBD(res, err, 'GET /api/taller/trabajos/:id');
+  }
+});
+
+app.post('/api/taller/trabajos', authTaller(), async (req, res) => {
+  try {
+    if (!req.persona) return enviarError(res, 403, SIN_PERSONA_TALLER);
+    const ctx = await contextoTaller();
+    const leido = leerTrabajoTaller(req.body, ctx);
+    if (leido.error) return enviarError(res, 400, leido.error);
+    let cobro = {};
+    if (req.body?.cobro) {
+      const c = leerCobroTaller(req.body.cobro, ctx, req.persona);
+      if (c.error) return enviarError(res, 400, c.error);
+      cobro = c.cobro;
+    }
+
+    const { data: creado, error } = await db.from('taller_trabajos')
+      .insert([{ estado: 'PENDIENTE', ...leido.trabajo, ...cobro, registrado_por: req.persona.id }]).select(COLUMNAS_TRABAJO_TALLER).single();
+    if (error) return enviarErrorBD(res, error, 'POST /api/taller/trabajos');
+
+    let repuestos = [];
+    if (leido.repuestos.length) {
+      const { data: filas, error: errRep } = await db.from('taller_trabajo_repuestos')
+        .insert(leido.repuestos.map(r => ({ ...r, trabajo_id: creado.id }))).select(COLUMNAS_REPUESTO_TALLER);
+      if (errRep) {
+        await db.from('taller_trabajos').delete().eq('id', creado.id);   // sin transacción: se deshace a mano
+        return enviarErrorBD(res, errRep, 'POST /api/taller/trabajos (repuestos)');
+      }
+      repuestos = filas || [];
+    }
+    await anotarHistorialTaller(creado.id, req, 'CREADO', { trabajo: leido.trabajo, repuestos: leido.repuestos, cobro: req.body?.cobro ? cobro : null });
+    await recordarLugaresTaller(leido.repuestos, req.persona);
+    res.status(201).json(trabajoTallerPara(creado, repuestos, req.persona, req.esAdminTaller));
+  } catch (err) {
+    return enviarErrorBD(res, err, 'POST /api/taller/trabajos');
+  }
+});
+
+/* Corrige un trabajo. Pendiente: el admin o quien participa. Ya cobrado:
+   solo el admin (cambia cuentas que ya se sacaron). */
+app.put('/api/taller/trabajos/:id', authTaller(), async (req, res) => {
+  try {
+    if (!req.persona) return enviarError(res, 403, SIN_PERSONA_TALLER);
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return enviarError(res, 400, 'Trabajo inválido');
+    const hallado = await leerTrabajoTallerPorId(id);
+    if (!hallado) return enviarError(res, 404, 'Ese trabajo no existe');
+    const antes = hallado.trabajo;
+    if (antes.estado === 'ANULADO') return enviarError(res, 409, 'Ese trabajo está anulado');
+    if (antes.estado === 'COBRADO' && !req.esAdminTaller) return enviarError(res, 403, 'Un trabajo ya cobrado solo lo corrige el administrador');
+    if (trabajoTallerPara(antes, hallado.repuestos, req.persona, req.esAdminTaller).limitado) {
+      return enviarError(res, 403, 'Ese trabajo lo corrige quien lo registró o el administrador');
+    }
+
+    const ctx = await contextoTaller();
+    const leido = leerTrabajoTaller(req.body, ctx);
+    if (leido.error) return enviarError(res, 400, leido.error);
+    let cobro = {};
+    if (antes.estado === 'COBRADO' && req.body?.cobro) {
+      const c = leerCobroTaller(req.body.cobro, ctx, req.persona);
+      if (c.error) return enviarError(res, 400, c.error);
+      // Corregir el monto no cambia cuándo ni quién lo cobró.
+      const { cobrado_fecha, cobrado_en, cobrado_por, ...resto } = c.cobro;
+      cobro = resto;
+    }
+
+    const { data: filas, error } = await db.from('taller_trabajos')
+      .update({ ...leido.trabajo, ...cobro, actualizado_por: req.persona.id, actualizado_en: new Date().toISOString() })
+      .eq('id', id).eq('estado', antes.estado).select(COLUMNAS_TRABAJO_TALLER);
+    if (error) return enviarErrorBD(res, error, 'PUT /api/taller/trabajos/:id');
+    if (!filas?.length) return enviarError(res, 409, 'Ese trabajo cambió mientras lo editabas: ábrelo de nuevo');
+
+    const { error: errBorrar } = await db.from('taller_trabajo_repuestos').delete().eq('trabajo_id', id);
+    if (errBorrar) return enviarErrorBD(res, errBorrar, 'PUT /api/taller/trabajos/:id (repuestos)');
+    let repuestos = [];
+    if (leido.repuestos.length) {
+      const { data: nuevos, error: errRep } = await db.from('taller_trabajo_repuestos')
+        .insert(leido.repuestos.map(r => ({ ...r, trabajo_id: id }))).select(COLUMNAS_REPUESTO_TALLER);
+      if (errRep) return enviarErrorBD(res, errRep, 'PUT /api/taller/trabajos/:id (repuestos)');
+      repuestos = nuevos || [];
+    }
+    await anotarHistorialTaller(id, req, 'EDITADO', {
+      antes: { trabajo: antes, repuestos: hallado.repuestos.map(({ id: _id, trabajo_id, ...r }) => r) },
+      despues: { trabajo: { ...leido.trabajo, ...cobro }, repuestos: leido.repuestos }
+    });
+    await recordarLugaresTaller(leido.repuestos, req.persona);
+    res.json(trabajoTallerPara(filas[0], repuestos, req.persona, req.esAdminTaller));
+  } catch (err) {
+    return enviarErrorBD(res, err, 'PUT /api/taller/trabajos/:id');
+  }
+});
+
+/* Entregar y cobrar. El `.eq('estado', 'PENDIENTE')` es el candado: si dos
+   teléfonos cobran el mismo trabajo a la vez, solo uno lo consigue. */
+app.post('/api/taller/trabajos/:id/cobrar', authTaller(), async (req, res) => {
+  try {
+    if (!req.persona) return enviarError(res, 403, SIN_PERSONA_TALLER);
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return enviarError(res, 400, 'Trabajo inválido');
+    const ctx = await contextoTaller();
+    const c = leerCobroTaller(req.body, ctx, req.persona);
+    if (c.error) return enviarError(res, 400, c.error);
+
+    const { data: filas, error } = await db.from('taller_trabajos')
+      .update({ ...c.cobro, actualizado_por: req.persona.id, actualizado_en: new Date().toISOString() })
+      .eq('id', id).eq('estado', 'PENDIENTE').select(COLUMNAS_TRABAJO_TALLER);
+    if (error) return enviarErrorBD(res, error, 'POST /api/taller/trabajos/:id/cobrar');
+    if (!filas?.length) {
+      const hallado = await leerTrabajoTallerPorId(id);
+      if (!hallado) return enviarError(res, 404, 'Ese trabajo no existe');
+      return enviarError(res, 409, hallado.trabajo.estado === 'COBRADO' ? 'Ese trabajo ya estaba cobrado' : 'Ese trabajo está anulado');
+    }
+    await anotarHistorialTaller(id, req, 'COBRADO', c.cobro);
+    const repuestos = await repuestosDeTrabajosTaller([id]);
+    // Quien cobra ve el detalle de ese cobro aunque no haya participado antes.
+    res.json(trabajoTallerPara(filas[0], repuestos, req.persona, req.esAdminTaller));
+  } catch (err) {
+    return enviarErrorBD(res, err, 'POST /api/taller/trabajos/:id/cobrar');
+  }
+});
+
+app.post('/api/taller/trabajos/:id/anular', authTaller(true), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return enviarError(res, 400, 'Trabajo inválido');
+    const motivo = textoTaller(req.body?.motivo, 200);
+    if (!motivo) return enviarError(res, 400, 'Escribe por qué se anula');
+    const { data: filas, error } = await db.from('taller_trabajos')
+      .update({ estado: 'ANULADO', anulado_motivo: motivo, actualizado_por: req.persona?.id || null, actualizado_en: new Date().toISOString() })
+      .eq('id', id).neq('estado', 'ANULADO').select('id, estado');
+    if (error) return enviarErrorBD(res, error, 'POST /api/taller/trabajos/:id/anular');
+    if (!filas?.length) return enviarError(res, 409, 'Ese trabajo no existe o ya estaba anulado');
+    await anotarHistorialTaller(id, req, 'ANULADO', { motivo });
+    res.json({ ok: true, id, estado: 'ANULADO' });
+  } catch (err) {
+    return enviarErrorBD(res, err, 'POST /api/taller/trabajos/:id/anular');
+  }
+});
+
+/* Las cuentas entre personas. Solo admin.
+   `saldos` es de siempre (todos los trabajos cobrados, menos lo ya
+   devuelto); el resto es del mes pedido, por fecha de cobro. */
+app.get('/api/taller/cuentas', authTaller(true), async (req, res) => {
+  try {
+    const hoy = fechaHoyChile();
+    const mes = /^\d{4}-(0[1-9]|1[0-2])$/.test(String(req.query?.mes || '')) ? String(req.query.mes) : hoy.slice(0, 7);
+    const ctx = await contextoTaller();
+    const [trabajos, pagos] = await Promise.all([
+      padresTraerTodo(() => db.from('taller_trabajos').select(COLUMNAS_TRABAJO_TALLER).in('estado', ['PENDIENTE', 'COBRADO']).order('id')),
+      padresTraerTodo(() => db.from('taller_pagos').select('id, fecha, de_usuario, a_usuario, monto, nota, anulado, creado_en').eq('anulado', false).order('id'))
+    ]);
+    const repuestos = await repuestosDeTrabajosTaller(trabajos.map(t => t.id));
+    const porTrabajo = new Map();
+    repuestos.forEach(r => { const k = Number(r.trabajo_id); if (!porTrabajo.has(k)) porTrabajo.set(k, []); porTrabajo.get(k).push(r); });
+
+    // saldo.get('a>b') = lo que `a` le debe a `b`, antes de netear
+    const debe = new Map();
+    const anotar = (de, a, monto) => { const k = `${de}>${a}`; debe.set(k, (debe.get(k) || 0) + monto); };
+    const sinCobrar = new Map();
+    const movimientos = [];
+    const delMes = { trabajos: 0, cobrado: 0, costo_repuestos: 0, costo_viaje: 0, ganancia: 0, aporte_pozo: 0, de_patricio: 0, de_sevelin: 0 };
+    const puestoMes = new Map();
+    const hechoMes = new Map();
+    const persona = (mapa, id, base) => { const k = Number(id); if (!mapa.has(k)) mapa.set(k, { persona_id: k, ...base }); return mapa.get(k); };
+
+    trabajos.forEach(t => {
+      const mios = porTrabajo.get(Number(t.id)) || [];
+      const c = cuentasDeTrabajoTaller(t, mios);
+      if (t.estado === 'PENDIENTE') {
+        c.por_devolver.forEach(p => { const k = `${t.dueno_id}>${p.a}`; sinCobrar.set(k, (sinCobrar.get(k) || 0) + p.monto); });
+        return;
+      }
+      c.deudas.forEach(d => anotar(d.de, d.a, d.monto));
+      if (String(t.cobrado_fecha).slice(0, 7) !== mes) return;
+      delMes.trabajos += 1;
+      delMes.cobrado += Math.round(num(t.cobrado_monto));
+      delMes.costo_repuestos += c.costo_repuestos;
+      delMes.costo_viaje += c.costo_viaje;
+      delMes.ganancia += c.ganancia;
+      delMes.aporte_pozo += c.aporte_pozo;
+      if (t.va_al_pozo) delMes.de_patricio += 1; else delMes.de_sevelin += 1;
+      mios.forEach(r => { if (r.pagado_por && num(r.costo) > 0) persona(puestoMes, r.pagado_por, { repuestos: 0, viaje: 0 }).repuestos += Math.round(num(r.costo)); });
+      if (t.viaje_pagado_por && num(t.viaje_monto) > 0) persona(puestoMes, t.viaje_pagado_por, { repuestos: 0, viaje: 0 }).viaje += Math.round(num(t.viaje_monto));
+      [['desarmo_id', 'desarmo'], ['instalo_id', 'instalo'], ['probo_id', 'probo']].forEach(([campo, clave]) => {
+        if (t[campo]) persona(hechoMes, t[campo], { desarmo: 0, instalo: 0, probo: 0 })[clave] += 1;
+      });
+      c.deudas.forEach(d => movimientos.push({
+        trabajo_id: t.id, equipo_modelo: t.equipo_modelo, fecha: t.cobrado_fecha, de: d.de, a: d.a, monto: d.monto, motivo: d.motivo
+      }));
+    });
+    pagos.forEach(p => anotar(p.a_usuario, p.de_usuario, Math.round(num(p.monto))));   // devolver baja la deuda
+
+    const saldos = [];
+    const vistos = new Set();
+    debe.forEach((_m, clave) => {
+      const [a, b] = clave.split('>').map(Number);
+      const par = [Math.min(a, b), Math.max(a, b)].join('|');
+      if (vistos.has(par)) return;
+      vistos.add(par);
+      const neto = (debe.get(`${a}>${b}`) || 0) - (debe.get(`${b}>${a}`) || 0);
+      if (neto > 0) saldos.push({ de: a, a: b, monto: neto });
+      if (neto < 0) saldos.push({ de: b, a, monto: -neto });
+    });
+
+    res.json({
+      hoy, mes,
+      personas: ctx.personas.map(p => ({ id: p.id, nombre: p.nombre, papel_taller: p.papel_taller || null })),
+      dueno_id: ctx.dueno?.id || null, papa_id: ctx.papa?.id || null,
+      saldos,
+      sin_cobrar: [...sinCobrar].map(([clave, monto]) => { const [de, a] = clave.split('>').map(Number); return { de, a, monto }; }),
+      del_mes: delMes,
+      puesto_mes: [...puestoMes.values()],
+      hecho_mes: [...hechoMes.values()],
+      movimientos: movimientos.reverse().slice(0, 80),
+      pagos: pagos.slice(-30).reverse().map(p => ({ ...p, monto: Math.round(num(p.monto)) }))
+    });
+  } catch (err) {
+    return enviarErrorBD(res, err, 'GET /api/taller/cuentas');
+  }
+});
+
+/* Anota que alguien le devolvió plata a otro. */
+app.post('/api/taller/pagos', authTaller(true), async (req, res) => {
+  try {
+    const ctx = await contextoTaller();
+    const de = Number(req.body?.de_usuario), a = Number(req.body?.a_usuario);
+    if (!ctx.activos.has(de) || !ctx.activos.has(a) || de === a) return enviarError(res, 400, 'Elige quién devuelve y a quién');
+    const monto = enteroTaller(req.body?.monto);
+    if (!Number.isFinite(monto) || monto <= 0 || monto > 20000000) return enviarError(res, 400, 'Escribe cuánto devolvió');
+    const fecha = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.fecha || '')) ? String(req.body.fecha) : fechaHoyChile();
+    if (fecha > fechaHoyChile()) return enviarError(res, 400, 'La fecha no puede ser futura');
+    const { data, error } = await db.from('taller_pagos')
+      .insert([{ fecha, de_usuario: de, a_usuario: a, monto, nota: textoTaller(req.body?.nota, 200), anulado: false, registrado_por: req.persona?.id || null }])
+      .select('id, fecha, de_usuario, a_usuario, monto, nota').single();
+    if (error) return enviarErrorBD(res, error, 'POST /api/taller/pagos');
+    res.status(201).json(data);
+  } catch (err) {
+    return enviarErrorBD(res, err, 'POST /api/taller/pagos');
+  }
+});
+
+app.delete('/api/taller/pagos/:id', authTaller(true), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return enviarError(res, 400, 'Devolución inválida');
+    const { data, error } = await db.from('taller_pagos').update({ anulado: true }).eq('id', id).eq('anulado', false).select('id');
+    if (error) return enviarErrorBD(res, error, 'DELETE /api/taller/pagos/:id');
+    if (!data?.length) return enviarError(res, 404, 'Esa devolución no existe o ya estaba anulada');
+    res.json({ ok: true });
+  } catch (err) {
+    return enviarErrorBD(res, err, 'DELETE /api/taller/pagos/:id');
+  }
+});
+
+/* Lo que los trabajos de la app suman al pozo de C. Patricio (lo lee
+   GET /api/padres/resumen). Si la migración sql/92 todavía no está, no hay
+   trabajos: devuelve vacío en vez de botar el panel. */
+async function pozoDeLaAppTaller() {
+  try {
+    const trabajos = await padresTraerTodo(() => db.from('taller_trabajos').select(COLUMNAS_TRABAJO_TALLER)
+      .eq('estado', 'COBRADO').eq('va_al_pozo', true).order('id'));
+    const repuestos = await repuestosDeTrabajosTaller(trabajos.map(t => t.id));
+    return trabajos.map(t => {
+      const mios = repuestos.filter(r => Number(r.trabajo_id) === Number(t.id));
+      const c = cuentasDeTrabajoTaller(t, mios);
+      return {
+        trabajo_id: t.id, fecha: String(t.cobrado_fecha).slice(0, 10), mes: String(t.cobrado_fecha).slice(0, 7),
+        nombre: `${t.equipo_modelo}${mios.length ? ' · ' + mios.map(r => r.nombre).join(', ') : ''}`,
+        cobrado: Math.round(num(t.cobrado_monto)), aporte: c.aporte_pozo, en_su_mano: c.en_mano_del_dueno,
+        puesto_por_otros: c.puesto_por_otros, en_la_caja: t.cobrado_donde === 'CAJA_POS'
+      };
+    }).filter(a => !a.en_la_caja);
+  } catch (err) {
+    console.warn('[TALLER] el pozo no pudo leer los trabajos de la app (¿falta sql/92?):', err.message);
+    return [];
+  }
+}
 
 /* ---------- 404 y errores ---------- */
 app.use('/api', (_req, res) => enviarError(res, 404, 'Endpoint no encontrado'));

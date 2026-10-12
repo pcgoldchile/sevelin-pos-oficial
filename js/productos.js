@@ -1512,7 +1512,7 @@ async function generarTextoConIA(destino) {
    espera de 35-70 s por un cambio de pestaña.
    ============================================================ */
 
-/* "Lo hace mi papá" (sql/90) solo se ofrece en un servicio: un producto
+/* "Lo hace C. Patricio" (sql/90) solo se ofrece en un servicio: un producto
    físico nunca va al pozo. Al desmarcar "Es un servicio" se apaga solo. */
 function pintarVaAlPozoProducto() {
   const item = document.getElementById('itemProdVaAlPozo');

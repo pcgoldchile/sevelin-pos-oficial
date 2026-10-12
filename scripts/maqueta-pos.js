@@ -1089,6 +1089,9 @@ const pozoMaqueta = [
   { item_id: 501, venta_id: 301, numero_orden: 301, fecha: hoyMaqueta(), nombre: 'Cambio de Pantalla para Celulares (Todas las Marcas)', cobrado: 60000, pozo: 40000, nota: 'Menos el repuesto ($20.000)', devuelto: 0 },
   { item_id: 502, venta_id: 302, numero_orden: 302, fecha: hoyMaqueta(), nombre: 'Limpieza Interna de Puerto de Carga', cobrado: 10000, pozo: 8403, nota: 'Todo lo cobrado, sin el IVA', devuelto: 0 }
 ];
+// v135: un trabajo de C. Patricio cobrado en la app del taller (lo cobró él: ya lo tiene en la mano).
+pozoMaqueta.push({ item_id: null, trabajo_id: 3, venta_id: null, numero_orden: null, fecha: hoyMaqueta(), origen: 'APP', nombre: 'Samsung A07 · Pantalla',
+  cobrado: 25000, pozo: 14000, nota: 'Menos $11.000 que puso otro · lo cobró él', devuelto: 0 });
 const sinPozoMaqueta = [
   { item_id: 503, venta_id: 303, numero_orden: 303, fecha: hoyMaqueta(), nombre: 'Formateo e instalación de Windows', cobrado: 25000 }
 ];
@@ -1108,13 +1111,14 @@ app.get('/api/padres/resumen', (req, res) => {
   const esDe = (g, texto) => String(g.clasificacion || '').includes(texto);
   const comoFila = (g) => ({ id: g.id, fecha: String(g.fecha || hoy).slice(0, 10), monto: Number(g.costo_total) || 0, descripcion: g.descripcion || null, metodo_pago: g.metodo_pago || null });
   const pagos = gastosMaqueta.filter(g => esDe(g, 'Mercadería de mis padres')).map(comoFila);
-  const entregas = delMes ? gastosMaqueta.filter(g => esDe(g, 'Pozo de mi papá')).map(comoFila) : [];
+  const entregas = delMes ? gastosMaqueta.filter(g => esDe(g, 'Pozo de C. Patricio')).map(comoFila) : [];
+  const enSuMano = delMes ? 14000 : 0;
   const pagado = pagos.reduce((s, p) => s + p.monto, 0);
   const entregado = entregas.reduce((s, e) => s + e.monto, 0);
   const vendido = 2840000;
   res.json({
     hoy, acuerdo: acuerdoMaqueta,
-    clasificaciones: { mercaderia: 'Mercadería de mis padres', pozo: 'Pozo de mi papá (servicios de celulares)' },
+    clasificaciones: { mercaderia: 'Mercadería de mis padres', pozo: 'Pozo de C. Patricio (servicios de celulares)' },
     mercaderia: {
       vendido, devuelto: 0, unidades: 312, costo_vendido: 1310000, tope: acuerdoMaqueta.tope_mercaderia,
       falta_para_tope: Math.max(0, acuerdoMaqueta.tope_mercaderia - vendido), aviso_tope: vendido >= acuerdoMaqueta.tope_mercaderia,
@@ -1126,13 +1130,45 @@ app.get('/api/padres/resumen', (req, res) => {
     pozo: {
       mes, desde: mes + '-01', hasta: mes + '-' + String(diasMes).padStart(2, '0'), activo, inicio: activo ? acuerdoMaqueta.pozo_desde : null,
       juntado, minimo_mes: minimoMes, minimo_a_la_fecha: minimoALaFecha, dias_activos: diasActivos, dias_corridos: diasCorridos,
-      entregado, saldo_anterior: 0, sugerido_hoy: Math.max(0, Math.max(juntado, minimoALaFecha) - entregado),
+      entregado, saldo_anterior: 0, en_su_mano: enSuMano, sugerido_hoy: Math.max(0, Math.max(juntado, minimoALaFecha) - entregado - enSuMano),
       falta_para_minimo: Math.max(0, minimoMes - juntado),
       lineas: delMes ? pozoMaqueta : [], servicios_sin_pozo: delMes ? sinPozoMaqueta : [], entregas
     }
   });
 });
 app.put('/api/padres/acuerdo', (req, res) => { Object.assign(acuerdoMaqueta, req.body); res.json(acuerdoMaqueta); });
+// v135 (sql/92): usuarios con RUT y PIN. Simulado: lo que vale es api/index.js (la app del taller se prueba con
+// scripts/maqueta-taller.js, que corre el servidor real). El PIN no se guarda ni se devuelve.
+const usuariosMaqueta = [
+  { id: 1, nombre: 'C. Alejandro Silva', rut: '11111111-1', rol: 'admin', papel_taller: 'DUENO', activo: true, tiene_pin: true, bloqueado: false, ultimo_ingreso_en: null },
+  { id: 2, nombre: 'C. Patricio Silva', rut: '22222222-2', rol: 'trabajador', papel_taller: null, activo: true, tiene_pin: true, bloqueado: true, ultimo_ingreso_en: null }
+];
+const rutMaqueta = (v) => { const l = String(v || '').replace(/[^0-9kK]/g, '').toUpperCase(); return l.length < 8 ? null : `${l.slice(0, -1)}-${l.slice(-1)}`; };
+function guardarUsuarioMaqueta(u, b, res) {
+  if (b.rut !== undefined) {
+    const rut = rutMaqueta(b.rut);
+    if (!rut) return res.status(400).json({ error: 'El RUT no es válido: escríbelo con su dígito verificador (ej: 12.345.678-5)' });
+    if (usuariosMaqueta.some(x => x.rut === rut && x !== u)) return res.status(409).json({ error: 'Ya existe un usuario con ese RUT' });
+    u.rut = rut;
+  }
+  if (b.pin !== undefined && !/^\d{4,8}$/.test(String(b.pin))) return res.status(400).json({ error: 'El PIN son entre 4 y 8 números' });
+  if (b.papel_taller) usuariosMaqueta.forEach(x => { if (x !== u && x.papel_taller === b.papel_taller) x.papel_taller = null; });
+  ['nombre', 'rol', 'papel_taller', 'activo'].forEach(c => { if (b[c] !== undefined) u[c] = b[c]; });
+  if (b.pin || b.desbloquear) u.bloqueado = false;
+  if (b.pin) u.tiene_pin = true;
+  return res.json(u);
+}
+app.get('/api/usuarios', (_req, res) => (app.locals.rolMaqueta === 'trabajador' ? res.status(403).json({ error: 'Esta acción es solo para el administrador' }) : res.json(usuariosMaqueta)));
+app.post('/api/usuarios', (req, res) => {
+  const u = { id: Math.max(0, ...usuariosMaqueta.map(x => x.id)) + 1, nombre: '', rut: '', rol: 'trabajador', papel_taller: null, activo: true, tiene_pin: false, bloqueado: false, ultimo_ingreso_en: null };
+  const r = guardarUsuarioMaqueta(u, req.body || {}, res);
+  if (res.statusCode === 200) usuariosMaqueta.push(u);
+  return r;
+});
+app.put('/api/usuarios/:id', (req, res) => {
+  const u = usuariosMaqueta.find(x => x.id === Number(req.params.id));
+  return u ? guardarUsuarioMaqueta(u, req.body || {}, res) : res.status(404).json({ error: 'Ese usuario no existe' });
+});
 app.put('/api/padres/pozo/:itemId', (req, res) => {
   const id = Number(req.params.itemId);
   const monto = Number(req.body?.monto) || 0;

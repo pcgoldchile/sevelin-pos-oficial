@@ -679,7 +679,7 @@ function renderOrdenesTabla(lista) {
       <td>${escHtml(o.dispositivo_categoria || '')} ${escHtml(o.dispositivo_modelo || '')}${o.dispositivo_sn ? `<br><small style="color:var(--text-muted);">S/N: ${escHtml(o.dispositivo_sn)}</small>` : ''}</td>
       <td>${escHtml((o.falla_reportada || '').slice(0, 70))}${(o.falla_reportada || '').length > 70 ? '…' : ''}</td>
       <td><span class="badge ${pendiente ? 'badge-gold' : 'badge-green'}">${o.estado}</span>
-          ${o.de_padres ? '<span class="badge badge-blue" title="Lo hace mi papá: al cobrarlo, marca cuánto va a su pozo">👨‍🔧 Papá</span>' : ''}
+          ${o.de_padres ? '<span class="badge badge-blue" title="Lo hace C. Patricio: al cobrarlo, marca cuánto va a su pozo">👨‍🔧 C. Patricio</span>' : ''}
           ${typeof insigniaAvanceOT === 'function' ? insigniaAvanceOT(o.id) : ''}</td>
       <td>
         <div class="cell-actions">

@@ -28,6 +28,14 @@
       "port": 4180
     },
     {
+      "name": "taller-maqueta",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "scripts/maqueta-taller.js"
+      ],
+      "port": 4181
+    },
+    {
       "name": "sevelin-tienda-dev",
       "runtimeExecutable": "npm",
       "runtimeArgs": [

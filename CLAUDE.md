@@ -63,6 +63,11 @@ inserte en el DOM pasa por `escHtml`** (regla de seguridad).
   (`scripts/maqueta-pos.js`, puerto 4180): el frontend real con una API simulada y 10 productos
   reales. No toca Supabase ni producción, y cualquier PIN entra (como admin; `trabajador` entra
   como trabajador). Nunca se prueba con el PIN real ni contra la base real.
+- **App del taller (`/taller/`, v135):** config `taller-maqueta` (`scripts/maqueta-taller.js`, puerto 4181). A diferencia
+  de `pos-maqueta`, aquí corre el **servidor real** (`api/index.js`) contra una base en memoria
+  (`scripts/doble-supabase.js`): lo que se prueba es el código que va a producción. Usuarios de prueba en la cabecera
+  del script (RUT `11.111.111-1` admin, `22.222.222-2` C. Patricio; PIN `1234`). La app es una página aparte: no usa
+  los `js/*.js` del POS ni Tailwind, y no puede tener scripts dentro del HTML (los bloquea la política de `vercel.json`).
 - **Tienda (sevelin-tienda):** config `tienda-maqueta` (`scripts/maqueta-tienda.mjs` de ese repo, puerto
   3100): la tienda real contra un Supabase simulado con 40 productos, sesiones de prueba
   (`http://localhost:54399/maqueta/entrar?quien=mayorista|pendiente|cliente|salir`) y un Khipu falso.

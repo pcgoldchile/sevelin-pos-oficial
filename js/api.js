@@ -634,6 +634,13 @@ const API = {
     corregirPozo: (itemId, monto) => apiRequest(`/padres/pozo/${itemId}`, { method: 'PUT', body: { monto } })
   },
 
+  /* ---------- Usuarios con RUT y PIN (sql/92, v135). Solo admin ---------- */
+  usuarios: {
+    listar: () => apiRequest('/usuarios'),
+    crear: (datos) => apiRequest('/usuarios', { method: 'POST', body: datos }),
+    actualizar: (id, datos) => apiRequest(`/usuarios/${id}`, { method: 'PUT', body: datos })
+  },
+
   /* ---------- Cotizaciones aproximadas del taller (sql/90, v133) ---------- */
   cotizacionesRef: {
     listar: () => apiRequest('/cotizaciones-ref'),

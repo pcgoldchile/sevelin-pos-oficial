@@ -12,6 +12,26 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 12-10-2026 · v135 SIN PUBLICAR: app del taller para el celular y usuarios con RUT y PIN
+
+Detalle en `docs/CHANGELOG-V135.md` (y la v134 del 11-10 en `docs/CHANGELOG-V134.md`).
+
+- **App del taller (#100):** `/taller/`, instalable desde el navegador del celular. Registro paso a paso de cada
+  servicio (equipo, repuesto, calidad de pantalla, stock o compra, viaje, quién puso la plata, quién desarmó,
+  instaló y probó, cobro) y las cuentas de quién le devuelve a quién. Construida y probada en `taller-maqueta`.
+  **Falta el OK del dueño para aplicar `sql/92` y publicar.**
+- **Usuarios (#98, la mitad):** tabla `usuarios`, ingreso con RUT y PIN en `POST /api/login` y ventana Usuarios en
+  el POS. Falta que el POS mismo pida RUT y PIN, los permisos por casillas y el registro de cambios.
+- **Pozo:** partió el 12-10-2026 a pedido del dueño (`pozo_desde`, ya en producción). En pantalla ahora dice
+  "C. Patricio". Lo cobrado en la app por trabajos de él suma a su pozo; lo que puso otro no.
+- **Lo cobrado en la app no crea una venta en el POS** (decisión de Claude, dicha al dueño).
+- **v134 (11-10, noche):** Por llegar con varias llegadas y ventanas propias, publicado (`b0b2e24`). Pago con
+  tarjeta construido y **sin publicar** (POS `ce4f5a5`, tienda `32ce25f`; faltan `sql/91` y `supabase/42`).
+- **Ojo al publicar:** el commit de la v135 va encima del de pago con tarjeta. Un push del POS publica los dos.
+- Tabla de pendientes: #70 y #84 descartados a pedido del dueño, #28 cerrado, #72 pasa a Claude ("sí, ordena").
+- No se hizo: la auditoría de precios del lunes (#88), el logo en tienda y POS (#99), ordenar categorías (#72), el
+  marcador de Facebook (#91), la respuesta a la reseña (#89) ni las lluvias de ideas que pidió el 11-10.
+
 ## 11-10-2026 (noche) · Sin versión nueva: decisiones del dueño, logo en vector y tres encargos para la próxima sesión
 
 Nada de código. Ese día el mismo mensaje corrió en **dos chats a la vez** (uno era copia del otro): el primero hizo la

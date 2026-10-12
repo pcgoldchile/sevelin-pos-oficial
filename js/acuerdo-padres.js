@@ -38,7 +38,7 @@ function pozoDeLineaPrevio(cobrado, pozo) {
   return pozo.sin_iva ? Math.round(monto / POZO_IVA) : monto;
 }
 
-/* Un servicio se pregunta si su ficha dice "lo hace mi papá" o si se
+/* Un servicio se pregunta si su ficha dice "lo hace C. Patricio" o si se
    escribió a mano en la caja (no hay ficha que lo diga). */
 function lineaPreguntaPozo(item) {
   return !!item.es_servicio && (!!item.va_al_pozo || !item.producto_id);
@@ -101,7 +101,7 @@ function pintarAntesDeCobrar(hayPozo) {
           </label>
         </div>
         <label class="antes-iva">
-          <input type="checkbox" data-pozo-sin-iva${previo?.sin_iva ? ' checked' : ''}> El IVA lo pone mi papá (al pozo va sin el IVA)
+          <input type="checkbox" data-pozo-sin-iva${previo?.sin_iva ? ' checked' : ''}> El IVA lo pone C. Patricio (al pozo va sin el IVA)
         </label>
         <p class="antes-resultado" data-pozo-resultado></p>
       </div>`;
@@ -124,7 +124,7 @@ function pintarAntesDeCobrar(hayPozo) {
   }).join('');
 
   cuerpo.innerHTML =
-    (bloquesPozo ? `<h3 class="antes-seccion">👨‍🔧 ¿Va al pozo de tu papá?</h3>${bloquesPozo}` : '') +
+    (bloquesPozo ? `<h3 class="antes-seccion">👨‍🔧 ¿Va al pozo de C. Patricio?</h3>${bloquesPozo}` : '') +
     (bloquesDueno ? `<h3 class="antes-seccion">📦 Este producto lo tienen los dos: ¿de quién es la unidad?</h3>${bloquesDueno}` : '');
 
   cuerpo.querySelectorAll('[data-pozo-linea]').forEach(actualizarLineaAntesDeCobrar);
@@ -296,32 +296,36 @@ function pintarPozoPadres(r) {
 
   const avisos = [];
   if (!r.acuerdo.pozo_desde) {
-    avisos.push(`<div class="callout-warning">El pozo todavía no parte: no hay mínimo corriendo. Cuando tu papá empiece,
+    avisos.push(`<div class="callout-warning">El pozo todavía no parte: no hay mínimo corriendo. Cuando C. Patricio empiece,
       <button type="button" class="btn btn-outline btn-sm" id="btnPozoPartirHoy">▶️ Partir hoy</button></div>`);
   } else if (p.activo && p.falta_para_minimo > 0) {
-    avisos.push(`<div class="callout-warning">Si el mes cerrara así, pones <b>${fmtCLP(p.falta_para_minimo)}</b> de tu bolsillo para llegar al mínimo de ${fmtCLP(p.minimo_mes)}. El pozo solo cuenta lo que se cobra por la caja.</div>`);
+    avisos.push(`<div class="callout-warning">Si el mes cerrara así, pones <b>${fmtCLP(p.falta_para_minimo)}</b> de tu bolsillo para llegar al mínimo de ${fmtCLP(p.minimo_mes)}. El pozo cuenta lo que se cobra por la caja y lo que se cobra en la app del taller.</div>`);
   }
   if (elAviso) elAviso.innerHTML = avisos.join('');
 
   const pieSugerido = p.saldo_anterior > 0 ? `incluye ${fmtCLP(p.saldo_anterior)} que quedó de meses anteriores`
     : p.saldo_anterior < 0 ? `ya descuenta ${fmtCLP(-p.saldo_anterior)} que le adelantaste antes`
     : 'lo mayor entre lo juntado y el mínimo, menos lo entregado';
+  // v135: lo que cobró él mismo en la app ya lo tiene en la mano; no se le vuelve a entregar
+  const enSuMano = Number(p.en_su_mano) || 0;
+  const deLaApp = p.lineas.filter(l => l.origen === 'APP').length;
   elKpis.innerHTML = [
-    tarjetaPadres('blue', 'Juntado en el mes', fmtCLP(p.juntado), `${p.lineas.length} ${p.lineas.length === 1 ? 'servicio' : 'servicios'} cobrados en la caja`),
+    tarjetaPadres('blue', 'Juntado en el mes', fmtCLP(p.juntado), `${p.lineas.length} ${p.lineas.length === 1 ? 'servicio cobrado' : 'servicios cobrados'}` + (deLaApp ? ` (${deLaApp} en la app del taller)` : ' en la caja')),
     tarjetaPadres('violet', 'Mínimo a la fecha', fmtCLP(p.minimo_a_la_fecha),
       p.activo ? `día ${p.dias_corridos} de ${p.dias_activos} · mínimo del mes ${fmtCLP(p.minimo_mes)}` : 'sin mínimo este mes'),
-    tarjetaPadres('green', 'Entregado', fmtCLP(p.entregado), `${p.entregas.length} ${p.entregas.length === 1 ? 'entrega' : 'entregas'} en el mes`),
-    tarjetaPadres('gold', 'Para entregarle hoy', fmtCLP(p.sugerido_hoy), pieSugerido)
+    tarjetaPadres('green', 'Entregado', fmtCLP(p.entregado), `${p.entregas.length} ${p.entregas.length === 1 ? 'entrega' : 'entregas'} en el mes` + (enSuMano > 0 ? ` · además ya cobró él ${fmtCLP(enSuMano)}` : '')),
+    tarjetaPadres('gold', 'Para entregarle hoy', fmtCLP(p.sugerido_hoy), pieSugerido + (enSuMano > 0 ? ', menos lo que ya cobró él' : ''))
   ].join('');
 
   const filasLineas = p.lineas.map(l => `<tr>
       <td>${fechaCorta(l.fecha)}</td>
-      <td>#${escHtml(String(l.numero_orden ?? ''))}</td>
+      <td>${l.origen === 'APP' ? `<span class="badge badge-blue" title="Registrado en la app del taller">📱 App #${Number(l.trabajo_id)}</span>` : '#' + escHtml(String(l.numero_orden ?? ''))}</td>
       <td>${escHtml(l.nombre)}${l.devuelto > 0 ? ` <span class="badge badge-gold">devuelto ${fmtCLP(l.devuelto)}</span>` : ''}</td>
       <td>${fmtCLP(l.cobrado)}</td>
       <td class="strong">${fmtCLP(l.pozo)}</td>
       <td>${escHtml(l.nota || '—')}</td>
-      <td><button type="button" class="btn btn-outline btn-sm" data-pozo-corregir="${Number(l.item_id)}" data-cobrado="${Number(l.cobrado)}" data-pozo="${Number(l.pozo)}" data-nombre="${escHtml(l.nombre)}">Corregir</button></td>
+      <td>${l.origen === 'APP' ? '<span class="texto-apagado" title="Se corrige en la app del taller">en la app</span>'
+        : `<button type="button" class="btn btn-outline btn-sm" data-pozo-corregir="${Number(l.item_id)}" data-cobrado="${Number(l.cobrado)}" data-pozo="${Number(l.pozo)}" data-nombre="${escHtml(l.nombre)}">Corregir</button>`}</td>
     </tr>`);
   const filasEntregas = p.entregas.map(e => `<tr>
       <td>${fechaCorta(e.fecha)}</td>
@@ -339,9 +343,9 @@ function pintarPozoPadres(r) {
 
   elDetalle.innerHTML =
     tablaPadres('Servicios que fueron al pozo', ['Fecha', 'Venta', 'Servicio', 'Cobrado', 'Al pozo', 'Cómo', ''], filasLineas,
-      'Ningún servicio fue al pozo este mes. Se marca al cobrar: la caja pregunta cuando el servicio dice "Lo hace mi papá".') +
-    tablaPadres('Entregas a tu papá', ['Fecha', 'Monto', 'Medio', 'Detalle'], filasEntregas,
-      'Sin entregas este mes. Usa el botón "Entregar a mi papá".') +
+      'Ningún servicio fue al pozo este mes. Se marca al cobrar: la caja pregunta cuando el servicio dice "Lo hace C. Patricio", o se registra en la app del taller.') +
+    tablaPadres('Entregas a C. Patricio', ['Fecha', 'Monto', 'Medio', 'Detalle'], filasEntregas,
+      'Sin entregas este mes. Usa el botón "Entregar a C. Patricio".') +
     (filasSinPozo.length
       ? tablaPadres('Otros servicios del mes que no fueron al pozo', ['Fecha', 'Venta', 'Servicio', 'Cobrado', ''], filasSinPozo, '')
       : '');
@@ -365,8 +369,8 @@ function registrarEntregaPozo() {
   const p = resumenPadres.pozo;
   abrirGastoPrellenado({
     monto: p.sugerido_hoy,
-    descripcion: `Entrega del pozo a mi papá (${p.mes.slice(5)}-${p.mes.slice(0, 4)})`,
-    proveedor: 'Mi papá',
+    descripcion: `Entrega del pozo a C. Patricio (${p.mes.slice(5)}-${p.mes.slice(0, 4)})`,
+    proveedor: 'C. Patricio',
     clasificacion: resumenPadres.clasificaciones.pozo
   });
 }
