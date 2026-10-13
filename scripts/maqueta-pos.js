@@ -937,6 +937,9 @@ let pedidosWebMaqueta = [
   { id: 4, numero_pedido: 'WEB-900004', cliente_nombre: 'Luis Sin Correo', cliente_email: null, subtotal: 8000, total: 8000, items: [itemWebMaqueta('combo', 'Combo Teclado y Mouse RGB', 8000)] },
   { id: 5, numero_pedido: 'WEB-900005', cliente_nombre: 'Marta Un Envío', metodo_envio: 'LOCAL', costo_envio: 3000, entrega_por_llegar: 'JUNTO', subtotal: 21980, total: 24980,
     items: [itemWebMaqueta('mouse-rgb', 'Mouse gamer RGB 7200 DPI', 6990), itemWebMaqueta('zapatero', 'Zapatero 5 Niveles', 14990, { por_llegar: true, fecha_llegada_estimada: '2026-10-08' })] },
+  // v134: eligió tarjeta y pagó por el link de Haulmer; espera que el dueño apriete "Confirmar pago".
+  { id: 6, numero_pedido: 'WEB-900006', cliente_nombre: 'Rosa', cliente_apellido: 'Link <i>Tarjeta</i>', estado: 'CREADO', metodo_pago: 'LINK_TUU', subtotal: 18000, total: 18000,
+    items: [itemWebMaqueta('audifonos', 'Audífonos Bluetooth con Estuche', 18000)] },
 ].map(p => ({ ...basePedidoWeb, ...p }));
 app.get('/api/pos/pedidos-web', (req, res) => {
   const estados = String(req.query.estado || '').split(',').map(e => e.trim()).filter(Boolean);
@@ -948,6 +951,20 @@ app.put('/api/pos/pedidos-web/:id', (req, res) => {
   if (req.body.estado) p.estado = req.body.estado;
   if (req.body.tracking_courier !== undefined) p.tracking_courier = req.body.tracking_courier || null;
   res.json({ ...p, correo_enviado: true });
+});
+// v134: "Confirmar pago" de un pedido que pagó con el link. Mismas reglas que api/index.js (el que vale):
+// débito o crédito, el monto escrito tiene que ser el del pedido, y solo si sigue esperando pago.
+app.post('/api/pos/pedidos-web/:id/confirmar-pago', (req, res) => {
+  const tipo = String(req.body?.tipo || '').trim().toUpperCase();
+  if (!['DEBITO', 'CREDITO'].includes(tipo)) return res.status(400).json({ error: 'Indica si el cliente pagó con débito o con crédito' });
+  const monto = Math.round(Number(req.body?.monto_recibido) || 0);
+  if (!(monto > 0)) return res.status(400).json({ error: 'Escribe el monto que te llegó' });
+  const p = pedidosWebMaqueta.find(x => x.id === Number(req.params.id));
+  if (!p) return res.status(404).json({ error: 'Pedido no encontrado' });
+  if (p.estado !== 'CREADO') return res.status(409).json({ error: 'Este pedido ya no está esperando pago. Actualiza la lista.' });
+  if (monto !== p.total) return res.status(409).json({ error: `El pedido ${p.numero_pedido} es por $${p.total.toLocaleString('es-CL')} y escribiste $${monto.toLocaleString('es-CL')}: no calza.` });
+  p.estado = 'PAGADO';
+  res.json({ ok: true, numero_pedido: p.numero_pedido, estado: 'PAGADO', sin_stock: false, correo_cliente: true });
 });
 app.post('/api/pos/pedidos-web/:id/listo-retiro', (req, res) => {
   const p = pedidosWebMaqueta.find(x => x.id === Number(req.params.id));
