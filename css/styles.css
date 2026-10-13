@@ -201,6 +201,7 @@ h2 { color: var(--text-100); font-weight: 700; letter-spacing: -.01em; }
 .sidebar-foot-extra { width: 100%; flex-wrap: wrap; }
 .sidebar-foot-extra .btn { text-decoration: none; }
 .texto-apagado { color: var(--text-muted); font-size: 12.5px; }
+.foto-ubicacion-interruptor { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-muted); cursor: pointer; white-space: nowrap; }
 .usuarios-acciones { white-space: nowrap; display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
 
 .app-header {

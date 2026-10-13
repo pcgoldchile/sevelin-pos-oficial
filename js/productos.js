@@ -359,6 +359,14 @@ function setupProductosEventListeners() {
   elProdPeso?.addEventListener('input', actualizarLecturaPeso);
   elProdPesoUnidad?.addEventListener('change', actualizarLecturaPeso);
   document.getElementById('btnDescargarTodasFotos')?.addEventListener('click', descargarTodasFotosProducto);
+  const chkUbicacion = document.getElementById('chkFotoUbicacion');
+  if (chkUbicacion) {
+    chkUbicacion.checked = fotoUbicacionEncendida();
+    chkUbicacion.addEventListener('change', () => {
+      localStorage.setItem(CLAVE_FOTO_UBICACION, chkUbicacion.checked ? '1' : '0');
+      showToast(chkUbicacion.checked ? '"Descargar todas" agrega la foto ¿Dónde estamos?' : '"Descargar todas" ya no agrega la foto de ubicación', 'ok');
+    });
+  }
   document.getElementById('btnDescargarInstagram')?.addEventListener('click', descargarFotosInstagram);
   if (elBtnGenerarSeoIA) elBtnGenerarSeoIA.addEventListener('click', generarSeoConIA);
   if (elBtnGenerarFichaIA) elBtnGenerarFichaIA.addEventListener('click', () => generarTextoConIA('ficha'));
@@ -2801,6 +2809,27 @@ async function entregarVariasFotos(carpeta, subcarpeta, archivos, nombreZip) {
   const zip = new JSZip();
   archivos.forEach(a => zip.file(a.nombre, a.blob));
   dispararDescargaBlob(await zip.generateAsync({ type: 'blob' }), nombreZip);
+  // Que el .zip no salga "porque sí": se dice el motivo.
+  if (typeof window.showDirectoryPicker !== 'function') {
+    showToast('Este navegador no deja guardar en una carpeta: bajó un .zip. Sin .zip funciona en Chrome o Edge del computador.', 'err');
+  } else if (motivoSinCarpetaFotos) {
+    showToast(`No se pudo usar la carpeta (${motivoSinCarpetaFotos}): bajó un .zip.`, 'err');
+  }
+}
+
+/* FOTO DE UBICACIÓN "¿Dónde estamos?" (dueño, 13-10-2026)
+   Con el interruptor encendido, "Descargar todas" agrega esa imagen como
+   última foto, para copiar la carpeta completa a Facebook Marketplace.
+   El interruptor vale para todos los productos y se recuerda en este
+   navegador. La imagen es img/donde-estamos.webp: se cambia reemplazando
+   ese archivo. */
+const CLAVE_FOTO_UBICACION = 'pos_foto_ubicacion';
+let motivoSinCarpetaFotos = '';
+function fotoUbicacionEncendida() { return localStorage.getItem(CLAVE_FOTO_UBICACION) !== '0'; }
+async function traerFotoUbicacion() {
+  const resp = await fetch('img/donde-estamos.webp');
+  if (!resp.ok) throw new Error('No se pudo cargar la foto de ubicación');
+  return resp.blob();
 }
 
 /* "Descargar todas": una sola foto se baja directa; dos o más quedan sueltas
@@ -2812,9 +2841,11 @@ async function descargarTodasFotosProducto(evento) {
   const boton = document.getElementById('btnDescargarTodasFotos');
   if (boton) { boton.disabled = true; boton.textContent = '⏳ Descargando…'; }
   try {
+    const conUbicacion = fotoUbicacionEncendida();
     let carpeta = null;
-    if (lista.length > 1) {
-      try { carpeta = await elegirCarpetaDeFotos(evento?.shiftKey === true); } catch (err) { if (err.name === 'AbortError') return; }
+    motivoSinCarpetaFotos = '';
+    if (lista.length + (conUbicacion ? 1 : 0) > 1) {
+      try { carpeta = await elegirCarpetaDeFotos(evento?.shiftKey === true); } catch (err) { if (err.name === 'AbortError') return; motivoSinCarpetaFotos = err.message || err.name; }
     }
     const blobs = await Promise.all(lista.map(async (url) => {
       const resp = await fetch(url);
@@ -2822,14 +2853,15 @@ async function descargarTodasFotosProducto(evento) {
       return resp.blob();
     }));
 
-    if (blobs.length === 1) {
+    if (blobs.length === 1 && !conUbicacion) {
       dispararDescargaBlob(blobs[0], nombreArchivoFoto(nombre, 0, 1, lista[0]));
       return;
     }
 
-    await entregarVariasFotos(carpeta, slugArchivo(nombre),
-      blobs.map((blob, i) => ({ nombre: nombreArchivoFoto(nombre, i, lista.length, lista[i]), blob })),
-      `${slugArchivo(nombre)}-fotos.zip`);
+    const archivos = blobs.map((blob, i) => ({ nombre: nombreArchivoFoto(nombre, i, lista.length, lista[i]), blob }));
+    // "zz" para que quede al final al ordenar la carpeta por nombre
+    if (conUbicacion) archivos.push({ nombre: `${slugArchivo(nombre)}-zz-donde-estamos.webp`, blob: await traerFotoUbicacion() });
+    await entregarVariasFotos(carpeta, slugArchivo(nombre), archivos, `${slugArchivo(nombre)}-fotos.zip`);
   } catch (err) {
     showToast(err.message || 'No se pudieron descargar las fotos', 'err');
   } finally {
@@ -4592,7 +4624,8 @@ async function descargarFotosInstagram(evento) {
   try {
     let carpeta = null;
     if (lista.length > 1) {
-      try { carpeta = await elegirCarpetaDeFotos(evento?.shiftKey === true); } catch (err) { if (err.name === 'AbortError') return; }
+      motivoSinCarpetaFotos = '';
+      try { carpeta = await elegirCarpetaDeFotos(evento?.shiftKey === true); } catch (err) { if (err.name === 'AbortError') return; motivoSinCarpetaFotos = err.message || err.name; }
     }
     const blobs = [];
     for (const url of lista) blobs.push(await aFotoInstagram(url));
