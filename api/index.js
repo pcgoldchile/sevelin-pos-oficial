@@ -2108,7 +2108,8 @@ Si el producto trae una advertencia real, requisito de instalación, condición 
 Entre 8 y 12 en total — solo las más importantes y útiles para el comprador. Prioriza beneficios reales y especificaciones relevantes, sin tecnicismos innecesarios.
 
 📌 RETIRO PRESENCIAL SECTOR 11 SEPTIEMBRE O ENVÍO HOY EN ARICA
-Escríbenos antes de venir a retirar o solicitar tu despacho. Así te confirmamos disponibilidad del producto, el horario exacto y nos aseguramos de que haya alguien listo para entregártelo.
+📍 San Rafael 896, Arica. Entrada por Robinson Rojas: busca los carteles de servicio técnico.
+⚠️ Antes de venir, consulta siempre la disponibilidad del producto. Escríbenos y te confirmamos el stock y el horario, para que tu pedido esté listo cuando llegues.
 
 🕐 Horario de atención: Consulta nuestros horarios actualizados en nuestros canales digitales.
 
@@ -2128,7 +2129,7 @@ Escríbenos antes de venir a retirar o solicitar tu despacho. Así te confirmamo
 
 Si el producto es reacondicionado, usado, de segunda mano, abierto, con detalles estéticos o tiene cualquier condición especial, indícalo claramente y de forma profesional — nunca lo presentes como nuevo si no corresponde.
 
-No incluyas dirección física, referencias de ubicación ni dirección de la tienda.
+La dirección y la referencia de ubicación son solo las del bloque de retiro, copiadas tal cual. No agregues otra dirección, otras referencias ni horarios.
 
 La línea del número escrito con emojis (➕5️⃣6️⃣9️⃣3️⃣5️⃣7️⃣5️⃣0️⃣8️⃣2️⃣8️⃣) va siempre, justo debajo del WhatsApp y copiada tal cual, sin espacios ni cambios: Facebook a veces oculta los teléfonos escritos con números normales.
 
