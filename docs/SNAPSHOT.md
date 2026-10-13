@@ -38,6 +38,11 @@ Detalle en `docs/CHANGELOG-V135.md` (y la v134 del 11-10 en `docs/CHANGELOG-V134
 - **v137 (13-10):** la caja obliga a elegir si un servicio **escrito a mano** va al pozo de C. Patricio (antes venía
   en "No va" con el foco en "Continuar" y un Enter la saltaba; venta #266 quedó sin pozo). El pozo de una venta ya
   hecha se corrige en Finanzas → Mis padres ("Sumar al pozo"), no en el Historial. Ver `docs/CHANGELOG-V137.md`.
+- **v138 (13-10, sql/94):** la mercadería de los padres ya no es una compra. En la ficha de un producto "De mis padres":
+  casilla "⏳ costo y stock al ojo, por confirmar" (el costo deja de congelarse: al guardar se corrige en las capas) y, en
+  Cargar stock, "🤝 Me la entregaron mis padres" (sube el stock sin dejar compra). Carga masiva con la misma opción.
+  Finanzas → Mis padres cuenta lo recibido **a costo** (stock + vendido) contra los $3.000.000. Lo ya vendido con un costo
+  al ojo no se recalcula en Utilidades. Ver `docs/CHANGELOG-V138.md`.
 - **Pozo:** partió el 12-10-2026 a pedido del dueño (`pozo_desde`, ya en producción). En pantalla ahora dice
   "C. Patricio". Lo cobrado en la app por trabajos de él suma a su pozo; lo que puso otro no.
 - **Lo cobrado en la app no crea una venta en el POS** (decisión de Claude, dicha al dueño).

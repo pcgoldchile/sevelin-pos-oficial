@@ -1077,7 +1077,9 @@ const CAMPOS_PRODUCTO = [
   'es_borrador',
   // Acuerdo con los padres (sql/90): de quién es la mercadería y si es un
   // servicio que hace el papá (su pozo).
-  'propietario', 'va_al_pozo'
+  'propietario', 'va_al_pozo',
+  // sql/94: costo y stock al ojo, por confirmar (mercadería de los padres)
+  'costo_provisorio'
 ];
 
 /* Normaliza el código de barras: SOLO dígitos.
@@ -1262,6 +1264,7 @@ function sanearProducto(body = {}) {
   // Un valor que no se reconoce cae a MIO: nunca le suma a la cuenta de los padres por error.
   if (p.propietario !== undefined) p.propietario = propietarioDeFicha(p.propietario);
   if (body.va_al_pozo !== undefined) p.va_al_pozo = !!body.va_al_pozo;
+  if (body.costo_provisorio !== undefined) p.costo_provisorio = !!body.costo_provisorio;
 
   return p;
 }
@@ -3780,6 +3783,16 @@ async function crearCapaInicialSiFalta(producto) {
   return data;
 }
 
+/* COSTO POR CONFIRMAR (sql/94, v138). Un producto cargado con el costo al
+   ojo no puede quedar con ese costo congelado en sus capas PEPS: mientras
+   tenga la marca, el costo de la ficha se copia a todas las capas vivas. */
+async function ponerCostoEnCapasVivas(productoId, costo) {
+  const { error } = await db.from('producto_lotes')
+    .update({ costo_unitario: Math.max(0, num(costo)) })
+    .eq('producto_id', productoId).is('agotado_en', null).gt('cantidad', 0);
+  if (error) throw error;
+}
+
 /* Lo que una compra le hace a un producto, en un solo lugar: lo usan el
    formulario de compras y la corrección de stock "las compré" (v118).
    `producto` trae id, stock, usa_lotes, stock_ilimitado y costo_unitario.
@@ -3790,8 +3803,15 @@ async function registrarCompraDeProducto(producto, datos, opciones = {}) {
      suma stock — sumarlo diría que la tienes y se podría vender algo que
      no existe. En su lugar el producto queda "por llegar" en sevelin.cl,
      que es reservable con tope. */
-  const enCamino = opciones.enCamino === true;
-  const sumarStock = !enCamino && opciones.sumarStock !== false && !producto.stock_ilimitado;
+  /* sql/94 (v138): mercadería que entregaron los padres. Sube el stock y crea
+     su capa igual que una compra, pero NO deja una fila en ingresos_mercaderia:
+     no es una compra, así que no sale en el informe de compras ni tiene plazo
+     de devolución. Queda en ajustes_stock con el motivo 'padres'. */
+  const sinCompra = opciones.sinCompra === true;
+  const enCamino = !sinCompra && opciones.enCamino === true;
+  const sumarStock = !enCamino && (sinCompra || opciones.sumarStock !== false) && !producto.stock_ilimitado;
+  // Sin costo escrito, lo de los padres entra al costo que ya tiene la ficha
+  const costoEntrada = sinCompra && !(datos.costo_unitario > 0) ? num(producto.costo_unitario) : datos.costo_unitario;
 
   /* La capa PEPS se crea solo si la mercadería YA está. Crearla mientras
      viaja dejaría unidades consumibles que no existen, y una venta
@@ -3803,21 +3823,25 @@ async function registrarCompraDeProducto(producto, datos, opciones = {}) {
       producto_id: id,
       cantidad: datos.cantidad,
       cantidad_inicial: datos.cantidad,
-      costo_unitario: datos.costo_unitario,
-      referencia: datos.referencia
+      costo_unitario: costoEntrada,
+      referencia: sinCompra ? 'Mercadería de mis padres (no es compra)' : datos.referencia
     }]).select().single();
     if (error) throw error;
     lote = data;
   }
 
-  const { data: ingreso, error: errI } = await db.from('ingresos_mercaderia').insert([{
-    ...datos,
-    producto_id: id,
-    estado: 'confirmado',
-    en_camino: enCamino,
-    creado_por: opciones.usuario || null
-  }]).select('*').single();
-  if (errI) throw errI;
+  let ingreso = null;
+  if (!sinCompra) {
+    const { data, error: errI } = await db.from('ingresos_mercaderia').insert([{
+      ...datos,
+      producto_id: id,
+      estado: 'confirmado',
+      en_camino: enCamino,
+      creado_por: opciones.usuario || null
+    }]).select('*').single();
+    if (errI) throw errI;
+    ingreso = data;
+  }
 
   const cambios = {};
   let stockNuevo = num(producto.stock);
@@ -3830,7 +3854,12 @@ async function registrarCompraDeProducto(producto, datos, opciones = {}) {
      de la última compra cambiaría el margen de todo el catálogo sin que
      nadie lo pida; para eso están los lotes. */
   const costoRellenado = num(producto.costo_unitario) === 0 && datos.costo_unitario > 0;
-  if (costoRellenado) cambios.costo_unitario = datos.costo_unitario;
+  /* sql/94: con el costo "por confirmar" hay un solo costo por producto. Si
+     en esta entrega se escribe otro, pasa a ser el de la ficha y el de todas
+     las capas vivas: es la corrección del costo puesto al ojo. */
+  const costoAlOjoCambia = sinCompra && !!producto.costo_provisorio && datos.costo_unitario > 0
+    && num(producto.costo_unitario) !== datos.costo_unitario;
+  if (costoRellenado || costoAlOjoCambia) cambios.costo_unitario = datos.costo_unitario;
 
   /* Precio de venta escrito junto a la compra (v118). Ya viene validado
      por rechazoPrecioDeVenta(); null = no se toca. */
@@ -3850,6 +3879,22 @@ async function registrarCompraDeProducto(producto, datos, opciones = {}) {
   if (Object.keys(cambios).length) {
     const { error: errU } = await db.from('productos').update(cambios).eq('id', id);
     if (errU) throw errU;
+  }
+  if (costoAlOjoCambia && producto.usa_lotes) await ponerCostoEnCapasVivas(id, datos.costo_unitario);
+
+  /* La entrega de los padres queda anotada junto a las correcciones de stock.
+     Va al final: si fallara, el stock ya subió y repetirla lo subiría dos veces. */
+  let avisoRegistro = null;
+  if (sinCompra && sumarStock) {
+    const { error: errReg } = await db.from('ajustes_stock').insert([{
+      producto_id: id, stock_antes: num(producto.stock), stock_despues: stockNuevo, motivo: 'padres',
+      nota: datos.nota || null, costo_unitario: costoEntrada, costo_total: costoEntrada * datos.cantidad,
+      creado_por: opciones.usuario || 'admin'
+    }]);
+    if (errReg) {
+      console.error('[PADRES] el stock subió pero no quedó en ajustes_stock:', errReg.message);
+      avisoRegistro = 'El stock subió, pero no se pudo guardar el registro de la entrega.';
+    }
   }
 
   /* sql/85 — El RUT se recuerda por proveedor para proponerlo la próxima
@@ -3873,7 +3918,10 @@ async function registrarCompraDeProducto(producto, datos, opciones = {}) {
     stock_nuevo: stockNuevo,
     stock_sumado: sumarStock,
     en_camino: enCamino,
-    costo_rellenado: costoRellenado ? datos.costo_unitario : null,
+    sin_compra: sinCompra,
+    costo_entrada: costoEntrada,
+    ...(avisoRegistro ? { aviso: avisoRegistro } : {}),
+    costo_rellenado: (costoRellenado || costoAlOjoCambia) ? datos.costo_unitario : null,
     precio_nuevo: opciones.precioVenta || null,
     publicado_web: cambios.publicado_web === true
   };
@@ -3895,7 +3943,28 @@ async function rechazoPrecioDeVenta(producto, precioNuevo, costoNuevo = null) {
 
 const CAMPOS_PRODUCTO_COMPRA = 'id, nombre, stock, usa_lotes, stock_ilimitado, costo_unitario, precio_unitario, precio_web, ' +
   'precio_oferta_web, precio_mayorista, mayorista_desde, precio_mayorista_2, mayorista_desde_2, es_servicio, es_pedido_encargo, precio_a_consultar, ' +
-  'publicado_web, archivado';
+  'publicado_web, archivado, propietario, costo_provisorio';
+
+/* sql/94: lo que hay que dejar listo en la ficha antes de cargar unidades que
+   entregaron los padres. `elegido` es lo que el formulario tiene marcado en
+   "¿De quién es?" aunque todavía no se haya guardado. Devuelve { error } o
+   deja `producto` al día. Un producto "mío" con stock propio pasa a "de los
+   dos" (la caja pregunta de quién es cada unidad); sin stock, a "de mis padres". */
+async function prepararProductoDePadres(producto, { elegido = null, provisorio = undefined } = {}) {
+  if (producto.stock_ilimitado) return { error: `"${producto.nombre}" tiene stock ilimitado: no hay unidades que cargar.` };
+  const cambios = {};
+  if (producto.propietario !== 'PADRES' && producto.propietario !== 'AMBOS') {
+    const pedido = elegido ? propietarioDeFicha(elegido) : 'MIO';
+    cambios.propietario = pedido !== 'MIO' ? pedido : (num(producto.stock) > 0 ? 'AMBOS' : 'PADRES');
+  }
+  if (provisorio !== undefined && !!provisorio !== !!producto.costo_provisorio) cambios.costo_provisorio = !!provisorio;
+  if (Object.keys(cambios).length) {
+    const { error } = await db.from('productos').update(cambios).eq('id', producto.id);
+    if (error) throw error;
+    Object.assign(producto, cambios);
+  }
+  return {};
+}
 
 app.post('/api/productos/:id/compras', auth(true), async (req, res) => {
   const id = Number(req.params.id);
@@ -3937,7 +4006,19 @@ app.post('/api/productos/:id/compras', auth(true), async (req, res) => {
       producto.usa_lotes = true;
     }
 
+    /* sql/94 (v138): "me la entregaron mis padres". No es una compra. */
+    const dePadres = req.body?.de_padres === true;
+    if (dePadres) {
+      if (req.body?.en_camino === true) return enviarError(res, 400, 'Lo que te entregan tus padres ya está en la tienda: no puede quedar "por llegar".');
+      const listo = await prepararProductoDePadres(producto, {
+        elegido: req.body?.propietario,
+        provisorio: req.body?.costo_provisorio
+      });
+      if (listo.error) return enviarError(res, 400, listo.error);
+    }
+
     const resultado = await registrarCompraDeProducto(producto, datos, {
+      sinCompra: dePadres,
       enCamino: req.body?.en_camino === true,
       sumarStock: req.body?.sumar_stock !== false,
       stockPorLlegar: req.body?.stock_por_llegar,
@@ -3970,13 +4051,13 @@ app.post('/api/productos/:id/compras', auth(true), async (req, res) => {
    no esconda las que sí entraron. El gasto en Finanzas se anota aparte.
    El precio de un producto que ya existe no se toca desde acá.
    ============================================================ */
-const ESTADOS_CARGA_MASIVA = ['llego', 'por_llegar', 'encargo'];
+const ESTADOS_CARGA_MASIVA = ['llego', 'por_llegar', 'encargo', 'padres'];   // 'padres': sql/94, entra sin compra
 const TOPE_FILAS_CARGA_MASIVA = 60;
 
 app.post('/api/productos/carga-masiva', auth(true), async (req, res) => {
   const estado = String(req.body?.estado || '').trim();
   if (!ESTADOS_CARGA_MASIVA.includes(estado)) {
-    return enviarError(res, 400, 'Indica si los productos ya llegaron, están por llegar o son por encargo');
+    return enviarError(res, 400, 'Indica si los productos ya llegaron, están por llegar, son por encargo o te los entregaron tus padres');
   }
   const filas = Array.isArray(req.body?.items) ? req.body.items : [];
   if (!filas.length) return enviarError(res, 400, 'No hay productos que cargar');
@@ -4059,7 +4140,9 @@ app.post('/api/productos/carga-masiva', auth(true), async (req, res) => {
           const nuevo = sanearProducto({
             nombre: it.nombre, costo_unitario: it.costo, precio_unitario: it.precio, stock: 0,
             ...(it.marca ? { marca: it.marca } : {}),
-            usa_lotes: estado !== 'encargo', publicado_web: false, es_pedido_encargo: estado === 'encargo'
+            usa_lotes: estado !== 'encargo', publicado_web: false, es_pedido_encargo: estado === 'encargo',
+            // sql/94: lo de los padres nace marcado y con el costo por confirmar
+            ...(estado === 'padres' ? { propietario: 'PADRES', costo_provisorio: true } : {})
           });
           const { data, error } = await db.from('productos').insert([nuevo]).select(CAMPOS_PRODUCTO_COMPRA).single();
           if (error) throw error;
@@ -4078,9 +4161,13 @@ app.post('/api/productos/carga-masiva', auth(true), async (req, res) => {
           desarchivado = true;
         }
         let compra = null;
+        if (estado === 'padres') {
+          const listo = await prepararProductoDePadres(producto);
+          if (listo.error) throw new Error(listo.error);
+        }
         if (estado !== 'encargo') {
           compra = await registrarCompraDeProducto(producto, it.datos, {
-            enCamino: estado === 'por_llegar', fechaLlegada: eta, usuario
+            sinCompra: estado === 'padres', enCamino: estado === 'por_llegar', fechaLlegada: eta, usuario
           });
         }
         resultados.push({
@@ -5377,11 +5464,13 @@ app.put('/api/productos/:id', auth(true), async (req, res) => {
   }
 
   // Venta mayorista (sql/76): mismo criterio, lo que falte sale de lo guardado.
+  let antesDeGuardar = null;   // sql/94: para saber si el costo estaba "por confirmar"
   try {
     const { data: actualMayorista, error: errActual } = await db.from('productos')
-      .select('precio_mayorista, mayorista_desde, precio_mayorista_2, mayorista_desde_2, costo_unitario, precio_unitario, precio_web, es_servicio, stock_ilimitado, es_pedido_encargo, precio_a_consultar')
+      .select('precio_mayorista, mayorista_desde, precio_mayorista_2, mayorista_desde_2, costo_unitario, precio_unitario, precio_web, es_servicio, stock_ilimitado, es_pedido_encargo, precio_a_consultar, costo_provisorio')
       .eq('id', req.params.id).maybeSingle();
     if (errActual) throw errActual;
+    antesDeGuardar = actualMayorista || null;
     const errMayorista = await validarPrecioMayorista(producto, actualMayorista || {}, req.params.id);
     if (errMayorista) return enviarError(res, 400, errMayorista);
   } catch (e) {
@@ -5413,6 +5502,16 @@ app.put('/api/productos/:id', auth(true), async (req, res) => {
   if (enciendeLotes) {
     try { await crearCapaInicialSiFalta(data); }
     catch (e) { console.error('[LOTES] no se pudo crear la capa inicial al activar los lotes:', e.message); }
+  }
+  /* sql/94 (v138): con el costo "por confirmar" la ficha manda también sobre
+     las capas PEPS vivas. Vale para el guardado que lo confirma (quita la
+     marca): ahí queda el costo definitivo en lo que hay en stock. */
+  if (data.usa_lotes && (antesDeGuardar?.costo_provisorio || data.costo_provisorio)) {
+    try { await ponerCostoEnCapasVivas(data.id, data.costo_unitario); }
+    catch (e) {
+      console.error('[PADRES] no se pudo llevar el costo a las capas:', e.message);
+      return enviarError(res, 500, 'El producto se guardó, pero no se pudo corregir el costo de lo que hay en stock. Guarda de nuevo.');
+    }
   }
   res.json(data);
 });
@@ -13853,7 +13952,7 @@ app.post('/api/mermas', auth(true), async (req, res) => {
    ============================================================ */
 const MOTIVOS_AJUSTE_BAJA = ['danado', 'perdido', 'conteo'];
 const MOTIVOS_AJUSTE_ALZA = ['compra', 'conteo'];
-const TEXTO_MOTIVO_AJUSTE = { danado: 'Se dañó', perdido: 'Se perdió o lo robaron', conteo: 'Estaba mal contado', compra: 'Compra' };
+const TEXTO_MOTIVO_AJUSTE = { danado: 'Se dañó', perdido: 'Se perdió o lo robaron', conteo: 'Estaba mal contado', compra: 'Compra', padres: 'Me las entregaron mis padres' };
 
 app.get('/api/productos/:id/ajustes-stock', auth(true), async (req, res) => {
   const id = Number(req.params.id);
@@ -17210,10 +17309,12 @@ app.get('/api/pos/informe-semanal', auth(true), async (req, res) => {
    ACUERDO CON LOS PADRES: PANEL "MIS PADRES" (sql/90, v133)
    ------------------------------------------------------------
    Solo admin. Son dos cuentas que no se mezclan:
-     1. MERCADERÍA: cuánto se ha vendido de lo que entregaron los padres,
-        contado al PRECIO DE VENTA (decisión del dueño, 11-10-2026), contra
-        el tope del acuerdo; y cuánto se les ha pagado (gastos con la
-        clasificación CLASIF_PADRES_MERCADERIA).
+     1. MERCADERÍA: cuánto vale A COSTO lo que entregaron los padres (lo que
+        queda en stock + lo ya vendido) contra el tope del acuerdo, y cuánto
+        se les ha pagado (gastos con la clasificación CLASIF_PADRES_MERCADERIA).
+        v138 (dueño, 13-10-2026): la mercadería pasó a ser suya y se la
+        entregan a costo; quiere saber si todo vale más o menos que el tope.
+        Lo vendido al precio de venta se sigue informando, ya no es el aviso.
      2. POZO DEL PAPÁ: lo que juntaron sus servicios (venta_items.pozo_monto),
         el mínimo garantizado del mes y lo entregado (gastos con la
         clasificación CLASIF_PADRES_POZO).
@@ -17323,7 +17424,7 @@ app.get('/api/padres/resumen', auth(true), async (req, res) => {
         .select('id, fecha, costo_total, descripcion, metodo_pago, clasificacion')
         .in('clasificacion', [CLASIF_PADRES_MERCADERIA, CLASIF_PADRES_POZO, CLASIF_PADRES_POZO_ANTERIOR]).order('id')),
       padresTraerTodo(() => db.from('productos')
-        .select('id, nombre, stock, costo_unitario, precio_unitario, propietario, stock_ilimitado, archivado')
+        .select('id, nombre, stock, costo_unitario, precio_unitario, propietario, stock_ilimitado, archivado, costo_provisorio')
         .in('propietario', ['PADRES', 'AMBOS']).order('id')),
       padresTraerTodo(() => db.from('ventas')
         .select('id, numero_orden, fecha, estado, total, descuento_monto, ajuste_redondeo')
@@ -17335,7 +17436,7 @@ app.get('/api/padres/resumen', auth(true), async (req, res) => {
     const idsLinea = [...lineasPadres, ...lineasPozo].map(l => l.id);
     const [ventasLineas, devueltos] = await Promise.all([
       padresTraerPorIds('ventas', 'id, numero_orden, fecha, estado, total, descuento_monto, ajuste_redondeo', 'id', idsVenta),
-      padresTraerPorIds('devolucion_items', 'id, venta_item_id, monto', 'venta_item_id', idsLinea)
+      padresTraerPorIds('devolucion_items', 'id, venta_item_id, monto, cantidad, reingresa_stock', 'venta_item_id', idsLinea)
     ]);
     const ventaDe = new Map([...ventasLineas, ...ventasMes].map(v => [Number(v.id), v]));
     const devueltoDe = new Map();
@@ -17367,6 +17468,59 @@ app.get('/api/padres/resumen', auth(true), async (req, res) => {
 
     const vigentes = productos.filter(p => !p.archivado);
     const conStock = vigentes.filter(p => !p.stock_ilimitado && num(p.stock) > 0);
+
+    /* v138: la mercadería A COSTO. Recibido = lo que queda en stock + lo ya
+       vendido, las dos cosas al costo que la ficha tiene HOY: un costo puesto
+       al ojo y corregido después arregla la cuenta completa, también lo
+       vendido. Lo devuelto que volvió al stock no se cuenta dos veces. De un
+       producto "de los dos" solo entran las unidades vendidas como de ellos:
+       de su stock no se sabe cuántas son de quién. */
+    const reingresadoDe = new Map();
+    devueltos.forEach(d => {
+      if (d.reingresa_stock === false) return;
+      reingresadoDe.set(Number(d.venta_item_id), (reingresadoDe.get(Number(d.venta_item_id)) || 0) + num(d.cantidad));
+    });
+    const productoPadres = new Map(productos.map(p => [Number(p.id), p]));
+    const vendidasDe = new Map();
+    let costoVendidoSinFicha = 0, unidadesVendidasNetas = 0;
+    lineasPadres.filter(cuenta).forEach(l => {
+      const netas = Math.max(0, num(l.cantidad) - (reingresadoDe.get(Number(l.id)) || 0));
+      unidadesVendidasNetas += netas;
+      if (l.producto_id && productoPadres.has(Number(l.producto_id))) {
+        vendidasDe.set(Number(l.producto_id), (vendidasDe.get(Number(l.producto_id)) || 0) + netas);
+      } else {
+        // Escrito a mano, o de un producto que ya no está marcado: vale el costo anotado en la venta
+        costoVendidoSinFicha += netas * num(l.costo_unitario);
+      }
+    });
+    const detalleCosto = productos.map(p => {
+      const costo = num(p.costo_unitario);
+      const enStock = p.propietario === 'PADRES' && !p.archivado && !p.stock_ilimitado ? Math.max(0, num(p.stock)) : 0;
+      const vendidas = vendidasDe.get(Number(p.id)) || 0;
+      return {
+        id: p.id, nombre: p.nombre, de_los_dos: p.propietario === 'AMBOS', archivado: !!p.archivado,
+        costo_unitario: costo, por_confirmar: !!p.costo_provisorio, sin_costo: costo <= 0,
+        en_stock: enStock, vendidas, valor_stock: Math.round(enStock * costo), valor_vendido: Math.round(vendidas * costo),
+        total: Math.round((enStock + vendidas) * costo)
+      };
+    }).filter(f => !f.archivado || f.vendidas > 0);
+    const conMovimiento = detalleCosto.filter(f => f.en_stock > 0 || f.vendidas > 0);
+    const aCostoStock = detalleCosto.reduce((a, f) => a + f.valor_stock, 0);
+    const aCostoVendido = detalleCosto.reduce((a, f) => a + f.valor_vendido, 0) + Math.round(costoVendidoSinFicha);
+    const aCosto = {
+      en_stock: aCostoStock,
+      vendido: aCostoVendido,
+      total: aCostoStock + aCostoVendido,
+      unidades_en_stock: detalleCosto.reduce((a, f) => a + f.en_stock, 0),
+      unidades_vendidas: unidadesVendidasNetas,
+      // Con unidades y el costo todavía al ojo, o en $0: mientras existan, el total no es definitivo
+      por_confirmar: conMovimiento.filter(f => f.por_confirmar).length,
+      sin_costo: conMovimiento.filter(f => f.sin_costo).length,
+      // Positivo: la mercadería vale más que el tope. Negativo: vale menos.
+      diferencia_con_tope: aCostoStock + aCostoVendido - acuerdo.tope_mercaderia,
+      productos: detalleCosto.sort((a, b) => b.total - a.total || a.nombre.localeCompare(b.nombre)).slice(0, 300),
+      productos_total: detalleCosto.length
+    };
 
     /* ---------- 2. Pozo del papá ---------- */
     const pozoNeto = (l) => {
@@ -17453,6 +17607,7 @@ app.get('/api/padres/resumen', auth(true), async (req, res) => {
         por_pagar: Math.max(0, acuerdo.tope_mercaderia - pagado),
         cuota_semanal: acuerdo.cuota_semanal,
         pagos,
+        a_costo: aCosto,
         productos: {
           cantidad: vigentes.length,
           de_los_dos: vigentes.filter(p => p.propietario === 'AMBOS').length,

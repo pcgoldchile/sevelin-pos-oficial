@@ -29,7 +29,7 @@ const MOTIVOS_CORRECCION_STOCK = {
     { clave: 'conteo', titulo: '🔢 Estaba mal contado', detalle: 'Solo corrige el número. No mueve plata.' }
   ]
 };
-const TEXTO_MOTIVO_CORRECCION = { danado: 'Se dañó', perdido: 'Se perdió o lo robaron', conteo: 'Estaba mal contado', compra: 'Las compré' };
+const TEXTO_MOTIVO_CORRECCION = { danado: 'Se dañó', perdido: 'Se perdió o lo robaron', conteo: 'Estaba mal contado', compra: 'Las compré', padres: 'Me las entregaron mis padres (sin compra)' };
 
 let correccionStock = null;   // { stockVisto, costo, nombre, motivo }
 

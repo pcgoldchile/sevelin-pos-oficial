@@ -245,6 +245,21 @@ Cuando el dueño dice "compré esto, ponlo por llegar" **nunca se carga stock**.
 
 ---
 
+## 🤝 Mercadería de los padres: nunca como compra (regla del dueño, 13-10-2026)
+
+La mercadería de sus padres pasó a ser del dueño: se la entregan **a costo** y él les paga hasta $3.000.000. No es una
+compra y el costo y el stock son al ojo hasta que termine de contar.
+
+- **En el POS:** ficha → "¿De quién es?" = De mis padres → Cargar stock con "🤝 Me la entregaron mis padres"; o
+  Productos → Carga masiva → "🤝 Me los entregaron mis padres". Las dos usan `registrarCompraDeProducto(…, { sinCompra })`.
+- **Qué queda en la base:** `productos.propietario = PADRES`, `costo_provisorio = true`, el stock y su capa PEPS, y una fila
+  en `ajustes_stock` con `motivo = padres`. **Nunca** una fila en `ingresos_mercaderia` ni un gasto: lo que se anota en
+  Gastos es el pago a los padres ("Mercadería de mis padres"), aparte.
+- Vender un producto de los padres **no va al pozo** de C. Patricio (el pozo es solo de servicios): es utilidad del dueño.
+- La cuenta contra los $3.000.000 va **a costo** (stock + vendido, al costo de la ficha de hoy): Finanzas → Mis padres.
+
+---
+
 ## Trampas ya descubiertas (no repetir)
 
 - `confirmarEntrega` existía en `ot.js` y `pago.js`. Las de venta ahora son `confirmarEntregaVenta` /

@@ -329,9 +329,12 @@ function pintarCargaMasiva() {
     b.classList.toggle('activo', activo);
     b.setAttribute('aria-checked', activo ? 'true' : 'false');
   });
-  // Un encargo no es una compra: no hay gasto que decidir
+  // Un encargo no es una compra, y lo que entregan los padres tampoco (sql/94): no hay gasto que decidir
+  const padres = cargaMasiva.estado === 'padres';
   const bloqueGasto = document.getElementById('cmBloqueGasto');
-  if (bloqueGasto) bloqueGasto.style.display = encargo ? 'none' : 'block';
+  if (bloqueGasto) bloqueGasto.style.display = encargo || padres ? 'none' : 'block';
+  const datosCompra = document.getElementById('cmDatos');
+  if (datosCompra) datosCompra.style.display = padres ? 'none' : '';
   document.querySelectorAll('#cmGastos [data-gasto-masiva]').forEach(b => {
     const activo = b.dataset.gastoMasiva === cargaMasiva.gasto;
     b.classList.toggle('activo', activo);
@@ -372,13 +375,14 @@ function pintarResumenCargaMasiva() {
   const btn = document.getElementById('btnCmCargar');
   const filas = cargaMasiva.filas.filter(f => f.incluir);
   const encargo = cargaMasiva.estado === 'encargo';
+  const padres = cargaMasiva.estado === 'padres';
   document.querySelectorAll('#cmTabla select[data-cm-campo="destino"]').forEach(s => s.classList.toggle('cm-falta', !s.value));
 
   let falta = '';
   if (!cargaMasiva.filas.length) falta = '';
   else if (!filas.length) falta = 'Marca al menos un producto.';
-  else if (!cargaMasiva.estado) falta = 'Elige arriba si ya llegaron, están por llegar o son por encargo.';
-  else if (!encargo && !cargaMasiva.gasto) falta = 'Dime si sumo esta compra a gastos de mercadería o no.';
+  else if (!cargaMasiva.estado) falta = 'Elige arriba si ya llegaron, están por llegar, son por encargo o te los entregaron tus padres.';
+  else if (!encargo && !padres && !cargaMasiva.gasto) falta = 'Dime si sumo esta compra a gastos de mercadería o no.';
   else if (filas.some(f => !String(f.nombre || '').trim())) falta = 'Hay un producto sin nombre.';
   else if (!encargo && filas.some(f => !(Number(f.cantidad) > 0))) falta = 'Hay un producto sin cantidad.';
   else if (!encargo && filas.some(f => f.costo === '' || Number(f.costo) < 0)) falta = 'Hay un producto sin costo (si de verdad fue gratis, escribe 0).';
@@ -395,6 +399,7 @@ function pintarResumenCargaMasiva() {
     btn.disabled = !!falta || !filas.length || cargaMasiva.enviando;
     btn.textContent = cargaMasiva.estado === 'por_llegar' ? `🚚 Cargar ${filas.length} como "por llegar"`
       : encargo ? `📦 Crear ${filas.length} por encargo`
+      : padres ? `🤝 Cargar ${filas.length} de mis padres (sin compra)`
       : `📥 Cargar ${filas.length} y sumar al stock`;
   }
   return falta;
@@ -402,12 +407,14 @@ function pintarResumenCargaMasiva() {
 
 async function enviarCargaMasiva() {
   if (cargaMasiva.enviando || pintarResumenCargaMasiva()) return;
-  const encargo = cargaMasiva.estado === 'encargo';
+  // Lo de los padres (sql/94) no lleva proveedor, marketplace, devolución ni boleta, igual que un encargo
+  const padres = cargaMasiva.estado === 'padres';
+  const encargo = cargaMasiva.estado === 'encargo' || padres;
   const filas = cargaMasiva.filas.filter(f => f.incluir);
   const cuerpo = {
     estado: cargaMasiva.estado,
-    fecha_compra: document.getElementById('cmFechaCompra')?.value || todayISO(),
-    proveedor: (document.getElementById('cmProveedor')?.value || '').trim() || null,
+    fecha_compra: padres ? todayISO() : (document.getElementById('cmFechaCompra')?.value || todayISO()),
+    proveedor: padres ? null : ((document.getElementById('cmProveedor')?.value || '').trim() || null),
     marketplace: encargo ? null : ((document.getElementById('cmMarketplace')?.value || '').trim() || null),
     fecha_llegada_estimada: cargaMasiva.estado === 'por_llegar' ? (document.getElementById('cmFechaLlegada')?.value || null) : null,
     // v130: los mismos datos opcionales del formulario de una compra
@@ -415,12 +422,12 @@ async function enviarCargaMasiva() {
     referencia: encargo ? null : ((document.getElementById('cmReferencia')?.value || '').trim() || null),
     items: filas.map(f => ({
       nombre: String(f.nombre).trim(),
-      cantidad: encargo ? 0 : Number(f.cantidad),
+      cantidad: encargo && !padres ? 0 : Number(f.cantidad),
       costo_unitario: Number(f.costo) || 0,
       precio_venta: Number(f.precio) || 0,
       marca: String(f.marca || '').trim(),
       enlace: f.enlace || '',
-      producto_id: !encargo && f.destino && f.destino !== 'nuevo' ? Number(f.destino) : null
+      producto_id: (!encargo || padres) && f.destino && f.destino !== 'nuevo' ? Number(f.destino) : null
     }))
   };
 
@@ -441,12 +448,13 @@ async function enviarCargaMasiva() {
           <strong>✅ ${num(r.cargados)} producto(s) cargado(s)</strong>: ${num(r.creados)} nuevo(s) y ${num(r.sumados)} sumado(s) a uno que ya existía.
           ${r.estado === 'por_llegar' ? ' Quedaron <strong>por llegar</strong>, sin sumar stock: cuando lleguen, botón 🚚 de arriba y "Ya llegó".' : ''}
           ${r.estado === 'llego' ? ' El stock ya quedó sumado.' : ''}
+          ${r.estado === 'padres' ? ` El stock ya quedó sumado, <strong>sin compra ni gasto</strong>: son ${fmtCLP(r.total_compra)} a costo, que se suman a la cuenta de Finanzas → Mis padres. Los nuevos quedaron marcados "De mis padres", con el costo por confirmar.` : ''}
           ${(r.resultados || []).some(x => x.desarchivado) ? `<br>📦 Volvieron del archivo: ${(r.resultados || []).filter(x => x.desarchivado).map(x => escHtml(x.nombre)).join(', ')}. Siguen sin publicar.` : ''}
           ${malos.length ? `<br>⚠️ No se pudieron cargar: ${malos.map(m => `${escHtml(m.nombre)} (${escHtml(m.error)})`).join('; ')}` : ''}
           <br>Les falta foto, descripción, categoría${filas.some(f => !(Number(f.precio) > 0)) ? ', precio de venta' : ''} y publicarlos: quedaron en <strong>📋 Por completar</strong> (arriba) y en la lista de Productos.
           ${num(r.total_compra) > 0 && quiereGasto ? `<br><span class="compra-aviso-gasto" style="margin-top:8px;">💸 Esta compra son <strong>${fmtCLP(r.total_compra)}</strong>. Falta guardar el gasto en Finanzas.
             <button type="button" class="btn btn-primary btn-sm" id="btnCmGasto">Abrir el gasto</button></span>` : ''}
-          ${num(r.total_compra) > 0 && !quiereGasto ? '<br>🚫 No se anotó ningún gasto por esta compra, como pediste.' : ''}
+          ${num(r.total_compra) > 0 && !quiereGasto && !padres ? '<br>🚫 No se anotó ningún gasto por esta compra, como pediste.' : ''}
         </div>`;
       document.getElementById('btnCmGasto')?.addEventListener('click', abrirGasto);
     }

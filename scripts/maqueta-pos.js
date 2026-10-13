@@ -800,6 +800,21 @@ app.post('/api/productos/:id/compras', (req, res) => {
   if (precio && p.precio_mayorista && precio <= p.precio_mayorista) return res.status(400).json({ error: 'El precio mayorista tiene que ser menor que el precio normal' });
   const ingreso = { id: sigIngreso++, producto_id: p.id, fecha_compra: b.fecha_compra, cantidad, costo_unitario: costo, proveedor: b.proveedor || null,
     devolucion_hasta: b.devolucion_hasta || null, referencia: b.referencia || null, proveedor_rut: b.proveedor_rut || null, url_documento: b.url_documento || null, estado: 'confirmado', en_camino: !!b.en_camino };
+  // v138 (sql/94): lo que entregan los padres sube el stock sin dejar compra, como el servidor real
+  const dePadres = b.de_padres === true;
+  if (dePadres) {
+    if (b.en_camino) return res.status(400).json({ error: 'Lo que te entregan tus padres ya está en la tienda: no puede quedar "por llegar".' });
+    if (!['PADRES', 'AMBOS'].includes(p.propietario)) p.propietario = ['PADRES', 'AMBOS'].includes(b.propietario) ? b.propietario : (p.stock > 0 ? 'AMBOS' : 'PADRES');
+    if (b.costo_provisorio !== undefined) p.costo_provisorio = !!b.costo_provisorio;
+    const antes = p.stock, entrada = costo > 0 ? costo : (p.costo_unitario || 0);
+    const cambia = costo > 0 && (!p.costo_unitario || (p.costo_provisorio && p.costo_unitario !== costo));
+    if (cambia) p.costo_unitario = costo;
+    p.stock += cantidad;
+    (ajustesMaqueta[p.id] = ajustesMaqueta[p.id] || []).unshift({ id: Date.now(), producto_id: p.id, stock_antes: antes, stock_despues: p.stock, motivo: 'padres',
+      nota: null, costo_unitario: entrada, costo_total: entrada * cantidad, merma_id: null, creado_por: 'admin', creado_en: new Date().toISOString() });
+    return res.status(201).json({ ingreso: null, lote: null, stock_nuevo: p.stock, stock_sumado: true, en_camino: false, sin_compra: true, costo_entrada: entrada,
+      costo_rellenado: cambia ? costo : null, precio_nuevo: null, publicado_web: false });
+  }
   (ingresosMaqueta[p.id] = ingresosMaqueta[p.id] || []).unshift(ingreso);
   const sumar = !b.en_camino && b.sumar_stock !== false && !p.stock_ilimitado;
   if (sumar) p.stock += cantidad;
@@ -816,15 +831,21 @@ app.post('/api/productos/:id/compras', (req, res) => {
 // v125: carga masiva por copiar y pegar (como el servidor real, en memoria).
 app.post('/api/productos/carga-masiva', (req, res) => {
   const b = req.body || {};
-  if (!['llego', 'por_llegar', 'encargo'].includes(b.estado)) return res.status(400).json({ error: 'Indica si los productos ya llegaron, están por llegar o son por encargo' });
+  if (!['llego', 'por_llegar', 'encargo', 'padres'].includes(b.estado)) return res.status(400).json({ error: 'Indica si los productos ya llegaron, están por llegar, son por encargo o te los entregaron tus padres' });
   const resultados = (b.items || []).map(it => {
     let p = it.producto_id ? productoMaqueta(it.producto_id) : null;
     const creado = !p;
     if (!p) {
       if (productos.some(x => x.nombre.toLowerCase() === String(it.nombre).toLowerCase())) return { ok: false, nombre: it.nombre, error: 'Ya existe un producto con ese nombre' };
       p = { id: Math.max(...productos.map(x => x.id)) + 1, nombre: it.nombre, costo_unitario: it.costo_unitario, precio_unitario: it.precio_venta || 0, stock: 0, usa_lotes: b.estado !== 'encargo',
-        publicado_web: false, es_pedido_encargo: b.estado === 'encargo', archivado: false, stock_ilimitado: false, es_servicio: false, imagen_urls: [], created_at: new Date().toISOString() };
+        publicado_web: false, es_pedido_encargo: b.estado === 'encargo', archivado: false, stock_ilimitado: false, es_servicio: false, imagen_urls: [], created_at: new Date().toISOString(),
+        ...(b.estado === 'padres' ? { propietario: 'PADRES', costo_provisorio: true } : {}) };
       productos.push(p);
+    }
+    if (b.estado === 'padres') {   // v138: sin compra; un producto "mío" con stock pasa a "de los dos"
+      if (!['PADRES', 'AMBOS'].includes(p.propietario)) p.propietario = p.stock > 0 ? 'AMBOS' : 'PADRES';
+      p.stock += it.cantidad;
+      return { ok: true, producto_id: p.id, nombre: p.nombre, creado, desarchivado: false, cantidad: it.cantidad, costo_unitario: it.costo_unitario, stock_nuevo: p.stock };
     }
     const desarchivado = !!p.archivado;
     if (desarchivado) p.archivado = false;
@@ -1147,6 +1168,20 @@ app.get('/api/padres/resumen', (req, res) => {
   const pagado = pagos.reduce((s, p) => s + p.monto, 0);
   const entregado = entregas.reduce((s, e) => s + e.monto, 0);
   const vendido = 2840000;
+  // v138 (sql/94): a costo. Lo vendido es un ejemplo fijo; el stock sale de los productos de la maqueta.
+  const vendidasEjemplo = { 9301: 40, 9302: 12 };
+  const dePadres = productos.filter(p => ['PADRES', 'AMBOS'].includes(p.propietario) && !p.archivado);
+  const detalleCosto = dePadres.map(p => {
+    const costo = Number(p.costo_unitario) || 0, enStock = p.propietario === 'PADRES' ? Math.max(0, Number(p.stock) || 0) : 0, vendidas = vendidasEjemplo[p.id] || 0;
+    return { id: p.id, nombre: p.nombre, de_los_dos: p.propietario === 'AMBOS', archivado: false, costo_unitario: costo, por_confirmar: !!p.costo_provisorio, sin_costo: costo <= 0,
+      en_stock: enStock, vendidas, valor_stock: enStock * costo, valor_vendido: vendidas * costo, total: (enStock + vendidas) * costo };
+  }).sort((x, y) => y.total - x.total);
+  const aCostoStock = detalleCosto.reduce((s, f) => s + f.valor_stock, 0), aCostoVendido = detalleCosto.reduce((s, f) => s + f.valor_vendido, 0);
+  const conMov = detalleCosto.filter(f => f.en_stock > 0 || f.vendidas > 0);
+  const aCosto = { en_stock: aCostoStock, vendido: aCostoVendido, total: aCostoStock + aCostoVendido,
+    unidades_en_stock: detalleCosto.reduce((s, f) => s + f.en_stock, 0), unidades_vendidas: detalleCosto.reduce((s, f) => s + f.vendidas, 0),
+    por_confirmar: conMov.filter(f => f.por_confirmar).length, sin_costo: conMov.filter(f => f.sin_costo).length,
+    diferencia_con_tope: aCostoStock + aCostoVendido - acuerdoMaqueta.tope_mercaderia, productos: detalleCosto, productos_total: detalleCosto.length };
   res.json({
     hoy, acuerdo: acuerdoMaqueta,
     clasificaciones: { mercaderia: 'Mercadería de mis padres', pozo: 'Pozo de C. Patricio (servicios de celulares)' },
@@ -1154,6 +1189,7 @@ app.get('/api/padres/resumen', (req, res) => {
       vendido, devuelto: 0, unidades: 312, costo_vendido: 1310000, tope: acuerdoMaqueta.tope_mercaderia,
       falta_para_tope: Math.max(0, acuerdoMaqueta.tope_mercaderia - vendido), aviso_tope: vendido >= acuerdoMaqueta.tope_mercaderia,
       pagado, por_pagar: Math.max(0, acuerdoMaqueta.tope_mercaderia - pagado), cuota_semanal: acuerdoMaqueta.cuota_semanal, pagos,
+      a_costo: aCosto,
       productos: { cantidad: 2, de_los_dos: 1, unidades_en_stock: 24, valor_venta_stock: 140760, sin_costo: 1 },
       ventas: [{ item_id: 601, venta_id: 304, numero_orden: 304, fecha: hoy, nombre: 'Cargador Tipo C 20W (de mis padres)', cantidad: 2, monto: 13980 }],
       ventas_total: 1

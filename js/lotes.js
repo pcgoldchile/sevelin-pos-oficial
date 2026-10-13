@@ -59,7 +59,9 @@ function bloquearCostoSegunLotes() {
   if (!elCosto) return;
   const activo = !!(elProdUsaLotes && elProdUsaLotes.checked);
   const hayCapas = (lotesPorProducto[editingProductId] || []).some(l => Number(l.cantidad) > 0);
-  const bloquear = activo && !!editingProductId && hayCapas;
+  // sql/94: con el costo por confirmar manda la ficha, así que no se bloquea
+  const alOjo = !!document.getElementById('prodCostoProvisorio')?.checked;
+  const bloquear = activo && !!editingProductId && hayCapas && !alOjo;
   elCosto.classList.toggle('campo-atenuado', bloquear);
   elCosto.readOnly = bloquear;
   elCosto.title = bloquear
@@ -87,6 +89,12 @@ function pintarCostoSegunLotes(lotes) {
 
   const promedio = costoPromedioDeLotes(lotes);
   const unidades = (lotes || []).reduce((a, l) => a + Math.max(0, Number(l.cantidad) || 0), 0);
+  if (document.getElementById('prodCostoProvisorio')?.checked) {
+    nota.textContent = unidades > 0
+      ? `⏳ Costo por confirmar: manda el que escribas arriba. Al guardar se corrige también en las ${unidades} unidad(es) que quedan en stock.`
+      : '⏳ Costo por confirmar: manda el que escribas arriba.';
+    return;
+  }
   nota.textContent = promedio === null
     ? '📚 PEPS activo: el costo lo deciden las capas. Todavía no hay ninguna — se crean al registrar una compra.'
     : `📚 Lo calculan tus capas: ${fmtCLP(promedio)} por unidad (promedio de ${unidades} unidad(es) vivas).`;

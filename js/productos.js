@@ -85,6 +85,7 @@ const elProdStockIlimitado = document.getElementById('prodStockIlimitado');
 const elProdEsServicio = document.getElementById('prodEsServicio');   // sql/52
 // Acuerdo con los padres (sql/90, v133): de quién es y si es un servicio del papá
 const elProdPropietario = document.getElementById('prodPropietario');
+const elProdCostoProvisorio = document.getElementById('prodCostoProvisorio');   // sql/94
 const elProdVaAlPozo = document.getElementById('prodVaAlPozo');
 const elGridProdStockControl = document.getElementById('gridProdStockControl');
 const elProdPeso = document.getElementById('prodPeso');
@@ -453,6 +454,10 @@ function setupProductosEventListeners() {
     }
   });
   if (elProdEsServicio) elProdEsServicio.addEventListener('change', pintarVaAlPozoProducto);
+  // sql/94 (v138): lo que solo aplica a la mercadería de los padres
+  if (elProdPropietario) elProdPropietario.addEventListener('change', () => pintarOpcionesDePadresProducto(true));
+  if (elProdCostoProvisorio) elProdCostoProvisorio.addEventListener('change', pintarCostoPorConfirmar);
+  document.getElementById('ingDePadres')?.addEventListener('change', pintarIngresoDePadres);
   if (elBtnCerrarValorizacion) elBtnCerrarValorizacion.addEventListener('click', cerrarValorizacion);
   if (elModalValorizacion) {
     elModalValorizacion.addEventListener('click', (e) => { if (e.target === elModalValorizacion) cerrarValorizacion(); });
@@ -1540,6 +1545,59 @@ function pintarVaAlPozoProducto() {
   if (!esServicio) elProdVaAlPozo.checked = false;
 }
 
+/* MERCADERÍA DE LOS PADRES (sql/94, v138). Dos casillas que solo se ven si
+   "¿De quién es?" dice que el producto es de ellos o de los dos:
+     · el costo y el stock son al ojo, por confirmar;
+     · en "Cargar stock": me la entregaron mis padres, no es una compra.
+   `alCambiar` = el dueño acaba de mover "¿De quién es?": lo de los padres
+   llega al ojo y sin compra, así que las dos nacen marcadas. */
+function productoEsDePadres() {
+  return ['PADRES', 'AMBOS'].includes(elProdPropietario?.value);
+}
+
+function pintarOpcionesDePadresProducto(alCambiar) {
+  const dePadres = productoEsDePadres();
+  const elIngreso = document.getElementById('ingDePadres');
+  const ver = (id) => { const el = document.getElementById(id); if (el) el.style.display = dePadres ? '' : 'none'; };
+  ver('itemProdCostoProvisorio');
+  ver('itemIngDePadres');
+  if (!dePadres) {
+    if (elProdCostoProvisorio) elProdCostoProvisorio.checked = false;
+    if (elIngreso) elIngreso.checked = false;
+  } else if (alCambiar === true) {
+    if (elProdCostoProvisorio) elProdCostoProvisorio.checked = true;
+    if (elIngreso) elIngreso.checked = elProdPropietario.value === 'PADRES';
+  }
+  pintarIngresoDePadres();
+  pintarCostoPorConfirmar();
+}
+
+/* Con el costo por confirmar el campo "Costo Unit." no se bloquea aunque haya capas. */
+function pintarCostoPorConfirmar() {
+  if (typeof bloquearCostoSegunLotes === 'function') bloquearCostoSegunLotes();
+  if (typeof pintarCostoSegunLotes === 'function' && typeof lotesPorProducto !== 'undefined') {
+    const activo = !!(elProdUsaLotes && elProdUsaLotes.checked && editingProductId);
+    pintarCostoSegunLotes(activo ? (lotesPorProducto[editingProductId] || []) : null);
+  }
+}
+
+/* Lo que entregan los padres ya está en la tienda y no tiene proveedor ni
+   factura: se esconde todo eso para que no parezca una compra. */
+function pintarIngresoDePadres() {
+  const dePadres = ingresoEsDePadres();
+  const porLlegar = document.getElementById('prodPorLlegar');
+  if (dePadres && porLlegar?.checked) porLlegar.checked = false;
+  const ver = (id, mostrar) => { const el = document.getElementById(id); if (el) el.style.display = mostrar ? '' : 'none'; };
+  ver('compraLlegada', !dePadres);
+  ver('ingMasDatos', !dePadres);
+  alternarIngresoEnCamino();
+  actualizarTextoGuardarProducto();
+}
+
+function ingresoEsDePadres() {
+  return productoEsDePadres() && !!document.getElementById('ingDePadres')?.checked;
+}
+
 // Si está en "pegar" o vino del botón automático: cambia qué hace "Usar esta ficha"
 let fichaGeneradaPegada = false;
 
@@ -2025,6 +2083,10 @@ function abrirModalProducto(producto = null) {
     if (elProdVaAlPozo) elProdVaAlPozo.checked = !!producto.va_al_pozo;
     pintarVaAlPozoProducto();
     if (elProdUsaLotes) elProdUsaLotes.checked = !!producto.usa_lotes;
+    // sql/94: en un producto de los padres, lo normal es que el stock lo entreguen ellos
+    if (elProdCostoProvisorio) elProdCostoProvisorio.checked = !!producto.costo_provisorio;
+    { const elIng = document.getElementById('ingDePadres'); if (elIng) elIng.checked = producto.propietario === 'PADRES'; }
+    pintarOpcionesDePadresProducto();
     if (elProdStockActualizado) {
       elProdStockActualizado.textContent = producto.stock_actualizado_en
         ? `Última actualización de stock: ${tsAChile(producto.stock_actualizado_en)}`
@@ -2110,6 +2172,7 @@ function abrirModalProducto(producto = null) {
     if (elProdPropietario) elProdPropietario.value = 'MIO';
     if (elProdVaAlPozo) elProdVaAlPozo.checked = false;
     pintarVaAlPozoProducto();
+    pintarOpcionesDePadresProducto();   // sql/94: producto "mío", sin las casillas de los padres
     if (elProdStockActualizado) elProdStockActualizado.textContent = 'Última actualización de stock: se registrará al guardar.';
     if (elProdMedidasActualizado) elProdMedidasActualizado.textContent = 'Última actualización de medidas y peso: se registrará al guardar.';
     // Pedido explícito del dueño: un producto nuevo nace marcado para
@@ -2344,6 +2407,7 @@ function construirPayloadProducto() {
     es_servicio: !!(elProdEsServicio && elProdEsServicio.checked),
     // sql/90: de quién es la mercadería; y el pozo del papá solo aplica a un servicio
     propietario: elProdPropietario?.value || 'MIO',
+    costo_provisorio: productoEsDePadres() && !!elProdCostoProvisorio?.checked,   // sql/94
     va_al_pozo: !!(elProdVaAlPozo && elProdVaAlPozo.checked && elProdEsServicio && elProdEsServicio.checked),
     // Interruptor de costos por lote (PEPS). Apagado salvo que el admin lo marque.
     usa_lotes: !!(elProdUsaLotes && elProdUsaLotes.checked),
@@ -4226,7 +4290,8 @@ function alternarIngresoEnCamino() {
     b.setAttribute('aria-checked', activo ? 'true' : 'false');
   });
   const btn = document.getElementById('btnAgregarIngreso');
-  if (btn) btn.textContent = enCamino ? '🚚 Registrar compra por llegar' : '📥 Registrar compra';
+  if (btn) btn.textContent = (typeof ingresoEsDePadres === 'function' && ingresoEsDePadres()) ? '🤝 Cargar al stock (sin compra)'
+    : enCamino ? '🚚 Registrar compra por llegar' : '📥 Registrar compra';
 
   const sumar = document.getElementById('ingSumarStock');
   const item = document.getElementById('itemIngSumarStock');
@@ -4439,7 +4504,10 @@ function compraDelFormulario() {
       factura_pendiente: !!document.getElementById('ingFacturaPendiente')?.checked,
       factura_esperada_para: (document.getElementById('ingFacturaEsperada')?.value || '').trim() || null,
       sumar_stock: !!document.getElementById('ingSumarStock')?.checked,
-      en_camino: !!document.getElementById('prodPorLlegar')?.checked,
+      // sql/94 (v138): entrega de los padres, sin compra. Viajan las dos marcas de la
+      // ficha por si todavía no se guardó (igual que activar_lotes).
+      ...(ingresoEsDePadres() ? { de_padres: true, propietario: elProdPropietario.value, costo_provisorio: !!elProdCostoProvisorio?.checked } : {}),
+      en_camino: !ingresoEsDePadres() && !!document.getElementById('prodPorLlegar')?.checked,
       // v124: en camino y marcado "Publicar en la web" → la compra lo deja publicado, sin otro guardado
       ...(document.getElementById('prodPorLlegar')?.checked && elProdPublicadoWeb?.checked ? { publicar_web: true } : {}),
       stock_por_llegar: Number(document.getElementById('prodStockPorLlegar')?.value) || 0,
@@ -4453,7 +4521,8 @@ function compraDelFormulario() {
 function actualizarTextoGuardarProducto() {
   if (!elBtnGuardarProducto) return;
   const hayCompra = (Number(document.getElementById('ingCantidad')?.value) || 0) > 0;
-  elBtnGuardarProducto.textContent = hayCompra ? 'Guardar y registrar compra' : 'Guardar Producto';
+  elBtnGuardarProducto.textContent = !hayCompra ? 'Guardar Producto'
+    : ingresoEsDePadres() ? 'Guardar y cargar al stock' : 'Guardar y registrar compra';
 }
 
 /* Una compra de mercadería no anota el gasto en Finanzas: el gasto lleva
@@ -4474,7 +4543,7 @@ function ofrecerGastoDeCompra({ unidades, costoUnitario, proveedor, documento })
 
 /* Lo que cambia en pantalla después de una compra registrada. */
 async function reflejarCompraRegistrada(r, datos) {
-  const partes = ['Compra registrada'];
+  const partes = [r?.sin_compra ? 'Cargado al stock: entrega de tus padres, sin compra' : 'Compra registrada'];
   if (r?.en_camino) partes.push('queda por llegar, sin sumar stock');
   if (r?.publicado_web) partes.push('publicado en sevelin.cl como "por llegar"');
   if (r?.stock_sumado) partes.push(`stock: ${num(r.stock_nuevo)}`);
@@ -4483,8 +4552,11 @@ async function reflejarCompraRegistrada(r, datos) {
   showToast(partes.join(' · '), 'ok');
   // El costo se rellenó solo: conviene decirlo, no dejarlo pasar callado
   if (r?.costo_rellenado) {
-    setTimeout(() => showToast(`Le cargué el costo al producto: ${fmtCLP(r.costo_rellenado)} (estaba en $0)`, 'ok'), 1800);
+    setTimeout(() => showToast(r.sin_compra
+      ? `El costo del producto quedó en ${fmtCLP(r.costo_rellenado)}`
+      : `Le cargué el costo al producto: ${fmtCLP(r.costo_rellenado)} (estaba en $0)`, 'ok'), 1800);
   }
+  if (r?.aviso) setTimeout(() => showToast(r.aviso, 'err'), 2400);
 
   ingresosDelProducto = await API.productos.listarIngresos(editingProductId) || [];
   pintarIngresosProducto();
@@ -4499,7 +4571,14 @@ async function reflejarCompraRegistrada(r, datos) {
     if (elCosto) elCosto.value = num(r.costo_rellenado);
   }
   limpiarFormularioIngreso();
-  ofrecerGastoDeCompra({ unidades: datos.cantidad, costoUnitario: datos.costo_unitario, proveedor: datos.proveedor, documento: datos.url_documento });
+  if (r?.sin_compra) {
+    // No es una compra: no hay gasto que anotar. Queda junto a las correcciones de stock.
+    const aviso = document.getElementById('ingAvisoGasto');
+    if (aviso) aviso.innerHTML = '';
+    if (typeof cargarAjustesStockProducto === 'function') cargarAjustesStockProducto();
+  } else {
+    ofrecerGastoDeCompra({ unidades: datos.cantidad, costoUnitario: datos.costo_unitario, proveedor: datos.proveedor, documento: datos.url_documento });
+  }
 
   if (r?.lote && typeof cargarLotesDelProducto === 'function') await cargarLotesDelProducto(editingProductId);
   if (typeof cargarProductos === 'function') cargarProductos(true);

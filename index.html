@@ -2027,7 +2027,7 @@
           <div class="card-head">
             <div>
               <h2>📦 Mercadería de mis padres</h2>
-              <p class="subtitle">Lo que vendes de ellos, contado al precio de venta, y lo que les has pagado.</p>
+              <p class="subtitle">Cuánto vale a costo lo que te entregaron (lo que queda más lo ya vendido) y cuánto les has pagado.</p>
             </div>
             <div class="toolbar-group">
               <button class="btn btn-outline" id="btnPadresAjustes">⚙️ Números del acuerdo</button>
@@ -2615,7 +2615,12 @@
               <option value="PADRES">De mis padres</option>
               <option value="AMBOS">De los dos (la caja pregunta al vender)</option>
             </select>
-            <small class="fila-meta">Lo que vendas de tus padres se cuenta para el aviso de los $3.000.000.</small>
+            <small class="fila-meta">La mercadería de tus padres se cuenta a costo en Finanzas → Mis padres. Lo que ganes al venderla es tuyo: no va al pozo de C. Patricio.</small>
+            <!-- sql/94 (v138): solo se ve si el producto es de los padres (js/productos.js) -->
+            <label class="check-item" id="itemProdCostoProvisorio" style="display:none; margin-top:8px;">
+              <input type="checkbox" id="prodCostoProvisorio">
+              <span>⏳ El costo y el stock son al ojo, por confirmar. Puedes corregir el costo cuando quieras: cambia también en lo que queda en stock.</span>
+            </label>
           </div>
 
           <!-- v117 (dueño, 03-10-2026): la Descripción vivía en su propia tarjeta al final
@@ -2766,6 +2771,12 @@
               <span class="estado-seccion" data-estado="compras"></span>
             </div>
             <p class="subtitle">Sube el stock, queda el historial y, si cambias el precio de venta, se actualiza el producto.</p>
+            <!-- sql/94 (v138): lo que entregan los padres no es una compra. Solo se ve si
+                 el producto es de ellos ("¿De quién es?"). -->
+            <label class="check-item" id="itemIngDePadres" style="display:none; margin-top:10px;">
+              <input type="checkbox" id="ingDePadres">
+              <span>🤝 Me la entregaron mis padres: <strong>no es una compra</strong>. Sube el stock sin dejar nada en el informe de compras ni en Gastos.</span>
+            </label>
 
             <div class="grid grid-4" style="margin-top:10px;">
               <div class="field">
@@ -7383,7 +7394,7 @@
         <div class="cm-opciones">
         <div>
         <p class="compra-llegada-titulo" style="margin-top:8px;">¿Esta mercadería ya la tienes?</p>
-        <div class="compra-llegada-opciones tres" id="cmEstados" role="radiogroup" aria-label="¿Ya llegó la mercadería?">
+        <div class="compra-llegada-opciones" id="cmEstados" role="radiogroup" aria-label="¿Ya llegó la mercadería?">
           <button type="button" class="compra-llegada-opcion" data-estado-masiva="llego" role="radio" aria-checked="false">
             <strong>✅ Ya llegó</strong><small>Se suma al stock ahora.</small>
           </button>
@@ -7392,6 +7403,10 @@
           </button>
           <button type="button" class="compra-llegada-opcion" data-estado-masiva="encargo" role="radio" aria-checked="false">
             <strong>📦 Son por encargo</strong><small>Sin stock: se piden cuando alguien los compra.</small>
+          </button>
+          <!-- sql/94 (v138): entra al stock sin compra ni gasto, marcado "De mis padres" -->
+          <button type="button" class="compra-llegada-opcion" data-estado-masiva="padres" role="radio" aria-checked="false">
+            <strong>🤝 Me los entregaron mis padres</strong><small>Suma al stock sin compra ni gasto. El costo queda al ojo, por confirmar.</small>
           </button>
         </div>
         </div>
@@ -7409,7 +7424,7 @@
         </div>
         </div>
         <!-- Los mismos datos del formulario de una compra, una vez para toda la carga. -->
-        <div class="cm-datos">
+        <div class="cm-datos" id="cmDatos">
           <div class="field"><label for="cmFechaCompra">Fecha de compra</label><input type="date" id="cmFechaCompra"></div>
           <div class="field"><label for="cmProveedor">Vendedor o proveedor</label><input type="text" id="cmProveedor" maxlength="80" placeholder="A quién se la compraste"></div>
           <div class="field"><label for="cmMarketplace">Marketplace (opcional)</label><input type="text" id="cmMarketplace" maxlength="60" placeholder="Ej: MercadoLibre" list="listaMarketplaces" autocomplete="off">

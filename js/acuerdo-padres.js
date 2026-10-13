@@ -285,23 +285,45 @@ function pintarMercaderiaPadres(r) {
   const elDetalle = document.getElementById('padresMercaderiaDetalle');
   if (!elKpis || !elDetalle) return;
 
+  /* v138 (sql/94): la cuenta va A COSTO. Te la entregan a costo y pagas hasta el
+     tope: lo que importa es si todo lo recibido vale más o menos que eso. */
+  const c = m.a_costo || { en_stock: 0, vendido: 0, total: 0, unidades_en_stock: 0, unidades_vendidas: 0, por_confirmar: 0, sin_costo: 0, diferencia_con_tope: -m.tope, productos: [], productos_total: 0 };
+  const dif = Number(c.diferencia_con_tope) || 0;
   const avisos = [];
-  if (m.aviso_tope) {
-    avisos.push(`<div class="callout-warning"><b>Ya vendiste ${fmtCLP(m.vendido)} de la mercadería de tus padres</b> (el aviso era a los ${fmtCLP(m.tope)}). Es el momento de conversar con ellos qué pasa con lo que queda.</div>`);
+  if (dif > 0) {
+    avisos.push(`<div class="callout-warning"><b>La mercadería que llevas contada ya vale ${fmtCLP(c.total)} a costo</b>: ${fmtCLP(dif)} más que los ${fmtCLP(m.tope)} del acuerdo.</div>`);
+  }
+  if (c.por_confirmar > 0) {
+    avisos.push(`<div class="callout-warning">⏳ ${c.por_confirmar === 1 ? 'Hay 1 producto con el costo al ojo' : `Hay ${c.por_confirmar} productos con el costo al ojo`}, por confirmar: el total a costo cambia cuando lo corrijas.</div>`);
   }
   if (m.productos.sin_costo > 0) {
     avisos.push(`<div class="callout-warning">${m.productos.sin_costo === 1 ? 'Hay 1 producto de tus padres sin costo' : `Hay ${m.productos.sin_costo} productos de tus padres sin costo`}: mientras siga en $0, Utilidades cuenta su venta como ganancia completa.</div>`);
   }
   if (elAviso) elAviso.innerHTML = avisos.join('');
 
+  const pendientes = c.por_confirmar > 0 || c.sin_costo > 0;
   elKpis.innerHTML = [
-    tarjetaPadres(m.aviso_tope ? 'red' : 'blue', 'Vendido de ellos', fmtCLP(m.vendido),
-      m.aviso_tope ? `${m.unidades} unidades · pasaste el aviso de ${fmtCLP(m.tope)}` : `${m.unidades} unidades · faltan ${fmtCLP(m.falta_para_tope)} para el aviso`),
+    tarjetaPadres('blue', 'Recibido de ellos, a costo', fmtCLP(c.total),
+      `${fmtCLP(c.en_stock)} en stock + ${fmtCLP(c.vendido)} ya vendido`),
+    tarjetaPadres(dif > 0 ? 'red' : 'gold', `Contra los ${fmtCLP(m.tope)}`, dif > 0 ? `+${fmtCLP(dif)}` : dif < 0 ? `−${fmtCLP(-dif)}` : fmtCLP(0),
+      (dif > 0 ? 'vale más que el acuerdo' : dif < 0 ? 'vale menos que el acuerdo' : 'vale justo el acuerdo') + (pendientes ? ' · todavía contando' : '')),
     tarjetaPadres('green', 'Pagado a ellos', fmtCLP(m.pagado),
       m.por_pagar > 0 ? `te falta pagar ${fmtCLP(m.por_pagar)} de ${fmtCLP(m.tope)}` : 'el acuerdo está pagado'),
-    tarjetaPadres('violet', 'Productos de ellos', String(m.productos.cantidad),
-      `${m.productos.unidades_en_stock} unidades en stock · ${fmtCLP(m.productos.valor_venta_stock)} al precio de venta`)
+    tarjetaPadres('violet', 'Vendido de ellos', fmtCLP(m.vendido),
+      `${m.unidades} unidades al precio de venta · es ganancia tuya, no va al pozo`)
   ].join('');
+
+  const filasCosto = c.productos.map(f => `<tr>
+      <td>${escHtml(f.nombre)}${f.de_los_dos ? ' <small class="texto-apagado">(de los dos: solo lo vendido como de ellos)</small>' : ''}</td>
+      <td>${Number(f.en_stock)}</td>
+      <td>${Number(f.vendidas)}</td>
+      <td>${f.sin_costo ? '<span class="badge badge-red">sin costo</span>' : fmtCLP(f.costo_unitario)}${f.por_confirmar ? ' <span class="badge badge-gold">⏳ al ojo</span>' : ''}</td>
+      <td class="strong">${fmtCLP(f.total)}</td>
+    </tr>`);
+  if (filasCosto.length) {
+    filasCosto.push(`<tr><td class="strong">Total${c.productos_total > c.productos.length ? ` (se muestran ${c.productos.length} de ${c.productos_total})` : ''}</td>
+      <td class="strong">${Number(c.unidades_en_stock)}</td><td class="strong">${Number(c.unidades_vendidas)}</td><td></td><td class="strong">${fmtCLP(c.total)}</td></tr>`);
+  }
 
   const filasPagos = m.pagos.map(p => `<tr>
       <td>${fechaCorta(p.fecha)}</td>
@@ -318,6 +340,8 @@ function pintarMercaderiaPadres(r) {
     </tr>`);
 
   elDetalle.innerHTML =
+    tablaPadres('Lo que te han entregado, producto por producto (a costo)', ['Producto', 'En stock', 'Vendidas', 'Costo c/u', 'Total a costo'], filasCosto,
+      'Todavía no hay productos marcados "De mis padres". Márcalos en la ficha (¿De quién es?) o cárgalos con Productos → Carga masiva → "Me los entregaron mis padres".') +
     tablaPadres('Pagos a tus padres', ['Fecha', 'Monto', 'Medio', 'Detalle'], filasPagos,
       'Todavía no registras ningún pago. Usa el botón "Registrar pago a mis padres".') +
     tablaPadres(m.ventas_total > m.ventas.length ? `Últimas ${m.ventas.length} ventas de su mercadería (de ${m.ventas_total})` : 'Ventas de su mercadería',
