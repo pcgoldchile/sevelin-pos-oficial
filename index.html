@@ -2469,6 +2469,7 @@
             <button class="btn btn-outline btn-sm" id="btnExportarProductosExcel">📊 Exportar Excel</button>
             <button class="btn btn-outline btn-sm" id="btnExportarProductosCSV">📄 Exportar CSV</button>
             <button class="btn btn-outline btn-sm" id="btnExportarProductosPDF">🧾 Exportar PDF</button>
+            <button class="btn btn-outline btn-sm admin-only" id="btnFotosMarcadosFacebook" title="Marca productos con la casilla y baja las fotos de todos: una carpeta por producto, lista para Facebook. Con Mayús eliges otra carpeta.">📘 Fotos de los marcados</button>
           </div>
         </div>
 
@@ -7401,6 +7402,48 @@
     </div>
   </div>
 
+  <!-- v136 (sql/93): Facebook desde la lista de productos, sin abrir la ficha — js/facebook-rapido.js -->
+  <div id="modalFacebookRapido" class="modal-overlay">
+    <div class="modal-box" style="max-width:760px;">
+      <h2>📘 Publicar en Facebook</h2>
+      <p class="modal-hint" id="fbRapidoNombre">—</p>
+      <div id="fbRapidoEstado" class="fb-rapido-estado"></div>
+
+      <h3 class="antes-seccion">1. Fotos</h3>
+      <div class="fb-rapido-fotos" id="fbRapidoFotos"></div>
+      <button class="btn btn-outline btn-sm" id="btnFbRapidoFotos" type="button" title="Las deja sueltas en tu carpeta de fotos, con la de ubicación si el interruptor está encendido. Con Mayús eliges otra carpeta.">⬇️ Descargar las fotos</button>
+
+      <h3 class="antes-seccion">2. Texto</h3>
+      <div class="field">
+        <label for="fbRapidoDatos">Tu descripción del producto (escríbela tú: la IA solo la ordena, no inventa)</label>
+        <textarea id="fbRapidoDatos" rows="4" maxlength="6000" placeholder="Ej: Audífonos bluetooth Blik SOUL250, negros, 20 horas de batería, estuche de carga, nuevos y sellados…"></textarea>
+      </div>
+      <div class="toolbar-group">
+        <button class="btn btn-primary btn-sm" id="btnFbRapidoOrdenar" type="button">✨ Ordenar con IA</button>
+        <button class="btn btn-ghost btn-sm" id="btnFbRapidoUsarFicha" type="button" title="Copia aquí la descripción que ya tiene la ficha, para que la revises antes de ordenar">Traer la descripción de la ficha</button>
+      </div>
+      <div class="field" style="margin-top:12px;">
+        <label for="fbRapidoTexto">Texto para Facebook (queda guardado en el producto; lo puedes corregir)</label>
+        <textarea id="fbRapidoTexto" rows="9" maxlength="8000" placeholder="Aquí aparece el texto listo para copiar y pegar."></textarea>
+      </div>
+      <div class="toolbar-group">
+        <button class="btn btn-green btn-sm" id="btnFbRapidoCopiar" type="button">📋 Copiar texto</button>
+        <button class="btn btn-outline btn-sm" id="btnFbRapidoGuardar" type="button">💾 Guardar texto</button>
+      </div>
+
+      <h3 class="antes-seccion">3. ¿Ya lo publicaste?</h3>
+      <div class="field">
+        <label for="fbRapidoLink">Link de la publicación en Facebook (sin link no queda como publicado)</label>
+        <input type="url" id="fbRapidoLink" maxlength="500" placeholder="https://www.facebook.com/marketplace/item/…" autocomplete="off">
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnFbRapidoQuitar" type="button" style="display:none;">Quitar marca</button>
+        <button class="btn btn-ghost" id="btnFbRapidoCerrar" type="button">Cerrar</button>
+        <button class="btn btn-primary" id="btnFbRapidoPublicado" type="button">✓ Marcar como publicado</button>
+      </div>
+    </div>
+  </div>
+
   <!-- v135 (sql/92): usuarios con RUT y PIN. Solo admin — js/usuarios.js -->
   <div id="modalUsuarios" class="modal-overlay">
     <div class="modal-box" style="max-width:860px;">
@@ -8073,6 +8116,7 @@
   <script src="js/informe-semanal.js"></script>   <!-- después de balance.js: usa el panel de Finanzas y fmtCLP -->
   <script src="js/acuerdo-padres.js"></script>   <!-- v133 (sql/90): después de pos.js, compras.js y balance.js: pregunta de la caja y panel Mis padres -->
   <script src="js/cotizaciones-ref.js"></script>   <!-- v133 (sql/90): Taller → Cotizaciones aproximadas; usa cerrarModal de balance.js -->
+  <script src="js/facebook-rapido.js"></script>   <!-- v136 (sql/93): después de productos.js; usa sus funciones de fotos y la lista -->
   <script src="js/usuarios.js"></script>   <!-- v135 (sql/92): usuarios con RUT y PIN; usa ventanaConfirmar de ventanas.js -->
   <script src="js/finanzas-gate.js"></script>   <!-- después de balance/config: intercepta la navegación a Finanzas -->
   <script src="js/reportes.js"></script>

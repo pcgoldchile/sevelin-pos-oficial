@@ -769,6 +769,20 @@ app.post('/api/productos', (req, res) => {
   productos.push(p);
   res.status(201).json(p);
 });
+// v136 (sql/93): Facebook desde la lista. Simulado; lo que vale es api/index.js.
+app.put('/api/productos/:id/facebook', (req, res) => {
+  const p = productos.find(x => x.id === Number(req.params.id));
+  if (!p) return res.status(404).json({ error: 'Ese producto no existe' });
+  const b = req.body || {};
+  if (b.texto !== undefined) p.facebook_texto = String(b.texto).trim() || null;
+  if (b.url !== undefined) {
+    const url = String(b.url).trim();
+    if (url && !/^https:\/\/([a-z0-9-]+\.)*(facebook\.com|fb\.com|fb\.me)\//i.test(url)) return res.status(400).json({ error: 'Pega el link de la publicación en Facebook (empieza con https://www.facebook.com/…)' });
+    p.facebook_url = url || null;
+    p.facebook_publicado_en = url ? new Date().toISOString() : null;
+  }
+  res.json({ id: p.id, facebook_texto: p.facebook_texto || null, facebook_url: p.facebook_url || null, facebook_publicado_en: p.facebook_publicado_en || null });
+});
 app.put('/api/productos/:id', (req, res) => {
   const p = productoMaqueta(req.params.id);
   if (!p) return res.status(404).json({ error: 'Producto no encontrado' });

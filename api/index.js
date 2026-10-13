@@ -2413,6 +2413,49 @@ app.post('/api/productos/generar-texto', auth(true), async (req, res) => {
       'Mientras tanto puedes pegar el prompt en Gemini a mano, como antes.');
   }
 });
+/* PUBLICACIÓN DE FACEBOOK DE UN PRODUCTO (sql/93, v136)
+   ------------------------------------------------------------
+   Ruta propia, fuera del guardado del producto: se usa desde la lista, sin
+   abrir la ficha, y no debe pisar nada más. Dos cosas, las dos opcionales:
+     texto → el texto listo para pegar en Facebook
+     url   → el link de la publicación. Con link = publicado; vacío = se
+             quita la marca. "Publicado" sin link no existe (regla del dueño). */
+app.put('/api/productos/:id/facebook', auth(true), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return enviarError(res, 400, 'Producto inválido');
+    const cambios = {};
+    if (req.body?.texto !== undefined) {
+      const texto = String(req.body.texto || '').trim();
+      if (texto.length > 8000) return enviarError(res, 400, 'El texto es demasiado largo para una publicación');
+      cambios.facebook_texto = texto || null;
+    }
+    if (req.body?.url !== undefined) {
+      const url = String(req.body.url || '').trim();
+      if (!url) {
+        cambios.facebook_url = null;
+        cambios.facebook_publicado_en = null;
+      } else {
+        let destino = null;
+        try { destino = new URL(url); } catch (_) { destino = null; }
+        if (!destino || destino.protocol !== 'https:' || url.length > 500 || !/(^|\.)(facebook\.com|fb\.com|fb\.me)$/i.test(destino.hostname)) {
+          return enviarError(res, 400, 'Pega el link de la publicación en Facebook (empieza con https://www.facebook.com/…)');
+        }
+        cambios.facebook_url = url;
+        cambios.facebook_publicado_en = new Date().toISOString();
+      }
+    }
+    if (!Object.keys(cambios).length) return enviarError(res, 400, 'No hay nada que guardar');
+    const { data, error } = await db.from('productos').update(cambios).eq('id', id)
+      .select('id, facebook_texto, facebook_url, facebook_publicado_en');
+    if (error) return enviarErrorBD(res, error, 'PUT /api/productos/:id/facebook');
+    if (!data?.length) return enviarError(res, 404, 'Ese producto no existe');
+    res.json(data[0]);
+  } catch (err) {
+    return enviarErrorBD(res, err, 'PUT /api/productos/:id/facebook');
+  }
+});
+
 /* Importación masiva (CSV / Excel de Tiendanube)
    ------------------------------------------------------------
    Exige reconfirmar el PIN de administrador: es una operación que puede

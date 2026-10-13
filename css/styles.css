@@ -201,6 +201,12 @@ h2 { color: var(--text-100); font-weight: 700; letter-spacing: -.01em; }
 .sidebar-foot-extra { width: 100%; flex-wrap: wrap; }
 .sidebar-foot-extra .btn { text-decoration: none; }
 .texto-apagado { color: var(--text-muted); font-size: 12.5px; }
+/* v136: Facebook desde la lista */
+.btn-icon-fb-listo { color: #fff; background: #1877f2; border-color: #1877f2; }
+.marca-fb { color: #4f9bff; font-weight: 700; }
+.fb-rapido-estado { margin: 4px 0 2px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.fb-rapido-fotos { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.fb-rapido-fotos img { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; border: 1px solid var(--border); background: #fff; }
 .foto-ubicacion-interruptor { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-muted); cursor: pointer; white-space: nowrap; }
 .usuarios-acciones { white-space: nowrap; display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
 

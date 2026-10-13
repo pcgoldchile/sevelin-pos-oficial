@@ -970,6 +970,7 @@ function renderProductosTabla(items, origen) {
           ${p.requiere_sn ? ' · <b>S/N</b>' : ''}
           ${p.es_repuesto ? ' · Repuesto' : ''}
           ${etiquetaWebTexto(p.etiqueta_web) ? ` · ${etiquetaWebTexto(p.etiqueta_web)}` : ''}
+          ${esAdmin() && typeof marcaFacebookDeFila === 'function' ? marcaFacebookDeFila(p) : ''}
         </small>
       </td>
       <td class="admin-only">${fmtCLP(p.costo_unitario)}</td>
@@ -979,6 +980,7 @@ function renderProductosTabla(items, origen) {
       <td>
         <div class="cell-actions">
           ${urlProductoWeb(p) ? `<a class="btn btn-icon btn-icon-view" href="${escHtml(urlProductoWeb(p))}" target="_blank" rel="noopener noreferrer" title="Ver este producto en sevelin.cl">${ICO_VER_WEB_PROD}</a>` : ''}
+          ${esAdmin() && origen !== 'archivados' && typeof botonFacebookDeFila === 'function' ? botonFacebookDeFila(p) : ''}
           <button class="btn btn-icon btn-icon-view" data-etiqueta="${p.id}" title="Imprimir etiqueta de código de barras">${ICO_ETIQUETA_PROD}</button>
           <button class="btn btn-icon btn-icon-edit" data-editar="${p.id}" title="Editar producto">${ICO_EDITAR_PROD}</button>
           ${origen === 'archivados'
@@ -1008,6 +1010,14 @@ function renderProductosTabla(items, origen) {
     btn.addEventListener('click', () => {
       const producto = (fuente || []).find(p => String(p.id) === btn.dataset.editar);
       if (producto) abrirModalProducto(producto);
+    });
+  });
+
+  // v136: Facebook sin abrir la ficha (js/facebook-rapido.js)
+  elProductosTableBody.querySelectorAll('button[data-facebook]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const producto = (fuente || []).find(p => String(p.id) === btn.dataset.facebook);
+      if (producto && typeof abrirFacebookRapido === 'function') abrirFacebookRapido(producto);
     });
   });
 

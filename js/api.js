@@ -143,6 +143,8 @@ const API = {
        el post de Facebook (destino 'facebook'). Los prompts viven en el
        servidor. Tampoco guarda nada: devuelve el texto para revisarlo. */
     generarTexto: (datos) => apiRequest('/productos/generar-texto', { method: 'POST', body: datos }),
+    // v136 (sql/93): texto y link de la publicación de Facebook, desde la lista
+    guardarFacebook: (id, cambios) => apiRequest(`/productos/${id}/facebook`, { method: 'PUT', body: cambios }),
 
     /* El MISMO prompt que se le manda a Gemini, pero devuelto para
        copiarlo y pegarlo a mano en la web de Gemini/ChatGPT/Claude
