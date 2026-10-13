@@ -35,6 +35,9 @@ Detalle en `docs/CHANGELOG-V135.md` (y la v134 del 11-10 en `docs/CHANGELOG-V134
   el POS. Falta que el POS mismo pida RUT y PIN, los permisos por casillas y el registro de cambios.
 - **Pago a los padres:** el dueño pasó $1.000.000 el 12-10-2026 (pago 1 de 3, por transferencia). Lo anotó Claude a
   pedido suyo como gasto #35, "Mercadería de mis padres". Siguen $1.000.000 por semana hasta $3.000.000.
+- **v137 (13-10):** la caja obliga a elegir si un servicio **escrito a mano** va al pozo de C. Patricio (antes venía
+  en "No va" con el foco en "Continuar" y un Enter la saltaba; venta #266 quedó sin pozo). El pozo de una venta ya
+  hecha se corrige en Finanzas → Mis padres ("Sumar al pozo"), no en el Historial. Ver `docs/CHANGELOG-V137.md`.
 - **Pozo:** partió el 12-10-2026 a pedido del dueño (`pozo_desde`, ya en producción). En pantalla ahora dice
   "C. Patricio". Lo cobrado en la app por trabajos de él suma a su pozo; lo que puso otro no.
 - **Lo cobrado en la app no crea una venta en el POS** (decisión de Claude, dicha al dueño).

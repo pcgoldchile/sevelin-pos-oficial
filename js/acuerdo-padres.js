@@ -14,7 +14,7 @@ const POZO_MODOS = [
   { valor: 'TODO', texto: 'Todo' },
   { valor: 'MENOS_REPUESTO', texto: 'Menos el repuesto' },
   { valor: 'OTRO', texto: 'Otro monto' },
-  { valor: 'NO', texto: 'No va' }
+  { valor: 'NO', texto: 'No va (es mío)' }
 ];
 const POZO_IVA = 1.19;
 
@@ -44,6 +44,26 @@ function lineaPreguntaPozo(item) {
   return !!item.es_servicio && (!!item.va_al_pozo || !item.producto_id);
 }
 
+/* Un servicio escrito a mano no tiene ficha que diga quién lo hizo. Antes
+   partía en "No va" con el botón de seguir enfocado: un Enter cerraba la
+   pregunta sin que nadie la viera y el servicio quedaba fuera del pozo
+   (venta #266, 13-10-2026). Ahora no trae nada marcado y hay que elegir. */
+function lineaPozoObligatoria(item) {
+  return lineaPreguntaPozo(item) && !item.va_al_pozo;
+}
+
+function lineaPozoSinResponder(bloque) {
+  return bloque.hasAttribute('data-pozo-obligatoria') && !bloque.querySelector('input[type="radio"]:checked');
+}
+
+/* "Continuar al pago" queda apagado mientras falte elegir en alguna línea. */
+function actualizarBotonAntesDeCobrar() {
+  const cuerpo = document.getElementById('antesDeCobrarCuerpo');
+  const btn = document.getElementById('btnAntesDeCobrarSeguir');
+  if (!cuerpo || !btn) return;
+  btn.disabled = [...cuerpo.querySelectorAll('[data-pozo-linea]')].some(lineaPozoSinResponder);
+}
+
 /* Abre la pregunta si hace falta. Resuelve true para seguir al pago y false
    si se canceló. Deja en cada línea del carrito `pozo` y `propietario`, que
    viajan al servidor con la venta. */
@@ -64,7 +84,10 @@ function preguntarAntesDeCobrar(carrito, totales) {
   pintarAntesDeCobrar(hayPozo);
   modal.classList.add('show');
   // 150 ms: la caja devuelve el foco al buscador 40 ms después de agregar un producto
-  setTimeout(() => document.getElementById('btnAntesDeCobrarSeguir')?.focus(), 150);
+  setTimeout(() => {
+    const pendiente = [...modal.querySelectorAll('[data-pozo-linea]')].find(lineaPozoSinResponder);
+    (pendiente?.querySelector('input[type="radio"]') || document.getElementById('btnAntesDeCobrarSeguir'))?.focus();
+  }, 150);
   return new Promise(resolve => { resolverAntesDeCobrar = resolve; });
 }
 
@@ -77,9 +100,11 @@ function pintarAntesDeCobrar(hayPozo) {
     if (!item.es_servicio) return '';
     const cobrado = Math.round(item.subtotal * factorAntesDeCobrar);
     const previo = item.pozo || null;
-    const modo = previo?.modo || (lineaPreguntaPozo(item) && item.va_al_pozo ? 'TODO' : 'NO');
+    const obligatoria = lineaPozoObligatoria(item);
+    // '' = ninguna opción marcada: lo escrito a mano se elige cada vez
+    const modo = previo?.modo || (obligatoria ? '' : (lineaPreguntaPozo(item) ? 'TODO' : 'NO'));
     return `
-      <div class="antes-linea" data-pozo-linea="${idx}" data-cobrado="${cobrado}">
+      <div class="antes-linea" data-pozo-linea="${idx}" data-cobrado="${cobrado}"${obligatoria ? ' data-pozo-obligatoria' : ''}>
         <div class="antes-linea-titulo">
           <b>${escHtml(item.nombre)}${item.cantidad > 1 ? ` ×${Number(item.cantidad)}` : ''}</b>
           <span>${fmtCLP(cobrado)}</span>
@@ -128,6 +153,7 @@ function pintarAntesDeCobrar(hayPozo) {
     (bloquesDueno ? `<h3 class="antes-seccion">📦 Este producto lo tienen los dos: ¿de quién es la unidad?</h3>${bloquesDueno}` : '');
 
   cuerpo.querySelectorAll('[data-pozo-linea]').forEach(actualizarLineaAntesDeCobrar);
+  actualizarBotonAntesDeCobrar();
 }
 
 function leerLineaPozo(bloque) {
@@ -151,16 +177,28 @@ function actualizarLineaAntesDeCobrar(bloque) {
   if (iva) iva.style.display = (modo === 'TODO' || modo === 'MENOS_REPUESTO') ? '' : 'none';
   const resultado = bloque.querySelector('[data-pozo-resultado]');
   if (resultado) {
+    const falta = lineaPozoSinResponder(bloque);
     const monto = pozoDeLineaPrevio(cobrado, pozo);
-    resultado.innerHTML = monto > 0
-      ? `Al pozo: <b>${fmtCLP(monto)}</b>${monto < cobrado ? ` · para ti ${fmtCLP(cobrado - monto)}` : ''}`
-      : 'No va al pozo';
+    resultado.style.color = falta ? 'var(--red)' : '';
+    resultado.innerHTML = falta
+      ? 'Elige una opción: ¿lo hizo C. Patricio (va a su pozo) o es tuyo?'
+      : monto > 0
+        ? `Al pozo: <b>${fmtCLP(monto)}</b>${monto < cobrado ? ` · para ti ${fmtCLP(cobrado - monto)}` : ''}`
+        : 'No va al pozo';
   }
+  actualizarBotonAntesDeCobrar();
 }
 
 function confirmarAntesDeCobrar() {
   const cuerpo = document.getElementById('antesDeCobrarCuerpo');
   if (!cuerpo) return cerrarAntesDeCobrar(true);
+
+  const pendiente = [...cuerpo.querySelectorAll('[data-pozo-linea]')].find(lineaPozoSinResponder);
+  if (pendiente) {
+    showToast('Elige si el servicio va al pozo de C. Patricio o es tuyo', 'err');
+    pendiente.querySelector('input[type="radio"]')?.focus();
+    return;
+  }
 
   // Primero se valida todo; el carrito solo se toca si no hay ningún error
   const elecciones = [];
