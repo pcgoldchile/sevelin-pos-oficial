@@ -12,6 +12,16 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 13-10-2026 · v136 publicada: Facebook desde la lista de productos y fotos sin .zip
+
+Detalle en `docs/CHANGELOG-V136.md`. Migración `sql/93` aplicada.
+
+- Botón Facebook en cada fila de Productos: fotos a una carpeta, texto que el dueño escribe y la IA ordena (nunca se
+  genera solo), y marca de publicado **solo con el link**. "Fotos de los marcados" baja varias carpetas de una vez.
+- "Descargar todas" deja las fotos sueltas en una carpeta (Chrome/Edge) y puede agregar la imagen "¿Dónde estamos?".
+- La plantilla de Facebook lleva el WhatsApp en emojis y la dirección de San Rafael 896.
+- Sin confirmar: el dueño dijo que le seguía saliendo el .zip; el POS ahora muestra el motivo.
+
 ## 12-10-2026 · v135 publicada: app del taller para el celular y usuarios con RUT y PIN
 
 Detalle en `docs/CHANGELOG-V135.md` (y la v134 del 11-10 en `docs/CHANGELOG-V134.md`).
