@@ -2710,7 +2710,30 @@
                   </button>
                 </div>
               </div>
-              <p class="subtitle" id="prodTextoIAAviso">La ficha reemplaza la Descripción de arriba (revísala antes de guardar). La de Facebook se abre aparte, con botón para copiar.</p>
+              <p class="subtitle" id="prodTextoIAAviso">La ficha reemplaza la Descripción de arriba (revísala antes de guardar). La de Facebook se abre aparte y también queda en "Textos para Facebook e Instagram", aquí abajo.</p>
+
+              <!-- v139 (sql/95): textos para redes, guardados en el producto. Se arman SOLO con lo que
+                   ya dice la Descripción (js/redes-texto.js): sin descripción no se genera nada. -->
+              <details class="compra-mas" id="prodRedes" style="margin-top:10px;">
+                <summary>📣 Textos para Facebook e Instagram (se guardan con el producto)</summary>
+                <p class="subtitle" style="margin-top:8px;">Se arman con lo que ya dice la <strong>Descripción</strong> de arriba, sin IA y sin inventar nada: si no hay descripción, no se genera. Puedes corregirlos. Quedan guardados al apretar <strong>Guardar Producto</strong>.</p>
+                <div class="field" style="margin-top:8px;">
+                  <label for="prodFacebookTexto">Texto para Facebook</label>
+                  <textarea id="prodFacebookTexto" rows="8" maxlength="8000" spellcheck="true" placeholder="Aprieta «Armar desde la descripción» o pega aquí tu texto."></textarea>
+                  <div class="toolbar-group" style="margin-top:6px;">
+                    <button type="button" class="btn btn-primary btn-sm" data-armar-red="facebook">🧩 Armar desde la descripción</button>
+                    <button type="button" class="btn btn-outline btn-sm" data-copiar-red="facebook">📋 Copiar</button>
+                  </div>
+                </div>
+                <div class="field" style="margin-top:12px;">
+                  <label for="prodInstagramTexto">Texto para Instagram (más corto; Instagram acepta hasta 2.200 letras)</label>
+                  <textarea id="prodInstagramTexto" rows="7" maxlength="2200" spellcheck="true" placeholder="Aprieta «Armar desde la descripción» o pega aquí tu texto."></textarea>
+                  <div class="toolbar-group" style="margin-top:6px;">
+                    <button type="button" class="btn btn-primary btn-sm" data-armar-red="instagram">🧩 Armar desde la descripción</button>
+                    <button type="button" class="btn btn-outline btn-sm" data-copiar-red="instagram">📋 Copiar</button>
+                  </div>
+                </div>
+              </details>
             </div>
           </div>
 
@@ -7481,7 +7504,8 @@
         <textarea id="fbRapidoDatos" rows="4" maxlength="6000" placeholder="Ej: Audífonos bluetooth Blik SOUL250, negros, 20 horas de batería, estuche de carga, nuevos y sellados…"></textarea>
       </div>
       <div class="toolbar-group">
-        <button class="btn btn-primary btn-sm" id="btnFbRapidoOrdenar" type="button">✨ Ordenar con IA</button>
+        <button class="btn btn-primary btn-sm" id="btnFbRapidoArmar" type="button" title="Sin IA: ordena lo que ya dice la descripción de la ficha. Si no hay descripción, no arma nada.">🧩 Armar desde la ficha (sin IA)</button>
+        <button class="btn btn-outline btn-sm" id="btnFbRapidoOrdenar" type="button">✨ Ordenar con IA</button>
         <button class="btn btn-ghost btn-sm" id="btnFbRapidoUsarFicha" type="button" title="Copia aquí la descripción que ya tiene la ficha, para que la revises antes de ordenar">Traer la descripción de la ficha</button>
       </div>
       <div class="field" style="margin-top:12px;">
@@ -8131,6 +8155,7 @@
   <script src="js/pago.js"></script>
   <script src="js/alta-producto.js"></script>
   <script src="js/lotes.js"></script>
+  <script src="js/redes-texto.js"></script>   <!-- v139 (sql/95): arma el texto de Facebook e Instagram desde la Descripción, sin IA -->
   <script src="js/productos.js"></script>
   <script src="js/stock-ajuste.js"></script>   <!-- v118 (sql/84): después de productos.js, usa editingProductId y cargarIngresosProducto -->
   <script src="js/asistente-producto.js"></script>   <!-- v119: después de productos.js y stock-ajuste.js -->

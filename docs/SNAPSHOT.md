@@ -43,6 +43,9 @@ Detalle en `docs/CHANGELOG-V135.md` (y la v134 del 11-10 en `docs/CHANGELOG-V134
   Cargar stock, "🤝 Me la entregaron mis padres" (sube el stock sin dejar compra). Carga masiva con la misma opción.
   Finanzas → Mis padres cuenta lo recibido **a costo** (stock + vendido) contra los $3.000.000. Lo ya vendido con un costo
   al ojo no se recalcula en Utilidades. Ver `docs/CHANGELOG-V138.md`.
+- **v139 (13-10, sql/95):** textos para **Facebook e Instagram** guardados en cada producto. Se arman sin IA, ordenando lo que
+  ya dice la Descripción (`js/redes-texto.js`); sin descripción no se genera nada. Cuadros en la ficha (crear y editar) y botón
+  "Armar desde la ficha" en el Facebook de la lista. Ver `docs/CHANGELOG-V139.md`.
 - **Pozo:** partió el 12-10-2026 a pedido del dueño (`pozo_desde`, ya en producción). En pantalla ahora dice
   "C. Patricio". Lo cobrado en la app por trabajos de él suma a su pozo; lo que puso otro no.
 - **Lo cobrado en la app no crea una venta en el POS** (decisión de Claude, dicha al dueño).

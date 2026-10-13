@@ -94,6 +94,8 @@ const elProdAlto = document.getElementById('prodAlto');
 const elProdAncho = document.getElementById('prodAncho');
 const elProdProfundidad = document.getElementById('prodProfundidad');
 const elProdDescripcion = document.getElementById('prodDescripcion');
+const elProdFacebookTexto = document.getElementById('prodFacebookTexto');     // sql/93
+const elProdInstagramTexto = document.getElementById('prodInstagramTexto');   // sql/95
 const elProdFotoInput = document.getElementById('prodFotoInput');
 const elProdFotoCanvas = document.getElementById('prodFotoCanvas');
 const elProdFotoEstado = document.getElementById('prodFotoEstado');
@@ -458,6 +460,9 @@ function setupProductosEventListeners() {
   if (elProdPropietario) elProdPropietario.addEventListener('change', () => pintarOpcionesDePadresProducto(true));
   if (elProdCostoProvisorio) elProdCostoProvisorio.addEventListener('change', pintarCostoPorConfirmar);
   document.getElementById('ingDePadres')?.addEventListener('change', pintarIngresoDePadres);
+  // v139 (sql/95): textos para redes en la ficha
+  document.querySelectorAll('[data-armar-red]').forEach(b => b.addEventListener('click', () => armarTextoRedProducto(b.dataset.armarRed)));
+  document.querySelectorAll('[data-copiar-red]').forEach(b => b.addEventListener('click', () => copiarTextoRedProducto(b.dataset.copiarRed)));
   if (elBtnCerrarValorizacion) elBtnCerrarValorizacion.addEventListener('click', cerrarValorizacion);
   if (elModalValorizacion) {
     elModalValorizacion.addEventListener('click', (e) => { if (e.target === elModalValorizacion) cerrarValorizacion(); });
@@ -1502,6 +1507,12 @@ async function generarTextoConIA(destino) {
     const resultado = await API.productos.generarTexto(cuerpoParaPromptIA(destino));
 
     if (destino === 'facebook') {
+      // v139: además de mostrarse, queda en la ficha para guardarse con el producto
+      if (elProdFacebookTexto && resultado.texto) {
+        elProdFacebookTexto.value = resultado.texto;
+        const redes = document.getElementById('prodRedes');
+        if (redes) redes.open = true;
+      }
       abrirModalTextoFacebook(resultado.texto || '');
       return;
     }
@@ -1596,6 +1607,55 @@ function pintarIngresoDePadres() {
 
 function ingresoEsDePadres() {
   return productoEsDePadres() && !!document.getElementById('ingDePadres')?.checked;
+}
+
+/* TEXTOS PARA REDES EN LA FICHA (v139, sql/95). Regla del dueño: "debe
+   existir la descripción, si no, no se debe generar nada inventado". El texto
+   lo arma js/redes-texto.js ordenando lo que ya dice la Descripción; acá solo
+   se junta lo que hay en el formulario. Se guarda con "Guardar Producto". */
+function productoDelFormularioParaRedes() {
+  const nombre = elProdNombre?.value.trim() || '';
+  const categoria = typeof resolverCategoriaWebYSubcategoria === 'function' ? resolverCategoriaWebYSubcategoria() : {};
+  return {
+    nombre: nombreProvisorioDeProducto(nombre) ? '' : nombre,
+    es_servicio: !!(elProdEsServicio && elProdEsServicio.checked),
+    marca: elProdMarca?.value.trim() || '',
+    condicion: elProdCondicion?.value || 'nuevo',
+    meses_garantia: elProdMesesGarantia?.value,
+    categoria_web: categoria.categoria_web || '',
+    subcategoria_web: categoria.subcategoria_web || '',
+    descripcion: elProdDescripcion?.value || ''
+  };
+}
+
+async function armarTextoRedProducto(red) {
+  const instagram = red === 'instagram';
+  const caja = instagram ? elProdInstagramTexto : elProdFacebookTexto;
+  if (!caja || typeof armarTextoFacebook !== 'function') return;
+  const p = productoDelFormularioParaRedes();
+  if (!p.nombre) { showToast('Ponle nombre al producto primero', 'err'); elProdNombre?.focus(); return; }
+  const texto = instagram ? armarTextoInstagram(p) : armarTextoFacebook(p);
+  if (!texto) {
+    showToast('Falta la Descripción del producto: sin descripción no se arma nada (no se inventa)', 'err');
+    return;
+  }
+  const actual = caja.value.trim();
+  if (actual && actual !== texto && !(await ventanaConfirmar(`¿Reemplazar el texto de ${instagram ? 'Instagram' : 'Facebook'} que ya está escrito?`, { textoSi: 'Sí, reemplazarlo' }))) return;
+  caja.value = texto;
+  showToast(`Texto de ${instagram ? 'Instagram' : 'Facebook'} armado desde la descripción. Se guarda con Guardar Producto`, 'ok');
+}
+
+async function copiarTextoRedProducto(red) {
+  const caja = red === 'instagram' ? elProdInstagramTexto : elProdFacebookTexto;
+  const texto = caja?.value || '';
+  if (!texto.trim()) { showToast('Todavía no hay texto para copiar', 'err'); return; }
+  try {
+    await navigator.clipboard.writeText(texto);
+    showToast(`Texto copiado: pégalo en ${red === 'instagram' ? 'Instagram' : 'Facebook'}`, 'ok');
+  } catch (_) {
+    caja.select();
+    showToast('Selecciona el texto y cópialo con Ctrl+C', 'err');
+  }
 }
 
 // Si está en "pegar" o vino del botón automático: cambia qué hace "Usar esta ficha"
@@ -2058,6 +2118,10 @@ function abrirModalProducto(producto = null) {
      si quedara pegado, el siguiente producto se generaría con las specs
      del anterior. Se limpia en los dos casos (crear y editar). */
   if (elProdDatosReales) elProdDatosReales.value = '';
+  // v139 (sql/95): los textos para redes que el producto ya tiene guardados
+  if (elProdFacebookTexto) elProdFacebookTexto.value = producto?.facebook_texto || '';
+  if (elProdInstagramTexto) elProdInstagramTexto.value = producto?.instagram_texto || '';
+  { const redes = document.getElementById('prodRedes'); if (redes) redes.open = !!(producto?.facebook_texto || producto?.instagram_texto); }
   sesionEditorProducto++;
   seoIAOfrecido = false;
   productoEnEdicionPublicado = !!(producto && producto.publicado_web && !producto.es_borrador);
@@ -2414,6 +2478,9 @@ function construirPayloadProducto() {
     // peso/medidas NO van acá: se guardan con "📏 Guardar medidas", que pide
     // el nombre de quien midió (ver guardarMedidasProducto más abajo).
     descripcion: elProdDescripcion?.value.trim() || null,
+    // v139: textos para redes. Solo viajan si la ficha tiene los cuadros (no se borran por accidente).
+    ...(elProdFacebookTexto ? { facebook_texto: elProdFacebookTexto.value.trim() || null } : {}),
+    ...(elProdInstagramTexto ? { instagram_texto: elProdInstagramTexto.value.trim() || null } : {}),
     // --- Tienda web (e-commerce Fase 0). imagen_urls NO va acá: se sube
     // aparte, foto por foto, con API.productos.subirImagen/quitarImagen. ---
     publicado_web: !!(elProdPublicadoWeb && elProdPublicadoWeb.checked),

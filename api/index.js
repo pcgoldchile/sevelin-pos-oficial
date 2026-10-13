@@ -1079,7 +1079,9 @@ const CAMPOS_PRODUCTO = [
   // servicio que hace el papá (su pozo).
   'propietario', 'va_al_pozo',
   // sql/94: costo y stock al ojo, por confirmar (mercadería de los padres)
-  'costo_provisorio'
+  'costo_provisorio',
+  // sql/93 y sql/95 (v139): textos para redes, guardados también desde la ficha
+  'facebook_texto', 'instagram_texto'
 ];
 
 /* Normaliza el código de barras: SOLO dígitos.
@@ -1265,6 +1267,13 @@ function sanearProducto(body = {}) {
   if (p.propietario !== undefined) p.propietario = propietarioDeFicha(p.propietario);
   if (body.va_al_pozo !== undefined) p.va_al_pozo = !!body.va_al_pozo;
   if (body.costo_provisorio !== undefined) p.costo_provisorio = !!body.costo_provisorio;
+
+  // --- Textos para redes (sql/93, sql/95). Vacío = sin texto. ---
+  for (const [campo, tope] of [['facebook_texto', 8000], ['instagram_texto', 2200]]) {
+    if (body[campo] === undefined) continue;
+    const texto = String(body[campo] || '').trim();
+    p[campo] = texto ? texto.slice(0, tope) : null;
+  }
 
   return p;
 }
@@ -2449,6 +2458,12 @@ app.put('/api/productos/:id/facebook', auth(true), async (req, res) => {
       if (texto.length > 8000) return enviarError(res, 400, 'El texto es demasiado largo para una publicación');
       cambios.facebook_texto = texto || null;
     }
+    // v139 (sql/95): el pie de foto de Instagram viaja por la misma ruta
+    if (req.body?.instagram !== undefined) {
+      const texto = String(req.body.instagram || '').trim();
+      if (texto.length > 2200) return enviarError(res, 400, 'El texto es demasiado largo para Instagram (máximo 2.200 letras)');
+      cambios.instagram_texto = texto || null;
+    }
     if (req.body?.url !== undefined) {
       const url = String(req.body.url || '').trim();
       if (!url) {
@@ -2466,7 +2481,7 @@ app.put('/api/productos/:id/facebook', auth(true), async (req, res) => {
     }
     if (!Object.keys(cambios).length) return enviarError(res, 400, 'No hay nada que guardar');
     const { data, error } = await db.from('productos').update(cambios).eq('id', id)
-      .select('id, facebook_texto, facebook_url, facebook_publicado_en');
+      .select('id, facebook_texto, instagram_texto, facebook_url, facebook_publicado_en');
     if (error) return enviarErrorBD(res, error, 'PUT /api/productos/:id/facebook');
     if (!data?.length) return enviarError(res, 404, 'Ese producto no existe');
     res.json(data[0]);

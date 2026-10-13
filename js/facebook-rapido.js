@@ -147,6 +147,22 @@ async function descargarFotosDeMarcadosParaFacebook(evento) {
   showToast(`${listos} carpeta(s) lista(s) en "${carpeta.name}"` + (fallidos.length ? ` · fallaron: ${fallidos.map(n => acortar(n, 24)).join(', ')}` : ''), fallidos.length ? 'err' : 'ok');
 }
 
+/* v139: sin IA. Ordena lo que ya dice la descripción de la ficha (js/redes-texto.js).
+   Si el producto no tiene descripción, no arma nada. De paso deja guardado el
+   pie de foto de Instagram si el producto todavía no tenía uno. */
+async function armarTextoFacebookRapido() {
+  const p = productoFacebookRapido;
+  if (!p || typeof armarTextoFacebook !== 'function') return;
+  const texto = armarTextoFacebook(p);
+  if (!texto) { showToast('Este producto no tiene descripción en la ficha: sin descripción no se arma nada', 'err'); return; }
+  const caja = document.getElementById('fbRapidoTexto');
+  const actual = (caja?.value || '').trim();
+  if (actual && actual !== texto && !(await ventanaConfirmar('¿Reemplazar el texto que ya está escrito?', { textoSi: 'Sí, reemplazarlo' }))) return;
+  if (caja) caja.value = texto;
+  const instagram = !p.instagram_texto ? armarTextoInstagram(p) : '';
+  await guardarFacebookRapido({ texto, ...(instagram ? { instagram } : {}) }, 'Texto armado desde la ficha y guardado en el producto');
+}
+
 /* La IA solo ORDENA lo que el dueño escribió: sin texto suyo, no hay nada que ordenar. */
 async function ordenarTextoFacebookRapido() {
   const p = productoFacebookRapido;
@@ -224,6 +240,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const al = (id, fn) => document.getElementById(id)?.addEventListener('click', fn);
   al('btnFbRapidoCerrar', cerrarFacebookRapido);
   al('btnFbRapidoFotos', descargarFotosFacebookRapido);
+  al('btnFbRapidoArmar', armarTextoFacebookRapido);
   al('btnFbRapidoOrdenar', ordenarTextoFacebookRapido);
   al('btnFbRapidoCopiar', copiarTextoFacebookRapido);
   al('btnFbRapidoGuardar', () => guardarFacebookRapido({ texto: document.getElementById('fbRapidoTexto')?.value || '' }, 'Texto guardado'));
