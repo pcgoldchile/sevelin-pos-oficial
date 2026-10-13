@@ -2726,17 +2726,96 @@ async function descargarFotoProducto(idx, boton) {
   }
 }
 
-/* "Descargar todas": una sola foto se baja directa; dos o más se empaquetan
-   en un .zip (JSZip, cargado en index.html) — bajar 5 archivos sueltos de
-   un solo click casi siempre lo bloquea el navegador (límite de descargas
-   múltiples por interacción del usuario). */
-async function descargarTodasFotosProducto() {
+/* FOTOS SUELTAS EN UNA CARPETA, SIN .ZIP (dueño, 13-10-2026)
+   ------------------------------------------------------------
+   "Debo manualmente extraer el archivo .zip". En Chrome y Edge de
+   computador el navegador puede escribir en una carpeta que el dueño
+   elige UNA vez: ahí se crea una subcarpeta por producto con las fotos
+   ya sueltas. La carpeta se recuerda en este navegador (IndexedDB); el
+   navegador puede volver a pedir permiso al abrir el POS otro día.
+   Donde no existe esa función (celular, Firefox) sigue el .zip.
+   Con Mayús apretada al hacer clic se elige otra carpeta. */
+function bdCarpetaFotos() {
+  return new Promise((ok, mal) => {
+    const pedido = indexedDB.open('sevelin-pos-carpetas', 1);
+    pedido.onupgradeneeded = () => pedido.result.createObjectStore('carpetas');
+    pedido.onsuccess = () => ok(pedido.result);
+    pedido.onerror = () => mal(pedido.error);
+  });
+}
+async function leerCarpetaFotosGuardada() {
+  try {
+    const bd = await bdCarpetaFotos();
+    return await new Promise((ok) => {
+      const pedido = bd.transaction('carpetas').objectStore('carpetas').get('fotos');
+      pedido.onsuccess = () => ok(pedido.result || null);
+      pedido.onerror = () => ok(null);
+    });
+  } catch (_) { return null; }
+}
+async function recordarCarpetaFotos(carpeta) {
+  try { (await bdCarpetaFotos()).transaction('carpetas', 'readwrite').objectStore('carpetas').put(carpeta, 'fotos'); } catch (_) { /* se pedirá de nuevo */ }
+}
+
+/* La carpeta donde dejar las fotos, o null si este navegador no puede
+   (ahí se usa el .zip). Si el dueño cierra la ventana de elegir carpeta
+   lanza AbortError: es un "cancelar", no un error. Se llama ANTES de
+   bajar las fotos: el navegador solo deja abrir esa ventana justo
+   después de un clic. */
+async function elegirCarpetaDeFotos(elegirOtra) {
+  if (typeof window.showDirectoryPicker !== 'function') return null;
+  if (!elegirOtra) {
+    const guardada = await leerCarpetaFotosGuardada();
+    if (guardada) {
+      try { if ((await guardada.requestPermission({ mode: 'readwrite' })) === 'granted') return guardada; } catch (_) { /* se elige de nuevo */ }
+    }
+  }
+  const carpeta = await window.showDirectoryPicker({ id: 'sevelin-fotos', mode: 'readwrite', startIn: 'downloads' });
+  await recordarCarpetaFotos(carpeta);
+  return carpeta;
+}
+
+/* Escribe los archivos ({ nombre, blob }) en carpeta/subcarpeta. */
+async function guardarFotosEnCarpeta(carpeta, subcarpeta, archivos) {
+  const destino = await carpeta.getDirectoryHandle(subcarpeta, { create: true });
+  for (const archivo of archivos) {
+    const escritor = await (await destino.getFileHandle(archivo.nombre, { create: true })).createWritable();
+    await escritor.write(archivo.blob);
+    await escritor.close();
+  }
+}
+
+/* Varias fotos de un clic: sueltas en la carpeta si se puede; si no, en un
+   .zip (bajar 5 archivos sueltos de un solo clic lo bloquea el navegador). */
+async function entregarVariasFotos(carpeta, subcarpeta, archivos, nombreZip) {
+  if (carpeta) {
+    try {
+      await guardarFotosEnCarpeta(carpeta, subcarpeta, archivos);
+      showToast(`${archivos.length} fotos guardadas en la carpeta "${carpeta.name}" → "${subcarpeta}"`, 'ok');
+      return;
+    } catch (err) {
+      console.warn('[FOTOS] no se pudo escribir en la carpeta, se usa el .zip:', err.message);
+    }
+  }
+  if (typeof JSZip === 'undefined') { showToast('No se pudo cargar el compresor .zip', 'err'); return; }
+  const zip = new JSZip();
+  archivos.forEach(a => zip.file(a.nombre, a.blob));
+  dispararDescargaBlob(await zip.generateAsync({ type: 'blob' }), nombreZip);
+}
+
+/* "Descargar todas": una sola foto se baja directa; dos o más quedan sueltas
+   en la carpeta elegida (o en un .zip donde el navegador no puede). */
+async function descargarTodasFotosProducto(evento) {
   const lista = fotosActivas();
   if (!lista.length) return;
   const nombre = elProdNombre?.value.trim() || 'producto';
   const boton = document.getElementById('btnDescargarTodasFotos');
   if (boton) { boton.disabled = true; boton.textContent = '⏳ Descargando…'; }
   try {
+    let carpeta = null;
+    if (lista.length > 1) {
+      try { carpeta = await elegirCarpetaDeFotos(evento?.shiftKey === true); } catch (err) { if (err.name === 'AbortError') return; }
+    }
     const blobs = await Promise.all(lista.map(async (url) => {
       const resp = await fetch(url);
       if (!resp.ok) throw new Error(`No se pudo descargar una de las fotos (${resp.status})`);
@@ -2748,11 +2827,9 @@ async function descargarTodasFotosProducto() {
       return;
     }
 
-    if (typeof JSZip === 'undefined') { showToast('No se pudo cargar el compresor .zip', 'err'); return; }
-    const zip = new JSZip();
-    blobs.forEach((blob, i) => zip.file(nombreArchivoFoto(nombre, i, lista.length, lista[i]), blob));
-    const zipBlob = await zip.generateAsync({ type: 'blob' });
-    dispararDescargaBlob(zipBlob, `${slugArchivo(nombre)}-fotos.zip`);
+    await entregarVariasFotos(carpeta, slugArchivo(nombre),
+      blobs.map((blob, i) => ({ nombre: nombreArchivoFoto(nombre, i, lista.length, lista[i]), blob })),
+      `${slugArchivo(nombre)}-fotos.zip`);
   } catch (err) {
     showToast(err.message || 'No se pudieron descargar las fotos', 'err');
   } finally {
@@ -4505,7 +4582,7 @@ async function aFotoInstagram(url) {
   });
 }
 
-async function descargarFotosInstagram() {
+async function descargarFotosInstagram(evento) {
   const lista = fotosActivas();
   if (!lista.length) return;
   const nombre = elProdNombre?.value.trim() || 'producto';
@@ -4513,6 +4590,10 @@ async function descargarFotosInstagram() {
   if (boton) { boton.disabled = true; boton.textContent = '⏳ Preparando…'; }
 
   try {
+    let carpeta = null;
+    if (lista.length > 1) {
+      try { carpeta = await elegirCarpetaDeFotos(evento?.shiftKey === true); } catch (err) { if (err.name === 'AbortError') return; }
+    }
     const blobs = [];
     for (const url of lista) blobs.push(await aFotoInstagram(url));
     const base = slugArchivo(nombre);
@@ -4520,14 +4601,11 @@ async function descargarFotosInstagram() {
     if (blobs.length === 1) {
       dispararDescargaBlob(blobs[0], `${base}-instagram.jpg`);
     } else {
-      // Mismo criterio que "Descargar todas": varios archivos sueltos de un
-      // solo clic los bloquea el navegador, así que van en un .zip.
-      if (typeof JSZip === 'undefined') { showToast('No se pudo cargar el compresor .zip', 'err'); return; }
-      const zip = new JSZip();
-      blobs.forEach((blob, i) => zip.file(`${base}-instagram-${i + 1}.jpg`, blob));
-      dispararDescargaBlob(await zip.generateAsync({ type: 'blob' }), `${base}-instagram.zip`);
+      // Mismo criterio que "Descargar todas": sueltas en la carpeta, o en un .zip.
+      await entregarVariasFotos(carpeta, `${base}-instagram`,
+        blobs.map((blob, i) => ({ nombre: `${base}-instagram-${i + 1}.jpg`, blob })), `${base}-instagram.zip`);
     }
-    showToast(`${blobs.length} foto(s) en JPG 1080×1350, listas para Instagram`, 'ok');
+    if (!carpeta || blobs.length === 1) showToast(`${blobs.length} foto(s) en JPG 1080×1350, listas para Instagram`, 'ok');
   } catch (err) {
     showToast(err.message || 'No se pudieron preparar las fotos', 'err');
   } finally {
