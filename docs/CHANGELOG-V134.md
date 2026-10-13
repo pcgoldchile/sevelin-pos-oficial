@@ -13,7 +13,12 @@
 - Doble clic o dos personas a la vez: el `update ... .eq('en_camino', true)` es el candado; la segunda recibe 409.
 - Probado: 68 casos del servidor y la maqueta. No probado con la base real ni en celular.
 
-## 2. Pago con tarjeta (#96) — CONSTRUIDO, SIN PUBLICAR (POS `ce4f5a5`, tienda `32ce25f`)
+## 2. Pago con tarjeta (#96) — PUBLICADO EL 13-10-2026 (POS `74a5b6d`, tienda `32ce25f`)
+> **13-10-2026:** el dueño dio el OK. Aplicadas `sql/91` y `supabase/42`, probada en pantalla la ventana "Confirmar
+> pago" (maqueta, pedido de ejemplo #6) y publicados los dos repos. Ese día también se hicieron los 6 pagos de prueba
+> que Transbank pide para validar Webpay (`sevelin-tienda/docs/transbank/VALIDACION-WEBPAY.md`). Lo que sigue describe
+> cómo estaba el 11-10.
+
 - **Tienda:** medio "Tarjeta de débito o crédito". Hoy abre el link de Haulmer (`tuu.cl/sevelin`): el pedido queda
   "Esperando pago". Webpay Plus integrado y probado en el ambiente de pruebas de Transbank, apagado.
 - **POS:** en Pedidos Web, "Confirmar pago" (solo admin): el monto escrito debe calzar con el pedido.

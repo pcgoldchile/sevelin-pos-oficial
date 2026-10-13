@@ -13,9 +13,11 @@ APP DEL TALLER (#100), ya publicada en sevelin-pos-oficial.vercel.app/taller/:
 - Lo cobrado en la app no entra a Ventas ni a la caja del POS: (está bien así / los trabajos de Sevelin
   cobrados en la app deben quedar también como venta del POS) →
 
-PAGO CON TARJETA (#96), construido y sin publicar:
-- (publícalo / todavía no) →
-- #93 Transbank, código de comercio: (es … / sigue en trámite) →
+PAGO CON TARJETA, publicado el 13-10 con el link de Haulmer como puente:
+- Compra real de prueba con el link y "Confirmar pago" en el POS: (la hice y salió bien / falló en … / todavía no) →
+- #93 Transbank, código de comercio (llega de soporte@transbank.cl): (es … / sigue sin llegar) →
+- Si llegó después del 20-10: hay que repetir los 6 pagos de prueba (docs/transbank/VALIDACION-WEBPAY.md de la tienda).
+- En el portal de Transbank, cuotas sin interés: (apagadas / encendidas / no lo encontré) → y mi tarifa es: →
 
 USUARIOS DEL POS (#98), lo que falta:
 - Que el POS también pida RUT y PIN en vez del PIN general: (sí, y apaga el PIN general / sí, pero deja el

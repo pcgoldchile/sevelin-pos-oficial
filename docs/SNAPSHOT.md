@@ -38,10 +38,17 @@ Detalle en `docs/CHANGELOG-V135.md` (y la v134 del 11-10 en `docs/CHANGELOG-V134
 - **Pozo:** partió el 12-10-2026 a pedido del dueño (`pozo_desde`, ya en producción). En pantalla ahora dice
   "C. Patricio". Lo cobrado en la app por trabajos de él suma a su pozo; lo que puso otro no.
 - **Lo cobrado en la app no crea una venta en el POS** (decisión de Claude, dicha al dueño).
-- **v134 (11-10, noche):** Por llegar con varias llegadas y ventanas propias, publicado (`b0b2e24`). Pago con
-  tarjeta construido y **sin publicar** (POS `ce4f5a5`, tienda `32ce25f`; faltan `sql/91` y `supabase/42`).
-- **Pago con tarjeta, sin publicar:** es el único commit local que va delante de `origin/main`. Un `git push` lo
-  publica: antes hay que aplicar `sql/91` y `supabase/42`, y tener el OK del dueño.
+- **v134 (11-10, noche):** Por llegar con varias llegadas y ventanas propias, publicado (`b0b2e24`).
+- **Pago con tarjeta, PUBLICADO el 13-10-2026** con el OK del dueño (POS `74a5b6d` y `9acd5a5`, tienda `32ce25f` y
+  `1297788`; `sql/91` y `supabase/42` aplicadas). sevelin.cl ofrece "Tarjeta de débito o crédito" con el link de
+  Haulmer (puente) y el POS tiene "Confirmar pago" en Pedidos Web, probado en pantalla en la maqueta (pedido de
+  ejemplo #6). Verificado en producción: el checkout muestra las dos formas de pago, `/api/webpay/retorno` responde
+  303 y las rutas de confirmar responden 401 sin sesión. **Falta una compra real de prueba con el link (dueño).**
+- **Webpay Plus (#93):** contrato firmado el 13-10-2026, falta que Transbank mande el código de comercio. La
+  evidencia de validación (6 pagos de prueba, logo de 130x59 y respuestas del formulario) está en
+  `sevelin-tienda/docs/transbank/VALIDACION-WEBPAY.md` y **vence el 20-10-2026**. Webpay sigue apagado: se enciende
+  con tres variables en Vercel que pone el dueño, y ahí el link se apaga solo.
+- `main` local quedó igual a `origin/main` en los dos repos: ya no hay commits guardados sin publicar.
 - **Instalación:** la app trae botón "Instalar" para Android (Chrome) y un service worker que no guarda caché.
   El dueño preguntó por "el archivo para instalar": el APK es opcional y se genera después de publicar.
 - Tabla de pendientes: #70 y #84 descartados a pedido del dueño, #28 cerrado, #72 pasa a Claude ("sí, ordena").
