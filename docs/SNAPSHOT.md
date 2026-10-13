@@ -46,6 +46,12 @@ Detalle en `docs/CHANGELOG-V135.md` (y la v134 del 11-10 en `docs/CHANGELOG-V134
 - **v139 (13-10, sql/95):** textos para **Facebook e Instagram** guardados en cada producto. Se arman sin IA, ordenando lo que
   ya dice la Descripción (`js/redes-texto.js`); sin descripción no se genera nada. Cuadros en la ficha (crear y editar) y botón
   "Armar desde la ficha" en el Facebook de la lista. Ver `docs/CHANGELOG-V139.md`.
+- **Datos cargados el 13-10 (por SQL, a pedido del dueño):** texto de Facebook e Instagram en **189 productos** (los 36 sin
+  descripción quedaron sin texto); **categorías ordenadas** según `docs/propuesta-categorias-2026-10-06.md`, bloques A a D
+  (pendiente #72 cerrado: 9 subcategorías nuevas, 43 productos movidos, 0 publicados sin categoría); y **SEO** escrito para
+  los 20 publicados que tenían descripción y no tenían título ni descripción para Google (quedan 24 sin SEO: no tienen
+  descripción). Pendientes nuevos del dueño: #102 (costo al ojo y lo ya vendido), #103 (36 sin descripción) y #104 (el
+  computador #340 dice 8GB en el nombre y 4GB con monitor en la descripción).
 - **Pozo:** partió el 12-10-2026 a pedido del dueño (`pozo_desde`, ya en producción). En pantalla ahora dice
   "C. Patricio". Lo cobrado en la app por trabajos de él suma a su pozo; lo que puso otro no.
 - **Lo cobrado en la app no crea una venta en el POS** (decisión de Claude, dicha al dueño).

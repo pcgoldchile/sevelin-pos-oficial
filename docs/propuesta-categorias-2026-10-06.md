@@ -1,6 +1,10 @@
 # Propuesta de categorías (pendiente #72) — 06-10-2026
 
-**Nada de esto está aplicado.** Es una propuesta para que la apruebes por bloques. Responde con las letras que
+> **APLICADA el 13-10-2026 (bloques A, B, C y D).** El dueño respondió "sí, ordena" el 11-10-2026. Diferencias con lo
+> escrito abajo: "Periféricos › Teclados" no se borró (tiene 1 producto); el Motorola #337 quedó en "Celulares y
+> Smartphones", que el dueño creó después; el bloque E (monitores en dos grupos) sigue sin decidir.
+
+Lo que sigue es la propuesta original, tal como se escribió. Responde con las letras que
 quieres, por ejemplo: "A, B y D sí; C no".
 
 Revisé los 222 productos sin archivar (214 publicados) y las 50 categorías de la tabla (15 principales y 35
