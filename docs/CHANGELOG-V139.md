@@ -23,6 +23,15 @@ Instagram, y que se carguen las que faltan. Ese día la IA (Gemini) andaba lenta
 - **Instagram:** pie de foto más corto (introducción recortada a una oración completa, hasta 6 características, 12
   hashtags separados por espacios), con tope de 2.200 letras.
 
+- **Usa la descripción que haya:** la de la ficha y, si está vacía, la publicada en la tienda (`descripcion_web`). 50
+  productos solo tenían esa.
+- **Productos por encargo:** el bloque no promete "envío hoy"; dice que se pide al proveedor al confirmar la compra.
+
+## Carga del 13-10-2026
+Se guardaron los dos textos en **189 productos** (todos los que tienen descripción), por SQL y solo donde el campo
+estaba vacío: los 3 textos que el dueño ya había escrito quedaron intactos. Los 36 productos sin ninguna descripción
+quedaron sin texto, como manda la regla.
+
 ## Decidido por Claude (por confirmar)
 - El formato de Instagram: no había plantilla del dueño.
 - No hay botón de IA para Instagram: se arma siempre desde la descripción.

@@ -1622,6 +1622,7 @@ function productoDelFormularioParaRedes() {
     marca: elProdMarca?.value.trim() || '',
     condicion: elProdCondicion?.value || 'nuevo',
     meses_garantia: elProdMesesGarantia?.value,
+    es_pedido_encargo: !!(elProdEsEncargo && elProdEsEncargo.checked),
     categoria_web: categoria.categoria_web || '',
     subcategoria_web: categoria.subcategoria_web || '',
     descripcion: elProdDescripcion?.value || ''

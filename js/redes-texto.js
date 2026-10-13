@@ -95,6 +95,13 @@ function partesDeFichaParaRedes(html) {
   return partes;
 }
 
+/* La descripción del producto: la de la ficha y, si está vacía, la que se publicó
+   en la tienda (el editor de la ficha carga las dos en ese mismo orden). */
+function descripcionParaRedes(p) {
+  const limpia = (t) => { const x = String(t || '').trim(); return x && x.toLowerCase() !== 'null' ? x : ''; };
+  return limpia(p?.descripcion) || limpia(p?.descripcion_web);
+}
+
 function sinAcentosRedes(texto) {
   return String(texto || '').normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
@@ -230,7 +237,7 @@ function fichaAlcanzaParaRedes(partes) {
 
 /* PUBLICACIÓN DE FACEBOOK: el mismo orden de la plantilla que usa la IA. */
 function armarTextoFacebook(p) {
-  const partes = partesDeFichaParaRedes(p?.descripcion);
+  const partes = partesDeFichaParaRedes(descripcionParaRedes(p));
   if (!fichaAlcanzaParaRedes(partes)) return '';
   const servicio = !!p?.es_servicio;
   const bloques = [encabezadoParaRedes(p)];
@@ -245,7 +252,11 @@ function armarTextoFacebook(p) {
   }
   if (partes.noIncluye.length) bloques.push('🚫 NO INCLUYE\n\n' + partes.noIncluye.slice(0, 6).map(c => '❌ ' + c).join('\n'));
 
-  bloques.push(servicio
+  // Un producto por encargo no está en la tienda: no se promete envío hoy ni stock
+  const encargo = !servicio && !!p?.es_pedido_encargo;
+  bloques.push(encargo
+    ? '📌 PRODUCTO POR ENCARGO · RETIRO PRESENCIAL SECTOR 11 SEPTIEMBRE O ENVÍO EN ARICA\n📍 San Rafael 896, Arica. Entrada por Robinson Rojas: busca los carteles de servicio técnico.\n⚠️ Se pide al proveedor cuando confirmas tu compra. Escríbenos antes y te confirmamos el plazo de llegada.'
+    : servicio
     ? '📌 SERVICIO TÉCNICO EN ARICA, SECTOR 11 SEPTIEMBRE\n📍 San Rafael 896, Arica. Entrada por Robinson Rojas: busca los carteles de servicio técnico.\n⚠️ Antes de venir, escríbenos: te confirmamos el horario y coordinamos la recepción de tu equipo.'
     : '📌 RETIRO PRESENCIAL SECTOR 11 SEPTIEMBRE O ENVÍO HOY EN ARICA\n📍 San Rafael 896, Arica. Entrada por Robinson Rojas: busca los carteles de servicio técnico.\n⚠️ Antes de venir, consulta siempre la disponibilidad del producto. Escríbenos y te confirmamos el stock y el horario, para que tu pedido esté listo cuando llegues.');
   bloques.push('🕐 Horario de atención: Consulta nuestros horarios actualizados en nuestros canales digitales.');
@@ -265,7 +276,7 @@ function armarTextoFacebook(p) {
 /* PIE DE FOTO DE INSTAGRAM: más corto, con los hashtags separados por espacios.
    Si no cabe en lo que acepta Instagram, se van quitando características. */
 function armarTextoInstagram(p) {
-  const partes = partesDeFichaParaRedes(p?.descripcion);
+  const partes = partesDeFichaParaRedes(descripcionParaRedes(p));
   if (!fichaAlcanzaParaRedes(partes)) return '';
   const servicio = !!p?.es_servicio;
   const armar = (cuantas) => {
@@ -279,6 +290,7 @@ function armarTextoInstagram(p) {
     const cierre = ['📍 San Rafael 896, Arica. Entrada por Robinson Rojas.', `📲 WhatsApp: ${REDES_WHATSAPP}`,
       servicio ? '🛍️ Más servicios en www.sevelin.cl' : '🛍️ Compra online en www.sevelin.cl'];
     if (!servicio) cierre.push('🇨🇱 Envíos a todo Chile.');
+    if (!servicio && p?.es_pedido_encargo) cierre.push('📦 Producto por encargo: escríbenos y te confirmamos el plazo de llegada.');
     const garantia = lineaGarantiaParaRedes(p);
     if (garantia) cierre.push(garantia);
     bloques.push(cierre.join('\n'));

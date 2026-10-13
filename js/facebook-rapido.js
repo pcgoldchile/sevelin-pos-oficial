@@ -35,7 +35,7 @@ function linkFacebookValido(texto) {
 /* Texto plano de la descripción de la ficha (viene en HTML). */
 function descripcionPlanaDeProducto(p) {
   const caja = document.createElement('div');
-  caja.innerHTML = String(p?.descripcion || '').replace(/<\/(p|li|h[1-6])>|<br\s*\/?>/gi, '\n');
+  caja.innerHTML = String((typeof descripcionParaRedes === 'function' ? descripcionParaRedes(p) : p?.descripcion) || '').replace(/<\/(p|li|h[1-6])>|<br\s*\/?>/gi, '\n');
   return (caja.textContent || '').replace(/\n{3,}/g, '\n\n').trim();
 }
 
