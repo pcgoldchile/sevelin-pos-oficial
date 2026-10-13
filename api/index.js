@@ -2113,6 +2113,7 @@ Escríbenos antes de venir a retirar o solicitar tu despacho. Así te confirmamo
 🕐 Horario de atención: Consulta nuestros horarios actualizados en nuestros canales digitales.
 
 📲 WhatsApp: +56935750828
+➕5️⃣6️⃣9️⃣3️⃣5️⃣7️⃣5️⃣0️⃣8️⃣2️⃣8️⃣
 📸 Instagram: @sevelin.cl
 
 🇨🇱 Envíos a todo Chile.
@@ -2128,6 +2129,8 @@ Escríbenos antes de venir a retirar o solicitar tu despacho. Así te confirmamo
 Si el producto es reacondicionado, usado, de segunda mano, abierto, con detalles estéticos o tiene cualquier condición especial, indícalo claramente y de forma profesional — nunca lo presentes como nuevo si no corresponde.
 
 No incluyas dirección física, referencias de ubicación ni dirección de la tienda.
+
+La línea del número escrito con emojis (➕5️⃣6️⃣9️⃣3️⃣5️⃣7️⃣5️⃣0️⃣8️⃣2️⃣8️⃣) va siempre, justo debajo del WhatsApp y copiada tal cual, sin espacios ni cambios: Facebook a veces oculta los teléfonos escritos con números normales.
 
 No inventes especificaciones técnicas, accesorios incluidos, compatibilidades, autonomía, potencia, dimensiones, capacidad, contenido de la caja, stock, tiempos de despacho, condiciones de instalación, garantía adicional ni ninguna otra característica que no esté confirmada en la información que te doy.
 
