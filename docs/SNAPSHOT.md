@@ -12,6 +12,16 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 14-10-2026 · v140 publicada: Bodega en la app del taller
+
+Detalle en `docs/CHANGELOG-V140.md`. Sin migración (usa `sql/60`).
+
+- Pestaña "Bodega" en `/taller/`: escanear el código con la cámara (Chrome de Android), ver categoría y en qué lugar
+  está, guardarlo en un lugar y ver qué hay en cada lugar. La usan todos los del taller; no muestra costos.
+- Lugares A1 a I5 creados en producción (9 muebles × 5 repisas, de abajo hacia arriba). Las cajas las crea el dueño.
+- Lo anotado en el celular se ve en la ficha del POS (mismas tablas de lugares).
+- Sin probar: la cámara de un teléfono real.
+
 ## 13-10-2026 · v136 publicada: Facebook desde la lista de productos y fotos sin .zip
 
 Detalle en `docs/CHANGELOG-V136.md`. Migración `sql/93` aplicada.

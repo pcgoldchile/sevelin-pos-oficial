@@ -218,6 +218,7 @@
   }
 
   async function cargarLista() {
+    if (S.pestana === 'bodega') return cargarLugares();
     if (S.pestana === 'cuentas') return cargarCuentas();
     S.cargandoLista = true;
     pintar();
@@ -416,7 +417,8 @@
         ? `Falta decir en el POS quién es ${!S.duenoId ? 'el dueño de Sevelin' : 'C. Patricio'}: botón Usuarios, casilla "En las cuentas del taller". Sin eso no se pueden sacar las cuentas.`
         : 'Todavía no se puede registrar: falta que el administrador diga en el POS quién es el dueño de Sevelin.'}</div>` : '';
     let contenido;
-    if (S.pestana === 'cuentas') contenido = vistaCuentas();
+    if (S.pestana === 'bodega') contenido = vistaBodega();
+    else if (S.pestana === 'cuentas') contenido = vistaCuentas();
     else if (S.cargandoLista && !S.trabajos.length) contenido = '<p class="cargando">Cargando…</p>';
     else if (!S.trabajos.length) {
       contenido = S.pestana === 'pendientes'
@@ -426,11 +428,12 @@
 
     return barra('Taller Sevelin', { derecha: `<span class="barra-quien">${esc(S.yo.nombre)}</span><button type="button" class="barra-btn" data-a="salir">Salir</button>` }) +
       `<main class="cuerpo">
-        <button type="button" class="btn-principal" data-a="nuevo">＋ Nuevo trabajo</button>
-        ${faltaPapel}
+        ${S.pestana === 'bodega' ? '' : `<button type="button" class="btn-principal" data-a="nuevo">＋ Nuevo trabajo</button>
+        ${faltaPapel}`}
         <div class="pestanas" role="tablist">
           <button type="button" role="tab" class="${S.pestana === 'pendientes' ? 'on' : ''}" data-a="pestana" data-v="pendientes">Pendientes</button>
           <button type="button" role="tab" class="${S.pestana === 'cobrados' ? 'on' : ''}" data-a="pestana" data-v="cobrados">Cobrados</button>
+          <button type="button" role="tab" class="${S.pestana === 'bodega' ? 'on' : ''}" data-a="pestana" data-v="bodega">Bodega</button>
           ${S.admin ? `<button type="button" role="tab" class="${S.pestana === 'cuentas' ? 'on' : ''}" data-a="pestana" data-v="cuentas">Cuentas</button>` : ''}
         </div>
         ${contenido}
@@ -723,7 +726,191 @@
           <br><button type="button" class="btn-enlace" data-a="anularpago" data-v="${Number(p.id)}" style="padding:2px 0;color:var(--rojo)">Anular</button></span><span>${plata(p.monto)}</span></div>`).join('')}</div>` : ''}`;
   }
 
+  /* ---------- Bodega (v140): dónde está guardado cada producto ----------
+     Mismos lugares que el POS (sql/60). La cámara lee el código con el
+     lector que trae Chrome en Android (BarcodeDetector): sin librerías. */
+  const bodegaNueva = () => ({ lugares: null, resultados: null, producto: null, lugar: null, codigoSinDueno: null, texto: '', buscando: false });
+  S.bodega = bodegaNueva();
+
+  async function cargarLugares() {
+    try {
+      S.bodega.lugares = await pedir('/taller/bodega/lugares');
+    } catch (err) {
+      aviso(err.message, true);
+      S.bodega.lugares = S.bodega.lugares || [];
+    }
+    if (S.pestana === 'bodega' && S.vista === 'inicio') pintar();
+  }
+
+  /* "A1".."I5" en filas por mueble; lo que no siga ese patrón (cajas, vitrina) va en "Otros". */
+  function lugaresPorMueble(lugares) {
+    const grupos = new Map();
+    lugares.forEach(l => {
+      const m = /^([A-Z])\s*-?\s*\d+$/i.exec(l.nombre.trim());
+      const clave = m ? m[1].toUpperCase() : 'Otros';
+      if (!grupos.has(clave)) grupos.set(clave, []);
+      grupos.get(clave).push(l);
+    });
+    return [...grupos].sort((a, b) => (a[0] === 'Otros') - (b[0] === 'Otros') || a[0].localeCompare(b[0]));
+  }
+
+  function grillaLugares(accion, marcados = new Set()) {
+    const lugares = S.bodega.lugares || [];
+    if (!lugares.length) return '<p class="paso-ayuda">Todavía no hay lugares. Crea el primero con "＋ Lugar nuevo".</p>';
+    return lugaresPorMueble(lugares).map(([mueble, lista]) => `<div class="mueble">
+        <span class="mueble-letra">${esc(mueble)}</span>
+        <div class="fila${mueble === 'Otros' ? '' : ' cinco'}">${lista.map(l => `<button type="button" class="op lugar${marcados.has(Number(l.id)) ? ' on' : ''}" data-a="${accion}" data-v="${Number(l.id)}">
+          ${esc(l.nombre)}${accion === 'verlugar' && l.productos ? `<small>${Number(l.productos)}</small>` : ''}</button>`).join('')}</div>
+      </div>`).join('');
+  }
+
+  function tarjetaProductoBodega(p, accion = 'verproducto') {
+    const donde = p.lugares.length ? p.lugares.map(l => `<span class="marca ${l.principal ? 'azul' : ''}">📍 ${esc(l.nombre)}</span>`).join('')
+      : '<span class="marca ambar">Sin lugar</span>';
+    return `<button type="button" class="tarjeta trabajo" data-a="${accion}" data-v="${Number(p.id)}">
+      <div class="trabajo-cabeza">
+        ${p.foto ? `<img class="miniatura" src="${esc(p.foto)}" alt="" loading="lazy">` : '<div class="trabajo-icono" aria-hidden="true">📦</div>'}
+        <div><div class="trabajo-modelo">${esc(p.nombre)}</div>
+          <div class="trabajo-linea">${esc([p.categoria, p.subcategoria].filter(Boolean).join(' › ') || 'Sin categoría')}</div></div>
+      </div>
+      <div class="marcas">${donde}</div>
+    </button>`;
+  }
+
+  function vistaProductoBodega(p) {
+    const b = S.bodega;
+    const marcados = new Set(p.lugares.map(l => Number(l.id)));
+    const pedirCodigo = b.codigoSinDueno && !p.codigo_barras
+      ? `<button type="button" class="btn-principal" data-a="asociarcodigo" style="margin-top:12px">Guardar el código ${esc(b.codigoSinDueno)} en este producto</button>` : '';
+    return `<div class="tarjeta">
+        <div class="trabajo-cabeza">
+          ${p.foto ? `<img class="miniatura grande" src="${esc(p.foto)}" alt="">` : ''}
+          <div><div class="trabajo-modelo">${esc(p.nombre)}</div>
+            <div class="trabajo-linea">${esc([p.categoria, p.subcategoria].filter(Boolean).join(' › ') || 'Sin categoría')}</div></div>
+        </div>
+        <div class="dato"><span>Stock</span><span>${p.stock === null ? 'Ilimitado' : Number(p.stock)}</span></div>
+        <div class="dato"><span>Código de barras</span><span>${esc(p.codigo_barras || 'No tiene')}</span></div>
+        ${pedirCodigo}
+      </div>
+      <p class="seccion">Dónde está guardado</p>
+      ${p.lugares.length ? `<div class="tarjeta">${p.lugares.map(l => `<div class="dato"><span>📍 <b style="color:var(--tinta)">${esc(l.nombre)}</b>${l.principal ? ' <small>(se busca primero)</small>' : ''}</span>
+          <span><button type="button" class="btn-enlace" data-a="sacarlugar" data-v="${Number(l.id)}" style="color:var(--rojo)">Sacar</button></span></div>`).join('')}</div>`
+        : '<div class="nota-suave">Este producto todavía no tiene lugar. Toca dónde lo estás guardando.</div>'}
+      <p class="seccion">${p.lugares.length ? 'Guardarlo también en' : 'Guardarlo en'}</p>
+      ${grillaLugares('ponerlugar', marcados)}
+      <button type="button" class="op punteada" data-a="lugarnuevo" style="width:100%;margin-top:8px">＋ Lugar nuevo (ej: "Caja cables USB-C")</button>
+      <button type="button" class="btn-secundario" data-a="cerrarbodega" style="margin-top:18px">Listo, escanear otro</button>`;
+  }
+
+  function vistaBodega() {
+    const b = S.bodega;
+    if (b.lugar) {
+      const { lugar, productos } = b.lugar;
+      return `<div class="tarjeta"><div class="trabajo-modelo">📍 ${esc(lugar.nombre)}</div>
+          <div class="trabajo-linea">${productos.length ? `${productos.length} producto${productos.length === 1 ? '' : 's'} guardado${productos.length === 1 ? '' : 's'} aquí` : 'No hay nada anotado en este lugar'}</div></div>
+        ${productos.map(p => tarjetaProductoBodega(p)).join('')}
+        <button type="button" class="btn-secundario" data-a="cerrarbodega" style="margin-top:8px">Volver</button>`;
+    }
+    if (b.producto) return vistaProductoBodega(b.producto);
+    const resultados = b.resultados === null ? ''
+      : b.resultados.length ? b.resultados.map(p => tarjetaProductoBodega(p)).join('')
+        : `<div class="vacio"><b>No encontré nada</b>Prueba con otra palabra del nombre.</div>`;
+    return `<button type="button" class="btn-principal" data-a="escanear">📷 Escanear código de barras</button>
+      <form data-form="buscarbodega" class="buscar-bodega">
+        <input class="campo" id="textoBodega" maxlength="80" autocomplete="off" enterkeyhint="search" placeholder="O escribe el nombre o el código" value="${esc(b.texto)}">
+        <button type="submit" class="btn-principal btn-chico">${b.buscando ? '…' : 'Buscar'}</button>
+      </form>
+      ${b.codigoSinDueno ? `<div class="nota-suave">El código <b>${esc(b.codigoSinDueno)}</b> no está en ningún producto. Busca el producto por nombre y tócalo: ahí puedes guardarle este código.</div>` : ''}
+      ${resultados}
+      <p class="seccion">Lugares${b.lugares && b.lugares.length ? ' · toca uno para ver qué hay' : ''}</p>
+      ${b.lugares === null ? '<p class="cargando">Cargando…</p>' : grillaLugares('verlugar')}
+      <button type="button" class="op punteada" data-a="lugarnuevo" style="width:100%;margin-top:8px">＋ Lugar nuevo</button>`;
+  }
+
+  /* ---------- La cámara ---------- */
+  let camara = null;   // { stream, reloj }
+  function vistaEscaner() {
+    return barra('Escanear código', { derecha: '<button type="button" class="barra-btn" data-a="cerrarescaner">Cancelar</button>' }) +
+      `<main class="cuerpo escaner">
+        <div class="visor"><video id="videoEscaner" playsinline muted></video><i class="mira" aria-hidden="true"></i></div>
+        <p class="paso-ayuda" style="text-align:center;margin-top:12px">Apunta al código de barras. Se lee solo.</p>
+        <button type="button" class="btn-secundario" data-a="cerrarescaner">Cancelar</button>
+      </main>`;
+  }
+  function apagarCamara() {
+    if (!camara) return;
+    clearInterval(camara.reloj);
+    camara.stream.getTracks().forEach(t => t.stop());
+    camara = null;
+  }
+  async function abrirEscaner() {
+    if (!('BarcodeDetector' in window) || !navigator.mediaDevices?.getUserMedia) {
+      await ventana({ titulo: 'Este teléfono no lee códigos con la cámara', texto: 'Funciona en Chrome de Android. Mientras, escribe el código o el nombre del producto en el buscador.', si: 'Entendido', no: '' });
+      return;
+    }
+    let formatos = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'qr_code'];
+    try { const soportados = await BarcodeDetector.getSupportedFormats(); formatos = formatos.filter(f => soportados.includes(f)); } catch (_) { /* usa la lista completa */ }
+    S.vista = 'escaner';
+    pintar();
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+      const $video = document.getElementById('videoEscaner');
+      if (!$video || S.vista !== 'escaner') { stream.getTracks().forEach(t => t.stop()); return; }
+      $video.srcObject = stream;
+      await $video.play();
+      const detector = new BarcodeDetector({ formats: formatos });
+      let ocupado = false;
+      camara = { stream, reloj: setInterval(async () => {
+        if (ocupado || !camara) return;
+        ocupado = true;
+        try {
+          const codigos = await detector.detect($video);
+          const leido = codigos.find(c => c.rawValue && c.rawValue.trim());
+          if (leido && camara) {
+            apagarCamara();
+            if (navigator.vibrate) navigator.vibrate(80);
+            S.vista = 'inicio';
+            await buscarBodega({ codigo: leido.rawValue.trim() });
+          }
+        } catch (_) { /* cuadro sin código: se sigue mirando */ }
+        ocupado = false;
+      }, 250) };
+    } catch (err) {
+      apagarCamara();
+      S.vista = 'inicio';
+      pintar();
+      aviso(err && err.name === 'NotAllowedError' ? 'Falta dar permiso para usar la cámara (candado junto a la dirección).' : 'No se pudo abrir la cámara.', true);
+    }
+  }
+
+  async function buscarBodega({ codigo = '', texto = '' }) {
+    const b = S.bodega;
+    Object.assign(b, { buscando: true, producto: null, lugar: null, resultados: null });
+    if (codigo) b.texto = '';
+    pintar();
+    try {
+      const consulta = codigo ? 'codigo=' + encodeURIComponent(codigo) : 'q=' + encodeURIComponent(texto);
+      const { productos } = await pedir('/taller/bodega/buscar?' + consulta);
+      // Un código leído que calza con un solo producto lo abre directo; si no calza con nada, queda pendiente para asociarlo.
+      if (codigo) b.codigoSinDueno = productos.length ? null : codigo;
+      if (productos.length === 1) b.producto = productos[0];
+      else b.resultados = productos;
+    } catch (err) {
+      aviso(err.message, true);
+    }
+    b.buscando = false;
+    pintar();
+    arriba();
+  }
+
+  function cambiarProductoBodega(p) {
+    const b = S.bodega;
+    b.producto = p;
+    if (b.resultados) b.resultados = b.resultados.map(r => (mismo(r.id, p.id) ? p : r));
+  }
+
   function pintar() {
+    if (S.vista === 'escaner') { if (!document.getElementById('videoEscaner')) $app.innerHTML = vistaEscaner(); return; }
     if (S.vista === 'login') $app.innerHTML = vistaLogin();
     else if (S.vista === 'inicio') $app.innerHTML = vistaInicio();
     else if (S.vista === 'asistente') $app.innerHTML = vistaAsistente();
@@ -947,6 +1134,84 @@
       return false;
     }
   };
+  /* ---------- Acciones de la bodega ---------- */
+  Object.assign(ACCIONES, {
+    escanear: () => { abrirEscaner(); return false; },
+    cerrarescaner: () => { apagarCamara(); S.vista = 'inicio'; pintar(); return false; },
+    cerrarbodega: () => {
+      const b = S.bodega;
+      // Con un código leído sin dueño todavía, se vuelve a la búsqueda: quizás se abrió el producto equivocado.
+      if (b.producto && b.codigoSinDueno) { b.producto = null; arriba(); return; }
+      Object.assign(b, { producto: null, lugar: null, resultados: null, codigoSinDueno: null, texto: '' });
+      cargarLugares();
+      arriba();
+    },
+    verproducto: (v) => {
+      const b = S.bodega;
+      const p = (b.resultados || []).find(r => mismo(r.id, v)) || (b.lugar ? b.lugar.productos.find(r => mismo(r.id, v)) : null);
+      if (p) { b.producto = p; b.lugar = null; arriba(); }
+    },
+    verlugar: async (v) => {
+      try {
+        S.bodega.lugar = await pedir('/taller/bodega/lugares/' + Number(v));
+        S.bodega.producto = null;
+        pintar(); arriba();
+      } catch (err) { aviso(err.message, true); }
+      return false;
+    },
+    ponerlugar: async (v) => {
+      const p = S.bodega.producto;
+      if (!p) return false;
+      if (p.lugares.some(l => mismo(l.id, v))) { aviso('Ya está anotado en ese lugar'); return false; }
+      try {
+        cambiarProductoBodega(await pedir('/taller/bodega/productos/' + p.id + '/lugares', { metodo: 'POST', cuerpo: { ubicacion_id: Number(v) } }));
+        const l = (S.bodega.lugares || []).find(x => mismo(x.id, v));
+        if (l) l.productos += 1;
+        aviso('Guardado en ' + (l ? l.nombre : 'el lugar'));
+        pintar();
+      } catch (err) { aviso(err.message, true); }
+      return false;
+    },
+    sacarlugar: async (v) => {
+      const p = S.bodega.producto;
+      const l = p && p.lugares.find(x => mismo(x.id, v));
+      if (!l) return false;
+      if (!(await ventana({ titulo: `¿Sacarlo de ${l.nombre}?`, texto: 'Solo se borra la anotación: el producto y su stock no cambian.', si: 'Sacar', no: 'Dejarlo', peligro: true }))) return false;
+      try {
+        cambiarProductoBodega(await pedir('/taller/bodega/productos/' + p.id + '/lugares/' + Number(v), { metodo: 'DELETE' }));
+        const lugar = (S.bodega.lugares || []).find(x => mismo(x.id, v));
+        if (lugar) lugar.productos = Math.max(0, lugar.productos - 1);
+        pintar();
+      } catch (err) { aviso(err.message, true); }
+      return false;
+    },
+    lugarnuevo: async () => {
+      const nombreLugar = await ventana({ titulo: 'Lugar nuevo', texto: 'Mueble con letra y repisa con número (de abajo hacia arriba), o el nombre de una caja.', campo: { ejemplo: 'B3 o Caja cables USB-C', tope: 60 }, si: 'Crear' });
+      if (!nombreLugar) return false;
+      try {
+        const nuevo = await pedir('/taller/bodega/lugares', { metodo: 'POST', cuerpo: { nombre: nombreLugar } });
+        const lugares = S.bodega.lugares || (S.bodega.lugares = []);
+        if (!lugares.some(l => mismo(l.id, nuevo.id))) lugares.push(nuevo);
+        lugares.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { numeric: true, sensitivity: 'base' }));
+        if (nuevo.ya_existia) aviso(nuevo.nombre + ' ya existía');
+        if (S.bodega.producto) return ACCIONES.ponerlugar(nuevo.id);
+        pintar();
+      } catch (err) { aviso(err.message, true); }
+      return false;
+    },
+    asociarcodigo: async () => {
+      const b = S.bodega, p = b.producto;
+      if (!p || !b.codigoSinDueno) return false;
+      try {
+        cambiarProductoBodega(await pedir('/taller/bodega/productos/' + p.id + '/codigo', { metodo: 'PUT', cuerpo: { codigo: b.codigoSinDueno } }));
+        b.codigoSinDueno = null;
+        aviso('Código guardado: la próxima vez se encuentra escaneando');
+        pintar();
+      } catch (err) { aviso(err.message, true); }
+      return false;
+    }
+  });
+
   /* Las que pintan por su cuenta (o no cambian nada a la vista) no repintan al terminar. */
   const NO_REPINTAR = new Set(['salir', 'nuevo', 'pestana', 'abrir', 'volver', 'atras', 'siguiente', 'guardar', 'confirmarcobro']);
 
@@ -976,6 +1241,15 @@
   });
 
   $app.addEventListener('submit', async (e) => {
+    if (e.target.dataset.form === 'buscarbodega') {
+      e.preventDefault();
+      const texto = document.getElementById('textoBodega').value.trim();
+      S.bodega.texto = texto;
+      if (!texto) { aviso('Escribe el nombre o el código', true); return; }
+      // Solo números (o un SKU sin espacios largo) se busca como código; lo demás, por nombre.
+      await buscarBodega(/^\d{6,}$/.test(texto) ? { codigo: texto } : { texto });
+      return;
+    }
     if (e.target.dataset.form !== 'login') return;
     e.preventDefault();
     const rut = document.getElementById('rut').value.trim();

@@ -26,6 +26,21 @@ bases.pos.taller_catalogo = [...sql.matchAll(/\('(REPUESTO|CALIDAD_PANTALLA|LUGA
 const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(new Date());
 bases.pos.acuerdo_padres = [{ id: 1, tope_mercaderia: 3000000, cuota_semanal: 1000000, pozo_minimo_mensual: 1000000, pozo_desde: hoy }];
 
+// Bodega (v140): unos productos de verdad del catálogo y los lugares A1..I5, como en producción.
+const prod = (id, nombre, codigo_barras, categoria_web, subcategoria_web, stock, extra = {}) =>
+  ({ id, nombre, sku: null, codigo_barras, categoria_web, subcategoria_web, stock, stock_ilimitado: false, imagen_urls: [], archivado: false, es_servicio: false, ...extra });
+bases.pos.productos = [
+  prod(177, 'Cable USB-C a USB-C 2 metros Carga Rápida', '7801234567890', 'Cables y Adaptadores', 'Cables USB y de Carga', 24),
+  prod(342, 'Cargador de Pared USB Carga Rápida 33W Power Delivery', '6941234500017', 'Cargadores', null, 0),
+  prod(173, 'Tarjeta de Memoria Kingston 128 GB', null, 'Almacenamiento', 'Tarjetas de Memoria', 9),
+  prod(161, 'Memoria RAM Hiksemi 8 GB DDR4', null, 'Componentes PC', 'Memorias RAM', 4),
+  prod(305, 'Chequeo de Salud de Disco Duro o SSD (por unidad)', null, 'Servicios Técnicos', 'Formateo y Respaldo de Datos', 0, { es_servicio: true, stock_ilimitado: true }),
+  prod(900, 'Producto archivado de prueba', '1111111111111', 'Audio', null, 1, { archivado: true })
+];
+bases.pos.ubicaciones = 'ABCDEFGHI'.split('').flatMap((letra, i) => [1, 2, 3, 4, 5].map(n =>
+  ({ id: i * 5 + n, nombre: letra + n, tipo: 'estante', descripcion: null, foto_url: null, activo: true, creado_en: new Date().toISOString() })));
+bases.pos.producto_ubicaciones = [];
+
 const api = require(path.join(POS, 'api', 'index.js'));
 const jwt = require('jsonwebtoken');
 const vercel = JSON.parse(fs.readFileSync(path.join(POS, 'vercel.json'), 'utf8'));

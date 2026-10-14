@@ -18604,6 +18604,219 @@ app.delete('/api/taller/pagos/:id', authTaller(true), async (req, res) => {
   }
 });
 
+/* ============================================================
+   BODEGA EN LA APP DEL TALLER (v140, dueño 14-10-2026)
+   ------------------------------------------------------------
+   "Una app donde pueda escanear el código de barras para saber qué
+   categoría y en qué cajón van, y si no tienen, agregar en qué cajón van."
+   Usa los mismos lugares del POS (sql/60: `ubicaciones` y
+   `producto_ubicaciones`): lo anotado en el celular se ve en la ficha.
+   Cualquiera del taller puede buscar y anotar lugares; nadie ve costos
+   ni toca precio ni stock. Sin persona (PIN general) solo se mira.
+   ============================================================ */
+const COLUMNAS_PRODUCTO_BODEGA = 'id, nombre, sku, codigo_barras, categoria_web, subcategoria_web, stock, stock_ilimitado, imagen_urls';
+
+function productoParaBodega(p, lugares) {
+  return {
+    id: p.id, nombre: p.nombre, sku: p.sku || null, codigo_barras: p.codigo_barras || null,
+    categoria: p.categoria_web || null, subcategoria: p.subcategoria_web || null,
+    stock: p.stock_ilimitado ? null : num(p.stock),
+    foto: Array.isArray(p.imagen_urls) && p.imagen_urls.length ? p.imagen_urls[0] : null,
+    lugares: lugares || []
+  };
+}
+
+/* Los lugares de varios productos de una vez: { producto_id: [{id, nombre, principal}] }. */
+async function lugaresDeProductosBodega(ids) {
+  const porProducto = {};
+  if (!ids.length) return porProducto;
+  const { data: filas, error } = await db.from('producto_ubicaciones').select('producto_id, ubicacion_id, principal').in('producto_id', ids);
+  if (error) throw error;
+  const idsLugar = [...new Set((filas || []).map(f => f.ubicacion_id))];
+  const { data: lugares, error: errL } = idsLugar.length
+    ? await db.from('ubicaciones').select('id, nombre').in('id', idsLugar) : { data: [] };
+  if (errL) throw errL;
+  const nombre = Object.fromEntries((lugares || []).map(l => [l.id, l.nombre]));
+  (filas || []).forEach(f => {
+    if (!nombre[f.ubicacion_id]) return;
+    (porProducto[f.producto_id] = porProducto[f.producto_id] || []).push({ id: f.ubicacion_id, nombre: nombre[f.ubicacion_id], principal: !!f.principal });
+  });
+  Object.values(porProducto).forEach(l => l.sort((a, b) => (b.principal ? 1 : 0) - (a.principal ? 1 : 0)));
+  return porProducto;
+}
+
+async function productosParaBodega(productos) {
+  const lugares = await lugaresDeProductosBodega(productos.map(p => p.id));
+  return productos.map(p => productoParaBodega(p, lugares[p.id]));
+}
+
+app.get('/api/taller/bodega/lugares', authTaller(), async (req, res) => {
+  try {
+    const [{ data: lugares, error }, { data: filas, error: errF }] = await Promise.all([
+      db.from('ubicaciones').select('id, nombre, tipo').eq('activo', true).limit(500),
+      db.from('producto_ubicaciones').select('ubicacion_id').limit(10000)
+    ]);
+    if (error || errF) return enviarErrorBD(res, error || errF, 'GET /api/taller/bodega/lugares');
+    const cuenta = {};
+    (filas || []).forEach(f => { cuenta[f.ubicacion_id] = (cuenta[f.ubicacion_id] || 0) + 1; });
+    const lista = (lugares || []).map(l => ({ id: l.id, nombre: l.nombre, tipo: l.tipo || null, productos: cuenta[l.id] || 0 }));
+    lista.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { numeric: true, sensitivity: 'base' }));
+    res.json(lista);
+  } catch (err) {
+    return enviarErrorBD(res, err, 'GET /api/taller/bodega/lugares');
+  }
+});
+
+/* Busca por código (lo que lee la cámara: código de barras o SKU exacto) o
+   por nombre (todas las palabras escritas, en cualquier orden). */
+app.get('/api/taller/bodega/buscar', authTaller(), async (req, res) => {
+  try {
+    const codigo = String(req.query.codigo || '').trim().slice(0, 64);
+    const texto = String(req.query.q || '').trim().slice(0, 80);
+    if (!codigo && !texto) return enviarError(res, 400, 'Escanea un código o escribe el nombre');
+    const base = () => db.from('productos').select(COLUMNAS_PRODUCTO_BODEGA)
+      .not('archivado', 'is', true).not('es_servicio', 'is', true);   // un null cuenta como "no"
+    let productos = [];
+    if (codigo) {
+      const { data, error } = await base().eq('codigo_barras', codigo).limit(10);
+      if (error) return enviarErrorBD(res, error, 'GET /api/taller/bodega/buscar');
+      productos = data || [];
+      if (!productos.length) {
+        const { data: porSku, error: errSku } = await base().eq('sku', codigo).limit(10);
+        if (errSku) return enviarErrorBD(res, errSku, 'GET /api/taller/bodega/buscar');
+        productos = porSku || [];
+      }
+    } else {
+      let consulta = base();
+      texto.split(/\s+/).filter(Boolean).slice(0, 6).forEach(palabra => { consulta = consulta.ilike('nombre', patronIlike(palabra)); });
+      const { data, error } = await consulta.order('nombre').limit(25);
+      if (error) return enviarErrorBD(res, error, 'GET /api/taller/bodega/buscar');
+      productos = data || [];
+    }
+    res.json({ productos: await productosParaBodega(productos) });
+  } catch (err) {
+    return enviarErrorBD(res, err, 'GET /api/taller/bodega/buscar');
+  }
+});
+
+app.get('/api/taller/bodega/lugares/:id', authTaller(), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return enviarError(res, 400, 'Lugar inválido');
+    const { data: lugar, error } = await db.from('ubicaciones').select('id, nombre, tipo').eq('id', id).maybeSingle();
+    if (error) return enviarErrorBD(res, error, 'GET /api/taller/bodega/lugares/:id');
+    if (!lugar) return enviarError(res, 404, 'Ese lugar no existe');
+    const { data: filas, error: errF } = await db.from('producto_ubicaciones').select('producto_id').eq('ubicacion_id', id).limit(500);
+    if (errF) return enviarErrorBD(res, errF, 'GET /api/taller/bodega/lugares/:id');
+    const ids = (filas || []).map(f => f.producto_id);
+    const { data: productos, error: errP } = ids.length
+      ? await db.from('productos').select(COLUMNAS_PRODUCTO_BODEGA).in('id', ids) : { data: [] };
+    if (errP) return enviarErrorBD(res, errP, 'GET /api/taller/bodega/lugares/:id');
+    const lista = await productosParaBodega(productos || []);
+    lista.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+    res.json({ lugar, productos: lista });
+  } catch (err) {
+    return enviarErrorBD(res, err, 'GET /api/taller/bodega/lugares/:id');
+  }
+});
+
+/* Crea un lugar (o devuelve el que ya existe con ese nombre: "b3" y "B3" son el mismo). */
+app.post('/api/taller/bodega/lugares', authTaller(), async (req, res) => {
+  try {
+    if (!req.persona) return enviarError(res, 403, SIN_PERSONA_TALLER);
+    const { datos, error: errVal } = sanearUbicacion({ nombre: String(req.body?.nombre || '').toUpperCase(), tipo: req.body?.tipo });
+    if (errVal) return enviarError(res, 400, errVal);
+    const { data: previo, error: errPrevio } = await db.from('ubicaciones').select('id, nombre, tipo').ilike('nombre', datos.nombre).limit(1);
+    if (errPrevio) return enviarErrorBD(res, errPrevio, 'POST /api/taller/bodega/lugares');
+    if (previo && previo.length) return res.json({ ...previo[0], productos: 0, ya_existia: true });
+    const { data, error } = await db.from('ubicaciones').insert([{ ...datos, activo: true }]).select('id, nombre, tipo').single();
+    if (error) return enviarErrorBD(res, error, 'POST /api/taller/bodega/lugares');
+    res.status(201).json({ ...data, productos: 0 });
+  } catch (err) {
+    return enviarErrorBD(res, err, 'POST /api/taller/bodega/lugares');
+  }
+});
+
+/* Guarda el producto en un lugar. El primero que se le pone queda como
+   principal ("dónde se busca primero"), igual que en el POS. */
+app.post('/api/taller/bodega/productos/:id/lugares', authTaller(), async (req, res) => {
+  try {
+    if (!req.persona) return enviarError(res, 403, SIN_PERSONA_TALLER);
+    const productoId = Number(req.params.id);
+    const lugarId = Number(req.body?.ubicacion_id);
+    if (!Number.isInteger(productoId) || productoId <= 0) return enviarError(res, 400, 'Producto inválido');
+    if (!Number.isInteger(lugarId) || lugarId <= 0) return enviarError(res, 400, 'Elige un lugar');
+    const [{ data: producto, error: errP }, { data: lugar, error: errL }, { data: actuales, error: errA }] = await Promise.all([
+      db.from('productos').select(COLUMNAS_PRODUCTO_BODEGA).eq('id', productoId).maybeSingle(),
+      db.from('ubicaciones').select('id').eq('id', lugarId).maybeSingle(),
+      db.from('producto_ubicaciones').select('ubicacion_id').eq('producto_id', productoId)
+    ]);
+    if (errP || errL || errA) return enviarErrorBD(res, errP || errL || errA, 'POST /api/taller/bodega/productos/:id/lugares');
+    if (!producto) return enviarError(res, 404, 'Producto no encontrado');
+    if (!lugar) return enviarError(res, 404, 'Ese lugar no existe');
+    if (!(actuales || []).some(a => Number(a.ubicacion_id) === lugarId)) {
+      const { error } = await db.from('producto_ubicaciones')
+        .insert([{ producto_id: productoId, ubicacion_id: lugarId, principal: !(actuales || []).length }]);
+      if (error) return enviarErrorBD(res, error, 'POST /api/taller/bodega/productos/:id/lugares');
+    }
+    const [listo] = await productosParaBodega([producto]);
+    res.status(201).json(listo);
+  } catch (err) {
+    return enviarErrorBD(res, err, 'POST /api/taller/bodega/productos/:id/lugares');
+  }
+});
+
+/* Saca el producto de un lugar. Si era el principal, el que quede pasa a serlo. */
+app.delete('/api/taller/bodega/productos/:id/lugares/:lugarId', authTaller(), async (req, res) => {
+  try {
+    if (!req.persona) return enviarError(res, 403, SIN_PERSONA_TALLER);
+    const productoId = Number(req.params.id);
+    const lugarId = Number(req.params.lugarId);
+    const { error } = await db.from('producto_ubicaciones').delete().eq('producto_id', productoId).eq('ubicacion_id', lugarId);
+    if (error) return enviarErrorBD(res, error, 'DELETE /api/taller/bodega/productos/:id/lugares/:lugarId');
+    const { data: quedan, error: errQ } = await db.from('producto_ubicaciones').select('id, principal').eq('producto_id', productoId).order('id');
+    if (errQ) return enviarErrorBD(res, errQ, 'DELETE /api/taller/bodega/productos/:id/lugares/:lugarId');
+    if ((quedan || []).length && !quedan.some(q => q.principal)) {
+      await db.from('producto_ubicaciones').update({ principal: true }).eq('id', quedan[0].id);
+    }
+    const { data: producto } = await db.from('productos').select(COLUMNAS_PRODUCTO_BODEGA).eq('id', productoId).maybeSingle();
+    if (!producto) return res.json({ ok: true });
+    const [listo] = await productosParaBodega([producto]);
+    res.json(listo);
+  } catch (err) {
+    return enviarErrorBD(res, err, 'DELETE /api/taller/bodega/productos/:id/lugares/:lugarId');
+  }
+});
+
+/* Asocia el código que leyó la cámara a un producto que no tenía. Nunca pisa
+   un código ya puesto ni repite el de otro producto: eso lo decide el dueño
+   en la ficha del POS. */
+app.put('/api/taller/bodega/productos/:id/codigo', authTaller(), async (req, res) => {
+  try {
+    if (!req.persona) return enviarError(res, 403, SIN_PERSONA_TALLER);
+    const productoId = Number(req.params.id);
+    const codigo = String(req.body?.codigo || '').trim();
+    if (!/^[0-9A-Za-z\-.]{4,64}$/.test(codigo)) return enviarError(res, 400, 'Ese código no parece un código de barras');
+    const { data: producto, error } = await db.from('productos').select(COLUMNAS_PRODUCTO_BODEGA).eq('id', productoId).maybeSingle();
+    if (error) return enviarErrorBD(res, error, 'PUT /api/taller/bodega/productos/:id/codigo');
+    if (!producto) return enviarError(res, 404, 'Producto no encontrado');
+    if (producto.codigo_barras && producto.codigo_barras !== codigo) {
+      return enviarError(res, 409, `Este producto ya tiene otro código (${producto.codigo_barras}). Si hay que cambiarlo, se hace en la ficha del POS.`);
+    }
+    const { data: otro, error: errOtro } = await db.from('productos').select('id, nombre').eq('codigo_barras', codigo).neq('id', productoId).limit(1);
+    if (errOtro) return enviarErrorBD(res, errOtro, 'PUT /api/taller/bodega/productos/:id/codigo');
+    if (otro && otro.length) return enviarError(res, 409, `Ese código ya es de "${otro[0].nombre}"`);
+    if (!producto.codigo_barras) {
+      const { error: errUp } = await db.from('productos').update({ codigo_barras: codigo }).eq('id', productoId);
+      if (errUp) return enviarErrorBD(res, errUp, 'PUT /api/taller/bodega/productos/:id/codigo');
+    }
+    const [listo] = await productosParaBodega([{ ...producto, codigo_barras: codigo }]);
+    res.json(listo);
+  } catch (err) {
+    return enviarErrorBD(res, err, 'PUT /api/taller/bodega/productos/:id/codigo');
+  }
+});
+
 /* Lo que los trabajos de la app suman al pozo de C. Patricio (lo lee
    GET /api/padres/resumen). Si la migración sql/92 todavía no está, no hay
    trabajos: devuelve vacío en vez de botar el panel. */
