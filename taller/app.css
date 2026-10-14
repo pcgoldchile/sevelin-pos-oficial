@@ -194,3 +194,15 @@ button { cursor: pointer; }
 .escaner .visor { position: relative; border-radius: var(--radio); overflow: hidden; background: #000; aspect-ratio: 3 / 4; }
 .escaner video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .escaner .mira { position: absolute; left: 10%; right: 10%; top: 38%; height: 24%; border: 3px solid rgba(255, 255, 255, .85); border-radius: 14px; box-shadow: 0 0 0 999px rgba(0, 0, 0, .35); }
+.controles-camara { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; margin-top: 10px; }
+.controles-camara:empty { display: none; }
+.zoom-camara { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14.5px; flex: 1 1 100%; justify-content: center; }
+.zoom-camara input { flex: 1; max-width: 260px; }
+.popup-producto h2 { margin-top: 6px; }
+.popup-producto .miniatura { display: block; }
+.donde { border-radius: 12px; padding: 12px 13px; margin: 10px 0 4px; font-size: 16px; }
+.donde.ok { background: var(--verde-suave); color: var(--verde); }
+.donde.falta { background: var(--ambar-suave); color: var(--ambar); font-weight: 700; }
+.popup-lugar label { display: block; font-weight: 700; margin-top: 12px; font-size: 15px; }
+.popup-lugar .buscar-bodega { margin: 6px 0 4px; }
+.popup-lugar .campo { margin-bottom: 0; }

@@ -729,7 +729,7 @@
   /* ---------- Bodega (v140): dónde está guardado cada producto ----------
      Mismos lugares que el POS (sql/60). La cámara lee el código con el
      lector que trae Chrome en Android (BarcodeDetector): sin librerías. */
-  const bodegaNueva = () => ({ lugares: null, resultados: null, producto: null, lugar: null, codigoSinDueno: null, texto: '', buscando: false });
+  const bodegaNueva = () => ({ lugares: null, resultados: null, producto: null, lugar: null, codigoSinDueno: null, texto: '', buscando: false, popup: null });
   S.bodega = bodegaNueva();
 
   async function cargarLugares() {
@@ -797,6 +797,12 @@
           <span><button type="button" class="btn-enlace" data-a="sacarlugar" data-v="${Number(l.id)}" style="color:var(--rojo)">Sacar</button></span></div>`).join('')}</div>`
         : '<div class="nota-suave">Este producto todavía no tiene lugar. Toca dónde lo estás guardando.</div>'}
       <p class="seccion">${p.lugares.length ? 'Guardarlo también en' : 'Guardarlo en'}</p>
+      <form data-form="lugarescrito" class="buscar-bodega">
+        <input class="campo" id="lugarEscrito" list="listaLugaresFicha" maxlength="60" autocomplete="off" autocapitalize="characters" placeholder="Escribe el lugar: B3 o Caja cables">
+        <button type="submit" class="btn-principal btn-chico">Guardar</button>
+        <datalist id="listaLugaresFicha">${(S.bodega.lugares || []).map(l => `<option value="${esc(l.nombre)}">`).join('')}</datalist>
+      </form>
+      <p class="paso-ayuda" style="margin:4px 2px 8px">O tócalo en la lista:</p>
       ${grillaLugares('ponerlugar', marcados)}
       <button type="button" class="op punteada" data-a="lugarnuevo" style="width:100%;margin-top:8px">＋ Lugar nuevo (ej: "Caja cables USB-C")</button>
       <button type="button" class="btn-secundario" data-a="cerrarbodega" style="margin-top:18px">Listo, escanear otro</button>`;
@@ -827,13 +833,18 @@
       <button type="button" class="op punteada" data-a="lugarnuevo" style="width:100%;margin-top:8px">＋ Lugar nuevo</button>`;
   }
 
-  /* ---------- La cámara ---------- */
-  let camara = null;   // { stream, reloj }
+  /* ---------- La cámara ----------
+     Con solo "cámara trasera" muchos Android abren la gran angular (0,5x), que no enfoca de cerca: por eso se elige la
+     principal por su nombre ("camera2 0, facing back"), se puede cambiar con un botón y la elección queda guardada en el
+     teléfono. Si la cámara deja, se pide enfoque continuo y se ofrece acercar (zoom). */
+  const CLAVE_CAMARA = 'taller_camara';
+  let camara = null;   // { stream, reloj, lista, indice }
   function vistaEscaner() {
     return barra('Escanear código', { derecha: '<button type="button" class="barra-btn" data-a="cerrarescaner">Cancelar</button>' }) +
       `<main class="cuerpo escaner">
         <div class="visor"><video id="videoEscaner" playsinline muted></video><i class="mira" aria-hidden="true"></i></div>
-        <p class="paso-ayuda" style="text-align:center;margin-top:12px">Apunta al código de barras. Se lee solo.</p>
+        <div id="controlesCamara" class="controles-camara"></div>
+        <p class="paso-ayuda" style="text-align:center;margin-top:10px">Apunta al código de barras, a unos 15 cm. Se lee solo.<br>Si se ve borroso, toca la imagen o cambia de cámara.</p>
         <button type="button" class="btn-secundario" data-a="cerrarescaner">Cancelar</button>
       </main>`;
   }
@@ -843,6 +854,61 @@
     camara.stream.getTracks().forEach(t => t.stop());
     camara = null;
   }
+  const pistaDe = () => (camara ? camara.stream.getVideoTracks()[0] : null);
+
+  async function camarasTraseras() {
+    const todas = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+    const traseras = todas.filter(d => /back|rear|trasera|environment/i.test(d.label));
+    return traseras.length ? traseras : todas;
+  }
+  /* La principal suele ser la de número más bajo ("camera2 0"); las otras son gran angular o tele. */
+  function indicePrincipal(lista) {
+    const guardada = leer(CLAVE_CAMARA);
+    const i = lista.findIndex(d => d.deviceId === guardada);
+    if (i >= 0) return i;
+    let mejor = 0, menor = Infinity;
+    lista.forEach((d, k) => { const m = /(\d+)\s*,?\s*facing/i.exec(d.label) || /camera2?\s*(\d+)/i.exec(d.label); const n = m ? Number(m[1]) : Infinity; if (n < menor) { menor = n; mejor = k; } });
+    return mejor;
+  }
+  async function abrirStream(deviceId) {
+    const video = deviceId
+      ? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+      : { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } };
+    return navigator.mediaDevices.getUserMedia({ video, audio: false });
+  }
+  async function enfocar() {
+    const pista = pistaDe();
+    if (!pista || !pista.getCapabilities) return;
+    const cap = pista.getCapabilities();
+    try {
+      if ((cap.focusMode || []).includes('continuous')) await pista.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+      else if ((cap.focusMode || []).includes('single-shot')) await pista.applyConstraints({ advanced: [{ focusMode: 'single-shot' }] });
+    } catch (_) { /* la cámara no deja: se queda como está */ }
+  }
+  function pintarControlesCamara() {
+    const $c = document.getElementById('controlesCamara');
+    const pista = pistaDe();
+    if (!$c || !pista) return;
+    const cap = pista.getCapabilities ? pista.getCapabilities() : {};
+    const zoom = cap.zoom && cap.zoom.max > cap.zoom.min ? cap.zoom : null;
+    const actual = pista.getSettings ? pista.getSettings().zoom : null;
+    const n = camara.lista.length;
+    $c.innerHTML = `${n > 1 ? `<button type="button" class="btn-secundario btn-chico" data-a="cambiarcamara">🔄 Cambiar cámara (${camara.indice + 1} de ${n})</button>` : ''}
+      ${zoom ? `<label class="zoom-camara">🔍 Acercar
+        <input type="range" id="zoomCamara" min="${Number(zoom.min)}" max="${Math.min(Number(zoom.max), 8)}" step="${Number(zoom.step) || 0.1}" value="${Number(actual || zoom.min)}"></label>` : ''}`;
+  }
+  async function ponerStream(stream) {
+    const $video = document.getElementById('videoEscaner');
+    if (!$video || S.vista !== 'escaner') { stream.getTracks().forEach(t => t.stop()); return false; }
+    if (camara.stream && camara.stream !== stream) camara.stream.getTracks().forEach(t => t.stop());
+    camara.stream = stream;
+    $video.srcObject = stream;
+    await $video.play();
+    await enfocar();
+    pintarControlesCamara();
+    return true;
+  }
+
   async function abrirEscaner() {
     if (!('BarcodeDetector' in window) || !navigator.mediaDevices?.getUserMedia) {
       await ventana({ titulo: 'Este teléfono no lee códigos con la cámara', texto: 'Funciona en Chrome de Android. Mientras, escribe el código o el nombre del producto en el buscador.', si: 'Entendido', no: '' });
@@ -853,15 +919,25 @@
     S.vista = 'escaner';
     pintar();
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+      // Primero cualquier cámara trasera: sin permiso, el teléfono no dice los nombres de sus cámaras.
+      let stream = await abrirStream(leer(CLAVE_CAMARA) || null).catch(() => abrirStream(null));
       const $video = document.getElementById('videoEscaner');
       if (!$video || S.vista !== 'escaner') { stream.getTracks().forEach(t => t.stop()); return; }
-      $video.srcObject = stream;
-      await $video.play();
+      const lista = await camarasTraseras();
+      const indice = indicePrincipal(lista);
+      const usada = stream.getVideoTracks()[0]?.getSettings?.().deviceId;
+      camara = { stream, reloj: null, lista, indice };
+      if (lista[indice] && lista[indice].deviceId && lista[indice].deviceId !== usada) {
+        stream.getTracks().forEach(t => t.stop());
+        stream = await abrirStream(lista[indice].deviceId).catch(() => abrirStream(null));
+      }
+      camara.stream = null;
+      if (!(await ponerStream(stream))) { camara = null; return; }
+      $video.addEventListener('click', enfocar);
       const detector = new BarcodeDetector({ formats: formatos });
       let ocupado = false;
-      camara = { stream, reloj: setInterval(async () => {
-        if (ocupado || !camara) return;
+      camara.reloj = setInterval(async () => {
+        if (ocupado || !camara || !camara.stream) return;
         ocupado = true;
         try {
           const codigos = await detector.detect($video);
@@ -870,11 +946,11 @@
             apagarCamara();
             if (navigator.vibrate) navigator.vibrate(80);
             S.vista = 'inicio';
-            await buscarBodega({ codigo: leido.rawValue.trim() });
+            await buscarBodega({ codigo: leido.rawValue.trim(), escaneado: true });
           }
         } catch (_) { /* cuadro sin código: se sigue mirando */ }
         ocupado = false;
-      }, 250) };
+      }, 250);
     } catch (err) {
       apagarCamara();
       S.vista = 'inicio';
@@ -883,7 +959,100 @@
     }
   }
 
-  async function buscarBodega({ codigo = '', texto = '' }) {
+  async function cambiarCamara() {
+    if (!camara || camara.lista.length < 2) return;
+    camara.indice = (camara.indice + 1) % camara.lista.length;
+    const elegida = camara.lista[camara.indice];
+    guardar(CLAVE_CAMARA, elegida.deviceId);
+    try {
+      await ponerStream(await abrirStream(elegida.deviceId));
+      aviso('Cámara ' + (camara.indice + 1) + ' de ' + camara.lista.length + ': queda guardada para la próxima vez');
+    } catch (_) {
+      aviso('Esa cámara no se pudo abrir. Prueba la siguiente.', true);
+    }
+  }
+  async function cambiarZoom(valor) {
+    const pista = pistaDe();
+    if (!pista) return;
+    try { await pista.applyConstraints({ advanced: [{ zoom: Number(valor) }] }); } catch (_) { /* no deja acercar */ }
+  }
+
+  /* ---------- Ventana al escanear: dónde está y dónde guardarlo, sin buscar más abajo ---------- */
+  const CLAVE_ULTIMO_LUGAR = 'taller_ultimo_lugar';
+  function ventanaProducto(p) {
+    const donde = p.lugares.length
+      ? `<div class="donde ok">📍 Está en: <b>${p.lugares.map(l => esc(l.nombre)).join(', ')}</b></div>`
+      : '<div class="donde falta">Todavía no tiene lugar</div>';
+    const ultimo = leer(CLAVE_ULTIMO_LUGAR) || '';
+    $capa.innerHTML = `<div class="ventana popup-producto" role="dialog" aria-modal="true">
+        ${p.foto ? `<img class="miniatura grande" src="${esc(p.foto)}" alt="">` : ''}
+        <h2>${esc(p.nombre)}</h2>
+        <p class="trabajo-linea">${esc([p.categoria, p.subcategoria].filter(Boolean).join(' › ') || 'Sin categoría')}${p.stock === null ? '' : ' · Stock ' + Number(p.stock)}</p>
+        ${donde}
+        <form data-p-form="lugar" class="popup-lugar">
+          <label for="popupLugar">${p.lugares.length ? 'Guardarlo también en' : '¿Dónde lo guardas?'}</label>
+          <div class="buscar-bodega">
+            <input class="campo" id="popupLugar" list="listaLugares" maxlength="60" autocomplete="off" autocapitalize="characters" placeholder="B3 o Caja cables" value="${esc(ultimo)}">
+            <button type="submit" class="btn-principal btn-chico">Guardar</button>
+          </div>
+          <datalist id="listaLugares">${(S.bodega.lugares || []).map(l => `<option value="${esc(l.nombre)}">`).join('')}</datalist>
+        </form>
+        <div class="botones">
+          <button type="button" class="btn-secundario" data-p="ficha">Ver ficha</button>
+          <button type="button" class="btn-principal" data-p="otro">📷 Escanear otro</button>
+        </div>
+      </div>`;
+    $capa.hidden = false;
+    S.bodega.popup = p.id;
+  }
+  function cerrarVentanaProducto() {
+    if (!S.bodega.popup) return;
+    S.bodega.popup = null;
+    $capa.hidden = true;
+    $capa.innerHTML = '';
+  }
+  /* Guarda el producto en un lugar escrito: lo crea si no existe ("b3" = "B3"). */
+  async function guardarEnLugarEscrito(p, texto) {
+    const nombreLugar = String(texto || '').trim().toUpperCase();
+    if (!nombreLugar) { aviso('Escribe dónde lo guardas, por ejemplo B3', true); return null; }
+    let lugar = (S.bodega.lugares || []).find(l => l.nombre.toUpperCase() === nombreLugar);
+    if (!lugar) {
+      lugar = await pedir('/taller/bodega/lugares', { metodo: 'POST', cuerpo: { nombre: nombreLugar } });
+      const lugares = S.bodega.lugares || (S.bodega.lugares = []);
+      if (!lugares.some(l => mismo(l.id, lugar.id))) lugares.push(lugar);
+      lugares.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { numeric: true, sensitivity: 'base' }));
+    }
+    if (p.lugares.some(l => mismo(l.id, lugar.id))) { aviso('Ya estaba anotado en ' + lugar.nombre); return p; }
+    const listo = await pedir('/taller/bodega/productos/' + p.id + '/lugares', { metodo: 'POST', cuerpo: { ubicacion_id: Number(lugar.id) } });
+    const enLista = (S.bodega.lugares || []).find(l => mismo(l.id, lugar.id));
+    if (enLista) enLista.productos = (enLista.productos || 0) + 1;
+    guardar(CLAVE_ULTIMO_LUGAR, lugar.nombre);
+    cambiarProductoBodega(listo);
+    aviso('Guardado en ' + lugar.nombre);
+    return listo;
+  }
+  $capa.addEventListener('submit', async (e) => {
+    if (e.target.dataset.pForm !== 'lugar') return;
+    e.preventDefault();
+    const p = S.bodega.producto;
+    if (!p) return;
+    const $boton = e.target.querySelector('button[type="submit"]');
+    $boton.disabled = true;
+    try {
+      const listo = await guardarEnLugarEscrito(p, document.getElementById('popupLugar').value);
+      if (listo) { ventanaProducto(listo); pintar(); }
+    } catch (err) { aviso(err.message, true); }
+    if ($boton.isConnected) $boton.disabled = false;
+  });
+  $capa.addEventListener('click', (e) => {
+    if (!S.bodega.popup) return;
+    const boton = e.target.closest('[data-p]');
+    if (boton && boton.dataset.p === 'otro') { cerrarVentanaProducto(); S.bodega.producto = null; abrirEscaner(); }
+    else if (boton && boton.dataset.p === 'ficha') { cerrarVentanaProducto(); pintar(); arriba(); }
+    else if (e.target === $capa) { cerrarVentanaProducto(); pintar(); }
+  });
+
+  async function buscarBodega({ codigo = '', texto = '', escaneado = false }) {
     const b = S.bodega;
     Object.assign(b, { buscando: true, producto: null, lugar: null, resultados: null });
     if (codigo) b.texto = '';
@@ -895,6 +1064,8 @@
       if (codigo) b.codigoSinDueno = productos.length ? null : codigo;
       if (productos.length === 1) b.producto = productos[0];
       else b.resultados = productos;
+      // Al escanear, el producto sale en una ventana con dónde está y dónde guardarlo (pedido del dueño, v141).
+      if (escaneado && productos.length === 1) { b.buscando = false; pintar(); ventanaProducto(productos[0]); return; }
     } catch (err) {
       aviso(err.message, true);
     }
@@ -1137,6 +1308,7 @@
   /* ---------- Acciones de la bodega ---------- */
   Object.assign(ACCIONES, {
     escanear: () => { abrirEscaner(); return false; },
+    cambiarcamara: () => { cambiarCamara(); return false; },
     cerrarescaner: () => { apagarCamara(); S.vista = 'inicio'; pintar(); return false; },
     cerrarbodega: () => {
       const b = S.bodega;
@@ -1229,6 +1401,7 @@
     const campo = e.target.dataset.c;
     if (e.target.id === 'rut') { e.target.value = formatoRut(e.target.value); return; }
     if (e.target.id === 'pin') { e.target.value = soloNumeros(e.target.value).slice(0, 8); return; }
+    if (e.target.id === 'zoomCamara') { cambiarZoom(e.target.value); return; }
     if (!campo) return;
     if (e.target.dataset.plata) e.target.value = conPuntos(e.target.value);
     const destino = S.vista === 'cobrar' ? S.cobro : S.borrador;
@@ -1241,6 +1414,13 @@
   });
 
   $app.addEventListener('submit', async (e) => {
+    if (e.target.dataset.form === 'lugarescrito') {
+      e.preventDefault();
+      const p = S.bodega.producto;
+      if (!p) return;
+      try { if (await guardarEnLugarEscrito(p, document.getElementById('lugarEscrito').value)) pintar(); } catch (err) { aviso(err.message, true); }
+      return;
+    }
     if (e.target.dataset.form === 'buscarbodega') {
       e.preventDefault();
       const texto = document.getElementById('textoBodega').value.trim();

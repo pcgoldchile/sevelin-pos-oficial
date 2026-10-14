@@ -39,3 +39,19 @@ se llamen por mueble y repisa, A1 a I5 (letra = mueble, número = repisa de abaj
   apaga la cámara).
 - **No probado:** la cámara de un teléfono de verdad leyendo un código real. El navegador del computador no trae el
   lector.
+
+## v141 (14-10-2026, mismo día): cámara, ventana al escanear y lugar escrito
+El dueño probó en su celular: "no me deja enfocar o cambiar la cámara, parece que se ocupa la 0,5x en vez de la 1x";
+pidió una ventana al escanear ("no se ve bien la opción de guardar") y poder escribir el cajón.
+- **Cámara:** pedir solo "cámara trasera" hace que muchos Android abran la gran angular (0,5x), que no enfoca de cerca.
+  Ahora, con el permiso dado, se lee la lista de cámaras traseras y se abre la principal (la de número más bajo en
+  "camera2 0, facing back"). Botón "🔄 Cambiar cámara (1 de 3)" que pasa a la siguiente y **queda guardada en ese
+  teléfono**. Enfoque continuo si la cámara lo permite, tocar la imagen vuelve a enfocar, y barra "🔍 Acercar" (zoom)
+  si la cámara lo trae. Resolución pedida: 1920×1080.
+- **Ventana al escanear:** nombre, categoría, stock, "📍 Está en: …" (o "Todavía no tiene lugar") y un campo para
+  escribir dónde se guarda, con "Guardar", "Ver ficha" y "📷 Escanear otro". El campo trae puesto el último lugar usado
+  (para ordenar una repisa entera: escanear, Guardar, escanear otro).
+- **Lugar escrito** también en la ficha del producto. Si el lugar no existe se crea ("b3" = "B3"), con sugerencias de
+  los lugares que ya hay.
+- Probado en la maqueta con cámaras simuladas (gran angular, principal y tele): abre la principal, cambia y recuerda,
+  aplica enfoque y zoom, y la ventana guarda en un lugar existente y en uno nuevo. **No probado en un teléfono real.**
