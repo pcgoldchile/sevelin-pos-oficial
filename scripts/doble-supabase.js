@@ -36,6 +36,7 @@ function crearCliente(base, rpcs, registro) {
     _f(fn) { this.filtros.push(fn); return this; }
     eq(c, v) { return this._f(f => f[c] === v || (f[c] != null && v != null && String(f[c]) === String(v))); }
     neq(c, v) { return this._f(f => !(f[c] === v || (f[c] != null && v != null && String(f[c]) === String(v)))); }
+    overlaps(c, vs) { const s = new Set((vs || []).map(String)); return this._f(f => Array.isArray(f[c]) && f[c].some(x => s.has(String(x)))); }
     in(c, vs) { const s = new Set((vs || []).map(String)); return this._f(f => f[c] != null && s.has(String(f[c]))); }
     is(c, v) { return this._f(f => (v === null ? f[c] == null : f[c] === v)); }
     gt(c, v) { return this._f(f => f[c] != null && f[c] > v); }
@@ -127,8 +128,11 @@ function crearCliente(base, rpcs, registro) {
       if (!rpcs[nombre]) return { data: null, error: { message: 'rpc sin doble: ' + nombre } };
       return rpcs[nombre](args, base) || { data: null, error: null };
     }),
-    storage: { from: () => ({ upload: async () => ({ data: {}, error: null }), remove: async () => ({ data: [], error: null }),
-      getPublicUrl: () => ({ data: { publicUrl: 'http://doble/archivo' } }), createSignedUrl: async () => ({ data: { signedUrl: 'http://doble/firmado' }, error: null }) }) }
+    /* Archivos en base.__archivos ('bucket/ruta' => true): las pruebas ven qué se subió y qué se borró (v142). */
+    storage: { from: (bucket) => ({
+      upload: async (ruta) => { (base.__archivos = base.__archivos || {})[bucket + '/' + ruta] = true; return { data: { path: ruta }, error: null }; },
+      remove: async (rutas) => { (rutas || []).forEach(r => { if (base.__archivos) delete base.__archivos[bucket + '/' + r]; }); return { data: [], error: null }; },
+      getPublicUrl: (ruta) => ({ data: { publicUrl: 'http://doble/storage/v1/object/public/' + bucket + '/' + ruta } }), createSignedUrl: async () => ({ data: { signedUrl: 'http://doble/firmado' }, error: null }) }) }
   };
 }
 

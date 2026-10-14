@@ -729,7 +729,7 @@
   /* ---------- Bodega (v140): dónde está guardado cada producto ----------
      Mismos lugares que el POS (sql/60). La cámara lee el código con el
      lector que trae Chrome en Android (BarcodeDetector): sin librerías. */
-  const bodegaNueva = () => ({ lugares: null, resultados: null, producto: null, lugar: null, codigoSinDueno: null, texto: '', buscando: false, popup: null });
+  const bodegaNueva = () => ({ lugares: null, resultados: null, producto: null, lugar: null, codigoSinDueno: null, texto: '', buscando: false, popup: null, nuevo: null });
   S.bodega = bodegaNueva();
 
   async function cargarLugares() {
@@ -808,6 +808,53 @@
       <button type="button" class="btn-secundario" data-a="cerrarbodega" style="margin-top:18px">Listo, escanear otro</button>`;
   }
 
+  /* Borrador desde un código nuevo (v142): solo un nombre temporal y una foto. Lo demás se completa en el POS. */
+  function vistaBorradorNuevo(n) {
+    const kb = n.bytes ? Math.round(n.bytes / 1024) + ' KB' : '';
+    return `<form data-form="borrador">
+        <div class="tarjeta">
+          <div class="trabajo-modelo">Producto nuevo (borrador)</div>
+          <div class="trabajo-linea">Código <b>${esc(n.codigo)}</b>. Queda en el POS → Productos → Ver: Borradores, sin precio, sin stock y sin publicar, para que lo termines después.</div>
+        </div>
+        <p class="pregunta">Nombre temporal <small>(opcional)</small></p>
+        <input class="campo" id="nombreBorrador" maxlength="120" autocomplete="off" autocapitalize="sentences" placeholder="Ej: Audífonos negros caja roja" value="${esc(n.nombre)}">
+        <p class="pregunta">Una foto <small>(opcional, se comprime sola)</small></p>
+        ${n.foto ? `<div class="foto-borrador"><img src="${n.foto}" alt="Foto del borrador"><span>${kb}</span>
+            <button type="button" class="btn-enlace" data-a="quitarfotoborrador" style="color:var(--rojo)">Quitar foto</button></div>`
+          : `<label class="btn-secundario" style="cursor:pointer">📷 Tomar foto<input type="file" id="fotoBorrador" accept="image/*" capture="environment" hidden></label>`}
+        ${n.comprimiendo ? '<p class="cargando" style="padding:12px">Comprimiendo la foto…</p>' : ''}
+        <button type="submit" class="btn-principal" style="margin-top:18px" ${n.guardando || n.comprimiendo ? 'disabled' : ''}>${n.guardando ? 'Guardando…' : 'Guardar borrador'}</button>
+        <button type="button" class="btn-secundario" data-a="cancelarborrador" style="margin-top:10px">Cancelar</button>
+      </form>`;
+  }
+
+  /* La foto sale del teléfono con 3 o 4 MB: se achica a 1000 px de lado y se baja la calidad hasta ~150 KB (webp). */
+  function comprimirFotoBorrador(archivo) {
+    return new Promise((resolver, rechazar) => {
+      const url = URL.createObjectURL(archivo);
+      const img = new Image();
+      img.onerror = () => { URL.revokeObjectURL(url); rechazar(new Error('Ese archivo no es una foto')); };
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const escala = Math.min(1, 1000 / Math.max(img.width, img.height));
+        const lienzo = document.createElement('canvas');
+        lienzo.width = Math.round(img.width * escala);
+        lienzo.height = Math.round(img.height * escala);
+        lienzo.getContext('2d').drawImage(img, 0, 0, lienzo.width, lienzo.height);
+        const intentar = (calidad) => lienzo.toBlob((blob) => {
+          if (!blob) { rechazar(new Error('No se pudo comprimir la foto')); return; }
+          if (blob.size > 150 * 1024 && calidad > 0.45) { intentar(Math.round((calidad - 0.1) * 100) / 100); return; }
+          const lector = new FileReader();
+          lector.onload = () => resolver({ dataUrl: lector.result, bytes: blob.size });
+          lector.onerror = () => rechazar(new Error('No se pudo preparar la foto'));
+          lector.readAsDataURL(blob);
+        }, 'image/webp', calidad);
+        intentar(0.8);
+      };
+      img.src = url;
+    });
+  }
+
   function vistaBodega() {
     const b = S.bodega;
     if (b.lugar) {
@@ -817,6 +864,7 @@
         ${productos.map(p => tarjetaProductoBodega(p)).join('')}
         <button type="button" class="btn-secundario" data-a="cerrarbodega" style="margin-top:8px">Volver</button>`;
     }
+    if (b.nuevo) return vistaBorradorNuevo(b.nuevo);
     if (b.producto) return vistaProductoBodega(b.producto);
     const resultados = b.resultados === null ? ''
       : b.resultados.length ? b.resultados.map(p => tarjetaProductoBodega(p)).join('')
@@ -826,7 +874,8 @@
         <input class="campo" id="textoBodega" maxlength="80" autocomplete="off" enterkeyhint="search" placeholder="O escribe el nombre o el código" value="${esc(b.texto)}">
         <button type="submit" class="btn-principal btn-chico">${b.buscando ? '…' : 'Buscar'}</button>
       </form>
-      ${b.codigoSinDueno ? `<div class="nota-suave">El código <b>${esc(b.codigoSinDueno)}</b> no está en ningún producto. Busca el producto por nombre y tócalo: ahí puedes guardarle este código.</div>` : ''}
+      ${b.codigoSinDueno ? `<div class="nota-suave">El código <b>${esc(b.codigoSinDueno)}</b> no está en ningún producto.<br>Si el producto ya existe, búscalo por nombre y tócalo para guardarle este código. Si es nuevo, déjalo como borrador:</div>
+        <button type="button" class="btn-principal" data-a="nuevoborrador" style="margin-bottom:12px">＋ Crear borrador con este código</button>` : ''}
       ${resultados}
       <p class="seccion">Lugares${b.lugares && b.lugares.length ? ' · toca uno para ver qué hay' : ''}</p>
       ${b.lugares === null ? '<p class="cargando">Cargando…</p>' : grillaLugares('verlugar')}
@@ -1309,6 +1358,9 @@
   Object.assign(ACCIONES, {
     escanear: () => { abrirEscaner(); return false; },
     cambiarcamara: () => { cambiarCamara(); return false; },
+    nuevoborrador: () => { S.bodega.nuevo = { codigo: S.bodega.codigoSinDueno, nombre: '', foto: null, bytes: 0, guardando: false, comprimiendo: false }; arriba(); },
+    cancelarborrador: () => { S.bodega.nuevo = null; },
+    quitarfotoborrador: () => { if (S.bodega.nuevo) Object.assign(S.bodega.nuevo, { foto: null, bytes: 0 }); },
     cerrarescaner: () => { apagarCamara(); S.vista = 'inicio'; pintar(); return false; },
     cerrarbodega: () => {
       const b = S.bodega;
@@ -1402,6 +1454,7 @@
     if (e.target.id === 'rut') { e.target.value = formatoRut(e.target.value); return; }
     if (e.target.id === 'pin') { e.target.value = soloNumeros(e.target.value).slice(0, 8); return; }
     if (e.target.id === 'zoomCamara') { cambiarZoom(e.target.value); return; }
+    if (e.target.id === 'nombreBorrador') { if (S.bodega.nuevo) S.bodega.nuevo.nombre = e.target.value; return; }
     if (!campo) return;
     if (e.target.dataset.plata) e.target.value = conPuntos(e.target.value);
     const destino = S.vista === 'cobrar' ? S.cobro : S.borrador;
@@ -1413,7 +1466,40 @@
     if ($adelanto) $adelanto.innerHTML = adelantoDeCobro();
   });
 
+  $app.addEventListener('change', async (e) => {
+    if (e.target.id !== 'fotoBorrador') return;
+    const n = S.bodega.nuevo, archivo = e.target.files && e.target.files[0];
+    if (!n || !archivo) return;
+    n.comprimiendo = true;
+    pintar();
+    try {
+      const { dataUrl, bytes } = await comprimirFotoBorrador(archivo);
+      Object.assign(n, { foto: dataUrl, bytes });
+    } catch (err) { aviso(err.message, true); }
+    n.comprimiendo = false;
+    pintar();
+  });
+
   $app.addEventListener('submit', async (e) => {
+    if (e.target.dataset.form === 'borrador') {
+      e.preventDefault();
+      const b = S.bodega, n = b.nuevo;
+      if (!n || n.guardando || n.comprimiendo) return;
+      n.guardando = true;
+      pintar();
+      try {
+        const creado = await pedir('/taller/bodega/borradores', { metodo: 'POST', cuerpo: { codigo: n.codigo, nombre: n.nombre, imagen_base64: n.foto || undefined } });
+        Object.assign(b, { nuevo: null, codigoSinDueno: null, resultados: null, producto: creado });
+        pintar();
+        if (creado.aviso) aviso(creado.aviso, true); else aviso('Borrador creado: termínalo en el POS, Productos → Ver: Borradores');
+        ventanaProducto(creado);
+      } catch (err) {
+        n.guardando = false;
+        aviso(err.message, true);
+        pintar();
+      }
+      return;
+    }
     if (e.target.dataset.form === 'lugarescrito') {
       e.preventDefault();
       const p = S.bodega.producto;

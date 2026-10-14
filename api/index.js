@@ -5540,41 +5540,76 @@ const MAX_BYTES_IMAGEN_PRODUCTO = 1 * 1024 * 1024; // el Canvas del front apunta
    y la agrega a productos.imagen_urls. El navegador nunca ve la llave de
    Supabase: solo manda el webp en base64 y el backend sube con
    service_role, igual que /api/compras/archivo con compras-documentos. */
+/* Sube un webp (ya comprimido en el navegador) al bucket y lo agrega a
+   productos.imagen_urls. Lo usan la ficha del POS y el borrador que se crea
+   desde la Bodega del taller (v142). Devuelve { data } o { error, status }. */
+async function subirFotoProducto(productoId, base64) {
+  if (!base64) return { status: 400, error: 'Falta la imagen' };
+  const { data: producto } = await db.from('productos')
+    .select('id, imagen_urls').eq('id', productoId).maybeSingle();
+  if (!producto) return { status: 404, error: 'Producto no encontrado' };
+
+  const contenido = String(base64).includes(',') ? String(base64).split(',')[1] : String(base64);
+  const buffer = Buffer.from(contenido, 'base64');
+  if (buffer.length > MAX_BYTES_IMAGEN_PRODUCTO) {
+    return { status: 413, error: 'La imagen supera 1 MB. El navegador debería haberla comprimido antes de subirla.' };
+  }
+
+  // Ruta no enumerable (mismo criterio FILE-01 que compras-documentos):
+  // un UUID aleatorio en vez del id de producto + timestamp.
+  const ruta = `${productoId}/${crypto.randomUUID()}.webp`;
+
+  const { error: errSubida } = await db.storage.from(BUCKET_IMAGENES_PRODUCTO)
+    .upload(ruta, buffer, { contentType: 'image/webp', upsert: false });
+  if (errSubida) throw new Error(errSubida.message);
+
+  // Bucket público a propósito (ver README-ECOMMERCE-SEVELIN.md sección
+  // 4.1): la tienda sirve la foto directo al navegador del cliente, sin
+  // pasar por ningún backend.
+  const { data: pub } = db.storage.from(BUCKET_IMAGENES_PRODUCTO).getPublicUrl(ruta);
+  const imagenUrls = [...(producto.imagen_urls || []), pub.publicUrl];
+  const { data, error } = await db.from('productos')
+    .update({ imagen_urls: imagenUrls }).eq('id', productoId).select('id, imagen_urls').single();
+  if (error) {
+    // Sin fila que la nombre, la foto quedaría suelta en el bucket ocupando espacio.
+    await db.storage.from(BUCKET_IMAGENES_PRODUCTO).remove([ruta]);
+    throw new Error(error.message);
+  }
+  return { data };
+}
+
+/* Borra del bucket las fotos de esta lista que ya no usa ningún producto
+   (v142, dueño 14-10-2026: "verificar que se pueda borrar después de la base
+   de datos, para que no ocupe espacio"). Antes, eliminar un producto dejaba
+   sus fotos en el bucket: al 14-10-2026 había 35 sueltas. Las URLs externas
+   o antiguas (fuera del bucket) se ignoran. Nunca tira: devuelve el error. */
+async function borrarFotosSinUso(urls) {
+  const marca = `/${BUCKET_IMAGENES_PRODUCTO}/`;
+  const candidatas = [...new Set((urls || []).map(u => String(u || '')).filter(u => u.includes(marca)))];
+  if (!candidatas.length) return { borradas: 0 };
+  try {
+    const { data: siguen, error } = await db.from('productos').select('imagen_urls').overlaps('imagen_urls', candidatas);
+    if (error) return { borradas: 0, error: error.message };
+    const enUso = new Set((siguen || []).flatMap(p => p.imagen_urls || []));
+    const rutas = candidatas.filter(u => !enUso.has(u)).map(u => u.slice(u.indexOf(marca) + marca.length));
+    if (!rutas.length) return { borradas: 0 };
+    const { error: errBorrar } = await db.storage.from(BUCKET_IMAGENES_PRODUCTO).remove(rutas);
+    if (errBorrar) {
+      console.error('[FOTOS] no se pudieron borrar del bucket:', errBorrar.message, rutas);
+      return { borradas: 0, error: errBorrar.message };
+    }
+    return { borradas: rutas.length };
+  } catch (err) {
+    console.error('[FOTOS] no se pudieron borrar del bucket:', err.message);
+    return { borradas: 0, error: err.message };
+  }
+}
+
 app.post('/api/productos/:id/imagen', auth(true), async (req, res) => {
   try {
-    const base64 = req.body?.imagen_base64;
-    if (!base64) return enviarError(res, 400, 'Falta la imagen');
-
-    const { data: producto } = await db.from('productos')
-      .select('id, imagen_urls').eq('id', req.params.id).maybeSingle();
-    if (!producto) return enviarError(res, 404, 'Producto no encontrado');
-
-    const contenido = String(base64).includes(',') ? String(base64).split(',')[1] : String(base64);
-    const buffer = Buffer.from(contenido, 'base64');
-    if (buffer.length > MAX_BYTES_IMAGEN_PRODUCTO) {
-      return enviarError(res, 413, 'La imagen supera 1 MB. El navegador debería haberla comprimido antes de subirla.');
-    }
-
-    // Ruta no enumerable (mismo criterio FILE-01 que compras-documentos):
-    // un UUID aleatorio en vez del id de producto + timestamp.
-    const ruta = `${req.params.id}/${crypto.randomUUID()}.webp`;
-
-    const { error: errSubida } = await db.storage.from(BUCKET_IMAGENES_PRODUCTO)
-      .upload(ruta, buffer, { contentType: 'image/webp', upsert: false });
-    if (errSubida) throw new Error(errSubida.message);
-
-    // Bucket público a propósito (ver README-ECOMMERCE-SEVELIN.md sección
-    // 4.1): la tienda sirve la foto directo al navegador del cliente, sin
-    // pasar por ningún backend.
-    const { data: pub } = db.storage.from(BUCKET_IMAGENES_PRODUCTO).getPublicUrl(ruta);
-    const url = pub.publicUrl;
-
-    const imagenUrls = [...(producto.imagen_urls || []), url];
-    const { data, error } = await db.from('productos')
-      .update({ imagen_urls: imagenUrls }).eq('id', req.params.id).select('id, imagen_urls').single();
-    if (error) throw new Error(error.message);
-
-    res.status(201).json(data);
+    const r = await subirFotoProducto(req.params.id, req.body?.imagen_base64);
+    if (r.error) return enviarError(res, r.status, r.error);
+    res.status(201).json(r.data);
   } catch (err) {
     enviarError(res, 500, err.message || 'No se pudo subir la imagen');
   }
@@ -5638,20 +5673,15 @@ app.delete('/api/productos/:id/imagen', auth(true), async (req, res) => {
 
   const imagenUrls = (producto.imagen_urls || []).filter(u => u !== url);
 
-  // La ruta dentro del bucket es todo lo que sigue después del nombre del
-  // bucket en la URL pública; si no matchea (url externa/antigua) igual se
-  // quita del arreglo, pero no se intenta borrar nada del storage.
-  const marca = `/${BUCKET_IMAGENES_PRODUCTO}/`;
-  const idx = url.indexOf(marca);
-  if (idx !== -1) {
-    const ruta = url.slice(idx + marca.length);
-    await db.storage.from(BUCKET_IMAGENES_PRODUCTO).remove([ruta]);
-  }
-
   const { data, error } = await db.from('productos')
     .update({ imagen_urls: imagenUrls }).eq('id', req.params.id).select('id, imagen_urls').single();
   if (error) return enviarErrorBD(res, error);
-  res.json(data);
+
+  /* Después de sacarla de la ficha, se borra del bucket (si es del bucket y
+     ningún otro producto la usa). Antes se borraba primero y sin mirar el
+     resultado: si fallaba, nadie se enteraba. */
+  const borrado = await borrarFotosSinUso([url]);
+  res.json(borrado.error ? { ...data, aviso: 'La foto se quitó del producto, pero no se pudo borrar del almacenamiento: ' + borrado.error } : data);
 });
 
 // Eliminación masiva desde la barra de selección (lista explícita de ids).
@@ -5660,8 +5690,10 @@ app.post('/api/productos/eliminar-lote', auth(true), exigirPinAdmin, async (req,
   const ids = (Array.isArray(req.body?.ids) ? req.body.ids : []).map(Number).filter(Boolean);
   if (ids.length === 0) return enviarError(res, 400, 'No hay productos seleccionados');
 
+  const { data: fotos } = await db.from('productos').select('imagen_urls').in('id', ids);
   const { error } = await db.from('productos').delete().in('id', ids);
   if (error) return enviarErrorBD(res, error);
+  await borrarFotosSinUso((fotos || []).flatMap(p => p.imagen_urls || []));   // v142: sin fotos sueltas en el bucket
   res.json({ eliminadas: ids.length });
 });
 
@@ -5675,8 +5707,10 @@ app.delete('/api/productos/todos', auth(true), exigirPinAdmin, async (req, res) 
 });
 
 app.delete('/api/productos/:id', auth(true), async (req, res) => {
+  const { data: antes } = await db.from('productos').select('imagen_urls').eq('id', req.params.id).maybeSingle();
   const { error } = await db.from('productos').delete().eq('id', req.params.id);
   if (error) return enviarErrorBD(res, error);
+  await borrarFotosSinUso(antes?.imagen_urls || []);   // v142: sin fotos sueltas en el bucket
   res.json({ ok: true });
 });
 
@@ -18814,6 +18848,52 @@ app.put('/api/taller/bodega/productos/:id/codigo', authTaller(), async (req, res
     res.json(listo);
   } catch (err) {
     return enviarErrorBD(res, err, 'PUT /api/taller/bodega/productos/:id/codigo');
+  }
+});
+
+/* Código que no está en ningún producto → borrador para terminarlo después en
+   el POS (v142, dueño 14-10-2026: "que temporalmente se vaya a borrador para
+   que yo mismo lo siga creando al rato… solo una foto, comprimida y temporal,
+   y un nombre temporal"). Nace sin precio, sin stock y sin publicar: queda en
+   Productos → Ver: Borradores. La foto se sube igual que en la ficha
+   (subirFotoProducto) y se borra del bucket al quitarla o al eliminar el
+   producto (borrarFotosSinUso). */
+app.post('/api/taller/bodega/borradores', authTaller(), async (req, res) => {
+  try {
+    if (!req.persona) return enviarError(res, 403, SIN_PERSONA_TALLER);
+    const codigo = String(req.body?.codigo || '').trim();
+    if (!/^[0-9A-Za-z\-.]{4,64}$/.test(codigo)) return enviarError(res, 400, 'Ese código no parece un código de barras');
+    const [{ data: porCodigo, error: e1 }, { data: porSku, error: e2 }] = await Promise.all([
+      db.from('productos').select('id, nombre').eq('codigo_barras', codigo).limit(1),
+      db.from('productos').select('id, nombre').eq('sku', codigo).limit(1)
+    ]);
+    if (e1 || e2) return enviarErrorBD(res, e1 || e2, 'POST /api/taller/bodega/borradores');
+    const ya = (porCodigo || [])[0] || (porSku || [])[0];
+    if (ya) return enviarError(res, 409, `Ese código ya es de "${ya.nombre}"`);
+
+    const nombre = String(req.body?.nombre || '').trim().slice(0, 120) || `Borrador sin nombre — código ${codigo}`;
+    const producto = sanearProducto({ nombre, codigo_barras: codigo, costo_unitario: 0, precio_unitario: 0, stock: 0, es_borrador: true, publicado_web: false });
+    if (!producto) return enviarError(res, 400, 'Escribe un nombre');
+    producto.es_borrador = true;
+    producto.publicado_web = false;
+    delete producto.stock;
+    const { data: creado, error } = await db.from('productos').insert([producto]).select(COLUMNAS_PRODUCTO_BODEGA).single();
+    if (error) return enviarErrorBD(res, error, 'POST /api/taller/bodega/borradores');
+
+    let aviso = null;
+    if (req.body?.imagen_base64) {
+      try {
+        const r = await subirFotoProducto(creado.id, req.body.imagen_base64);
+        if (r.error) aviso = 'El borrador se creó, pero la foto no: ' + r.error;
+        else creado.imagen_urls = r.data.imagen_urls;
+      } catch (err) {
+        aviso = 'El borrador se creó, pero la foto no se pudo subir: ' + err.message;
+      }
+    }
+    const [listo] = await productosParaBodega([creado]);
+    res.status(201).json({ ...listo, borrador: true, aviso });
+  } catch (err) {
+    return enviarErrorBD(res, err, 'POST /api/taller/bodega/borradores');
   }
 });
 

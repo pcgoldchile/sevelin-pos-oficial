@@ -55,3 +55,22 @@ pidió una ventana al escanear ("no se ve bien la opción de guardar") y poder e
   los lugares que ya hay.
 - Probado en la maqueta con cámaras simuladas (gran angular, principal y tele): abre la principal, cambia y recuerda,
   aplica enfoque y zoom, y la ventana guarda en un lugar existente y en uno nuevo. **No probado en un teléfono real.**
+
+## v142 (14-10-2026): borrador desde un código nuevo, y fotos que sí se borran del almacenamiento
+El dueño pidió: si el código escaneado no está en ningún producto, "que temporalmente se vaya a borrador para que yo
+mismo lo siga creando al rato", con solo una foto (comprimida y temporal, que después borra desde editar producto) y
+un nombre temporal; y "verificar que se pueda borrar después de la base de datos, para que no ocupe espacio".
+- **Bodega:** con un código desconocido aparece "＋ Crear borrador con este código". Pide un nombre temporal (opcional;
+  si va vacío queda "Borrador sin nombre — código …", que el POS ya trata como sin nombre) y una foto opcional, que se
+  achica en el teléfono a 1000 px y ~150 KB en webp (una foto de prueba de 4,9 MB quedó en 129 KB). El producto nace
+  como borrador: sin precio, sin stock, sin publicar, con el código guardado. Queda en Productos → Ver: Borradores y se
+  abre la ventana para anotar dónde se guardó. Ruta `POST /api/taller/bodega/borradores`.
+- **Fotos sueltas (arreglado):** eliminar un producto dejaba sus fotos en el bucket `productos-imagenes`. Al
+  14-10-2026 había 35 archivos sin producto (834 kB de 24 MB). Ahora `borrarFotosSinUso()` borra del bucket las fotos de
+  un producto eliminado (uno o en lote) y la que se quita en la ficha, siempre que ningún otro producto la use. Si el
+  bucket no deja borrar, se avisa en vez de callarlo. Los 35 archivos viejos NO se tocaron (falta el OK del dueño).
+- La subida de fotos pasó a `subirFotoProducto()` (la usan la ficha y el borrador); si la ficha no se puede guardar,
+  borra la foto recién subida para no dejarla suelta.
+- Probado: 18 pruebas del servidor con un bucket simulado que recuerda qué archivos hay (crear borrador con y sin foto,
+  código repetido, foto de más de 1 MB, quitar foto, foto compartida que no se borra, eliminar producto) y la pantalla
+  en la maqueta. **No probado en un teléfono real ni contra el bucket real.**

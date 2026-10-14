@@ -206,3 +206,6 @@ button { cursor: pointer; }
 .popup-lugar label { display: block; font-weight: 700; margin-top: 12px; font-size: 15px; }
 .popup-lugar .buscar-bodega { margin: 6px 0 4px; }
 .popup-lugar .campo { margin-bottom: 0; }
+.foto-borrador { display: flex; align-items: center; gap: 12px; background: var(--tarjeta); border: 1px solid var(--linea); border-radius: 12px; padding: 10px; }
+.foto-borrador img { width: 84px; height: 84px; object-fit: cover; border-radius: 10px; }
+.foto-borrador span { color: var(--gris); font-size: 14px; flex: 1; }
