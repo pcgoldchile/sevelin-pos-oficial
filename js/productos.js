@@ -104,6 +104,7 @@ const elProdFotosGrid = document.getElementById('prodFotosGrid');
 const elDropzoneFotos = document.getElementById('dropzoneFotos');
 const elAvisoPublicacionIncompleta = document.getElementById('avisoPublicacionIncompleta');
 const elProdPublicadoWeb = document.getElementById('prodPublicadoWeb');
+const elProdNotaInterna = document.getElementById('prodNotaInterna');   // sql/98 (v151)
 const elProdEsEncargo = document.getElementById('prodEsEncargo');
 const elProdPrecioAConsultar = document.getElementById('prodPrecioAConsultar');
 const elProdCondicion = document.getElementById('prodCondicion');
@@ -1003,6 +1004,7 @@ function renderProductosTabla(items, origen) {
           ${p.requiere_sn ? ' · <b>S/N</b>' : ''}
           ${p.es_repuesto ? ' · Repuesto' : ''}
           ${etiquetaWebTexto(p.etiqueta_web) ? ` · ${etiquetaWebTexto(p.etiqueta_web)}` : ''}
+          ${p.nota_interna ? ` · <span title="${escHtml(p.nota_interna)}">📝 ${escHtml(acortar(p.nota_interna, 28))}</span>` : ''}
           ${esAdmin() && typeof marcaFacebookDeFila === 'function' ? marcaFacebookDeFila(p) : ''}
         </small>
       </td>
@@ -2199,6 +2201,7 @@ function abrirModalProducto(producto = null) {
        un clic desmarcarlo antes de guardar. */
     if (elProdPublicadoWeb) elProdPublicadoWeb.checked = producto.es_borrador ? !producto.archivado : !!producto.publicado_web;
     if (elProdEsEncargo) elProdEsEncargo.checked = !!producto.es_pedido_encargo;
+    if (elProdNotaInterna) elProdNotaInterna.value = producto.nota_interna || '';
     if (elProdPrecioAConsultar) elProdPrecioAConsultar.checked = !!producto.precio_a_consultar;
     if (elProdCondicion) elProdCondicion.value = producto.condicion || 'nuevo';
     if (elProdMesesGarantia) elProdMesesGarantia.value = producto.meses_garantia ?? 6;
@@ -2272,6 +2275,7 @@ function abrirModalProducto(producto = null) {
     // cada vez. Sigue siendo reversible con un click antes de guardar.
     if (elProdPublicadoWeb) elProdPublicadoWeb.checked = true;
     if (elProdEsEncargo) elProdEsEncargo.checked = false;
+    if (elProdNotaInterna) elProdNotaInterna.value = '';
     // Un producto nuevo siempre parte "Nuevo" y con 6 meses de garantía
     // (pedido explícito del dueño) — editable después si hace falta.
     if (elProdCondicion) elProdCondicion.value = 'nuevo';
@@ -2512,6 +2516,7 @@ function construirPayloadProducto() {
     // --- Tienda web (e-commerce Fase 0). imagen_urls NO va acá: se sube
     // aparte, foto por foto, con API.productos.subirImagen/quitarImagen. ---
     publicado_web: !!(elProdPublicadoWeb && elProdPublicadoWeb.checked),
+    nota_interna: elProdNotaInterna ? elProdNotaInterna.value : undefined,   // sql/98
     es_pedido_encargo: !!(elProdEsEncargo && elProdEsEncargo.checked),
     // Ver sql/45-precio-a-consultar.sql: la tienda lo cotiza, no lo vende.
     precio_a_consultar: !!(elProdPrecioAConsultar && elProdPrecioAConsultar.checked),

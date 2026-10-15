@@ -1081,7 +1081,9 @@ const CAMPOS_PRODUCTO = [
   // sql/94: costo y stock al ojo, por confirmar (mercadería de los padres)
   'costo_provisorio',
   // sql/93 y sql/95 (v139): textos para redes, guardados también desde la ficha
-  'facebook_texto', 'instagram_texto'
+  'facebook_texto', 'instagram_texto',
+  // sql/98 (v151): nota solo para el POS; la tienda no la recibe
+  'nota_interna'
 ];
 
 /* Normaliza el código de barras: SOLO dígitos.
@@ -1294,6 +1296,11 @@ function sanearProducto(body = {}) {
     let texto = String(body[campo] || '').trim();
     if (campo === 'facebook_texto') texto = hashtagsFacebookConComas(texto);
     p[campo] = texto ? texto.slice(0, tope) : null;
+  }
+  // sql/98: vacío = sin nota; el check de la base corta en 500
+  if (body.nota_interna !== undefined) {
+    const nota = String(body.nota_interna || '').trim();
+    p.nota_interna = nota ? nota.slice(0, 500) : null;
   }
 
   return p;

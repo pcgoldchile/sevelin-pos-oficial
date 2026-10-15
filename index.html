@@ -2629,6 +2629,13 @@
             </label>
           </div>
 
+          <!-- sql/98 (v151): lo que antes se escribía en el nombre para que se supiera
+               en el POS ("insumo del taller") y terminaba en sevelin.cl. -->
+          <div class="field" style="margin-top:12px;">
+            <label for="prodNotaInterna">📝 Nota interna <small class="fila-meta">(solo el POS, no sale en la web)</small></label>
+            <textarea id="prodNotaInterna" rows="2" maxlength="500" placeholder="Ej: insumo del taller, no reponer, el del mostrador está rayado"></textarea>
+          </div>
+
           <!-- v117 (dueño, 03-10-2026): la Descripción vivía en su propia tarjeta al final
                de la página y había que bajar hasta allá en cada producto. Ahora va acá,
                junto al nombre. Conserva data-seccion="descripcion" para que el aviso de

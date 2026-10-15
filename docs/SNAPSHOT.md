@@ -12,6 +12,11 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 15-10-2026 · v150-v151: borradores a la web y nota interna (sql/98)
+
+Un borrador terminado entra a sevelin.cl (la casilla abre marcada). Nota interna por producto, solo POS. Ver
+`docs/CHANGELOG-V151.md`.
+
 ## 15-10-2026 · v149: Liquidación (sql/97 + tienda supabase/43)
 
 Etiqueta "🏷️ Liquidación", no categoría: el producto sigue en la suya. Se marca en la ficha o a varios desde la
