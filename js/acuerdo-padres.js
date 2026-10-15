@@ -11,10 +11,10 @@
 // ==========================================
 
 const POZO_MODOS = [
-  { valor: 'TODO', texto: 'Todo' },
-  { valor: 'MENOS_REPUESTO', texto: 'Menos el repuesto' },
-  { valor: 'OTRO', texto: 'Otro monto' },
-  { valor: 'NO', texto: 'No va (es mío)' }
+  { valor: 'NO', texto: 'Es mío (Sevelin)' },
+  { valor: 'TODO', texto: 'De C. Patricio: todo a su pozo' },
+  { valor: 'MENOS_REPUESTO', texto: 'De C. Patricio, menos el repuesto' },
+  { valor: 'OTRO', texto: 'Otro monto a su pozo' }
 ];
 const POZO_IVA = 1.19;
 
@@ -38,16 +38,20 @@ function pozoDeLineaPrevio(cobrado, pozo) {
   return pozo.sin_iva ? Math.round(monto / POZO_IVA) : monto;
 }
 
-/* Un servicio se pregunta si su ficha dice "lo hace C. Patricio" o si se
-   escribió a mano en la caja (no hay ficha que lo diga). */
+/* Todo servicio se pregunta (v143, dueño 15-10-2026: "al agregar servicios no
+   me pregunta si es para mí o para mis padres… mayormente el de celulares").
+   Antes solo se preguntaban los escritos a mano y los de ficha "Lo hace
+   C. Patricio"; como ninguna ficha lo tenía marcado, los del catálogo se iban
+   enteros al dueño sin que nadie lo decidiera (venta #272, formateo de
+   celular, 15-10-2026). */
 function lineaPreguntaPozo(item) {
-  return !!item.es_servicio && (!!item.va_al_pozo || !item.producto_id);
+  return !!item.es_servicio;
 }
 
-/* Un servicio escrito a mano no tiene ficha que diga quién lo hizo. Antes
-   partía en "No va" con el botón de seguir enfocado: un Enter cerraba la
-   pregunta sin que nadie la viera y el servicio quedaba fuera del pozo
-   (venta #266, 13-10-2026). Ahora no trae nada marcado y hay que elegir. */
+/* Un servicio sin "Lo hace C. Patricio" en la ficha no trae nada marcado y hay
+   que elegir. Antes partía en "No va" con el botón de seguir enfocado: un Enter
+   cerraba la pregunta sin que nadie la viera (venta #266, 13-10-2026). Con la
+   casilla marcada en la ficha viene elegido "Todo" (se puede cambiar). */
 function lineaPozoObligatoria(item) {
   return lineaPreguntaPozo(item) && !item.va_al_pozo;
 }
@@ -149,7 +153,7 @@ function pintarAntesDeCobrar(hayPozo) {
   }).join('');
 
   cuerpo.innerHTML =
-    (bloquesPozo ? `<h3 class="antes-seccion">👨‍🔧 ¿Va al pozo de C. Patricio?</h3>${bloquesPozo}` : '') +
+    (bloquesPozo ? `<h3 class="antes-seccion">👨‍🔧 ¿Quién hizo el servicio?</h3><p class="modal-hint">Si lo hizo C. Patricio, va a su pozo. Para que venga elegido, marca "Lo hace C. Patricio" en la ficha del servicio.</p>${bloquesPozo}` : '') +
     (bloquesDueno ? `<h3 class="antes-seccion">📦 Este producto lo tienen los dos: ¿de quién es la unidad?</h3>${bloquesDueno}` : '');
 
   cuerpo.querySelectorAll('[data-pozo-linea]').forEach(actualizarLineaAntesDeCobrar);
@@ -181,7 +185,7 @@ function actualizarLineaAntesDeCobrar(bloque) {
     const monto = pozoDeLineaPrevio(cobrado, pozo);
     resultado.style.color = falta ? 'var(--red)' : '';
     resultado.innerHTML = falta
-      ? 'Elige una opción: ¿lo hizo C. Patricio (va a su pozo) o es tuyo?'
+      ? 'Elige: ¿es tuyo o lo hizo C. Patricio (va a su pozo)?'
       : monto > 0
         ? `Al pozo: <b>${fmtCLP(monto)}</b>${monto < cobrado ? ` · para ti ${fmtCLP(cobrado - monto)}` : ''}`
         : 'No va al pozo';
