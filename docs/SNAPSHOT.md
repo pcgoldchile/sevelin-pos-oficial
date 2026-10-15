@@ -12,6 +12,11 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 15-10-2026 · v147: Editar Venta pregunta de quién es cada servicio
+
+Para las ventas cobradas antes de la v143: cada servicio tiene "¿Quién hizo el servicio?" (mío / C. Patricio) y el monto
+al pozo. Además, editar una venta ya no le borra el pozo a sus servicios. Ver `docs/CHANGELOG-V147.md`.
+
 ## 14-10-2026 · v140 publicada: Bodega en la app del taller
 
 Detalle en `docs/CHANGELOG-V140.md`. Sin migración (usa `sql/60`).

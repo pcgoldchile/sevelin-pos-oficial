@@ -1545,7 +1545,14 @@ async function abrirModalEditarVenta(ventaId) {
       precio_unitario: Number(it.precio_unitario) || 0,
       serial_number: it.serial_number || null,
       // Venta mayorista (sql/76): editar la venta no borra la marca.
-      precio_tipo: it.precio_tipo === 'MAYORISTA' ? 'MAYORISTA' : 'NORMAL'
+      precio_tipo: it.precio_tipo === 'MAYORISTA' ? 'MAYORISTA' : 'NORMAL',
+      /* Acuerdo con los padres (v147): sin es_servicio, guardar la edición
+         dejaba la línea como producto y le borraba el pozo. Las ventas viejas
+         a veces no traen la marca: manda la ficha del catálogo. */
+      es_servicio: lineaEsServicio(it),
+      pozo_de: Number(it.pozo_monto) > 0 ? 'PATRICIO' : 'MIO',
+      pozo_monto: Number(it.pozo_monto) > 0 ? Number(it.pozo_monto) : null,
+      pozo_tocado: false
     }));
 
     if (elEditVentaId) elEditVentaId.value = venta.id;
@@ -1562,6 +1569,38 @@ async function abrirModalEditarVenta(ventaId) {
     console.error('Error al abrir la venta:', err.message || err);
     showToast(err.message || 'No se pudo cargar la venta', 'err');
   }
+}
+
+/* ¿La línea es un servicio? La marca de la venta, o la ficha si la venta es
+   de antes de que se guardara (productsList es el catálogo ya cargado). */
+function lineaEsServicio(it) {
+  if (it.es_servicio) return true;
+  const ficha = it.producto_id && typeof productsList !== 'undefined'
+    ? productsList.find(p => Number(p.id) === Number(it.producto_id)) : null;
+  return !!ficha?.es_servicio;
+}
+
+/* Tercera línea de un servicio: ¿es de Sevelin o lo hizo C. Patricio? (v147)
+   Sirve para las ventas cobradas antes de que la caja lo preguntara (v143). */
+function htmlPozoEditable(it, i) {
+  if (!it.es_servicio) return '';
+  const patricio = it.pozo_de === 'PATRICIO';
+  const cobrado = (Number(it.precio_unitario) || 0) * (Number(it.cantidad) || 0);
+  return `
+        <div class="edit-item-codigos edit-item-pozo">
+          <div class="field">
+            <label>¿Quién hizo el servicio?</label>
+            <select data-pozo-de="${i}">
+              <option value="MIO"${patricio ? '' : ' selected'}>Es mío (Sevelin)</option>
+              <option value="PATRICIO"${patricio ? ' selected' : ''}>De C. Patricio: va a su pozo</option>
+            </select>
+          </div>
+          <div class="field"${patricio ? '' : ' hidden'}>
+            <label>Cuánto va a su pozo</label>
+            <input type="number" min="1" step="1" data-pozo-monto="${i}" value="${Number(it.pozo_monto) > 0 ? Number(it.pozo_monto) : cobrado}">
+            <small class="modal-hint">Si hubo repuesto o el IVA lo pone él, réstalo aquí.</small>
+          </div>
+        </div>`;
 }
 
 function renderItemsEditables() {
@@ -1621,8 +1660,29 @@ function renderItemsEditables() {
             </div>
           </div>
         </div>
+        ${htmlPozoEditable(it, i)}
       </div>
     `).join('');
+
+    elEditVentaItemsList.querySelectorAll('select[data-pozo-de]').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const it = itemsEditando[Number(sel.dataset.pozoDe)];
+        it.pozo_de = sel.value;
+        it.pozo_tocado = true;
+        const campoMonto = sel.closest('.edit-item-pozo')?.querySelector('[data-pozo-monto]');
+        if (campoMonto) {
+          campoMonto.closest('.field').hidden = sel.value !== 'PATRICIO';
+          if (sel.value === 'PATRICIO') it.pozo_monto = Number(campoMonto.value) || 0;
+        }
+      });
+    });
+    elEditVentaItemsList.querySelectorAll('input[data-pozo-monto]').forEach(campo => {
+      campo.addEventListener('input', () => {
+        const it = itemsEditando[Number(campo.dataset.pozoMonto)];
+        it.pozo_monto = Number(campo.value) || 0;
+        it.pozo_tocado = true;
+      });
+    });
 
     elEditVentaItemsList.querySelectorAll('.edit-item-row input').forEach(input => {
       input.addEventListener('input', () => {
@@ -1722,6 +1782,9 @@ async function guardarEdicionVenta() {
   if (itemsEditando.length === 0) { showToast('La venta debe tener al menos un producto', 'err'); return; }
   const invalido = itemsEditando.find(i => !String(i.nombre).trim() || i.cantidad <= 0 || i.precio_unitario < 0);
   if (invalido) { showToast('Revisa nombres, cantidades y precios de los ítems', 'err'); return; }
+  const pozoMalo = itemsEditando.find(i => i.es_servicio && i.pozo_de === 'PATRICIO'
+    && !(i.pozo_monto > 0 && i.pozo_monto <= i.precio_unitario * i.cantidad));
+  if (pozoMalo) { showToast(`"${pozoMalo.nombre}": al pozo va entre $1 y lo cobrado por ese servicio`, 'err'); return; }
 
   /* PIN de administrador (dueño, 17-09-2026). Editar una venta cambia
      total, costo y utilidad de algo ya cerrado, y con eso el resultado del
@@ -1746,7 +1809,9 @@ async function guardarEdicionVenta() {
       cliente: elEditVentaCliente?.value.trim() || null,
       cliente_telefono: elEditVentaClienteTelefono?.value.trim() || null,
       metodo_pago: elEditVentaMetodoPago?.value || null,
-      items: itemsEditando
+      // Solo viaja la elección del pozo que se cambió: lo demás lo conserva el servidor
+      items: itemsEditando.map(({ pozo_de, pozo_monto, pozo_tocado, ...it }) => (
+        pozo_tocado && it.es_servicio ? { ...it, pozo_de, pozo_monto } : it))
     }, pin);
 
     showToast('Venta actualizada y totales recalculados', 'ok');

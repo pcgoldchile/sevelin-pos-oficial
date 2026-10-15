@@ -7578,23 +7578,53 @@ app.put('/api/ventas/:id', auth(true), exigirPinAdmin, async (req, res) => {
       /* Acuerdo con los padres (sql/90): editar una venta borra y vuelve a
          escribir sus líneas. Cada línea conserva de quién era y lo que fue al
          pozo, emparejada con la anterior por producto (o por nombre si se
-         escribió a mano); el pozo nunca queda mayor que lo cobrado ahora. El
-         pozo se corrige en Finanzas → Mis padres, no acá. */
+         escribió a mano); el pozo nunca queda mayor que lo cobrado ahora.
+         v147: si el dueño eligió en la edición de quién es un servicio
+         (pozo_de MIO o PATRICIO), manda esa elección: así se marcan las ventas
+         cobradas antes de que la caja lo preguntara. */
       const { data: lineasAntes, error: errAntes } = await db.from('venta_items')
-        .select('id, producto_id, nombre, propietario, pozo_monto, pozo_nota').eq('venta_id', id).order('id');
+        .select('id, producto_id, nombre, propietario, pozo_monto, pozo_nota, es_servicio').eq('venta_id', id).order('id');
       if (errAntes) throw new Error(errAntes.message);
+      // Las ventas viejas a veces no traen la marca de servicio: manda la ficha
+      const idsProducto = [...new Set(items.map(it => it.producto_id).filter(Boolean))];
+      const servicioEnFicha = new Set();
+      if (idsProducto.length) {
+        const { data: fichas, error: errFichas } = await db.from('productos').select('id, es_servicio').in('id', idsProducto);
+        if (errFichas) throw new Error(errFichas.message);
+        (fichas || []).forEach(f => { if (f.es_servicio) servicioEnFicha.add(Number(f.id)); });
+      }
+      const pedidos = req.body.items;
+      const subtotalLineas = items.reduce((a, it) => a + num(it.subtotal), 0);
+      const factorDescuento = subtotalLineas > 0 ? Math.max(0, subtotalLineas - num(cambios.descuento_monto)) / subtotalLineas : 1;
       const porEmparejar = [...(lineasAntes || [])];
-      items.forEach(it => {
+      for (let k = 0; k < items.length; k++) {
+        const it = items[k];
         delete it._pozo;
         const i = porEmparejar.findIndex(a => it.producto_id
           ? Number(a.producto_id) === Number(it.producto_id)
           : (!a.producto_id && a.nombre === it.nombre));
         const antes = i >= 0 ? porEmparejar.splice(i, 1)[0] : null;
         if (antes?.propietario) it.propietario = antes.propietario;
-        const pozoAntes = num(antes?.pozo_monto);
-        it.pozo_monto = pozoAntes > 0 && it.es_servicio ? Math.min(pozoAntes, num(it.subtotal)) : null;
-        it.pozo_nota = it.pozo_monto ? (antes.pozo_nota || null) : null;
-      });
+        if (antes?.es_servicio || (it.producto_id && servicioEnFicha.has(Number(it.producto_id)))) it.es_servicio = true;
+
+        const eleccion = String(pedidos[k]?.pozo_de || '').trim().toUpperCase();
+        if (it.es_servicio && eleccion === 'MIO') {
+          it.pozo_monto = null;
+          it.pozo_nota = null;
+        } else if (it.es_servicio && eleccion === 'PATRICIO') {
+          const cobrado = Math.round(num(it.subtotal) * factorDescuento);
+          const monto = Math.round(num(pedidos[k]?.pozo_monto));
+          if (!(monto > 0) || monto > cobrado) {
+            return enviarError(res, 400, `"${it.nombre}": al pozo va entre $1 y lo cobrado por ese servicio (${cobrado})`);
+          }
+          it.pozo_monto = monto;
+          it.pozo_nota = 'Marcado al editar la venta';
+        } else {
+          const pozoAntes = num(antes?.pozo_monto);
+          it.pozo_monto = pozoAntes > 0 && it.es_servicio ? Math.min(pozoAntes, num(it.subtotal)) : null;
+          it.pozo_nota = it.pozo_monto ? (antes.pozo_nota || null) : null;
+        }
+      }
 
       const { error: errDel } = await db.from('venta_items').delete().eq('venta_id', id);
       if (errDel) throw new Error(errDel.message);
