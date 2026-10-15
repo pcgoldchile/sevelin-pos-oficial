@@ -1106,6 +1106,22 @@ function limpiarCodigoBarras(valor) {
   return soloDigitos || null;
 }
 
+/* Hashtags de Facebook siempre separados por comas (v144, dueño 15-10-2026).
+   El campo "Etiquetas de productos" de Marketplace corta las etiquetas en las
+   comas: "#Sevelin #Tecnologia" pegado con espacios queda como UNA etiqueta.
+   El prompt ya lo pide, pero la IA a veces no obedece (pasó con el #362), así
+   que se arregla al guardar y al generar: toda línea hecha solo de hashtags
+   (dos o más) queda como "#A, #B, #C", sin repetidos. Lo demás no se toca. */
+function hashtagsFacebookConComas(texto) {
+  if (!texto) return texto;
+  return String(texto).split('\n').map(linea => {
+    const partes = linea.trim().split(/[\s,]+/).filter(Boolean);
+    if (partes.length < 2 || !partes.every(t => /^#[\p{L}\p{N}_]+$/u.test(t))) return linea;
+    const vistos = new Set();
+    return partes.filter(t => { const k = t.toLowerCase(); if (vistos.has(k)) return false; vistos.add(k); return true; }).join(', ');
+  }).join('\n');
+}
+
 function sanearProducto(body = {}) {
   const p = {};
   CAMPOS_PRODUCTO.forEach(k => { if (body[k] !== undefined) p[k] = body[k]; });
@@ -1271,7 +1287,8 @@ function sanearProducto(body = {}) {
   // --- Textos para redes (sql/93, sql/95). Vacío = sin texto. ---
   for (const [campo, tope] of [['facebook_texto', 8000], ['instagram_texto', 2200]]) {
     if (body[campo] === undefined) continue;
-    const texto = String(body[campo] || '').trim();
+    let texto = String(body[campo] || '').trim();
+    if (campo === 'facebook_texto') texto = hashtagsFacebookConComas(texto);
     p[campo] = texto ? texto.slice(0, tope) : null;
   }
 
@@ -2429,7 +2446,7 @@ app.post('/api/productos/generar-texto', auth(true), async (req, res) => {
     const limpio = String(texto).trim();
 
     if (destino === 'facebook') {
-      return res.json({ destino, texto: sinPalabraGenerica(limpio), modelo });
+      return res.json({ destino, texto: hashtagsFacebookConComas(sinPalabraGenerica(limpio)), modelo });
     }
 
     // El mismo corte que se le hace a una respuesta pegada a mano
@@ -2456,7 +2473,7 @@ app.put('/api/productos/:id/facebook', auth(true), async (req, res) => {
     if (req.body?.texto !== undefined) {
       const texto = String(req.body.texto || '').trim();
       if (texto.length > 8000) return enviarError(res, 400, 'El texto es demasiado largo para una publicación');
-      cambios.facebook_texto = texto || null;
+      cambios.facebook_texto = hashtagsFacebookConComas(texto) || null;
     }
     // v139 (sql/95): el pie de foto de Instagram viaja por la misma ruta
     if (req.body?.instagram !== undefined) {
