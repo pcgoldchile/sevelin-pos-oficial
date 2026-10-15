@@ -5641,7 +5641,7 @@ app.put('/api/productos/:id', auth(true), async (req, res) => {
   let antesDeGuardar = null;   // sql/94: para saber si el costo estaba "por confirmar"
   try {
     const { data: actualMayorista, error: errActual } = await db.from('productos')
-      .select('precio_mayorista, mayorista_desde, precio_mayorista_2, mayorista_desde_2, costo_unitario, precio_unitario, precio_web, es_servicio, stock_ilimitado, es_pedido_encargo, precio_a_consultar, costo_provisorio')
+      .select('precio_mayorista, mayorista_desde, precio_mayorista_2, mayorista_desde_2, costo_unitario, precio_unitario, precio_web, es_servicio, stock_ilimitado, es_pedido_encargo, precio_a_consultar, costo_provisorio, es_borrador')
       .eq('id', req.params.id).maybeSingle();
     if (errActual) throw errActual;
     antesDeGuardar = actualMayorista || null;
@@ -5662,6 +5662,15 @@ app.put('/api/productos/:id', auth(true), async (req, res) => {
      clave del dueño y pregunta el motivo. Acá se ignora lo que venga. */
   delete producto.stock;
   delete producto.stock_actualizado_en;
+
+  /* v146 (dueño 15-10-2026): un borrador que se termina cuenta como recién creado.
+     Los de la Bodega se escanean un día y se completan otro; con su fecha de
+     escaneo quedaban bajo lo cargado entremedio en "Más recientes primero" y
+     parecía que no se habían guardado. La fecha que importa es cuándo pasó a ser
+     un producto de verdad. */
+  if (antesDeGuardar?.es_borrador === true && producto.es_borrador === false) {
+    producto.created_at = new Date().toISOString();
+  }
 
   // v122: ¿esta edición ENCIENDE los lotes? Se mira antes de escribir.
   let enciendeLotes = false;
