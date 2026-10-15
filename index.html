@@ -3309,8 +3309,9 @@
                 <option value="NOVEDAD">🆕 Novedad</option>
                 <option value="TENDENCIA">🔥 Tendencia</option>
                 <option value="OFERTA">⚡ Oferta irresistible</option>
+                <option value="LIQUIDACION">🏷️ Liquidación</option>
               </select>
-              <p class="subtitle">Aparece en la tienda y en la tabla del POS. Solo una a la vez.</p>
+              <p class="subtitle">Aparece en la tienda y en la tabla del POS. Solo una a la vez. Liquidación además lo pone en sevelin.cl/liquidacion, sin sacarlo de su categoría.</p>
             </div>
             <p class="subtitle" style="margin-top:10px; padding-top:10px; border-top:1px solid var(--border);">
               📦 <strong>"Por llegar"</strong> se maneja ahora al registrar la compra, en
@@ -6562,6 +6563,8 @@
     <div class="toolbar-group">
       <button class="btn btn-outline btn-sm" id="btnDescargarJSON">🗄️ Descargar Seleccionadas (JSON)</button>
       <button class="btn btn-green btn-sm" id="btnDescargarCSV">📊 Descargar Seleccionadas (CSV/Excel)</button>
+      <!-- v149: solo en Productos (lo muestra mostrarBarraSeleccion si el módulo pasa onLiquidacion) -->
+      <button class="btn btn-outline btn-sm admin-only" id="btnLiquidacionSeleccionadas" style="display:none;">🏷️ Liquidación</button>
       <button class="btn btn-red btn-sm admin-only" id="btnEliminarSeleccionadas">🗑️ Eliminar Seleccionadas</button>
       <button class="btn btn-ghost btn-sm" id="btnLimpiarSeleccionBarra">✖ Quitar selección</button>
     </div>

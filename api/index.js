@@ -1122,6 +1122,10 @@ function hashtagsFacebookConComas(texto) {
   }).join('\n');
 }
 
+/* Etiqueta destacada (sql/28; LIQUIDACION desde sql/97, v149). Misma lista en el
+   check de las dos bases y en etiquetaWebTexto() de js/productos.js. */
+const ETIQUETAS_WEB = ['NOVEDAD', 'TENDENCIA', 'OFERTA', 'LIQUIDACION'];
+
 function sanearProducto(body = {}) {
   const p = {};
   CAMPOS_PRODUCTO.forEach(k => { if (body[k] !== undefined) p[k] = body[k]; });
@@ -1255,7 +1259,7 @@ function sanearProducto(body = {}) {
     p.fecha_llegada_estimada = /^\d{4}-\d{2}-\d{2}$/.test(f) ? f : null;
   }
   if (p.etiqueta_web !== undefined) {
-    p.etiqueta_web = ['NOVEDAD', 'TENDENCIA', 'OFERTA'].includes(p.etiqueta_web) ? p.etiqueta_web : null;
+    p.etiqueta_web = ETIQUETAS_WEB.includes(p.etiqueta_web) ? p.etiqueta_web : null;
   }
   // stock_umbral_web: NULL = usa el default de la tienda (+5). 0 o negativo
   // no tiene sentido como umbral (ver check de la migración 23) — se guarda
@@ -5854,6 +5858,21 @@ app.delete('/api/productos/:id/imagen', auth(true), async (req, res) => {
 
 // Eliminación masiva desde la barra de selección (lista explícita de ids).
 // Se registra ANTES de "/:id" para no chocar con esa ruta.
+/* Etiqueta de varios productos de una vez (v149): sobre todo para marcar o
+   quitar "Liquidación" desde la selección múltiple de Productos. Una etiqueta
+   a la vez por producto: marcar Liquidación reemplaza a Novedad/Tendencia/Oferta.
+   Cada fila que cambia dispara la sincronización con la tienda (trg_sync_tienda). */
+app.post('/api/productos/etiqueta-lote', auth(true), async (req, res) => {
+  const ids = [...new Set((Array.isArray(req.body?.ids) ? req.body.ids : []).map(Number).filter(n => Number.isInteger(n) && n > 0))];
+  if (ids.length === 0) return enviarError(res, 400, 'No hay productos seleccionados');
+  if (ids.length > 500) return enviarError(res, 400, 'Son demasiados de una vez: hasta 500');
+  const pedida = req.body?.etiqueta;
+  if (pedida !== null && !ETIQUETAS_WEB.includes(pedida)) return enviarError(res, 400, 'Etiqueta no válida');
+  const { data, error } = await db.from('productos').update({ etiqueta_web: pedida }).in('id', ids).select('id');
+  if (error) return enviarErrorBD(res, error);
+  res.json({ actualizados: (data || []).length, etiqueta: pedida });
+});
+
 app.post('/api/productos/eliminar-lote', auth(true), exigirPinAdmin, async (req, res) => {
   const ids = (Array.isArray(req.body?.ids) ? req.body.ids : []).map(Number).filter(Boolean);
   if (ids.length === 0) return enviarError(res, 400, 'No hay productos seleccionados');

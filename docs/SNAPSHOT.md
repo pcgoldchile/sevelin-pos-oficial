@@ -12,6 +12,11 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 15-10-2026 · v149: Liquidación (sql/97 + tienda supabase/43)
+
+Etiqueta "🏷️ Liquidación", no categoría: el producto sigue en la suya. Se marca en la ficha o a varios desde la
+selección de Productos; sevelin.cl/liquidacion los junta. Ver `docs/CHANGELOG-V149.md`.
+
 ## 15-10-2026 · v148: ¿De dónde vino el cliente? (sql/96)
 
 Selector opcional en la caja y en Editar Venta (Marketplace, Instagram, web, WhatsApp, Google, recomendación, vuelve,

@@ -122,6 +122,8 @@ const API = {
     // Operaciones masivas: exigen reconfirmar el PIN de administrador
     eliminarTodos: (pin) => apiRequest('/productos/todos', { method: 'DELETE', body: { pin } }),
     eliminarLote: (ids, pin) => apiRequest('/productos/eliminar-lote', { method: 'POST', body: { ids, pin } }),
+    // v149: etiqueta de varios a la vez (null la quita)
+    etiquetaLote: (ids, etiqueta) => apiRequest('/productos/etiqueta-lote', { method: 'POST', body: { ids, etiqueta } }),
 
     /* Importación masiva. Exige el PIN de administrador y un modo:
          'omitir'     → deja intactos los productos que ya existen

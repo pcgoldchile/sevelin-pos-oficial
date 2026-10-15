@@ -580,12 +580,15 @@ function mostrarBarraSeleccion(cantidad, acciones = {}) {
   const btnCSV = document.getElementById('btnDescargarCSV');
   const btnEliminar = document.getElementById('btnEliminarSeleccionadas');
   const btnLimpiar = document.getElementById('btnLimpiarSeleccionBarra');
+  const btnLiquidacion = document.getElementById('btnLiquidacionSeleccionadas');   // v149: solo Productos
 
+  if (btnLiquidacion) btnLiquidacion.style.display = (acciones.onLiquidacion && esAdmin()) ? '' : 'none';
   // El borrado masivo solo se ofrece si el módulo lo soporta y hay permisos
   if (btnEliminar) btnEliminar.style.display = (acciones.onEliminar && esAdmin()) ? '' : 'none';
 
   // Se reemplazan los botones para no acumular listeners de vistas anteriores
-  [[btnJSON, acciones.onJSON], [btnCSV, acciones.onCSV], [btnEliminar, acciones.onEliminar], [btnLimpiar, acciones.onLimpiar]]
+  [[btnJSON, acciones.onJSON], [btnCSV, acciones.onCSV], [btnEliminar, acciones.onEliminar], [btnLimpiar, acciones.onLimpiar],
+   [btnLiquidacion, acciones.onLiquidacion]]
     .forEach(([btn, handler]) => {
       if (!btn || !handler) return;
       const nuevo = btn.cloneNode(true);

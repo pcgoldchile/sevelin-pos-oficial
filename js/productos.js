@@ -47,6 +47,7 @@ function etiquetaWebTexto(valor) {
   if (valor === 'NOVEDAD') return '🆕 Novedad';
   if (valor === 'TENDENCIA') return '🔥 Tendencia';
   if (valor === 'OFERTA') return '⚡ Oferta irresistible';
+  if (valor === 'LIQUIDACION') return '🏷️ Liquidación';   // v149 (sql/97)
   return '';
 }
 
@@ -849,8 +850,30 @@ function actualizarBarraProductos() {
     onJSON: descargarProductosJSON,
     onCSV: descargarProductosExcel,
     onEliminar: eliminarProductosSeleccionados,
+    onLiquidacion: liquidacionProductosSeleccionados,
     onLimpiar: () => { productosSeleccionados.clear(); renderProductosTabla(productosVisibles); }
   });
+}
+
+/* Liquidación de varios a la vez (v149, sql/97). Si todos los marcados ya
+   están en liquidación, se la quita; si no, se la pone. No toca la categoría:
+   el producto sigue en la suya y además sale en sevelin.cl/liquidacion. */
+async function liquidacionProductosSeleccionados() {
+  const seleccion = productosMarcados();
+  if (seleccion.length === 0) return;
+  const quitar = seleccion.every(p => p.etiqueta_web === 'LIQUIDACION');
+  const pisa = quitar ? [] : seleccion.filter(p => p.etiqueta_web && p.etiqueta_web !== 'LIQUIDACION');
+  try {
+    const r = await API.productos.etiquetaLote(seleccion.map(p => p.id), quitar ? null : 'LIQUIDACION');
+    showToast(quitar
+      ? `${num(r.actualizados)} producto(s) salieron de liquidación`
+      : `${num(r.actualizados)} producto(s) en liquidación${pisa.length ? ` (${pisa.length} perdieron su otra etiqueta)` : ''}`, 'ok');
+    productosSeleccionados.clear();
+    ocultarBarraSeleccion();
+    await cargarProductos(true);
+  } catch (err) {
+    showToast(err.message || 'No se pudo cambiar la liquidación', 'err');
+  }
 }
 
 function productosMarcados() {
