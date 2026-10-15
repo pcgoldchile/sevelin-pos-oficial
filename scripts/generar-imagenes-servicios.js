@@ -15,6 +15,7 @@
      node scripts/generar-imagenes-servicios.js              (los que falten, y los sube)
      node scripts/generar-imagenes-servicios.js --regenerar  (revisa cuáles cambiarían, no escribe)
      node scripts/generar-imagenes-servicios.js --regenerar --aplicar   (las rehace y las sube)
+     node scripts/generar-imagenes-servicios.js --rehacer=274,301       (rehace esas, si tienen UNA imagen)
 
    Requiere en .env: SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY (los del POS).
    Lee el .env a mano, mismo patrón que scripts/sincronizar-catalogo-web.js. */
@@ -79,12 +80,20 @@ const ICONOS = {
   datos: '<ellipse cx="50" cy="30" rx="26" ry="9"/><path d="M24 30v40c0 5 12 9 26 9s26-4 26-9V30"/><path d="M24 50c0 5 12 9 26 9s26-4 26-9"/>',
   casa: '<path d="M20 48L50 24l30 24"/><path d="M28 46v32h44V46"/><path d="M44 78V60h12v18"/>',
   limpieza: '<path d="M38 20h24v26H38z"/><path d="M34 46h32v10H34z"/><path d="M38 56v24h24V56"/><path d="M46 62v12M54 62v12"/>',
-  herramientas: '<path d="M30 26l16 16-8 8-16-16a11 11 0 0114-8z"/><path d="M44 56l22 22a8 8 0 0011-11L55 45"/>'
+  herramientas: '<path d="M30 26l16 16-8 8-16-16a11 11 0 0114-8z"/><path d="M44 56l22 22a8 8 0 0011-11L55 45"/>',
+  // 15-10-2026: servicios de celulares (antes caían en "herramientas")
+  celular: '<rect x="32" y="14" width="36" height="72" rx="7"/><path d="M44 22h12"/><circle cx="50" cy="76" r="3"/>',
+  escudo: '<path d="M50 14l28 10v22c0 18-12 32-28 40C34 78 22 64 22 46V24z"/><path d="M38 50l9 9 16-18"/>',
+  candado: '<rect x="26" y="44" width="48" height="38" rx="6"/><path d="M36 44V32a14 14 0 0128 0v12"/><circle cx="50" cy="62" r="5"/><path d="M50 67v7"/>'
 };
 
 /* Qué icono le toca a cada servicio. Se resuelve por palabra en el nombre,
    de arriba hacia abajo: la primera que calza gana. */
 const REGLAS_ICONO = [
+  // 15-10-2026: van primero y son específicas, así las imágenes ya hechas no cambian
+  [/virus|adware/i,                      'escudo'],
+  [/desbloqueo/i,                        'candado'],
+  [/formateo de celular/i,               'celular'],
   [/domicilio/i,                         'casa'],
   [/derrame|líquido|liquido|limpieza/i,  'limpieza'],
   [/pines|socket|microsolda|bios/i,      'soldadura'],
@@ -109,6 +118,15 @@ const escaparXml = (s) => String(s)
 /* El nombre limpio para el afiche: se quitan los paréntesis explicativos,
    que en una imagen no se leen y hacen que el título se achique de más.
    "Chequeo de Salud de Disco Duro o SSD (por unidad)" → sin el paréntesis. */
+/* La capacidad del paréntesis SÍ se muestra (15-10-2026): las cuatro
+   "Verificación de Capacidad Real" se distinguen solo por eso ("hasta 128 GB",
+   "2 TB a 4 TB"), y sin ella dos quedaban con el mismo título y distinto precio.
+   Solo paréntesis con GB o TB: las imágenes ya hechas no cambian. */
+function detalleParaAfiche(nombre) {
+  const m = String(nombre).match(/\(([^)]*\d+\s*[GT]B[^)]*)\)/i);
+  return m ? m[1].replace(/\s+/g, ' ').trim().toUpperCase() : '';
+}
+
 function nombreParaAfiche(nombre) {
   return String(nombre)
     .replace(/\s*\([^)]*\)\s*/g, ' ')
@@ -132,7 +150,9 @@ function acomodarTitulo(texto, anchoMax, tamMax, tamMin, lineasMax) {
       else { if (actual) lineas.push(actual); actual = palabra; }
     }
     if (actual) lineas.push(actual);
-    if (lineas.length <= lineasMax && lineas.every(l => l.length <= porLinea)) {
+    /* 15-10-2026: el bloque además tiene que caber entre el ícono y la línea de
+       acento (~200 px). Con 4 líneas grandes chocaba con los dos. */
+    if (lineas.length <= lineasMax && lineas.every(l => l.length <= porLinea) && lineas.length * tam * 1.14 <= 200) {
       return { lineas, tam };
     }
   }
@@ -146,6 +166,8 @@ const fmtCLP = (n) => '$' + Math.round(Number(n) || 0).toLocaleString('es-CL');
    ============================================================ */
 function svgServicio({ nombre, precio, aConsultar, instagram = INSTAGRAM }) {
   const titulo = nombreParaAfiche(nombre);
+  // La capacidad va arriba del precio, en el recuadro (como el "DESDE"): el título no se mueve
+  const detalle = detalleParaAfiche(nombre);
   const ANCHO_TITULO = 620;   // ancho útil dentro del marco, con aire a los lados
   const { lineas, tam } = acomodarTitulo(titulo, ANCHO_TITULO, 58, 28, 4);
   const icono = ICONOS[iconoPara(nombre)];
@@ -205,8 +227,11 @@ function svgServicio({ nombre, precio, aConsultar, instagram = INSTAGRAM }) {
   ${aConsultar
       ? `<text x="400" y="508" text-anchor="middle" font-family="Arial, sans-serif"
            font-size="18" fill="${C.apagado}" letter-spacing="4">DESDE</text>`
-      : ''}
-  <text x="400" y="${aConsultar ? 578 : 566}" text-anchor="middle"
+      : detalle
+        ? `<text x="400" y="512" text-anchor="middle" font-family="Arial, sans-serif"
+             font-size="24" font-weight="bold" fill="${C.acento}" letter-spacing="3">${escaparXml(detalle)}</text>`
+        : ''}
+  <text x="400" y="${aConsultar ? 578 : detalle ? 586 : 566}" text-anchor="middle"
         font-family="Arial Black, Arial, sans-serif" font-size="${aConsultar ? 68 : 76}"
         font-weight="900" fill="${C.precio}">${fmtCLP(precio)}</text>
   ${aConsultar
@@ -352,8 +377,40 @@ async function regenerar(aplicar) {
   console.log('Listo. El trigger trg_sync_tienda empuja las imágenes a sevelin.cl solo.');
 }
 
+/* ============================================================
+   MODO REHACER (15-10-2026): rehace con la plantilla actual los servicios
+   pedidos por id. Nació para los 5 cuyo título de 4 líneas chocaba con el
+   ícono y la línea de acento (#274, #301, #303, #310, #312). Solo toca los
+   que tienen UNA imagen; la anterior queda en el bucket (se imprime su URL
+   para volver atrás) y después la limpia "🧹 Fotos sin usar" del POS.
+   ============================================================ */
+async function rehacer(ids) {
+  const { createClient } = require('@supabase/supabase-js');
+  const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY,
+    { auth: { persistSession: false } });
+  const { data, error } = await db.from('productos')
+    .select('id, nombre, precio_unitario, precio_a_consultar, imagen_urls')
+    .eq('categoria_web', 'Servicios Técnicos').in('id', ids).order('id');
+  if (error) throw new Error(error.message);
+  for (const p of data || []) {
+    if ((p.imagen_urls || []).length !== 1) { console.log(`· #${p.id} no tiene una sola imagen: no se toca`); continue; }
+    const buffer = await renderBuffer({ nombre: p.nombre, precio: p.precio_unitario, aConsultar: !!p.precio_a_consultar });
+    const ruta = `${p.id}/${require('crypto').randomUUID()}.webp`;
+    const { error: errSubida } = await db.storage.from('productos-imagenes')
+      .upload(ruta, buffer, { contentType: 'image/webp', upsert: false });
+    if (errSubida) { console.error(`✗ #${p.id} ${p.nombre}: ${errSubida.message}`); continue; }
+    const { data: pub } = db.storage.from('productos-imagenes').getPublicUrl(ruta);
+    const { error: errUpd } = await db.from('productos').update({ imagen_urls: [pub.publicUrl] }).eq('id', p.id);
+    if (errUpd) { console.error(`✗ #${p.id} ${p.nombre}: ${errUpd.message}`); continue; }
+    console.log(`✓ #${p.id} ${p.nombre}  (antes: ${p.imagen_urls[0]})`);
+  }
+  console.log('Listo. El trigger trg_sync_tienda empuja las imágenes a sevelin.cl solo.');
+}
+
 (async () => {
-  if (process.argv.includes('--muestra')) await muestras();
+  const pedidoRehacer = process.argv.find(a => a.startsWith('--rehacer='));
+  if (pedidoRehacer) await rehacer(pedidoRehacer.split('=')[1].split(',').map(Number).filter(Boolean));
+  else if (process.argv.includes('--muestra')) await muestras();
   else if (process.argv.includes('--regenerar')) await regenerar(process.argv.includes('--aplicar'));
   else await generarYSubir();
 })().catch(e => { console.error('ERROR:', e.message); process.exit(1); });
