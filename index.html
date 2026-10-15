@@ -511,6 +511,12 @@
                     <input type="tel" id="posClienteTelefono" placeholder="9 1234 5678 — para avisarle de su garantía"
                            inputmode="tel" autocomplete="off" class="campo-pos">
                   </div>
+                  <!-- sql/96 (v148): de dónde vino el cliente, para medir qué canal vende.
+                       Opcional; las opciones las pone llenarSelectOrigenCliente (config.js). -->
+                  <div class="col-span-2">
+                    <label for="posOrigenCliente" class="etiqueta-pos">¿De dónde vino? (opcional)</label>
+                    <select id="posOrigenCliente" class="campo-pos"><option value="">Sin anotar</option></select>
+                  </div>
                   <div class="col-span-2">
                     <label for="posEditarHora" class="caja-check h-9 text-[13px]">
                       <input type="checkbox" id="posEditarHora" class="w-4 h-4 accent-blue-600"> Editar hora de la venta
@@ -5994,6 +6000,11 @@
             <option value="Tarjeta Crédito">Tarjeta Crédito</option>
             <option value="Por Pagar">Por Pagar</option>
           </select>
+        </div>
+        <!-- sql/96 (v148): se puede anotar o corregir después de la venta -->
+        <div class="field">
+          <label>¿De dónde vino?</label>
+          <select id="editVentaOrigenCliente"><option value="">Sin anotar</option></select>
         </div>
       </div>
 

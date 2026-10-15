@@ -677,6 +677,7 @@ function obtenerFilasHistorialParaExportar(ventas) {
     Hora: v.hora || '',
     Cliente: v.cliente || 'Consumidor Final',
     'WhatsApp': v.cliente_telefono || '',
+    'De dónde vino': textoOrigenCliente(v.origen_cliente),
     'Método de Pago': metodoDeVenta(v),
     Estado: estaPendiente(v) ? 'PENDIENTE' : 'PAGADA',
     DTE: dteDeVenta(v),
@@ -1562,6 +1563,9 @@ async function abrirModalEditarVenta(ventaId) {
     if (elEditVentaCliente) elEditVentaCliente.value = venta.cliente || '';
     if (elEditVentaClienteTelefono) elEditVentaClienteTelefono.value = venta.cliente_telefono || '';
     if (elEditVentaMetodoPago) elEditVentaMetodoPago.value = venta.metodo_pago || 'Efectivo';
+    const elOrigen = document.getElementById('editVentaOrigenCliente');
+    llenarSelectOrigenCliente(elOrigen);
+    if (elOrigen) elOrigen.value = venta.origen_cliente || '';
 
     renderItemsEditables();
     if (elModalEditarVenta) elModalEditarVenta.classList.add('show');
@@ -1809,6 +1813,7 @@ async function guardarEdicionVenta() {
       cliente: elEditVentaCliente?.value.trim() || null,
       cliente_telefono: elEditVentaClienteTelefono?.value.trim() || null,
       metodo_pago: elEditVentaMetodoPago?.value || null,
+      origen_cliente: document.getElementById('editVentaOrigenCliente')?.value || null,   // sql/96
       // Solo viaja la elección del pozo que se cambió: lo demás lo conserva el servidor
       items: itemsEditando.map(({ pozo_de, pozo_monto, pozo_tocado, ...it }) => (
         pozo_tocado && it.es_servicio ? { ...it, pozo_de, pozo_monto } : it))
@@ -1901,7 +1906,8 @@ function renderDetalleVenta(venta) {
     <div class="grid grid-2" style="gap:8px 18px; margin-bottom:12px;">
       <p><b>Orden:</b> #${String(venta.numero_orden ?? venta.id).padStart(5, '0')}</p>
       <p><b>Fecha:</b> ${venta.fecha || '-'}${venta.hora ? ' · ' + venta.hora : ''}</p>
-      <p><b>Cliente:</b> ${escHtml(venta.cliente || 'Consumidor Final')}${enlaceWhatsappCliente(venta)}</p>
+      <p><b>Cliente:</b> ${escHtml(venta.cliente || 'Consumidor Final')}${enlaceWhatsappCliente(venta)}
+        ${venta.origen_cliente ? `<span class="badge badge-blue" title="De dónde vino el cliente">${escHtml(textoOrigenCliente(venta.origen_cliente))}</span>` : ''}</p>
       <p><b>Pago:</b> ${metodoDeVenta(venta)}
         <span class="badge ${estaPendiente(venta) ? 'badge-red' : 'badge-green'}">${estaPendiente(venta) ? 'PENDIENTE' : 'PAGADA'}</span>
       </p>

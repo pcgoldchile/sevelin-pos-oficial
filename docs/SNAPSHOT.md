@@ -12,6 +12,12 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 15-10-2026 · v148: ¿De dónde vino el cliente? (sql/96)
+
+Selector opcional en la caja y en Editar Venta (Marketplace, Instagram, web, WhatsApp, Google, recomendación, vuelve,
+tienda, otro, no sé); las ventas de sevelin.cl quedan solas como web. Se ve en el Detalle y en el Excel del historial.
+Falta el informe por canal cuando haya datos. Ver `docs/CHANGELOG-V148.md`.
+
 ## 15-10-2026 · v147: Editar Venta pregunta de quién es cada servicio
 
 Para las ventas cobradas antes de la v143: cada servicio tiene "¿Quién hizo el servicio?" (mío / C. Patricio) y el monto

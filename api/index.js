@@ -6458,6 +6458,15 @@ function ajusteRedondeoValido(valor, descuentoMonto = 0) {
    `ajusteRedondeo` (sql/86) sale de ajusteRedondeoValido() y suma al total;
    con descuento no cuenta. La columna va en el resultado solo si hay
    redondeo: una venta sin él se guarda igual que antes de sql/86. */
+/* ¿De dónde vino el cliente? (sql/96, v148). Opcional: cualquier cosa fuera
+   de la lista queda en null, nunca frena el cobro. Las ventas de sevelin.cl
+   llegan solas como WEB. La misma lista vive en ORIGENES_CLIENTE de js/config.js. */
+const ORIGENES_CLIENTE = ['MARKETPLACE', 'INSTAGRAM', 'WEB', 'WHATSAPP', 'GOOGLE', 'RECOMENDACION', 'VUELVE', 'TIENDA', 'OTRO', 'NO_SE'];
+function origenClienteValido(valor) {
+  const v = String(valor || '').trim().toUpperCase();
+  return ORIGENES_CLIENTE.includes(v) ? v : null;
+}
+
 function totalizar(items, descuentoMonto = 0, ajusteRedondeo = 0) {
   const subtotal = items.reduce((a, i) => a + i.subtotal, 0);
   const costoTotal = items.reduce((a, i) => a + i.costo_unitario * i.cantidad, 0);
@@ -7154,6 +7163,7 @@ app.post('/api/ventas', auth(), async (req, res) => {
       // esperando enfrente y nada puede bloquear el cobro.
       cliente_telefono: normalizarTelefonoChile(req.body?.cliente_telefono),
       cliente_correo: (req.body?.cliente_correo || '').trim().toLowerCase() || null,
+      origen_cliente: origenClienteValido(req.body?.origen_cliente),   // sql/96
       metodo_pago: metodoPago,
       estado: esPendiente ? 'PENDIENTE' : 'PAGADA',
       fecha_pago: esPendiente ? null : new Date().toISOString(),
@@ -7533,6 +7543,7 @@ app.put('/api/ventas/:id', auth(true), exigirPinAdmin, async (req, res) => {
        propósito. El caso real es que el cliente da su WhatsApp recién al
        coordinar la entrega, cuando la venta ya está registrada. */
     if (req.body?.cliente_telefono !== undefined) cambios.cliente_telefono = normalizarTelefonoChile(req.body.cliente_telefono);
+    if (req.body?.origen_cliente !== undefined) cambios.origen_cliente = origenClienteValido(req.body.origen_cliente);   // sql/96
     if (req.body?.cliente_correo !== undefined) cambios.cliente_correo = (req.body.cliente_correo || '').trim().toLowerCase() || null;
     if (req.body?.metodo_pago) cambios.metodo_pago = req.body.metodo_pago;
     if (req.body?.tipo_dte !== undefined) cambios.tipo_dte = tipoDteValido(req.body.tipo_dte);
@@ -15278,6 +15289,7 @@ app.post('/api/interno/registrar-venta-web', authSync, async (req, res) => {
       // 'pendiente' para que aparezca en la logística del POS.
       ...construirDatosEnvio(req.body),
       origen_pago: 'web',
+      origen_cliente: 'WEB',   // sql/96: compró en sevelin.cl
       // La comisión de la pasarela la calcula la tienda, que es la que
       // sabe con cuál se cobró. Sin esto el margen de las ventas web se
       // vería mejor de lo que es.

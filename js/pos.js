@@ -80,6 +80,9 @@ const elPosCliente = document.getElementById('posCliente');
    opcional, nunca bloquea el cobro. El backend lo normaliza a dígitos
    con código de país para poder agrupar las compras de una persona. */
 const elPosClienteTelefono = document.getElementById('posClienteTelefono');
+// sql/96 (v148): de dónde vino el cliente. Opcional, nunca bloquea el cobro.
+const elPosOrigenCliente = document.getElementById('posOrigenCliente');
+llenarSelectOrigenCliente(elPosOrigenCliente);
 const elCartTableBody = document.getElementById('cartTableBody');
 const elCartTotalText = document.getElementById('cartTotalText');
 const elBtnFinalizarVenta = document.getElementById('btnFinalizarVenta');
@@ -1588,6 +1591,7 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
     tipo_dte: datosPago.tipoDte || 'SIN DTE',
     cliente: elPosCliente?.value.trim() || null,
     cliente_telefono: elPosClienteTelefono?.value.trim() || null,
+    origen_cliente: elPosOrigenCliente?.value || null,
     metodo_pago: metodoPago,
     // Descuento sobre el TOTAL de la venta (no por ítem) — el monto real
     // siempre lo vuelve a calcular el servidor, ver calcularDescuentoMonto().
@@ -1657,6 +1661,7 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
      carrito no se limpiaba y el modal de éxito nunca aparecía. */
   if (elPosCliente) elPosCliente.value = '';
   if (elPosClienteTelefono) elPosClienteTelefono.value = '';
+  if (elPosOrigenCliente) elPosOrigenCliente.value = '';
   if (elPosEditarHora) elPosEditarHora.checked = false;
   if (elPosHora) { elPosHora.value = ''; elPosHora.disabled = true; }
 

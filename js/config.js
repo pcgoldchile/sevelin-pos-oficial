@@ -369,6 +369,31 @@ function isoLocal(date) {
   return `${d.getFullYear()}-${mes}-${dia}`;
 }
 
+/* ¿De dónde vino el cliente? (sql/96, v148). Opcional en cada venta, para medir
+   qué canal trae a los clientes. La misma lista valida el servidor
+   (ORIGENES_CLIENTE en api/index.js): si cambia aquí, cambia allá y en sql/96. */
+const ORIGENES_CLIENTE = [
+  { valor: 'MARKETPLACE', texto: 'Facebook Marketplace' },
+  { valor: 'INSTAGRAM', texto: 'Instagram' },
+  { valor: 'WEB', texto: 'Página web (sevelin.cl)' },
+  { valor: 'WHATSAPP', texto: 'WhatsApp' },
+  { valor: 'GOOGLE', texto: 'Google / Maps' },
+  { valor: 'RECOMENDACION', texto: 'Recomendación de alguien' },
+  { valor: 'VUELVE', texto: 'Cliente que vuelve' },
+  { valor: 'TIENDA', texto: 'Pasó por la tienda' },
+  { valor: 'OTRO', texto: 'Otro' },
+  { valor: 'NO_SE', texto: 'No sé' }
+];
+function textoOrigenCliente(valor) {
+  return ORIGENES_CLIENTE.find(o => o.valor === valor)?.texto || '';
+}
+/* Llena un <select> con la lista, con "Sin anotar" primero (es opcional) */
+function llenarSelectOrigenCliente(select) {
+  if (!select || select.options.length > 1) return;
+  select.innerHTML = '<option value="">Sin anotar</option>' +
+    ORIGENES_CLIENTE.map(o => `<option value="${o.valor}">${escHtml(o.texto)}</option>`).join('');
+}
+
 /* Fecha de hoy en Chile (YYYY-MM-DD) */
 function todayISO() {
   const p = partesChile();
