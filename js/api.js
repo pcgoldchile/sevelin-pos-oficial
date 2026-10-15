@@ -220,6 +220,12 @@ const API = {
       apiRequest(`/productos/${id}/imagen`, { method: 'POST', body: { imagen_base64: imagenBase64 } }),
     quitarImagen: (id, url) =>
       apiRequest(`/productos/${id}/imagen`, { method: 'DELETE', body: { url } }),
+    // v153: varias a la vez (salen del producto y se borran del almacenamiento)
+    quitarImagenes: (id, urls) =>
+      apiRequest(`/productos/${id}/imagenes`, { method: 'DELETE', body: { urls } }),
+    // v153 (sql/99): fotos del almacenamiento que no usa ningún producto
+    fotosSueltas: () => apiRequest('/productos/fotos-sueltas'),
+    borrarFotosSueltas: (pin) => apiRequest('/productos/fotos-sueltas/borrar', { method: 'POST', body: { pin } }),
     moverImagen: (id, url, direccion) =>
       apiRequest(`/productos/${id}/imagen/orden`, { method: 'PUT', body: { url, direccion } }),
     // Arrastrar y soltar: manda el arreglo completo en el orden nuevo.

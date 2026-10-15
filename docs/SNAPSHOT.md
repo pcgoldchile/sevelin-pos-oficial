@@ -12,6 +12,11 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 15-10-2026 · v153: quitar varias fotos y limpiar las sueltas (sql/99)
+
+Casillas en la galería de la ficha y botón "🧹 Fotos sin usar" en Productos. Había 35 sueltas (834 kB), de antes de
+la v142; las borra el dueño con el botón. Ver `docs/CHANGELOG-V153.md`.
+
 ## 15-10-2026 · v152: gastos de meses pasados
 
 "Anotar el gasto" usa la fecha de la compra y la vincula; casilla "no mueve el saldo" en Gastos, sola para meses

@@ -259,6 +259,8 @@ let productoEnEdicionImagenUrls = [];
 // acá como data URLs hasta que guardarProducto() cree el producto y recién
 // ahí se suban en este mismo orden — ver manejarSeleccionFotoProducto().
 let fotosNuevasStaged = [];
+// v153: fotos marcadas para quitar de una vez (por su URL, sobrevive al reordenar)
+let fotosSeleccionadas = new Set();
 // Cache de producto_categorias (misma tabla que "Página Web → Categorías",
 // js/pagina-web.js) para la tarjeta "Categoría" del editor — se refresca al
 // abrir el editor o al crear una categoría/subcategoría desde ahí. Los ids
@@ -434,6 +436,7 @@ function setupProductosEventListeners() {
   }
 
   if (elBtnValorizacion) elBtnValorizacion.addEventListener('click', abrirValorizacion);
+  document.getElementById('btnFotosSueltas')?.addEventListener('click', revisarFotosSueltas);   // v153
   if (elProdStockIlimitado) elProdStockIlimitado.addEventListener('change', aplicarStockIlimitadoProductoUI);
   /* (A) Un servicio no tiene inventario: marcar "Es un servicio" enciende
      solo el stock ilimitado. Antes había que marcar las dos, y un servicio
@@ -2823,18 +2826,34 @@ function renderFotosProducto() {
   if (elBtnDescargarTodas) elBtnDescargarTodas.style.display = lista.length ? '' : 'none';
   const elBtnInstagram = document.getElementById('btnDescargarInstagram');
   if (elBtnInstagram) elBtnInstagram.style.display = lista.length ? '' : 'none';
+  // Lo marcado que ya no está en la lista (se quitó, o es otro producto) se olvida
+  fotosSeleccionadas = new Set([...fotosSeleccionadas].filter(u => lista.includes(u)));
   if (!lista.length) {
     elProdFotosGrid.innerHTML = '<p class="modal-hint">Sin fotos todavía.</p>';
     return;
   }
+  /* v153 (dueño 15-10-2026): al subir varias de golpe, marcar las que no sirven
+     y quitarlas juntas. Salen del producto y se borran del almacenamiento. */
+  const marcadas = fotosSeleccionadas.size;
+  const barraSeleccion = lista.length > 1 ? `
+    <div style="flex:1 0 100%; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+      <label style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer;">
+        <input type="checkbox" data-fotos-todas${marcadas === lista.length ? ' checked' : ''}> Seleccionar todas
+      </label>
+      ${marcadas
+        ? `<button type="button" class="btn btn-red btn-sm" data-fotos-quitar>🗑️ No usar: quitar y borrar ${marcadas} foto${marcadas === 1 ? '' : 's'}</button>`
+        : '<small class="modal-hint" style="margin:0;">Marca las que no vas a usar para quitarlas de una vez.</small>'}
+    </div>` : '';
   // La primera foto del arreglo es la que la tienda usa como foto principal
   // de catálogo (imagen_urls[0]) — de ahí la etiqueta y las flechas/el
   // arrastre para que el dueño elija el orden a mano, sin depender del
   // orden de subida.
-  elProdFotosGrid.innerHTML = lista.map((url, i) => `
+  elProdFotosGrid.innerHTML = barraSeleccion + lista.map((url, i) => `
     <div class="foto-producto-item" draggable="true" data-idx="${i}" title="Arrastra para reordenar" style="position:relative; width:90px;">
       <div style="position:relative; width:90px; height:90px;">
-        <img src="${escHtml(url)}" style="width:100%; height:100%; object-fit:cover; border-radius:8px; border:1px solid #d8dee9; pointer-events:none;">
+        <img src="${escHtml(url)}" style="width:100%; height:100%; object-fit:cover; border-radius:8px; border:1px solid ${fotosSeleccionadas.has(url) ? '#dc2626' : '#d8dee9'}; pointer-events:none;${fotosSeleccionadas.has(url) ? ' opacity:.45;' : ''}">
+        <input type="checkbox" class="chk-foto" data-idx="${i}" title="Marcar para no usar"${fotosSeleccionadas.has(url) ? ' checked' : ''}
+          style="position:absolute; top:4px; left:4px; width:16px; height:16px; cursor:pointer;">
         <button type="button" class="btn-quitar-foto" data-idx="${i}"
           style="position:absolute; top:-6px; right:-6px; width:22px; height:22px; border-radius:999px; border:none; background:#dc2626; color:#fff; cursor:pointer; line-height:1;">×</button>
         <button type="button" class="btn-descargar-foto" data-idx="${i}" title="Descargar esta foto"
@@ -2852,6 +2871,18 @@ function renderFotosProducto() {
   elProdFotosGrid.querySelectorAll('.btn-quitar-foto').forEach(btn => {
     btn.addEventListener('click', () => quitarFotoProducto(Number(btn.dataset.idx)));
   });
+  elProdFotosGrid.querySelectorAll('.chk-foto').forEach(chk => {
+    chk.addEventListener('change', () => {
+      const url = lista[Number(chk.dataset.idx)];
+      if (chk.checked) fotosSeleccionadas.add(url); else fotosSeleccionadas.delete(url);
+      renderFotosProducto();
+    });
+  });
+  elProdFotosGrid.querySelector('[data-fotos-todas]')?.addEventListener('change', (e) => {
+    fotosSeleccionadas = e.target.checked ? new Set(lista) : new Set();
+    renderFotosProducto();
+  });
+  elProdFotosGrid.querySelector('[data-fotos-quitar]')?.addEventListener('click', quitarFotosSeleccionadas);
   elProdFotosGrid.querySelectorAll('.btn-mover-foto').forEach(btn => {
     btn.addEventListener('click', () => moverFotoProducto(Number(btn.dataset.idx), btn.dataset.direccion));
   });
@@ -3467,6 +3498,68 @@ function blobADataUrl(blob) {
     lector.onerror = () => reject(new Error('No se pudo leer la imagen procesada'));
     lector.readAsDataURL(blob);
   });
+}
+
+/* v153: quita de una vez las fotos marcadas. En un producto nuevo solo viven en
+   memoria; en uno guardado salen del producto y se borran del almacenamiento. */
+async function quitarFotosSeleccionadas() {
+  const lista = fotosActivas();
+  const urls = lista.filter(u => fotosSeleccionadas.has(u));
+  if (!urls.length) return;
+  const n = urls.length;
+  if (!await ventanaConfirmar(
+    `¿Quitar ${n} foto${n === 1 ? '' : 's'}? Se ${n === 1 ? 'borra' : 'borran'} del almacenamiento y no se ${n === 1 ? 'puede' : 'pueden'} recuperar.`,
+    { peligro: true, textoSi: `Sí, quitar ${n}` })) return;
+
+  if (!editingProductId) {
+    fotosNuevasStaged = fotosNuevasStaged.filter(u => !fotosSeleccionadas.has(u));
+    fotosSeleccionadas = new Set();
+    renderFotosProducto();
+    showToast(`${n} foto(s) quitada(s)`, 'ok');
+    return;
+  }
+  try {
+    const r = await API.productos.quitarImagenes(editingProductId, urls);
+    productoEnEdicionImagenUrls = r.imagen_urls || productoEnEdicionImagenUrls.filter(u => !fotosSeleccionadas.has(u));
+    fotosSeleccionadas = new Set();
+    renderFotosProducto();
+    showToast(`${num(r.quitadas ?? n)} foto(s) quitada(s) y borrada(s)`, 'ok');
+    if (r.aviso) setTimeout(() => showToast(r.aviso, 'err'), 1800);
+  } catch (err) {
+    console.error('Error al quitar las fotos:', err.message || err);
+    showToast(err.message || 'No se pudieron quitar las fotos', 'err');
+  }
+}
+
+/* v153 (sql/99): revisa cuántas fotos del almacenamiento no usa ningún producto
+   ni lugar de la Bodega y, con la clave del dueño, las borra. El servidor vuelve
+   a calcular la lista al borrar: nunca borra lo que dijo una consulta vieja. */
+async function revisarFotosSueltas() {
+  let r;
+  try {
+    r = await API.productos.fotosSueltas();
+  } catch (err) {
+    showToast(err.message || 'No se pudieron revisar las fotos', 'err');
+    return;
+  }
+  const n = num(r.cantidad);
+  if (!n) { showToast('✅ No hay fotos sin usar: todas las guardadas están en algún producto', 'ok'); return; }
+  const kb = Math.max(1, Math.round(num(r.bytes) / 1024));
+  const peso = kb >= 1024 ? `${(kb / 1024).toFixed(1).replace('.', ',')} MB` : `${kb} kB`;
+  const pin = await pedirPinAdmin({
+    titulo: '🧹 Borrar fotos sin usar',
+    mensaje: `Hay ${n} foto${n === 1 ? '' : 's'} guardada${n === 1 ? '' : 's'} (${peso}) que no usa ningún producto ni lugar de la Bodega: ` +
+      'son de fotos que se cambiaron o de productos que se borraron. Borrarlas no cambia nada en el POS ni en la tienda, y no se pueden recuperar.',
+    resumen: `${n} foto(s) · ${peso}` + (r.desde ? ` · de ${String(r.desde).slice(0, 10)} a ${String(r.hasta).slice(0, 10)}` : ''),
+    textoBoton: `🗑️ Sí, borrar ${n}`
+  });
+  if (!pin) return;
+  try {
+    const b = await API.productos.borrarFotosSueltas(pin);
+    showToast(`${num(b.borradas)} foto(s) sin usar borrada(s)`, 'ok');
+  } catch (err) {
+    showToast(err.message || 'No se pudieron borrar las fotos', 'err');
+  }
 }
 
 async function quitarFotoProducto(idx) {

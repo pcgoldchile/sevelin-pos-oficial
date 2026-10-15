@@ -5863,6 +5863,65 @@ app.delete('/api/productos/:id/imagen', auth(true), async (req, res) => {
   res.json(borrado.error ? { ...data, aviso: 'La foto se quitó del producto, pero no se pudo borrar del almacenamiento: ' + borrado.error } : data);
 });
 
+/* Quita VARIAS fotos de una vez (v153, dueño 15-10-2026: "cuando agrego varias
+   imágenes de golpe, una opción que diga no usar, y borrar"). Igual que la de
+   arriba: sale del producto y se borra del bucket si nadie más la usa. */
+app.delete('/api/productos/:id/imagenes', auth(true), async (req, res) => {
+  const pedidas = [...new Set((Array.isArray(req.body?.urls) ? req.body.urls : []).map(u => String(u || '').trim()).filter(Boolean))];
+  if (!pedidas.length) return enviarError(res, 400, 'No hay fotos seleccionadas');
+  if (pedidas.length > 50) return enviarError(res, 400, 'Son demasiadas de una vez: hasta 50');
+
+  const { data: producto } = await db.from('productos')
+    .select('id, imagen_urls').eq('id', req.params.id).maybeSingle();
+  if (!producto) return enviarError(res, 404, 'Producto no encontrado');
+
+  const quitar = new Set(pedidas);
+  const antes = producto.imagen_urls || [];
+  const quitadas = antes.filter(u => quitar.has(u));
+  const { data, error } = await db.from('productos')
+    .update({ imagen_urls: antes.filter(u => !quitar.has(u)) }).eq('id', req.params.id).select('id, imagen_urls').single();
+  if (error) return enviarErrorBD(res, error);
+
+  const borrado = await borrarFotosSinUso(quitadas);
+  res.json({
+    ...data, quitadas: quitadas.length,
+    ...(borrado.error ? { aviso: 'Las fotos se quitaron del producto, pero no se pudieron borrar del almacenamiento: ' + borrado.error } : {})
+  });
+});
+
+/* FOTOS SUELTAS (v153, sql/99): archivos del bucket que ya no usa ningún
+   producto ni lugar de la Bodega. El GET solo cuenta; borrar pide la clave del
+   dueño y vuelve a calcular la lista en ese momento (nunca borra una lista
+   vieja que mandó el navegador). */
+app.get('/api/productos/fotos-sueltas', auth(true), async (req, res) => {
+  const { data, error } = await db.rpc('fotos_sueltas_productos');
+  if (error) return enviarErrorBD(res, error, 'GET /api/productos/fotos-sueltas');
+  const filas = data || [];
+  res.json({
+    cantidad: filas.length,
+    bytes: filas.reduce((a, f) => a + num(f.bytes), 0),
+    desde: filas[0]?.creado || null,
+    hasta: filas[filas.length - 1]?.creado || null
+  });
+});
+
+app.post('/api/productos/fotos-sueltas/borrar', auth(true), exigirPinAdmin, async (req, res) => {
+  const { data, error } = await db.rpc('fotos_sueltas_productos');
+  if (error) return enviarErrorBD(res, error, 'POST /api/productos/fotos-sueltas/borrar');
+  const rutas = (data || []).map(f => f.ruta).filter(Boolean);
+  let borradas = 0;
+  for (let i = 0; i < rutas.length; i += 100) {
+    const trozo = rutas.slice(i, i + 100);
+    const { error: errBorrar } = await db.storage.from(BUCKET_IMAGENES_PRODUCTO).remove(trozo);
+    if (errBorrar) {
+      console.error('[FOTOS] limpieza de sueltas cortada:', errBorrar.message);
+      return enviarError(res, 500, `Se borraron ${borradas} de ${rutas.length}; las demás no se pudieron borrar: ${errBorrar.message}`);
+    }
+    borradas += trozo.length;
+  }
+  res.json({ borradas });
+});
+
 // Eliminación masiva desde la barra de selección (lista explícita de ids).
 // Se registra ANTES de "/:id" para no chocar con esa ruta.
 /* Etiqueta de varios productos de una vez (v149): sobre todo para marcar o
