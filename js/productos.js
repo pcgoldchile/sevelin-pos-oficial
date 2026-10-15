@@ -2193,7 +2193,11 @@ function abrirModalProducto(producto = null) {
     // Una sola descripción: si el producto viene de antes de este cambio y
     // solo tenía escrita la "web", se usa esa como punto de partida.
     establecerDescripcion(producto.descripcion || producto.descripcion_web || '');
-    if (elProdPublicadoWeb) elProdPublicadoWeb.checked = !!producto.publicado_web;
+    /* v150 (dueño 15-10-2026): un borrador (de la Bodega del taller o del
+       asistente) se guarda siempre sin publicar, así que al terminarlo quedaba
+       oculto de la tienda. Abre marcado como un producto nuevo; sigue siendo
+       un clic desmarcarlo antes de guardar. */
+    if (elProdPublicadoWeb) elProdPublicadoWeb.checked = producto.es_borrador ? !producto.archivado : !!producto.publicado_web;
     if (elProdEsEncargo) elProdEsEncargo.checked = !!producto.es_pedido_encargo;
     if (elProdPrecioAConsultar) elProdPrecioAConsultar.checked = !!producto.precio_a_consultar;
     if (elProdCondicion) elProdCondicion.value = producto.condicion || 'nuevo';
