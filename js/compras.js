@@ -7,6 +7,10 @@
 
 let comprasList = [];
 let editandoCompraId = null;
+/* v152: gasto anotado desde una compra del producto (su ingresos_mercaderia.id),
+   y si la casilla "no mueve el saldo" la tocó el usuario (entonces no se cambia sola). */
+let gastoIngresoId = null;
+let noAfectaSaldoTocado = false;
 let compraOriginalCanal = null;   // req.5 — método/monto antes de editar
 let filtroDocumentos = '';           // '' | 'sin_documento' | 'sin_comprobante'
 let archivosPendientes = { url_documento: null, url_comprobante: null };
@@ -109,6 +113,9 @@ const elBtnCerrarClasificaciones = document.getElementById('btnCerrarClasificaci
 document.addEventListener('DOMContentLoaded', () => {
   setDefaultDatesCompras();
   setupComprasEventListeners();
+  // v152: "no mueve el saldo" sigue a la fecha hasta que el usuario la toque
+  elCompraFecha?.addEventListener('change', pintarNoAfectaSaldo);
+  document.getElementById('compraNoAfectaSaldo')?.addEventListener('change', () => { noAfectaSaldoTocado = true; });
 });
 
 function setDefaultDatesCompras() {
@@ -569,6 +576,11 @@ function abrirModalCompra(compra = null, campoFoco = null) {
     if (chkFactura) chkFactura.checked = !!compra.tiene_factura;
     if (inpIva) inpIva.value = num(compra.iva_credito) || '';
     alternarIvaCompra();
+    // v152: al editar manda lo guardado; no se cambia solo al mover la fecha
+    const chkSaldo = document.getElementById('compraNoAfectaSaldo');
+    if (chkSaldo) chkSaldo.checked = compra.afecta_saldo === false;
+    noAfectaSaldoTocado = true;
+    gastoIngresoId = null;
   } else {
     editandoCompraId = null;
     if (elCompraFormTitle) elCompraFormTitle.textContent = 'Registrar Compra';
@@ -588,6 +600,9 @@ function abrirModalCompra(compra = null, campoFoco = null) {
     const elBancoCompra = document.getElementById('compraBanco');
     if (elBancoCompra) elBancoCompra.value = '';
     ponerMedioPagoCompra(elCompraMetodoPago?.value === MEDIO_PAGO_OTRO ? 'Efectivo' : elCompraMetodoPago?.value);
+    noAfectaSaldoTocado = false;
+    gastoIngresoId = null;
+    pintarNoAfectaSaldo();
   }
 
   actualizarEstadoArchivo('url_documento');
@@ -614,7 +629,7 @@ function abrirModalCompra(compra = null, campoFoco = null) {
    después de una compra de mercadería, para no escribir dos veces el monto
    ni olvidar el gasto. La factura, el IVA y el medio de pago los completa
    el dueño: por eso se abre el formulario y no se guarda nada solo. */
-async function abrirGastoPrellenado({ monto, descripcion, proveedor, documento, clasificacion } = {}) {
+async function abrirGastoPrellenado({ monto, descripcion, proveedor, documento, clasificacion, fecha, ingresoId } = {}) {
   /* `clasificacion` (v133): el panel Mis padres pide la suya por nombre. Si
      todavía no está en la lista (se creó después de cargarla), se recarga. */
   const tieneClasificacion = () => clasificacionesList.some(c => c.nombre === clasificacion);
@@ -628,11 +643,29 @@ async function abrirGastoPrellenado({ monto, descripcion, proveedor, documento, 
   if (mercaderia && elCompraClasificacion) elCompraClasificacion.value = mercaderia.value;
   // v120: la factura que ya se adjuntó a la compra no se sube dos veces.
   if (documento && elCompraUrlDocumento) { elCompraUrlDocumento.value = documento; actualizarEstadoArchivo('url_documento'); }
+  /* v152: la fecha es la de la COMPRA, no la de hoy (el gasto #39 de una compra
+     de abril quedó en octubre y restó otra vez del banco). */
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(fecha || '')) && elCompraFecha) {
+    elCompraFecha.value = `${fecha}T${fecha === todayISO() ? horaActualCorta() : '12:00'}`;
+    pintarNoAfectaSaldo();
+  }
+  gastoIngresoId = Number(ingresoId) > 0 ? Number(ingresoId) : null;
+}
+
+/* "No mueve el saldo" (sql/49) se marca solo si la fecha es de un mes anterior
+   al actual: lo de meses pasados ya salió de la caja o del banco y el saldo de
+   hoy ya lo refleja. Si el usuario tocó la casilla, manda él. */
+function pintarNoAfectaSaldo() {
+  const chk = document.getElementById('compraNoAfectaSaldo');
+  if (!chk || noAfectaSaldoTocado) return;
+  const mes = String(elCompraFecha?.value || '').slice(0, 7);
+  chk.checked = !!mes && mes < todayISO().slice(0, 7);
 }
 
 function cerrarModalCompra() {
   if (elModalCompra) elModalCompra.classList.remove('show');
   editandoCompraId = null;
+  gastoIngresoId = null;
   campoArchivoPendiente = null;
   elBtnSubirDocumento?.classList.remove('resaltado');
   elBtnSubirComprobante?.classList.remove('resaltado');
@@ -717,7 +750,11 @@ async function guardarCompra() {
     tiene_factura: !!document.getElementById('compraTieneFactura')?.checked,
     iva_credito: document.getElementById('compraTieneFactura')?.checked
       ? (Number(document.getElementById('compraIvaCredito')?.value) || 0)
-      : 0
+      : 0,
+    // v152 (sql/49): un gasto ya pagado antes no vuelve a restar del saldo
+    afecta_saldo: !document.getElementById('compraNoAfectaSaldo')?.checked,
+    // v152: vincula el gasto a la compra del producto desde la que se anotó
+    ...(!editandoCompraId && gastoIngresoId ? { ingreso_id: gastoIngresoId } : {})
   };
 
   if (payload.tiene_factura && payload.iva_credito > costo) {

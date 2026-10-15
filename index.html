@@ -6209,6 +6209,15 @@
           Este gasto tiene <b>factura</b> y da derecho a crédito fiscal IVA
         </label>
       </div>
+      <!-- v152 (sql/49): gasto de un mes anterior que ya salió de la caja o del banco.
+           Cuenta en la utilidad de su mes, pero no vuelve a restar del saldo de hoy.
+           Se marca solo cuando la fecha es de un mes anterior (js/compras.js). -->
+      <div class="field" style="margin-top:8px;">
+        <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer;">
+          <input type="checkbox" id="compraNoAfectaSaldo" class="w-4 h-4 accent-blue-600" style="margin-top:3px;">
+          <span>⚖️ <b>Ya lo pagué antes: no mueve el saldo.</b> Cuenta en la utilidad del mes de la fecha, pero no resta de la caja ni del banco de hoy (esa plata ya salió).</span>
+        </label>
+      </div>
 
       <div class="grid grid-2 hidden" id="compraIvaWrap">
         <div class="field">

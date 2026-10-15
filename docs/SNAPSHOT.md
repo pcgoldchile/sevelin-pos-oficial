@@ -12,6 +12,11 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 15-10-2026 · v152: gastos de meses pasados
+
+"Anotar el gasto" usa la fecha de la compra y la vincula; casilla "no mueve el saldo" en Gastos, sola para meses
+anteriores. Gasto #39 corregido a abril. Ver `docs/CHANGELOG-V152.md` (incluye la regla para compras antiguas).
+
 ## 15-10-2026 · v150-v151: borradores a la web y nota interna (sql/98)
 
 Un borrador terminado entra a sevelin.cl (la casilla abre marcada). Nota interna por producto, solo POS. Ver

@@ -9014,6 +9014,15 @@ app.post('/api/compras', auth(true), async (req, res) => {
 
     const { data, error } = await db.from('compras').insert([datos]).select().single();
     if (error) return enviarErrorBD(res, error);
+    /* v152: el gasto que se anota desde una compra del producto queda
+       vinculado a ella (ingresos_mercaderia.compra_id), así la ficha avisa si
+       después cambia lo pagado. Solo si esa compra no tenía gasto todavía. */
+    const ingresoId = Number(req.body?.ingreso_id);
+    if (Number.isInteger(ingresoId) && ingresoId > 0) {
+      const { error: errVinculo } = await db.from('ingresos_mercaderia')
+        .update({ compra_id: data.id }).eq('id', ingresoId).is('compra_id', null);
+      if (errVinculo) console.error('[COMPRAS] gasto guardado, pero no se vinculó a la compra', ingresoId, errVinculo.message);
+    }
     res.status(201).json(data);
   } catch (err) {
     console.error('[COMPRAS] no se pudo guardar el gasto:', err.message);

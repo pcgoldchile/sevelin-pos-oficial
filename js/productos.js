@@ -4176,7 +4176,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('ingAvisoGasto')?.addEventListener('click', (e) => {
     const b = e.target.closest('[data-anotar-gasto]');
     if (b) {
-      abrirGastoPrellenado({ monto: Number(b.dataset.monto), descripcion: b.dataset.descripcion, proveedor: b.dataset.proveedor, documento: b.dataset.documento || '' });
+      abrirGastoPrellenado({ monto: Number(b.dataset.monto), descripcion: b.dataset.descripcion, proveedor: b.dataset.proveedor, documento: b.dataset.documento || '',
+        fecha: b.dataset.fecha || '', ingresoId: b.dataset.ingreso || null });
       return;
     }
     if (e.target.closest('[data-cerrar-aviso-gasto]')) document.getElementById('ingAvisoGasto').innerHTML = '';
@@ -4634,7 +4635,9 @@ function actualizarTextoGuardarProducto() {
 
 /* Una compra de mercadería no anota el gasto en Finanzas: el gasto lleva
    factura, IVA y medio de pago. Se ofrece abrir ese formulario ya llenado. */
-function ofrecerGastoDeCompra({ unidades, costoUnitario, proveedor, documento }) {
+/* v152: `fecha` (de la compra) e `ingresoId` viajan al gasto: así queda en el mes
+   de la compra y vinculado a ella. */
+function ofrecerGastoDeCompra({ unidades, costoUnitario, proveedor, documento, fecha, ingresoId }) {
   const aviso = document.getElementById('ingAvisoGasto');
   if (!aviso) return;
   const total = Math.round(num(unidades) * num(costoUnitario));
@@ -4643,7 +4646,8 @@ function ofrecerGastoDeCompra({ unidades, costoUnitario, proveedor, documento })
   aviso.innerHTML = `<span class="compra-aviso-gasto">
     💸 Esta compra son <strong>${fmtCLP(total)}</strong> (${num(unidades)} × ${fmtCLP(costoUnitario)}). ¿Ya anotaste el gasto en Finanzas?
     <button type="button" class="btn btn-primary btn-sm" data-anotar-gasto="1" data-monto="${total}"
-            data-descripcion="${escHtml(`Compra de ${num(unidades)} × ${nombre}`)}" data-proveedor="${escHtml(proveedor || '')}" data-documento="${escHtml(documento || '')}">Anotar el gasto</button>
+            data-descripcion="${escHtml(`Compra de ${num(unidades)} × ${nombre}`)}" data-proveedor="${escHtml(proveedor || '')}" data-documento="${escHtml(documento || '')}"
+            data-fecha="${escHtml(fecha || '')}" data-ingreso="${Number(ingresoId) > 0 ? Number(ingresoId) : ''}">Anotar el gasto</button>
     <button type="button" class="btn btn-ghost btn-sm" data-cerrar-aviso-gasto="1">Ya está anotado</button>
   </span>`;
 }
@@ -4684,7 +4688,8 @@ async function reflejarCompraRegistrada(r, datos) {
     if (aviso) aviso.innerHTML = '';
     if (typeof cargarAjustesStockProducto === 'function') cargarAjustesStockProducto();
   } else {
-    ofrecerGastoDeCompra({ unidades: datos.cantidad, costoUnitario: datos.costo_unitario, proveedor: datos.proveedor, documento: datos.url_documento });
+    ofrecerGastoDeCompra({ unidades: datos.cantidad, costoUnitario: datos.costo_unitario, proveedor: datos.proveedor, documento: datos.url_documento,
+      fecha: String(r?.ingreso?.fecha_compra || datos.fecha_compra || '').slice(0, 10), ingresoId: r?.ingreso?.id });
   }
 
   if (r?.lote && typeof cargarLotesDelProducto === 'function') await cargarLotesDelProducto(editingProductId);

@@ -192,7 +192,7 @@ async function confirmarCorreccionStock() {
 
     await cargarIngresosProducto({ conservarFormulario: true });   // también recarga las correcciones
     if (r.compra && typeof ofrecerGastoDeCompra === 'function') {
-      ofrecerGastoDeCompra({ unidades: dif, costoUnitario: r.compra.costo_unitario, proveedor: r.compra.proveedor });
+      ofrecerGastoDeCompra({ unidades: dif, costoUnitario: r.compra.costo_unitario, proveedor: r.compra.proveedor, fecha, ingresoId: r.compra.id });
     }
     if (r.lote && typeof cargarLotesDelProducto === 'function') await cargarLotesDelProducto(editingProductId);
     if (typeof cargarProductos === 'function') cargarProductos(true);
