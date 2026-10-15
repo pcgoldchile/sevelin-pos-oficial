@@ -4170,9 +4170,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (cerrar) { cerrarIngresoProducto(Number(cerrar.dataset.cerrarIngreso), cerrar.dataset.motivo); return; }
     const doc = e.target.closest('[data-doc-ingreso]');
     if (doc) { abrirDocumentoCompra(decodeURIComponent(doc.dataset.docIngreso)); return; }
+    const editar = e.target.closest('[data-editar-ingreso]');
+    if (editar) { abrirEditarCompra(Number(editar.dataset.editarIngreso)); return; }
     const borrar = e.target.closest('[data-borrar-ingreso]');
     if (borrar) borrarIngresoProducto(Number(borrar.dataset.borrarIngreso));
   });
+  document.getElementById('btnCancelarEditarCompra')?.addEventListener('click', () => cerrarModal('modalEditarCompra'));
+  document.getElementById('btnGuardarEditarCompra')?.addEventListener('click', guardarEditarCompra);
 });
 
 /* "Ya llegó": sube el stock y, si no queda nada más en camino, apaga el
@@ -4486,6 +4490,9 @@ function pintarIngresosProducto() {
                     ? '<small style="color:var(--text-muted);">Confírmala en el botón 📥 del header</small>'
                     : `<button class="btn btn-ghost btn-sm" data-cerrar-ingreso="${i.id}" data-motivo="devuelto" title="Se devolvió al proveedor">↩️ Devuelta</button>
                        <button class="btn btn-ghost btn-sm" data-cerrar-ingreso="${i.id}" data-motivo="vendido" title="Se vendió completa">✔️ Vendida</button>`}
+                ${esAdmin() && !i.en_camino && i.estado !== 'borrador'
+                  ? `<button class="btn btn-ghost btn-sm" data-editar-ingreso="${i.id}" title="Corregir los datos de esta compra (pide la clave del dueño)">✏️ Editar</button>`
+                  : ''}
                 <button class="btn btn-icon btn-icon-del" data-borrar-ingreso="${i.id}" title="Borrar este registro">✕</button>
               </div>
             </td>
@@ -4684,6 +4691,92 @@ async function cerrarIngresoProducto(id, motivo) {
     pintarIngresosProducto();
   } catch (err) {
     showToast(err.message || 'No se pudo actualizar la compra', 'err');
+  }
+}
+
+/* CORREGIR UNA COMPRA YA RECIBIDA (v145, dueño 15-10-2026). Solo admin y con la
+   clave del dueño: cambiar unidades o costo mueve el stock y la capa PEPS de esa
+   compra (lo hace el servidor, PUT /api/ingresos/:id/corregir). */
+function abrirEditarCompra(id) {
+  if (!esAdmin()) return;
+  const c = ingresosDelProducto.find(x => Number(x.id) === Number(id));
+  if (!c) return;
+  const poner = (campo, valor) => { const el = document.getElementById(campo); if (el) el.value = valor ?? ''; };
+  poner('ecoId', c.id);
+  poner('ecoCantidad', num(c.cantidad));
+  poner('ecoCosto', num(c.costo_unitario));
+  poner('ecoFecha', String(c.fecha_compra || '').slice(0, 10));
+  poner('ecoDevolucion', String(c.devolucion_hasta || '').slice(0, 10));
+  poner('ecoProveedor', c.proveedor || '');
+  poner('ecoRut', c.proveedor_rut || '');
+  poner('ecoMarketplace', c.marketplace || '');
+  poner('ecoReferencia', c.referencia || '');
+  poner('ecoNota', c.nota || '');
+  const titulo = document.getElementById('ecoProducto');
+  if (titulo) titulo.textContent = `${(elProdNombre?.value || '').trim() || 'Este producto'} · compra del ${fechaCorta(c.fecha_compra)}`;
+  document.getElementById('modalEditarCompra')?.classList.add('show');
+  setTimeout(() => document.getElementById('ecoCosto')?.focus(), 80);
+}
+
+async function guardarEditarCompra() {
+  if (!esAdmin()) return;
+  const valor = campo => (document.getElementById(campo)?.value ?? '').trim();
+  const id = Number(valor('ecoId'));
+  const c = ingresosDelProducto.find(x => Number(x.id) === id);
+  if (!c) return;
+
+  const cantidad = Number(valor('ecoCantidad'));
+  const costo = Number(valor('ecoCosto'));
+  if (!Number.isInteger(cantidad) || cantidad < 1) { showToast('Las unidades tienen que ser un número entero, de 1 o más', 'err'); return; }
+  if (valor('ecoCosto') === '' || !(costo >= 0)) { showToast('Escribe el costo por unidad', 'err'); return; }
+  if (!valor('ecoFecha')) { showToast('Falta la fecha de la compra', 'err'); return; }
+
+  // Solo viaja lo que cambió: el servidor no toca lo que no recibe
+  const datos = {};
+  const resumen = [];
+  const clp = n => fmtCLP(n);
+  if (cantidad !== num(c.cantidad)) { datos.cantidad = cantidad; resumen.push(`Unidades: ${num(c.cantidad)} → ${cantidad} (el stock cambia en ${cantidad - num(c.cantidad) > 0 ? '+' : ''}${cantidad - num(c.cantidad)})`); }
+  if (Math.round(costo) !== num(c.costo_unitario)) { datos.costo_unitario = Math.round(costo); resumen.push(`Costo: ${clp(c.costo_unitario)} → ${clp(costo)}`); }
+  const textos = [['ecoFecha', 'fecha_compra', 'Fecha'], ['ecoDevolucion', 'devolucion_hasta', 'Devolución'], ['ecoProveedor', 'proveedor', 'Proveedor'],
+    ['ecoRut', 'proveedor_rut', 'RUT del proveedor'], ['ecoMarketplace', 'marketplace', 'Marketplace'], ['ecoReferencia', 'referencia', 'N° de documento'], ['ecoNota', 'nota', 'Nota']];
+  textos.forEach(([campo, clave, nombre]) => {
+    const antes = String(c[clave] || '').slice(0, clave === 'fecha_compra' || clave === 'devolucion_hasta' ? 10 : undefined);
+    if (valor(campo) !== antes) { datos[clave] = valor(campo); resumen.push(`${nombre}: ${antes || '—'} → ${valor(campo) || '—'}`); }
+  });
+  if (!Object.keys(datos).length) { cerrarModal('modalEditarCompra'); return; }
+
+  const pin = await pedirPinAdmin({
+    titulo: 'Corregir registro de compra',
+    mensaje: 'Corregir una compra ya registrada pide la clave del dueño.',
+    resumen: resumen.join('\n'),
+    textoBoton: '✔️ Sí, corregir'
+  });
+  if (!pin) return;
+
+  const btn = document.getElementById('btnGuardarEditarCompra');
+  if (btn) btn.disabled = true;
+  try {
+    const r = await API.productos.corregirIngreso(id, { ...datos, pin });
+    cerrarModal('modalEditarCompra');
+    showToast('Compra corregida', 'ok');
+    if (r?.stock_nuevo !== null && r?.stock_nuevo !== undefined) {
+      const elStock = document.getElementById('prodStock');
+      if (elStock) { elStock.value = num(r.stock_nuevo); elStock.dispatchEvent(new Event('input', { bubbles: true })); }
+    }
+    if (datos.costo_unitario !== undefined && num(elProdCosto?.value) === num(c.costo_unitario) && elProdCosto) {
+      elProdCosto.value = datos.costo_unitario;
+      elProdCosto.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    ingresosDelProducto = await API.productos.listarIngresos(editingProductId) || [];
+    pintarIngresosProducto();
+    if (typeof cargarLotesDelProducto === 'function') await cargarLotesDelProducto(editingProductId);
+    if (typeof cargarProductos === 'function') cargarProductos(true);
+    const avisos = (r?.avisos || []).filter(Boolean);
+    if (avisos.length) await ventanaAviso(avisos.join('\n\n'), { titulo: 'Compra corregida' });
+  } catch (err) {
+    showToast(err.message || 'No se pudo corregir la compra', 'err');
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 

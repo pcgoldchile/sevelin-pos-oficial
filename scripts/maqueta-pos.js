@@ -1121,6 +1121,20 @@ app.put('/api/ingresos/:id/por-llegar', (req, res) => {
   const ahora = c.cantidad * c.costo_unitario;
   res.json({ ...c, aviso_gasto: c.compra_id && antes !== ahora ? `Esta compra está ligada a un gasto de Finanzas. Antes sumaba $${antes.toLocaleString('es-CL')} y ahora $${ahora.toLocaleString('es-CL')}: revisa que el gasto calce.` : null });
 });
+// v145: corregir una compra ya recibida (en la maqueta cualquier clave sirve; el servidor real la exige)
+app.put('/api/ingresos/:id/corregir', (req, res) => {
+  const id = Number(req.params.id);
+  const c = Object.values(ingresosMaqueta).flat().find(x => x.id === id);
+  if (!c) return res.status(404).json({ error: 'Compra no encontrada' });
+  if (!req.body.pin) return res.status(403).json({ error: 'Esta acción requiere confirmar el PIN de administrador' });
+  const { pin, ...datos } = req.body;
+  const p = productos.find(x => x.id === c.producto_id);
+  let stock_nuevo = null;
+  if (datos.cantidad !== undefined && p) { p.stock = Number(p.stock) + (datos.cantidad - c.cantidad); stock_nuevo = p.stock; }
+  if (datos.costo_unitario !== undefined && p && Number(p.costo_unitario) === Number(c.costo_unitario)) p.costo_unitario = datos.costo_unitario;
+  Object.assign(c, datos);
+  res.json({ ingreso: c, stock_nuevo, avisos: c.compra_id ? ['Esta compra tiene un gasto en Finanzas → Gastos. El gasto no se cambia solo.'] : [] });
+});
 app.delete('/api/ingresos/:id', (req, res) => {
   const i = porLlegarMaqueta.findIndex(x => x.id === Number(req.params.id));
   if (i < 0) return res.json({ ok: true });

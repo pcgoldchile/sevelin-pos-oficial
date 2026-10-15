@@ -116,6 +116,9 @@ const API = {
       apiRequest(`/ingresos/${ingresoId}`, { method: 'PUT', body: datos }),
     eliminarIngreso: (ingresoId) =>
       apiRequest(`/ingresos/${ingresoId}`, { method: 'DELETE' }),
+    // v145: corregir una compra ya recibida (pide la clave del dueño en datos.pin)
+    corregirIngreso: (ingresoId, datos) =>
+      apiRequest(`/ingresos/${ingresoId}/corregir`, { method: 'PUT', body: datos }),
     // Operaciones masivas: exigen reconfirmar el PIN de administrador
     eliminarTodos: (pin) => apiRequest('/productos/todos', { method: 'DELETE', body: { pin } }),
     eliminarLote: (ids, pin) => apiRequest('/productos/eliminar-lote', { method: 'POST', body: { ids, pin } }),

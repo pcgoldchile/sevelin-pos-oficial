@@ -4676,6 +4676,148 @@ app.delete('/api/ingresos/:id', auth(true), async (req, res) => {
   }
 });
 
+/* Corregir una compra YA RECIBIDA (v145, dueño 15-10-2026: "que de un registro
+   de compra, con la clave de admin, se puedan editar datos"). Solo admin y con
+   la clave del dueño (exigirPinAdmin).
+   PUT /api/ingresos/:id/corregir
+   { pin, fecha_compra, cantidad, costo_unitario, proveedor, proveedor_rut, marketplace, referencia, devolucion_hasta, nota }
+
+   Se manda solo lo que cambia. Lo que mueve plata o stock se lleva a donde vive:
+     · costo  → la capa PEPS de esta compra (lo que queda en stock sale al costo
+       nuevo; lo ya vendido conserva el costo con que se vendió) y la ficha, si
+       su costo era el de esta compra.
+     · unidades → el stock y la capa suben o bajan en la diferencia, nunca bajo
+       lo ya vendido de esa capa, y queda anotado en ajustes_stock (motivo
+       'compra'), igual que cualquier corrección de stock.
+   La capa no guarda de qué compra vino: se reconoce por producto, unidades
+   iniciales, costo y hora de creación (las dos nacen juntas en
+   registrarCompraDeProducto). Si no aparece (la borraron a mano o es antigua)
+   el costo se corrige solo en el registro y las unidades no se dejan cambiar.
+   El gasto de Finanzas ligado NO se toca solo: se avisa. */
+app.put('/api/ingresos/:id/corregir', auth(true), exigirPinAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return enviarError(res, 400, 'Compra inválida');
+  const b = req.body || {};
+  const esFecha = f => /^\d{4}-\d{2}-\d{2}$/.test(String(f || '')) && String(f) >= '2020-01-01' && !Number.isNaN(Date.parse(String(f)));
+  try {
+    const { data: ing, error: errI } = await db.from('ingresos_mercaderia').select('*').eq('id', id).maybeSingle();
+    if (errI) throw errI;
+    if (!ing) return enviarError(res, 404, 'Compra no encontrada');
+    if (ing.en_camino) return enviarError(res, 400, 'Esa compra está por llegar: se corrige en el botón 🚚 Por llegar → ✏️ Editar');
+    if (ing.estado === 'borrador') return enviarError(res, 400, 'Esa compra está sin confirmar: confírmala primero en el botón 📥 del encabezado');
+
+    const cambios = {};
+    const avisos = [];
+    const texto = (v, tope) => String(v ?? '').trim().slice(0, tope) || null;
+    if (b.fecha_compra !== undefined) {
+      if (!esFecha(b.fecha_compra)) return enviarError(res, 400, 'Fecha de compra inválida');
+      cambios.fecha_compra = b.fecha_compra;
+    }
+    if (b.devolucion_hasta !== undefined) {
+      if (b.devolucion_hasta && !esFecha(b.devolucion_hasta)) return enviarError(res, 400, 'Fecha de devolución inválida');
+      cambios.devolucion_hasta = b.devolucion_hasta || null;
+    }
+    if (b.proveedor !== undefined) cambios.proveedor = texto(b.proveedor, 120);
+    if (b.proveedor_rut !== undefined) cambios.proveedor_rut = texto(b.proveedor_rut, 20);
+    if (b.marketplace !== undefined) cambios.marketplace = texto(b.marketplace, 60);
+    if (b.referencia !== undefined) cambios.referencia = texto(b.referencia, 80);
+    if (b.nota !== undefined) cambios.nota = texto(b.nota, 300);
+
+    const costoViejo = num(ing.costo_unitario);
+    const cantidadVieja = num(ing.cantidad);
+    const costoNuevo = b.costo_unitario !== undefined ? Math.round(num(b.costo_unitario)) : costoViejo;
+    const cantidadNueva = b.cantidad !== undefined ? Number(b.cantidad) : cantidadVieja;
+    if (!(costoNuevo >= 0)) return enviarError(res, 400, 'El costo no puede ser negativo');
+    if (!Number.isInteger(cantidadNueva) || cantidadNueva < 1) return enviarError(res, 400, 'Las unidades tienen que ser un número entero, de 1 o más');
+    const cambiaCosto = costoNuevo !== costoViejo;
+    const delta = cantidadNueva - cantidadVieja;
+
+    let producto = null, lote = null;
+    if (cambiaCosto || delta) {
+      const { data: p, error: errP } = await db.from('productos')
+        .select('id, nombre, stock, stock_ilimitado, usa_lotes, costo_unitario').eq('id', ing.producto_id).maybeSingle();
+      if (errP) throw errP;
+      producto = p;
+      if (producto?.usa_lotes) {
+        const { data: capas, error: errL } = await db.from('producto_lotes').select('*')
+          .eq('producto_id', ing.producto_id).eq('cantidad_inicial', cantidadVieja).eq('costo_unitario', costoViejo);
+        if (errL) throw errL;
+        const t = Date.parse(ing.creado_en);
+        const cerca = (capas || []).filter(l => Math.abs(Date.parse(l.creado_en) - t) <= 2 * 60 * 1000);
+        if (cerca.length === 1) lote = cerca[0];
+      }
+    }
+
+    if (delta) {
+      if (!producto) return enviarError(res, 404, 'El producto de esta compra ya no existe: las unidades no se pueden corregir');
+      if (producto.usa_lotes && !lote) {
+        return enviarError(res, 409, 'No encontré la capa de costo de esta compra (quizás se quitó a mano). Corrige el stock con "✏️ Corregir" en la ficha.');
+      }
+      if (lote) {
+        const vendidas = num(lote.cantidad_inicial) - num(lote.cantidad);
+        if (cantidadNueva < vendidas) {
+          return enviarError(res, 409, `Ya se vendieron ${vendidas} unidad(es) de esta compra: no puede quedar con menos.`);
+        }
+      }
+      if (!producto.stock_ilimitado && num(producto.stock) + delta < 0) {
+        return enviarError(res, 409, `El stock quedaría negativo (hay ${num(producto.stock)}).`);
+      }
+      cambios.cantidad = cantidadNueva;
+    }
+    if (cambiaCosto) cambios.costo_unitario = costoNuevo;
+    if (!Object.keys(cambios).length) return res.json({ ingreso: ing, avisos: ['No había nada que cambiar.'] });
+
+    const { data: listo, error: errU } = await db.from('ingresos_mercaderia').update(cambios).eq('id', id).select('*').single();
+    if (errU) throw errU;
+
+    if (lote && (cambiaCosto || delta)) {
+      const capa = {};
+      if (cambiaCosto) capa.costo_unitario = costoNuevo;
+      if (delta) {
+        capa.cantidad = num(lote.cantidad) + delta;
+        capa.cantidad_inicial = cantidadNueva;
+        capa.agotado_en = capa.cantidad > 0 ? null : (lote.agotado_en || new Date().toISOString());
+      }
+      const { error: errC } = await db.from('producto_lotes').update(capa).eq('id', lote.id);
+      if (errC) throw errC;
+      const vendidas = num(lote.cantidad_inicial) - num(lote.cantidad);
+      if (cambiaCosto && vendidas > 0) {
+        avisos.push(`${vendidas} unidad(es) de esta compra ya se vendieron con el costo anterior (${'$' + costoViejo.toLocaleString('es-CL')}); eso no cambia. Lo que queda en stock sale al costo nuevo.`);
+      }
+    } else if (cambiaCosto && producto?.usa_lotes) {
+      avisos.push('No encontré la capa de costo de esta compra: el costo nuevo quedó en el registro, pero lo que queda en stock sigue con el costo de sus capas.');
+    }
+
+    if (producto) {
+      const ficha = {};
+      if (cambiaCosto && num(producto.costo_unitario) === costoViejo) ficha.costo_unitario = costoNuevo;
+      if (delta && !producto.stock_ilimitado) {
+        ficha.stock = num(producto.stock) + delta;
+        ficha.stock_actualizado_en = new Date().toISOString();
+      }
+      if (Object.keys(ficha).length) {
+        const { error: errF } = await db.from('productos').update(ficha).eq('id', producto.id);
+        if (errF) throw errF;
+      }
+      if (ficha.costo_unitario !== undefined) avisos.push('El costo de la ficha también quedó en ' + '$' + costoNuevo.toLocaleString('es-CL') + '.');
+      if (ficha.stock !== undefined) {
+        const { error: errA } = await db.from('ajustes_stock').insert([{
+          producto_id: producto.id, stock_antes: num(producto.stock), stock_despues: ficha.stock, motivo: 'compra',
+          nota: `Corrección de la compra #${id}: ${cantidadVieja} → ${cantidadNueva} unidades`,
+          costo_unitario: costoNuevo, costo_total: costoNuevo * delta, creado_por: req.usuario?.nombre || req.usuario?.rol || 'admin'
+        }]);
+        if (errA) avisos.push('El stock se corrigió, pero no se pudo anotar en el historial de correcciones.');
+      }
+    }
+    if (ing.compra_id && (cambiaCosto || delta)) {
+      avisos.push(`Esta compra tiene un gasto en Finanzas → Gastos (#${ing.compra_id}). El gasto no se cambia solo: revísalo si cambió lo que pagaste.`);
+    }
+    res.json({ ingreso: listo, stock_nuevo: producto && delta && !producto.stock_ilimitado ? num(producto.stock) + delta : null, avisos });
+  } catch (error) {
+    return enviarErrorBD(res, error, 'PUT /api/ingresos/:id/corregir');
+  }
+});
+
 /* Corregir una compra que todavía está por llegar (v132). Solo admin.
    PUT /api/ingresos/:id/por-llegar
    { cantidad, costo_unitario, proveedor, marketplace, fecha_compra, fecha_llegada_estimada }

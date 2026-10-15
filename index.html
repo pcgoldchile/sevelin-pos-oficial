@@ -7643,6 +7643,69 @@
     </div>
   </div>
 
+  <!-- CORREGIR UNA COMPRA YA RECIBIDA (v145): pide la clave del dueño al guardar -->
+  <div id="modalEditarCompra" class="modal-overlay">
+    <div class="modal-box" style="max-width:600px;">
+      <h2>✏️ Corregir registro de compra</h2>
+      <p class="modal-hint" id="ecoProducto">—</p>
+      <input type="hidden" id="ecoId">
+
+      <div class="grid grid-2">
+        <div class="field">
+          <label for="ecoCantidad">Unidades compradas *</label>
+          <input type="number" id="ecoCantidad" min="1" step="1">
+        </div>
+        <div class="field">
+          <label for="ecoCosto">Costo por unidad, con IVA ($) *</label>
+          <input type="number" id="ecoCosto" min="0" step="1">
+        </div>
+      </div>
+      <div class="grid grid-2" style="margin-top:12px;">
+        <div class="field">
+          <label for="ecoFecha">Fecha de la compra *</label>
+          <input type="date" id="ecoFecha">
+        </div>
+        <div class="field">
+          <label for="ecoDevolucion">Se puede devolver hasta</label>
+          <input type="date" id="ecoDevolucion">
+        </div>
+      </div>
+      <div class="grid grid-2" style="margin-top:12px;">
+        <div class="field">
+          <label for="ecoProveedor">Proveedor</label>
+          <input type="text" id="ecoProveedor" maxlength="120" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="ecoRut">RUT del proveedor</label>
+          <input type="text" id="ecoRut" maxlength="20" autocomplete="off">
+        </div>
+      </div>
+      <div class="grid grid-2" style="margin-top:12px;">
+        <div class="field">
+          <label for="ecoMarketplace">Marketplace (opcional)</label>
+          <input type="text" id="ecoMarketplace" maxlength="60" list="listaMarketplaces" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="ecoReferencia">N° de factura / guía / pedido</label>
+          <input type="text" id="ecoReferencia" maxlength="80" autocomplete="off">
+        </div>
+      </div>
+      <div class="field" style="margin-top:12px;">
+        <label for="ecoNota">Nota</label>
+        <input type="text" id="ecoNota" maxlength="300" autocomplete="off">
+      </div>
+      <p class="modal-hint" style="margin-top:10px;">
+        Si cambias las unidades, el stock sube o baja en la diferencia y queda anotado. Si cambias el costo, lo que queda
+        en stock sale al costo nuevo; lo ya vendido conserva el costo con que se vendió. El gasto de Finanzas no se cambia solo.
+      </p>
+
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCancelarEditarCompra" type="button">Cancelar</button>
+        <button class="btn btn-primary" id="btnGuardarEditarCompra" type="button">Guardar cambios</button>
+      </div>
+    </div>
+  </div>
+
   <!-- CHECKLIST DE FASES DE UNA OT (sql/66) -->
   <div id="modalProtocoloOT" class="modal-overlay">
     <div class="modal-box modal-lg">
