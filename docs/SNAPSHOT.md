@@ -12,6 +12,22 @@
 Se ve en el POS (chip "Pendientes") y Claude la lee y la actualiza en cada sesión (regla en `CLAUDE.md`).
 La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `docs/CHANGELOG-V101.md`.
 
+## 16-10-2026 · v154-v156: fotos en grande, foto «¿Dónde estamos?» editable, bodega y precios de Multiphone
+
+- **v154:** clic en una foto de la ficha la abre en grande, con descargar y eliminar ahí mismo (`CHANGELOG-V154.md`).
+- **v155 (sql/100):** foto «¿Dónde estamos?» nueva, más los botones "👁️ Ver" y "🔄 Cambiar" para que el dueño la
+  reemplace (`CHANGELOG-V155.md`).
+- **v156 (sql/101):** Productos → "📦 Más stock y bodega", con stock, lo vendido en 90 días, la plata guardada, dónde
+  está y la propuesta de repisa o caja. Hay 149 propuestas cargadas, y se aplican solo con su clic
+  (`CHANGELOG-V156.md`, `docs/bodega-propuesta-2026-10-16.md`). Supuesto sin confirmar: el mueble A es el más cercano
+  al mesón.
+- **Reparación de celulares:** `docs/estudios-precios/2026-10-16-servicios-celulares-multiphone.md`, con 1.875 precios
+  estimados de la lista de Multiphone del 21-09. **Nada cargado.** Faltan su OK a la mano de obra, qué hacer con las
+  fichas publicadas de pantalla ($25.000) y puerto ($10.000), si se construye el cotizador en el POS y en el taller, y
+  preguntarle a Multiphone si la lista es con IVA.
+- También: el Word de la verificación de actividad del SII (MEF, sin firma) y el catálogo para la máquina Haulmer, los
+  dos en `Downloads`.
+
 ## 15-10-2026 · v153: quitar varias fotos y limpiar las sueltas (sql/99)
 
 Casillas en la galería de la ficha y botón "🧹 Fotos sin usar" en Productos. Había 35 sueltas (834 kB), de antes de
