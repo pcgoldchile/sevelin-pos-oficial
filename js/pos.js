@@ -1557,6 +1557,8 @@ async function abrirModalPago() {
     total,
     textoConfirmar: 'Confirmar Venta',
     pedirEntrega: true,   // punto 3: tras el DTE se pregunta retiro/despacho
+    // Con boleta o factura: quién pone el IVA de los servicios que van al pozo
+    despuesDeDte: (dte) => (typeof preguntarIvaDelPozo === 'function' ? preguntarIvaDelPozo(cart, dte) : true),
     onConfirmar: (metodo, datos) => confirmarVenta(metodo, datos)
   });
 }

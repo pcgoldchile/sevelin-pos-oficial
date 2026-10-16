@@ -129,9 +129,6 @@ function pintarAntesDeCobrar(hayPozo) {
             <input type="number" class="campo-pos" data-pozo-monto min="0" step="1" inputmode="numeric" value="${previo?.monto ? Number(previo.monto) : ''}" placeholder="0">
           </label>
         </div>
-        <label class="antes-iva">
-          <input type="checkbox" data-pozo-sin-iva${previo?.sin_iva ? ' checked' : ''}> El IVA lo pone C. Patricio (al pozo va sin el IVA)
-        </label>
         <p class="antes-resultado" data-pozo-resultado></p>
       </div>`;
   }).join('');
@@ -167,8 +164,9 @@ function leerLineaPozo(bloque) {
     modo,
     repuesto: Number(bloque.querySelector('[data-pozo-repuesto]')?.value) || 0,
     monto: Number(bloque.querySelector('[data-pozo-monto]')?.value) || 0,
-    // Con "otro monto" vale lo escrito: el IVA no se descuenta dos veces
-    sin_iva: modo !== 'OTRO' && !!bloque.querySelector('[data-pozo-sin-iva]')?.checked
+    /* Quién pone el IVA se pregunta después del documento (preguntarIvaDelPozo):
+       sin DTE no hay IVA (dueño, 16-10-2026). */
+    sin_iva: false
   };
 }
 
@@ -177,8 +175,6 @@ function actualizarLineaAntesDeCobrar(bloque) {
   const pozo = leerLineaPozo(bloque);
   const modo = pozo?.modo || 'NO';
   bloque.querySelectorAll('[data-extra]').forEach(el => { el.style.display = el.dataset.extra === modo ? '' : 'none'; });
-  const iva = bloque.querySelector('.antes-iva');
-  if (iva) iva.style.display = (modo === 'TODO' || modo === 'MENOS_REPUESTO') ? '' : 'none';
   const resultado = bloque.querySelector('[data-pozo-resultado]');
   if (resultado) {
     const falta = lineaPozoSinResponder(bloque);
@@ -187,7 +183,8 @@ function actualizarLineaAntesDeCobrar(bloque) {
     resultado.innerHTML = falta
       ? 'Elige: ¿es tuyo o lo hizo C. Patricio (va a su pozo)?'
       : monto > 0
-        ? `Al pozo: <b>${fmtCLP(monto)}</b>${monto < cobrado ? ` · para ti ${fmtCLP(cobrado - monto)}` : ''}`
+        ? `Al pozo: <b>${fmtCLP(monto)}</b>${monto < cobrado ? ` · para ti ${fmtCLP(cobrado - monto)}` : ''}` +
+          (modo === 'OTRO' ? '' : '<br><small>Si sale con boleta o factura, después te pregunto quién pone el IVA.</small>')
         : 'No va al pozo';
   }
   actualizarBotonAntesDeCobrar();
@@ -238,6 +235,67 @@ function cerrarAntesDeCobrar(seguir) {
   document.getElementById('modalAntesDeCobrar')?.classList.remove('show');
   const resolver = resolverAntesDeCobrar;
   resolverAntesDeCobrar = null;
+  if (resolver) resolver(!!seguir);
+}
+
+/* ============================================================
+   1b. ¿QUIÉN PONE EL IVA? (después de elegir el documento)
+   ------------------------------------------------------------
+   Dueño, 16-10-2026: "a veces es SIN DTE, entonces no existe IVA hasta que se
+   haga la boleta". Por eso ya no se pregunta antes de cobrar: con SIN DTE no
+   se pregunta nada y al pozo va lo cobrado; con boleta o factura se elige si
+   el IVA lo pone C. Patricio (al pozo va el neto) o Sevelin (va completo).
+   Resuelve true para seguir y false para volver al documento.
+   ============================================================ */
+let resolverIvaPozo = null;
+let lineasIvaPozo = [];
+
+function preguntarIvaDelPozo(carrito, tipoDte) {
+  // Solo "todo" y "menos el repuesto": en "otro monto" vale lo escrito tal cual
+  const lineas = (carrito || []).filter(i => i.pozo && (i.pozo.modo === 'TODO' || i.pozo.modo === 'MENOS_REPUESTO'));
+  lineas.forEach(i => { i.pozo.sin_iva = false; });
+  const modal = document.getElementById('modalIvaPozo');
+  if (!lineas.length || !tipoDte || tipoDte === 'SIN DTE' || !modal) return Promise.resolve(true);
+
+  lineasIvaPozo = lineas;
+  const cobradoDe = (i) => Math.round(i.subtotal * factorAntesDeCobrar);
+  const completo = lineas.reduce((a, i) => a + pozoDeLineaPrevio(cobradoDe(i), { ...i.pozo, sin_iva: false }), 0);
+  const neto = lineas.reduce((a, i) => a + pozoDeLineaPrevio(cobradoDe(i), { ...i.pozo, sin_iva: true }), 0);
+  const uno = lineas.length === 1;
+
+  const cuerpo = document.getElementById('ivaPozoCuerpo');
+  if (cuerpo) {
+    cuerpo.innerHTML = `
+      <p class="modal-hint">Esta venta sale con <b>${escHtml(tipoDte)}</b>. ${uno ? 'El servicio' : 'Los servicios'} de C. Patricio
+        ${uno ? 'lleva' : 'llevan'} ${fmtCLP(completo - neto)} de IVA: ¿quién lo pone?</p>
+      <div class="antes-opciones" role="radiogroup" aria-label="¿Quién pone el IVA?">
+        <label class="antes-opcion"><input type="radio" name="ivaPozoQuien" value="PADRE"> C. Patricio: al pozo va ${fmtCLP(neto)} (sin el IVA)</label>
+        <label class="antes-opcion"><input type="radio" name="ivaPozoQuien" value="SEVELIN"> Yo (Sevelin): al pozo va ${fmtCLP(completo)} (completo)</label>
+      </div>`;
+    cuerpo.querySelectorAll('input[name="ivaPozoQuien"]').forEach(r => r.addEventListener('change', () => {
+      const btn = document.getElementById('btnIvaPozoSeguir');
+      if (btn) btn.disabled = false;
+    }));
+  }
+  const btn = document.getElementById('btnIvaPozoSeguir');
+  if (btn) btn.disabled = true;
+  modal.classList.add('show');
+  setTimeout(() => cuerpo?.querySelector('input[type="radio"]')?.focus(), 60);
+  return new Promise(resolve => { resolverIvaPozo = resolve; });
+}
+
+function confirmarIvaPozo() {
+  const quien = document.querySelector('#ivaPozoCuerpo input[name="ivaPozoQuien"]:checked')?.value;
+  if (!quien) { showToast('Elige quién pone el IVA', 'err'); return; }
+  lineasIvaPozo.forEach(i => { i.pozo.sin_iva = quien === 'PADRE'; });
+  cerrarIvaPozo(true);
+}
+
+function cerrarIvaPozo(seguir) {
+  document.getElementById('modalIvaPozo')?.classList.remove('show');
+  const resolver = resolverIvaPozo;
+  resolverIvaPozo = null;
+  lineasIvaPozo = [];
   if (resolver) resolver(!!seguir);
 }
 
@@ -523,6 +581,12 @@ document.addEventListener('DOMContentLoaded', () => {
     cuerpo.addEventListener('input', alCambiar);
   }
   document.getElementById('btnAntesDeCobrarSeguir')?.addEventListener('click', confirmarAntesDeCobrar);
+  document.getElementById('btnIvaPozoSeguir')?.addEventListener('click', confirmarIvaPozo);
+  document.getElementById('btnIvaPozoVolver')?.addEventListener('click', () => cerrarIvaPozo(false));
+  document.getElementById('modalIvaPozo')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); cerrarIvaPozo(false); }
+    else if (e.key === 'Enter') { e.preventDefault(); confirmarIvaPozo(); }
+  });
   document.getElementById('btnAntesDeCobrarCancelar')?.addEventListener('click', () => cerrarAntesDeCobrar(false));
   document.getElementById('modalAntesDeCobrar')?.addEventListener('click', (e) => {
     if (e.target.id === 'modalAntesDeCobrar') cerrarAntesDeCobrar(false);

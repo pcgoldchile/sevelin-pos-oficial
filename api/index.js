@@ -6373,11 +6373,14 @@ function calcularPozoLinea(base, pozo) {
 /* Pone pozo_monto y pozo_nota en cada línea y quita la marca interna _pozo.
    Solo los servicios van al pozo. El descuento de la venta se reparte en
    proporción: si se cobró 10% menos, al pozo va 10% menos. */
-function aplicarPozo(items, totales) {
+function aplicarPozo(items, totales, tipoDte) {
+  /* Sin DTE no hay IVA (dueño, 16-10-2026): aunque la caja mande sin_iva, al
+     pozo va lo cobrado. El IVA solo existe con boleta o factura. */
+  const sinDocumento = !tipoDte || tipoDte === 'SIN DTE';
   const subtotal = items.reduce((a, i) => a + num(i.subtotal), 0);
   const factor = subtotal > 0 ? Math.max(0, subtotal - num(totales?.descuento_monto)) / subtotal : 1;
   items.forEach(it => {
-    const pozo = it._pozo;
+    const pozo = it._pozo && sinDocumento ? { ...it._pozo, sin_iva: false } : it._pozo;
     delete it._pozo;
     Object.assign(it, it.es_servicio ? calcularPozoLinea(num(it.subtotal) * factor, pozo) : { pozo_monto: null, pozo_nota: null });
   });
@@ -7378,7 +7381,7 @@ app.post('/api/ventas', auth(), async (req, res) => {
 
     const totales = totalizar(items, descuentoMonto, ajusteRedondeo);
     // sql/90: cuánto de cada servicio va al pozo del papá (con el descuento ya repartido)
-    aplicarPozo(items, totales);
+    aplicarPozo(items, totales, tipoDteValido(req.body?.tipo_dte));
 
     // "Por Pagar" deja la venta PENDIENTE: no suma a totales hasta que se cobre.
     const metodoPago = req.body?.metodo_pago || 'Efectivo';

@@ -430,9 +430,16 @@ async function confirmarSelectorPago() {
   /* Paso intermedio: elegir el documento tributario.
      Solo al cobrar una venta; un abono de encargo no emite DTE. */
   if (configPago.pedirDte !== false) {
-    const dte = await pedirTipoDte();
-    if (dte === null) return;          // canceló: se vuelve al medio de pago
-    elegirTipoDte(dte);
+    for (;;) {
+      const dte = await pedirTipoDte();
+      if (dte === null) return;          // canceló: se vuelve al medio de pago
+      elegirTipoDte(dte);
+      /* Lo que depende del documento (el IVA del pozo, 16-10-2026). Si vuelve
+         atrás, se pregunta otra vez el documento; cancelar ahí reabre el pago. */
+      if (!configPago?.despuesDeDte || await configPago.despuesDeDte(dte)) break;
+      const pago = document.getElementById('modalPago');
+      if (pago) pago.dataset.reabrirTrasDte = '1';
+    }
   }
 
   /* Paso de entrega (punto 3): retiro o despacho + origen de pago.

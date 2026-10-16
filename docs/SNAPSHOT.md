@@ -27,6 +27,8 @@ La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `do
   taller (pestaña "Cotizar"): 1.875 precios estimados con la lista de Multiphone del 21-09, que es **con IVA**
   (confirmado). La mano de obra quedó como la recomendó Claude, aproximada. Las fichas publicadas subieron de "Desde
   $25.000" a **"Desde $30.000"** (pantalla) y de "Desde $10.000" a **"Desde $18.000"** (puerto) (`CHANGELOG-V157.md`).
+- **v158, IVA del pozo:** se pregunta después del documento y solo con boleta o factura (con SIN DTE no hay IVA). El
+  mismo día, el servicio nuevo #373 Inicialización de Notebook Nuevo, $15.000 (`CHANGELOG-V158.md`).
 - También: el Word de la verificación de actividad del SII (MEF, sin firma) y el catálogo para la máquina Haulmer, los
   dos en `Downloads`.
 
