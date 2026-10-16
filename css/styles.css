@@ -4105,6 +4105,10 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
     max-width: 92vw; text-shadow: 0 1px 3px rgba(0, 0, 0, .8);
 }
 
+.visor-acciones { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+/* Con botones abajo, la foto deja espacio para el pie y los botones */
+.visor-con-acciones .visor-img { max-height: calc(100vh - 150px); }
+
 .visor-cerrar {
     position: absolute; top: 14px; right: 16px;
     width: 42px; height: 42px; border-radius: 999px;

@@ -182,20 +182,27 @@ function miniaturaProducto(p, tam, opciones) {
    Se abre con abrirVisorImagen(urls, indice, titulo). `urls` puede ser un
    string o un arreglo: con varias fotos aparecen las flechas y funcionan
    ← → del teclado. Escape o un clic fuera de la foto cierran.
+   El 4º parámetro, opcional, agrega botones bajo la foto (v154, dueño
+   16-10-2026: "ver los detalles de cada imagen y eliminarla desde ahí"):
+   { acciones: [{ texto, clase, alHacer(indice) }] }. alHacer puede ser
+   async; si devuelve un arreglo, ese pasa a ser la nueva lista de fotos
+   (vacío = se cierra el visor).
    ------------------------------------------------------------ */
 let visorImagenUrls = [];
 let visorImagenIdx = 0;
+let visorImagenAcciones = [];
 
-function abrirVisorImagen(urls, indice, titulo) {
+function abrirVisorImagen(urls, indice, titulo, opciones) {
   const lista = (Array.isArray(urls) ? urls : [urls]).filter(Boolean);
   if (lista.length === 0) return;
 
   cerrarVisorImagen();                       // nunca dos visores encima
   visorImagenUrls = lista;
   visorImagenIdx = Math.min(Math.max(Number(indice) || 0, 0), lista.length - 1);
+  visorImagenAcciones = Array.isArray(opciones?.acciones) ? opciones.acciones : [];
 
   const cont = document.createElement('div');
-  cont.className = 'visor-imagen';
+  cont.className = 'visor-imagen' + (visorImagenAcciones.length ? ' visor-con-acciones' : '');
   cont.id = 'visorImagen';
   cont.innerHTML =
     '<button type="button" class="visor-cerrar" data-visor-cerrar title="Cerrar (Esc)">&#10005;</button>' +
@@ -203,6 +210,10 @@ function abrirVisorImagen(urls, indice, titulo) {
     '<figure class="visor-marco">' +
       '<img class="visor-img" alt="">' +
       '<figcaption class="visor-pie"></figcaption>' +
+      (visorImagenAcciones.length
+        ? '<div class="visor-acciones">' + visorImagenAcciones.map((a, i) =>
+            `<button type="button" class="btn ${escHtml(a.clase || 'btn-outline')} btn-sm" data-visor-accion="${i}">${escHtml(a.texto || '')}</button>`).join('') + '</div>'
+        : '') +
     '</figure>' +
     '<button type="button" class="visor-flecha visor-next" data-visor-mover="1" title="Siguiente">&#8250;</button>';
   // El título va por textContent, nunca por innerHTML: es nombre de producto
@@ -212,6 +223,8 @@ function abrirVisorImagen(urls, indice, titulo) {
   cont.addEventListener('click', (e) => {
     const mover = e.target.closest('[data-visor-mover]');
     if (mover) { moverVisorImagen(Number(mover.dataset.visorMover)); return; }
+    const accion = e.target.closest('[data-visor-accion]');
+    if (accion) { ejecutarAccionVisor(Number(accion.dataset.visorAccion), accion); return; }
     // Clic fuera de la foto (o en la ✕) cierra
     if (e.target.closest('[data-visor-cerrar]') || !e.target.closest('.visor-marco')) cerrarVisorImagen();
   });
@@ -234,6 +247,23 @@ function pintarVisorImagen() {
   cont.querySelectorAll('.visor-flecha').forEach(b => { b.style.display = varias ? '' : 'none'; });
 }
 
+async function ejecutarAccionVisor(i, boton) {
+  const accion = visorImagenAcciones[i];
+  if (!accion || typeof accion.alHacer !== 'function') return;
+  boton.disabled = true;
+  try {
+    const nueva = await accion.alHacer(visorImagenIdx);
+    if (Array.isArray(nueva)) {
+      if (!nueva.length) { cerrarVisorImagen(); return; }
+      visorImagenUrls = nueva;
+      visorImagenIdx = Math.min(visorImagenIdx, nueva.length - 1);
+      pintarVisorImagen();
+    }
+  } finally {
+    boton.disabled = false;
+  }
+}
+
 function moverVisorImagen(paso) {
   if (visorImagenUrls.length < 2) return;
   const total = visorImagenUrls.length;
@@ -247,6 +277,8 @@ function cerrarVisorImagen() {
 }
 
 function teclasVisorImagen(e) {
+  // Con una ventana de confirmación abierta encima, las teclas son de ella
+  if (document.querySelector('.ventana-dialogo.show')) return;
   if (e.key === 'Escape') { e.preventDefault(); cerrarVisorImagen(); }
   else if (e.key === 'ArrowLeft') moverVisorImagen(-1);
   else if (e.key === 'ArrowRight') moverVisorImagen(1);

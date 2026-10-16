@@ -2850,7 +2850,7 @@ function renderFotosProducto() {
   // orden de subida.
   elProdFotosGrid.innerHTML = barraSeleccion + lista.map((url, i) => `
     <div class="foto-producto-item" draggable="true" data-idx="${i}" title="Arrastra para reordenar" style="position:relative; width:90px;">
-      <div style="position:relative; width:90px; height:90px;">
+      <div data-foto-ampliar="${i}" title="Clic para ampliar" style="position:relative; width:90px; height:90px; cursor:zoom-in;">
         <img src="${escHtml(url)}" style="width:100%; height:100%; object-fit:cover; border-radius:8px; border:1px solid ${fotosSeleccionadas.has(url) ? '#dc2626' : '#d8dee9'}; pointer-events:none;${fotosSeleccionadas.has(url) ? ' opacity:.45;' : ''}">
         <input type="checkbox" class="chk-foto" data-idx="${i}" title="Marcar para no usar"${fotosSeleccionadas.has(url) ? ' checked' : ''}
           style="position:absolute; top:4px; left:4px; width:16px; height:16px; cursor:pointer;">
@@ -2868,6 +2868,15 @@ function renderFotosProducto() {
       </div>
     </div>`).join('');
 
+  /* v154 (dueño 16-10-2026): clic en la foto = verla en grande, con
+     eliminar y descargar ahí mismo. Los botones y la casilla de encima
+     siguen haciendo lo suyo. */
+  elProdFotosGrid.querySelectorAll('[data-foto-ampliar]').forEach(caja => {
+    caja.addEventListener('click', (e) => {
+      if (e.target.closest('button, input')) return;
+      abrirVisorFotosProducto(Number(caja.dataset.fotoAmpliar));
+    });
+  });
   elProdFotosGrid.querySelectorAll('.btn-quitar-foto').forEach(btn => {
     btn.addEventListener('click', () => quitarFotoProducto(Number(btn.dataset.idx)));
   });
@@ -2890,6 +2899,18 @@ function renderFotosProducto() {
     btn.addEventListener('click', () => descargarFotoProducto(Number(btn.dataset.idx), btn));
   });
   configurarArrastreFotos();
+}
+
+function abrirVisorFotosProducto(idx) {
+  abrirVisorImagen(fotosActivas().slice(), idx, elProdNombre?.value.trim() || '', {
+    acciones: [
+      { texto: '⬇ Descargar', clase: 'btn-outline', alHacer: (i) => descargarFotoProducto(i) },
+      { texto: '🗑️ Eliminar esta foto', clase: 'btn-red', alHacer: async (i) => {
+        await quitarFotoProducto(i);
+        return fotosActivas().slice();
+      } },
+    ],
+  });
 }
 
 /* ---------- Descargar fotos (una o todas) ----------
