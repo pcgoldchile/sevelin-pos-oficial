@@ -1284,6 +1284,40 @@ app.delete('/api/cotizaciones-ref/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// v156: Productos → "📦 Más stock y bodega" con propuestas de ejemplo
+const propuestasBodegaMaqueta = new Map([
+  [104, { lugar: 'B3', caja: 'Adaptadores de video', motivo: 'chico o suelto: en caja rotulada', estado: 'pendiente' }],
+  [126, { lugar: 'D5', caja: null, motivo: 'liviano pero voluminoso: arriba', estado: 'pendiente' }],
+  [100, { lugar: 'G2', caja: null, motivo: 'medianos', estado: 'pendiente' }],
+  [160, { lugar: 'H4', caja: null, motivo: 'fuentes y placas: cajas medianas', estado: 'pendiente' }],
+  [291, { lugar: 'B4', caja: 'Adaptadores USB', motivo: 'chico o suelto: en caja rotulada', estado: 'pendiente' }],
+]);
+const lugaresBodegaMaqueta = new Map([[126, [{ nombre: 'A1', principal: true }]]]);
+app.get('/api/bodega/stock', (_req, res) => {
+  const filas = productos.filter(p => !p.es_servicio && !p.stock_ilimitado && Number(p.stock) > 0)
+    .sort((a, b) => b.stock - a.stock)
+    .map(p => ({ id: p.id, nombre: p.nombre, stock: p.stock, costo: p.costo_unitario, valor: p.stock * p.costo_unitario, categoria: 'Categoría de prueba',
+      foto: null, vendidos_90: p.id === 104 ? 6 : 0, lugares: lugaresBodegaMaqueta.get(p.id) || [], propuesta: propuestasBodegaMaqueta.get(p.id) || null }));
+  res.json({ productos: filas, resumen: { productos: filas.length, unidades: filas.reduce((a, f) => a + f.stock, 0), valor: filas.reduce((a, f) => a + f.valor, 0),
+    sin_lugar: filas.filter(f => !f.lugares.length).length, propuestas_pendientes: filas.filter(f => f.propuesta?.estado === 'pendiente').length } });
+});
+app.post('/api/bodega/propuestas/:id/aceptar', (req, res) => {
+  const id = Number(req.params.id), p = propuestasBodegaMaqueta.get(id);
+  if (!p) return res.status(404).json({ error: 'Ese producto no tiene propuesta' });
+  p.estado = 'aceptada';
+  const lugar = p.caja ? `Caja ${p.caja} · ${p.lugar}` : p.lugar;
+  const lista = lugaresBodegaMaqueta.get(id) || [];
+  if (!lista.some(l => l.nombre === lugar)) lista.push({ nombre: lugar, principal: !lista.length });
+  lugaresBodegaMaqueta.set(id, lista);
+  res.json({ ok: true, lugar });
+});
+app.post('/api/bodega/propuestas/:id/descartar', (req, res) => {
+  const p = propuestasBodegaMaqueta.get(Number(req.params.id));
+  if (!p || p.estado !== 'pendiente') return res.status(404).json({ error: 'Esa propuesta ya no está pendiente' });
+  p.estado = 'descartada';
+  res.json({ ok: true });
+});
+
 app.use('/api', (req, res) => {
   const clave = `${req.method} ${req.path}`;
   if (!sinManejar.has(clave)) { sinManejar.add(clave); console.log('[maqueta] sin datos:', clave); }

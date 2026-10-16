@@ -5177,3 +5177,22 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
     .llegada-cabecera { flex-direction: column; }
     .llegada-cuantas { width: 100%; justify-content: space-between; }
 }
+
+/* ============================================================
+   MÁS STOCK Y BODEGA (v156 · js/bodega.js)
+   ============================================================ */
+.bodega-guia { margin: 6px 0 12px; font-size: 13px; color: var(--text-muted); }
+.bodega-guia summary { cursor: pointer; color: var(--text-100); font-weight: 600; }
+.bodega-guia ul { margin: 6px 0 8px 18px; }
+.bodega-guia p { margin: 6px 0; }
+.bodega-barra { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.bodega-barra .chip-group { margin: 0; }
+.bodega-barra input[type="search"] { flex: 1 1 220px; min-width: 180px; }
+.bodega-tabla { max-height: 56vh; overflow: auto; }
+.bodega-lugar { display: inline-block; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); font-size: 12px; margin: 1px 0; }
+.bodega-lugar.principal { border-color: var(--blue); color: var(--blue); font-weight: 700; }
+.bodega-sin-lugar { color: #f59e0b; font-size: 12px; font-weight: 600; }
+.bodega-ok { color: var(--green); font-weight: 700; }
+.bodega-tabla td:first-child { min-width: 220px; }
+.bodega-tabla td:nth-child(6) { min-width: 190px; }
+.bodega-tabla td:nth-child(5) { min-width: 110px; }

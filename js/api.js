@@ -70,6 +70,13 @@ const API = {
   login: (pin) => apiRequest('/login', { method: 'POST', body: { pin }, silencioso: true }),
   me: () => apiRequest('/me', { silencioso: true }),
 
+  // Más stock y bodega: dónde guardar cada producto (sql/101, v156)
+  bodega: {
+    stock: () => apiRequest('/bodega/stock'),
+    aceptar: (productoId) => apiRequest(`/bodega/propuestas/${productoId}/aceptar`, { method: 'POST', body: {} }),
+    descartar: (productoId) => apiRequest(`/bodega/propuestas/${productoId}/descartar`, { method: 'POST', body: {} }),
+  },
+
   // Foto "¿Dónde estamos?" que el dueño cambia desde la ficha (sql/100, v155)
   fotoUbicacion: {
     obtener: () => apiRequest('/foto-ubicacion', { silencioso: true }),

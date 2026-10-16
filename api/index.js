@@ -5153,6 +5153,120 @@ function sanearUbicacion(body) {
   };
 }
 
+/* ============================================================
+   MÁS STOCK Y BODEGA (v156, sql/101 · dueño 16-10-2026)
+   ------------------------------------------------------------
+   "Ver los productos que más stock tienen, y una sugerencia para ir
+   guardando las cosas en los cajones y qué cosas pueden ir en caja […]
+   yo tengo la palabra final". La lista sale ordenada por stock, con dónde
+   está hoy cada producto y la propuesta (bodega_propuestas). Aceptar una
+   propuesta la AGREGA a sus lugares (un producto puede estar en varios);
+   nunca saca un lugar que ya tenía.
+   ============================================================ */
+app.get('/api/bodega/stock', auth(true), async (req, res) => {
+  try {
+    const { data: productos, error } = await db.from('productos')
+      .select('id, nombre, stock, costo_unitario, categoria_web, subcategoria_web, imagen_urls')
+      .eq('archivado', false).eq('es_borrador', false).eq('es_servicio', false).eq('stock_ilimitado', false).gt('stock', 0)
+      .order('stock', { ascending: false }).limit(2000);
+    if (error) return enviarErrorBD(res, error, 'GET /api/bodega/stock');
+    const lista = productos || [];
+    const ids = lista.map(p => p.id);
+    const vacio = { data: [], error: null };
+    const [ventas, { data: enLugares, error: e1 }, { data: lugares, error: e2 }, { data: propuestas, error: e3 }] = await Promise.all([
+      ventasRecientesPorProducto(ids, 90),
+      ids.length ? db.from('producto_ubicaciones').select('producto_id, ubicacion_id, principal').in('producto_id', ids) : vacio,
+      db.from('ubicaciones').select('id, nombre').limit(2000),
+      ids.length ? db.from('bodega_propuestas').select('producto_id, lugar, caja, motivo, estado').in('producto_id', ids) : vacio
+    ]);
+    if (e1 || e2 || e3) return enviarErrorBD(res, e1 || e2 || e3, 'GET /api/bodega/stock');
+    const nombreLugar = new Map((lugares || []).map(l => [Number(l.id), l.nombre]));
+    const lugaresDe = new Map();
+    for (const pu of enLugares || []) {
+      const pid = Number(pu.producto_id);
+      if (!lugaresDe.has(pid)) lugaresDe.set(pid, []);
+      lugaresDe.get(pid).push({ nombre: nombreLugar.get(Number(pu.ubicacion_id)) || '?', principal: !!pu.principal });
+    }
+    const propuestaDe = new Map((propuestas || []).map(p => [Number(p.producto_id), p]));
+    const filas = lista.map(p => {
+      const stock = num(p.stock), costo = num(p.costo_unitario);
+      const prop = propuestaDe.get(Number(p.id));
+      return {
+        id: p.id, nombre: p.nombre, stock, costo, valor: Math.round(stock * costo),
+        categoria: [p.categoria_web, p.subcategoria_web].filter(Boolean).join(' › '),
+        foto: (p.imagen_urls || [])[0] || null,
+        vendidos_90: num(ventas.get(Number(p.id))?.unidades),
+        lugares: (lugaresDe.get(Number(p.id)) || []).sort((a, b) => b.principal - a.principal),
+        propuesta: prop ? { lugar: prop.lugar, caja: prop.caja, motivo: prop.motivo, estado: prop.estado } : null
+      };
+    });
+    res.json({
+      productos: filas,
+      resumen: {
+        productos: filas.length,
+        unidades: filas.reduce((a, f) => a + f.stock, 0),
+        valor: filas.reduce((a, f) => a + f.valor, 0),
+        sin_lugar: filas.filter(f => !f.lugares.length).length,
+        propuestas_pendientes: filas.filter(f => f.propuesta?.estado === 'pendiente').length
+      }
+    });
+  } catch (err) {
+    return enviarErrorBD(res, err, 'GET /api/bodega/stock');
+  }
+});
+
+/* Nombre del lugar que se usa al aceptar: la repisa tal cual ("C3") o la
+   caja con su repisa ("Caja Pilas · E3"), que se crea la primera vez. */
+function lugarDePropuesta(prop) {
+  return prop.caja ? { nombre: `Caja ${prop.caja} · ${prop.lugar}`.slice(0, 80), tipo: 'caja', descripcion: `Dentro de la repisa ${prop.lugar}` }
+    : { nombre: prop.lugar, tipo: 'estante', descripcion: null };
+}
+
+app.post('/api/bodega/propuestas/:id/aceptar', auth(true), async (req, res) => {
+  try {
+    const productoId = Number(req.params.id);
+    if (!Number.isInteger(productoId) || productoId <= 0) return enviarError(res, 400, 'Producto inválido');
+    const { data: prop, error } = await db.from('bodega_propuestas').select('producto_id, lugar, caja, estado').eq('producto_id', productoId).maybeSingle();
+    if (error) return enviarErrorBD(res, error, 'POST /api/bodega/propuestas/:id/aceptar');
+    if (!prop) return enviarError(res, 404, 'Ese producto no tiene propuesta');
+    if (prop.estado === 'aceptada') return res.json({ ok: true, lugar: lugarDePropuesta(prop).nombre });
+
+    const destino = lugarDePropuesta(prop);
+    const { data: previo, error: errP } = await db.from('ubicaciones').select('id').ilike('nombre', destino.nombre).limit(1);
+    if (errP) return enviarErrorBD(res, errP, 'POST /api/bodega/propuestas/:id/aceptar');
+    let ubicacionId = previo?.[0]?.id;
+    if (!ubicacionId) {
+      const { data: nuevo, error: errN } = await db.from('ubicaciones').insert([destino]).select('id').single();
+      if (errN) return enviarErrorBD(res, errN, 'POST /api/bodega/propuestas/:id/aceptar');
+      ubicacionId = nuevo.id;
+    }
+    const { data: actuales, error: errA } = await db.from('producto_ubicaciones').select('ubicacion_id').eq('producto_id', productoId);
+    if (errA) return enviarErrorBD(res, errA, 'POST /api/bodega/propuestas/:id/aceptar');
+    if (!(actuales || []).some(a => Number(a.ubicacion_id) === Number(ubicacionId))) {
+      const { error: errI } = await db.from('producto_ubicaciones')
+        .insert([{ producto_id: productoId, ubicacion_id: ubicacionId, principal: !(actuales || []).length }]);
+      if (errI) return enviarErrorBD(res, errI, 'POST /api/bodega/propuestas/:id/aceptar');
+    }
+    const { error: errU } = await db.from('bodega_propuestas')
+      .update({ estado: 'aceptada', decidido_en: new Date().toISOString() }).eq('producto_id', productoId);
+    if (errU) return enviarErrorBD(res, errU, 'POST /api/bodega/propuestas/:id/aceptar');
+    res.json({ ok: true, lugar: destino.nombre });
+  } catch (err) {
+    return enviarErrorBD(res, err, 'POST /api/bodega/propuestas/:id/aceptar');
+  }
+});
+
+app.post('/api/bodega/propuestas/:id/descartar', auth(true), async (req, res) => {
+  const productoId = Number(req.params.id);
+  if (!Number.isInteger(productoId) || productoId <= 0) return enviarError(res, 400, 'Producto inválido');
+  const { data, error } = await db.from('bodega_propuestas')
+    .update({ estado: 'descartada', decidido_en: new Date().toISOString() })
+    .eq('producto_id', productoId).eq('estado', 'pendiente').select('producto_id');
+  if (error) return enviarErrorBD(res, error, 'POST /api/bodega/propuestas/:id/descartar');
+  if (!data?.length) return enviarError(res, 404, 'Esa propuesta ya no está pendiente');
+  res.json({ ok: true });
+});
+
 app.get('/api/ubicaciones', auth(true), async (req, res) => {
   const { data, error } = await db.from('ubicaciones')
     .select('*').eq('activo', true).order('nombre').limit(500);

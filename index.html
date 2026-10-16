@@ -2429,6 +2429,8 @@
             <!-- v132: la misma ventana que en Finanzas → Gastos (js/informe-compras.js) -->
             <button class="btn btn-outline" id="btnInformeComprasProductos" title="Cuánto compras según el marketplace, el vendedor y la marca">🛒 Compras por origen</button>
             <!-- v153 (sql/99): fotos del almacenamiento que no usa ningún producto -->
+            <!-- v156 (sql/101): productos con más stock, dónde están y dónde propone guardarlos Claude (js/bodega.js) -->
+            <button class="btn btn-outline admin-only" id="btnBodegaStock" title="Los productos con más stock, dónde están guardados y una propuesta de dónde guardarlos">📦 Más stock y bodega</button>
             <button class="btn btn-outline admin-only" id="btnFotosSueltas" title="Fotos guardadas que ya no usa ningún producto: cuántas son y borrarlas">🧹 Fotos sin usar</button>
             <button class="btn btn-gold" id="btnValorizacion">💎 Valorización de Inventario</button>
             <button class="btn btn-red" id="btnEliminarTodosProductos">🗑️ Eliminar Todos</button>
@@ -7391,6 +7393,31 @@
     </div>
   </div>
 
+  <!-- MÁS STOCK Y BODEGA (v156, sql/101, js/bodega.js): la propuesta solo se aplica con "Guardar ahí" -->
+  <div id="modalBodegaStock" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <h2>📦 Más stock y bodega</h2>
+      <p class="modal-hint" id="bodegaStockResumen">—</p>
+      <details class="bodega-guia">
+        <summary>Cómo está pensada la propuesta</summary>
+        <div id="bodegaStockGuia"></div>
+      </details>
+      <div class="bodega-barra">
+        <div class="chip-group" id="bodegaStockFiltros"></div>
+        <input type="search" id="bodegaStockBuscar" placeholder="Buscar producto o lugar (ej: C3)…" autocomplete="off">
+      </div>
+      <div class="table-wrapper bodega-tabla">
+        <table class="data-table">
+          <thead><tr><th>Producto</th><th class="num">Stock</th><th class="num">Vendidos 90 días</th><th class="num">Plata guardada</th><th>Hoy está en</th><th>Propuesta</th><th></th></tr></thead>
+          <tbody id="bodegaStockLista"></tbody>
+        </table>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCerrarBodegaStock" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Productos a los que les falta algo (sql: ninguno, se calcula al leer) -->
   <div id="modalFichasIncompletas" class="modal-overlay">
     <div class="modal-box" style="max-width:760px;">
@@ -8301,6 +8328,7 @@
   <script src="js/informe-semanal.js"></script>   <!-- después de balance.js: usa el panel de Finanzas y fmtCLP -->
   <script src="js/acuerdo-padres.js"></script>   <!-- v133 (sql/90): después de pos.js, compras.js y balance.js: pregunta de la caja y panel Mis padres -->
   <script src="js/cotizaciones-ref.js"></script>   <!-- v133 (sql/90): Taller → Cotizaciones aproximadas; usa cerrarModal de balance.js -->
+  <script src="js/bodega.js"></script>   <!-- v156 (sql/101): Productos → "📦 Más stock y bodega"; usa cerrarModal de balance.js -->
   <script src="js/facebook-rapido.js"></script>   <!-- v136 (sql/93): después de productos.js; usa sus funciones de fotos y la lista -->
   <script src="js/usuarios.js"></script>   <!-- v135 (sql/92): usuarios con RUT y PIN; usa ventanaConfirmar de ventanas.js -->
   <script src="js/finanzas-gate.js"></script>   <!-- después de balance/config: intercepta la navegación a Finanzas -->

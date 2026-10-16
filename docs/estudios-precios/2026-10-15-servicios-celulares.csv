@@ -1,0 +1,283 @@
+marca,equipo,trabajo,calidad,costo_repuesto,mano_obra,precio_estimado,costo_estimado_por_gama,santiago_myphonexpress,santiago_cliniccel
+iPhone,iPhone 7,Cambio de pantalla,LCD,11250,20000,33000,,,
+iPhone,iPhone 8 / SE 2020 / SE 2022,Cambio de pantalla,LCD,10000,20000,32000,,,
+iPhone,iPhone 8 Plus,Cambio de pantalla,LCD,12500,20000,35000,,,
+iPhone,iPhone X,Cambio de pantalla,Incell,18750,20000,42000,,45000,
+iPhone,iPhone X,Cambio de pantalla,OLED,32500,25000,63000,,65000,65000
+iPhone,iPhone XR,Cambio de pantalla,Incell,17500,20000,41000,,40000,
+iPhone,iPhone XR,Cambio de pantalla,LCD calidad original,20000,20000,43000,,50000,45000
+iPhone,iPhone XS,Cambio de pantalla,Incell,17500,20000,41000,,45000,
+iPhone,iPhone XS,Cambio de pantalla,OLED,36250,25000,67000,,65000,75000
+iPhone,iPhone XS Max,Cambio de pantalla,Incell,21250,20000,45000,,65000,
+iPhone,iPhone XS Max,Cambio de pantalla,OLED,42500,25000,74000,,90000,85000
+iPhone,iPhone 11,Cambio de pantalla,Incell,17500,20000,41000,,45000,
+iPhone,iPhone 11,Cambio de pantalla,LCD calidad original,20000,20000,43000,,50000,55000
+iPhone,iPhone 11 Pro,Cambio de pantalla,Incell,21250,20000,45000,,75000,
+iPhone,iPhone 11 Pro,Cambio de pantalla,OLED,36250,25000,67000,,95000,85000
+iPhone,iPhone 11 Pro Max,Cambio de pantalla,Incell,22500,20000,46000,,75000,
+iPhone,iPhone 11 Pro Max,Cambio de pantalla,OLED,47500,25000,80000,,95000,85000
+iPhone,iPhone 12 / 12 Pro,Cambio de pantalla,Incell,18750,30000,52000,,80000,
+iPhone,iPhone 12 / 12 Pro,Cambio de pantalla,OLED,43750,30000,81000,,95000,95000
+iPhone,iPhone 12 mini,Cambio de pantalla,Incell,23750,30000,58000,,85000,
+iPhone,iPhone 12 mini,Cambio de pantalla,OLED,67500,30000,108000,,110000,110000
+iPhone,iPhone 12 Pro Max,Cambio de pantalla,Incell,25000,30000,59000,,,
+iPhone,iPhone 12 Pro Max,Cambio de pantalla,OLED,58750,30000,98000,,,150000
+iPhone,iPhone 13,Cambio de pantalla,Incell,21250,30000,55000,,85000,
+iPhone,iPhone 13,Cambio de pantalla,OLED,52500,30000,91000,,120000,95000
+iPhone,iPhone 13 mini,Cambio de pantalla,Incell,22500,30000,56000,,95000,
+iPhone,iPhone 13 mini,Cambio de pantalla,OLED,71250,30000,112000,,130000,
+iPhone,iPhone 13 Pro,Cambio de pantalla,Incell,30000,30000,65000,,,
+iPhone,iPhone 13 Pro,Cambio de pantalla,OLED,56250,30000,95000,,130000,115000
+iPhone,iPhone 13 Pro Max,Cambio de pantalla,Incell,27500,30000,62000,,,
+iPhone,iPhone 13 Pro Max,Cambio de pantalla,OLED,61250,30000,101000,,150000,145000
+iPhone,iPhone 14,Cambio de pantalla,Incell,28750,40000,74000,,,
+iPhone,iPhone 14,Cambio de pantalla,OLED,50000,40000,98000,,130000,125000
+iPhone,iPhone 14 Plus,Cambio de pantalla,Incell,30000,40000,75000,,,
+iPhone,iPhone 14 Plus,Cambio de pantalla,OLED,72500,40000,124000,,,125000
+iPhone,iPhone 14 Pro,Cambio de pantalla,Incell,33750,40000,79000,,,
+iPhone,iPhone 14 Pro,Cambio de pantalla,OLED,68750,40000,120000,,240000,140000
+iPhone,iPhone 14 Pro Max,Cambio de pantalla,Incell,33750,40000,79000,,,
+iPhone,iPhone 14 Pro Max,Cambio de pantalla,OLED,62500,40000,112000,,250000,140000
+iPhone,iPhone 15,Cambio de pantalla,Incell,25000,40000,69000,,,
+iPhone,iPhone 15,Cambio de pantalla,OLED,58750,40000,108000,,200000,165000
+iPhone,iPhone 15 Plus,Cambio de pantalla,Incell,26250,40000,71000,,,
+iPhone,iPhone 15 Plus,Cambio de pantalla,OLED,60000,40000,109000,,,170000
+iPhone,iPhone 15 Pro,Cambio de pantalla,Incell,36250,40000,82000,,,
+iPhone,iPhone 15 Pro,Cambio de pantalla,OLED,60000,40000,109000,,250000,170000
+iPhone,iPhone 15 Pro Max,Cambio de pantalla,Incell,27500,40000,72000,,,
+iPhone,iPhone 15 Pro Max,Cambio de pantalla,OLED,65000,40000,115000,,260000,170000
+iPhone,iPhone 16e,Cambio de pantalla,OLED,55000,50000,114000,,,
+iPhone,iPhone 16,Cambio de pantalla,OLED,61250,50000,121000,,,170000
+iPhone,iPhone 16 Plus,Cambio de pantalla,OLED,61250,50000,121000,,,190000
+iPhone,iPhone 16 Pro,Cambio de pantalla,OLED,77500,50000,140000,,,190000
+iPhone,iPhone 16 Pro Max,Cambio de pantalla,OLED,80000,50000,142000,,,190000
+iPhone,iPhone 17 Pro,Cambio de pantalla,OLED,112500,50000,180000,,,260000
+iPhone,iPhone 17 Pro Max,Cambio de pantalla,OLED,103750,50000,170000,,,260000
+iPhone,iPhone 7,Cambio de batería,Compatible,8750,10000,21000,,,20000
+iPhone,iPhone 8 / SE 2020,Cambio de batería,Compatible,8750,10000,21000,,,25000
+iPhone,iPhone 8 Plus,Cambio de batería,Compatible,10000,10000,22000,,,25000
+iPhone,iPhone SE 2022,Cambio de batería,Alta duración,14990,15000,33000,,,45000
+iPhone,iPhone X,Cambio de batería,Alta duración,14990,15000,33000,,39990,35000
+iPhone,iPhone XR,Cambio de batería,Alta duración,13990,15000,32000,,39990,45000
+iPhone,iPhone XS,Cambio de batería,Alta duración,14990,15000,33000,,39990,45000
+iPhone,iPhone XS Max,Cambio de batería,Alta duración,14990,15000,33000,,,45000
+iPhone,iPhone 11,Cambio de batería,Alta duración,14990,15000,33000,,45000,55000
+iPhone,iPhone 11 Pro,Cambio de batería,Alta duración,16990,15000,35000,,45000,55000
+iPhone,iPhone 11 Pro Max,Cambio de batería,Alta duración,17990,15000,36000,,45000,55000
+iPhone,iPhone 12 / 12 Pro,Cambio de batería,Sin aviso de batería,17500,18000,39000,,67990,68000
+iPhone,iPhone 12 mini,Cambio de batería,Sin aviso de batería,21250,18000,43000,,,68000
+iPhone,iPhone 12 Pro Max,Cambio de batería,Sin aviso de batería,22500,18000,44000,,74990,70000
+iPhone,iPhone 13,Cambio de batería,Sin aviso de batería,16250,18000,37000,,71990,75000
+iPhone,iPhone 13 mini,Cambio de batería,Sin aviso de batería,17500,18000,39000,,,75000
+iPhone,iPhone 13 Pro,Cambio de batería,Sin aviso de batería,21250,18000,43000,,72990,80000
+iPhone,iPhone 13 Pro Max,Cambio de batería,Sin aviso de batería,23750,18000,46000,,89900,80000
+iPhone,iPhone 14,Cambio de batería,Sin aviso de batería,21250,20000,45000,,89990,75000
+iPhone,iPhone 14 Plus,Cambio de batería,Sin aviso de batería,22500,20000,46000,,89990,75000
+iPhone,iPhone 14 Pro,Cambio de batería,Sin aviso de batería,23750,20000,48000,,89990,80000
+iPhone,iPhone 14 Pro Max,Cambio de batería,Sin aviso de batería,26250,20000,51000,,,80000
+iPhone,iPhone 15,Cambio de batería,Sin aviso de batería,23750,20000,48000,,,95000
+iPhone,iPhone 15 Plus,Cambio de batería,Sin aviso de batería,25000,20000,49000,,,95000
+iPhone,iPhone 15 Pro,Cambio de batería,Sin aviso de batería,27500,20000,52000,,,95000
+iPhone,iPhone 15 Pro Max,Cambio de batería,Sin aviso de batería,30000,20000,55000,,,95000
+iPhone,iPhone 7,Cambio de puerto de carga,Flex compatible,3690,20000,25000,,,
+iPhone,iPhone 8,Cambio de puerto de carga,Flex compatible,3750,20000,25000,,,
+iPhone,iPhone 8 Plus,Cambio de puerto de carga,Flex compatible,3690,20000,25000,,,
+iPhone,iPhone SE 2020,Cambio de puerto de carga,Flex compatible,3750,20000,25000,,,35000
+iPhone,iPhone X,Cambio de puerto de carga,Flex compatible,3690,20000,25000,,,35000
+iPhone,iPhone XR,Cambio de puerto de carga,Flex compatible,3750,20000,25000,,,35000
+iPhone,iPhone XS,Cambio de puerto de carga,Flex compatible,6150,20000,28000,,,35000
+iPhone,iPhone XS Max,Cambio de puerto de carga,Flex compatible,6150,20000,28000,,,45000
+iPhone,iPhone 11,Cambio de puerto de carga,Flex compatible,3750,20000,25000,,,45000
+iPhone,iPhone 11 Pro Max,Cambio de puerto de carga,Flex compatible,24600,20000,49000,,,55000
+iPhone,iPhone 12,Cambio de puerto de carga,Flex compatible,5000,25000,31000,,,55000
+iPhone,iPhone 12 Pro / 12 Pro Max,Cambio de puerto de carga,Flex compatible,24600,25000,54000,,,65000
+iPhone,iPhone 13 / 13 Pro,Cambio de puerto de carga,Flex compatible,6250,25000,33000,,,65000
+iPhone,iPhone X a 15 Pro Max (todos),Cambio de vidrio de cámara trasera,Con adhesivo,2500,10000,13000,,,
+Samsung,Galaxy A02 / A02s / A03 / A03s,Cambio de pantalla,LCD,10000,20000,32000,,40000,
+Samsung,Galaxy A04 / A04s,Cambio de pantalla,LCD,11250,20000,33000,,40000,
+Samsung,Galaxy A04e,Cambio de pantalla,LCD,13990,20000,37000,,40000,
+Samsung,Galaxy A05,Cambio de pantalla,LCD,10000,20000,32000,,40000,
+Samsung,Galaxy A06,Cambio de pantalla,LCD,12500,20000,35000,,45000,
+Samsung,Galaxy A07,Cambio de pantalla,LCD,11250,20000,33000,,45000,
+Samsung,Galaxy A10,Cambio de pantalla,LCD,11250,20000,33000,,,
+Samsung,Galaxy A11,Cambio de pantalla,LCD,13990,20000,37000,,,
+Samsung,Galaxy A12,Cambio de pantalla,LCD,11250,20000,33000,,45000,
+Samsung,Galaxy A13 4G,Cambio de pantalla,LCD,11250,20000,33000,,45000,
+Samsung,Galaxy A13 5G,Cambio de pantalla,LCD,13750,20000,36000,,45000,
+Samsung,Galaxy A14 4G,Cambio de pantalla,LCD,13750,20000,36000,,,
+Samsung,Galaxy A14 5G,Cambio de pantalla,LCD,14990,20000,38000,,,
+Samsung,Galaxy A20s,Cambio de pantalla,LCD,11250,20000,33000,,45000,
+Samsung,Galaxy A21s,Cambio de pantalla,LCD,11250,20000,33000,,45000,
+Samsung,Galaxy A22 5G,Cambio de pantalla,LCD,15000,20000,38000,,45000,
+Samsung,Galaxy A23,Cambio de pantalla,LCD,11250,20000,33000,,,
+Samsung,Galaxy A32 5G,Cambio de pantalla,LCD,16990,20000,40000,,,
+Samsung,Galaxy M12,Cambio de pantalla,LCD,16990,20000,40000,,,
+Samsung,Galaxy A20,Cambio de pantalla,Incell,11250,20000,33000,,,
+Samsung,Galaxy A20,Cambio de pantalla,OLED,28750,25000,59000,,55000,
+Samsung,Galaxy A30,Cambio de pantalla,Incell,12500,20000,35000,,,
+Samsung,Galaxy A30,Cambio de pantalla,OLED,35000,25000,66000,,,
+Samsung,Galaxy A30s,Cambio de pantalla,Incell,15000,20000,38000,,,
+Samsung,Galaxy A30s,Cambio de pantalla,OLED,33750,25000,64000,,,
+Samsung,Galaxy A50,Cambio de pantalla,Incell,15000,20000,38000,,,
+Samsung,Galaxy A50,Cambio de pantalla,OLED,32500,25000,63000,,,
+Samsung,Galaxy A51,Cambio de pantalla,Incell,13750,20000,36000,,,
+Samsung,Galaxy A51,Cambio de pantalla,OLED,37500,25000,69000,,,
+Samsung,Galaxy A70,Cambio de pantalla,Incell,12500,20000,35000,,,
+Samsung,Galaxy A70,Cambio de pantalla,OLED,37500,25000,69000,,,
+Samsung,Galaxy A71,Cambio de pantalla,Incell,17990,20000,41000,,,
+Samsung,Galaxy A71,Cambio de pantalla,OLED,40000,25000,71000,,,
+Samsung,Galaxy A15,Cambio de pantalla,OLED,42500,25000,74000,,,
+Samsung,Galaxy A22 4G,Cambio de pantalla,OLED,35000,25000,66000,,75000,
+Samsung,Galaxy A24,Cambio de pantalla,OLED,34990,25000,66000,,,
+Samsung,Galaxy A25,Cambio de pantalla,OLED,36990,25000,68000,,,
+Samsung,Galaxy A31,Cambio de pantalla,OLED,33750,25000,64000,,,
+Samsung,Galaxy A32 4G,Cambio de pantalla,OLED,33750,25000,64000,,,
+Samsung,Galaxy A33,Cambio de pantalla,OLED,40000,25000,71000,,,
+Samsung,Galaxy A34,Cambio de pantalla,OLED,47500,25000,80000,,,
+Samsung,Galaxy A35,Cambio de pantalla,OLED,46250,25000,79000,,,
+Samsung,Galaxy A52,Cambio de pantalla,OLED,36990,25000,68000,,,
+Samsung,Galaxy A52s,Cambio de pantalla,OLED,40000,25000,71000,,,
+Samsung,Galaxy A53,Cambio de pantalla,OLED,49990,25000,83000,,,
+Samsung,Galaxy A54,Cambio de pantalla,OLED,39990,25000,71000,,,
+Samsung,Galaxy A55,Cambio de pantalla,OLED,37500,25000,69000,,,
+Samsung,Galaxy A56,Cambio de pantalla,Incell,46250,25000,79000,,,
+Samsung,Galaxy A72,Cambio de pantalla,OLED,42990,25000,75000,,,
+Samsung,Galaxy A73,Cambio de pantalla,OLED,43750,25000,76000,,,
+Samsung,Galaxy S20 FE,Cambio de pantalla,OLED,38750,35000,80000,,175000,
+Samsung,Galaxy S21 FE,Cambio de pantalla,OLED,47500,35000,90000,,230000,
+Samsung,Galaxy S21 Plus,Cambio de pantalla,OLED,86250,35000,135000,,250000,
+Samsung,Galaxy S21 Ultra,Cambio de pantalla,OLED,103750,35000,155000,,320000,
+Samsung,Galaxy S22 Ultra,Cambio de pantalla,OLED,102500,35000,153000,,380000,
+Samsung,Galaxy S23 FE,Cambio de pantalla,OLED,41990,35000,84000,,190000,
+Samsung,Galaxy S23 Ultra,Cambio de pantalla,OLED,108750,35000,161000,,390000,
+Samsung,Galaxy Note 20,Cambio de pantalla,OLED,81250,35000,129000,,,
+Samsung,Galaxy Note 20 Ultra,Cambio de pantalla,OLED,97500,35000,148000,,,
+Samsung,Galaxy A01,Cambio de batería,Alta duración,11990,15000,29000,,,
+Samsung,Galaxy A02 / A04s / A21s / A22 4G,Cambio de batería,Alta duración,12990,15000,30000,,,
+Samsung,Galaxy A10,Cambio de batería,Alta duración,7990,15000,25000,,,
+Samsung,Galaxy A10s / A20s,Cambio de batería,Alta duración,12990,15000,30000,,,
+Samsung,Galaxy A11,Cambio de batería,Alta duración,12990,15000,30000,,,
+Samsung,Galaxy A12 / A13 4G,Cambio de batería,Alta duración,10000,15000,27000,,,
+Samsung,Galaxy A13 5G,Cambio de batería,Alta duración,12990,15000,30000,,,
+Samsung,Galaxy A14 4G / 5G,Cambio de batería,Alta duración,12990,15000,30000,,,
+Samsung,Galaxy A20 / A30,Cambio de batería,Alta duración,10990,15000,28000,,,
+Samsung,Galaxy A22 5G,Cambio de batería,Alta duración,13990,15000,32000,,,
+Samsung,Galaxy A23 5G / A73,Cambio de batería,Alta duración,10000,15000,27000,,,
+Samsung,Galaxy A32 / A42 / A72,Cambio de batería,Alta duración,12990,15000,30000,,,
+Samsung,Galaxy A33 / A53,Cambio de batería,Alta duración,13990,15000,32000,,,
+Samsung,Galaxy A34 / A54,Cambio de batería,Alta duración,12990,15000,30000,,,
+Samsung,Galaxy A51,Cambio de batería,Alta duración,11990,15000,29000,,,
+Samsung,Galaxy A52 / S20 FE,Cambio de batería,Alta duración,16990,15000,35000,,,
+Samsung,Galaxy S21 FE,Cambio de batería,Alta duración,10000,15000,27000,,,
+Samsung,Galaxy S21 Ultra,Cambio de batería,Alta duración,10000,15000,27000,,,
+Samsung,Galaxy S23 Ultra,Cambio de batería,Alta duración,11250,15000,28000,,,
+Samsung,Galaxy S24 Ultra,Cambio de batería,Alta duración,13990,15000,32000,,,
+Samsung,Galaxy Note 20 Ultra,Cambio de batería,Alta duración,13990,15000,32000,,,
+Samsung,Galaxy A05 / A05s / A06,Cambio de batería,Alta duración,12990,15000,30000,si,,
+Samsung,Galaxy A15 / A25,Cambio de batería,Alta duración,12990,15000,30000,si,,
+Samsung,Galaxy A35 / A55,Cambio de batería,Alta duración,12990,15000,30000,si,,
+Samsung,Galaxy A24,Cambio de batería,Alta duración,12990,15000,30000,si,,
+Samsung,Galaxy A01,Cambio de puerto de carga,Placa de carga,6150,15000,23000,,,
+Samsung,Galaxy A02 / A02s / A03,Cambio de puerto de carga,Placa de carga,3690,15000,20000,,,
+Samsung,Galaxy A03s,Cambio de puerto de carga,Placa de carga,4920,15000,21000,,,
+Samsung,Galaxy A04 / A04s,Cambio de puerto de carga,Placa de carga,3750,15000,20000,,,
+Samsung,Galaxy A10,Cambio de puerto de carga,Placa de carga,4920,15000,21000,,,
+Samsung,Galaxy A10s,Cambio de puerto de carga,Placa de carga,3750,15000,20000,,,
+Samsung,Galaxy A11 / A12 / A13 4G,Cambio de puerto de carga,Placa de carga,3690,15000,20000,,,
+Samsung,Galaxy A13 5G,Cambio de puerto de carga,Placa de carga,7380,15000,24000,,,
+Samsung,Galaxy A20 / A20s / A21s,Cambio de puerto de carga,Placa de carga,3690,15000,20000,,,
+Samsung,Galaxy A22 4G / 5G,Cambio de puerto de carga,Placa de carga,3750,15000,20000,,,
+Samsung,Galaxy A23,Cambio de puerto de carga,Placa de carga,3690,15000,20000,,,
+Samsung,Galaxy A30,Cambio de puerto de carga,Placa de carga,6150,15000,23000,,,
+Samsung,Galaxy A30s / A50,Cambio de puerto de carga,Placa de carga,3690,15000,20000,,,
+Samsung,Galaxy A31 / A51,Cambio de puerto de carga,Placa de carga,3750,15000,20000,,,
+Samsung,Galaxy A32 4G,Cambio de puerto de carga,Placa de carga,3690,15000,20000,,,
+Samsung,Galaxy A32 5G,Cambio de puerto de carga,Placa de carga,7380,15000,24000,,,
+Samsung,Galaxy A33,Cambio de puerto de carga,Placa de carga,3750,15000,20000,,,
+Samsung,Galaxy A50s / A71,Cambio de puerto de carga,Placa de carga,6150,15000,23000,,,
+Samsung,Galaxy A52 / A72,Cambio de puerto de carga,Placa de carga,11070,15000,28000,,,
+Samsung,Galaxy A52s / A73,Cambio de puerto de carga,Placa de carga,8750,15000,26000,,,
+Samsung,Galaxy A70,Cambio de puerto de carga,Placa de carga,3750,15000,20000,,,
+Samsung,Galaxy S20 FE,Cambio de puerto de carga,Placa de carga,5000,15000,21000,,,
+Samsung,Galaxy S21 FE,Cambio de puerto de carga,Placa de carga,8610,15000,25000,,,
+Samsung,Galaxy S21 / S22,Cambio de puerto de carga,Placa de carga,8750,15000,26000,,,
+Samsung,Galaxy S22 Ultra,Cambio de puerto de carga,Placa de carga,20910,15000,40000,,,
+Samsung,Galaxy A05 / A05s / A06,Cambio de puerto de carga,Placa de carga,4920,15000,21000,si,,
+Samsung,Galaxy A14 / A15 / A25,Cambio de puerto de carga,Placa de carga,4920,15000,21000,si,,
+Samsung,Galaxy A34 / A35 / A54 / A55,Cambio de puerto de carga,Placa de carga,4920,15000,21000,si,,
+Samsung,Galaxy A10,Cambio de tapa trasera,Compatible,2460,10000,13000,,,
+Samsung,Galaxy A20,Cambio de tapa trasera,Compatible,4920,10000,16000,,,
+Samsung,Galaxy A20s / A30s / A31 / A50 / A51 / A70,Cambio de tapa trasera,Compatible,3690,10000,15000,,,
+Motorola,Moto E6 Play,Cambio de pantalla,LCD,10000,20000,32000,,,
+Motorola,Moto E7 / E7 Power,Cambio de pantalla,LCD,13990,20000,37000,,,
+Motorola,Moto E7i Power,Cambio de pantalla,LCD,11250,20000,33000,,,
+Motorola,Moto E13,Cambio de pantalla,LCD,13990,20000,37000,,,
+Motorola,Moto E20,Cambio de pantalla,LCD,13990,20000,37000,,40000,
+Motorola,Moto E22 / E22i,Cambio de pantalla,LCD,11250,20000,33000,,,
+Motorola,Moto E30 / E40,Cambio de pantalla,LCD,15990,20000,39000,,,
+Motorola,Moto G04,Cambio de pantalla,LCD,13990,20000,37000,,,
+Motorola,Moto G13 / G23,Cambio de pantalla,LCD,11250,20000,33000,,55000,
+Motorola,Moto G14 / G54,Cambio de pantalla,LCD,13750,20000,36000,,50000,
+Motorola,Moto G20,Cambio de pantalla,LCD,11250,20000,33000,,40000,
+Motorola,Moto G24 / G24 Power,Cambio de pantalla,LCD,11250,20000,33000,,50000,
+Motorola,Moto G30,Cambio de pantalla,LCD,11250,20000,33000,,40000,
+Motorola,Moto G32,Cambio de pantalla,LCD,18750,20000,42000,,,
+Motorola,Moto G34,Cambio de pantalla,LCD,11250,20000,33000,,45000,
+Motorola,Moto G35,Cambio de pantalla,LCD,12500,20000,35000,,45000,
+Motorola,Moto G50 5G,Cambio de pantalla,LCD,11250,20000,33000,,45000,
+Motorola,Moto G51,Cambio de pantalla,LCD,16990,20000,40000,,45000,
+Motorola,Moto G53,Cambio de pantalla,LCD,15990,20000,39000,,,
+Motorola,Moto G60 / G40,Cambio de pantalla,LCD,13750,20000,36000,,50000,
+Motorola,Moto G60s,Cambio de pantalla,LCD,13750,20000,36000,,50000,
+Motorola,Moto G8 Play,Cambio de pantalla,LCD,11250,20000,33000,,,
+Motorola,Moto G8 Power,Cambio de pantalla,LCD,16990,20000,40000,,,
+Motorola,Moto G9 Play,Cambio de pantalla,LCD,11250,20000,33000,,,
+Motorola,Moto G9 Plus,Cambio de pantalla,LCD,14990,20000,38000,,,
+Motorola,Moto G9 Power,Cambio de pantalla,LCD,15990,20000,39000,,,
+Motorola,Moto G100,Cambio de pantalla,LCD,17990,20000,41000,,45000,
+Motorola,Moto G200,Cambio de pantalla,LCD,18750,20000,42000,,50000,
+Motorola,Moto One Fusion,Cambio de pantalla,LCD,11250,20000,33000,,,
+Motorola,Moto G50 4G,Cambio de pantalla,LCD,25000,20000,49000,,70000,
+Motorola,Moto G71 / G41 / G31,Cambio de pantalla,OLED,37500,25000,69000,,,
+Motorola,Moto G82,Cambio de pantalla,OLED,55000,25000,89000,,,
+Motorola,Moto G84,Cambio de pantalla,OLED,42990,25000,75000,,,
+Motorola,Motorola Edge 20 Lite,Cambio de pantalla,OLED,57500,35000,102000,,,
+Motorola,Motorola Edge 30 Pro,Cambio de pantalla,Incell,19363,35000,58000,,,
+Motorola,Motorola Edge 30 Pro,Cambio de pantalla,OLED,53750,35000,97000,,117000,
+Motorola,Motorola Edge 30 Fusion,Cambio de pantalla,OLED,75000,35000,122000,,140000,
+Motorola,Motorola Edge 30 Neo,Cambio de pantalla,OLED,95000,35000,145000,,175000,
+Motorola,Motorola Edge 40,Cambio de pantalla,OLED,45000,35000,87000,,117000,
+Motorola,Motorola Edge 40 Neo,Cambio de pantalla,OLED,45000,35000,87000,,130000,
+Motorola,Motorola Edge 50 Fusion,Cambio de pantalla,OLED,40000,35000,81000,,117000,
+Motorola,Motorola Edge 60 Fusion,Cambio de pantalla,OLED,41250,35000,83000,,150000,
+Motorola,Moto G50,Cambio de batería,Alta duración,12990,15000,30000,,,
+Motorola,Moto One Vision,Cambio de batería,Alta duración,12990,15000,30000,,,
+Motorola,Moto G7,Cambio de batería,Alta duración,7490,15000,24000,,,
+Motorola,Moto G7 Play,Cambio de batería,Alta duración,6990,15000,24000,,,
+Motorola,Moto G04 / G24 / G34 / G54 (y otros recientes),Cambio de batería,Alta duración,12990,15000,30000,si,,
+Motorola,Moto E7 / G9 Power / G100 / One,Cambio de puerto de carga,Placa de carga,3690,15000,20000,,,
+Motorola,Moto E7 Power / E7i / E20 / E30,Cambio de puerto de carga,Placa de carga,4920,15000,21000,,,
+Motorola,Moto G30 / G50 5G / G8 Power / G9 Plus / One Fusion,Cambio de puerto de carga,Placa de carga,4920,15000,21000,,,
+Motorola,Moto G71,Cambio de puerto de carga,Placa de carga,3750,15000,20000,,,
+Motorola,Moto G04 / G24 / G34 / G54 (y otros recientes),Cambio de puerto de carga,Placa de carga,4920,15000,21000,si,,
+Motorola,Moto E7i / G9 Plus,Cambio de tapa trasera,Compatible,2460,10000,13000,,,
+Motorola,Moto E6s / G30 / G9 Power,Cambio de tapa trasera,Compatible,4920,10000,16000,,,
+Vivo,Vivo Y01,Cambio de pantalla,LCD,13990,20000,37000,,40000,
+Vivo,Vivo Y02s,Cambio de pantalla,LCD,11250,20000,33000,,40000,
+Vivo,Vivo Y11s,Cambio de pantalla,LCD,11250,20000,33000,,40000,
+Vivo,Vivo Y15s,Cambio de pantalla,LCD,10000,20000,32000,,40000,
+Vivo,Vivo Y20 / Y20s / Y20i,Cambio de pantalla,LCD,11250,20000,33000,,40000,
+Vivo,Vivo Y21s,Cambio de pantalla,LCD,10000,20000,32000,,40000,
+Vivo,Vivo Y27 5G,Cambio de pantalla,LCD,12500,20000,35000,,40000,
+Vivo,Vivo Y30,Cambio de pantalla,LCD,17500,20000,41000,,50000,
+Vivo,Vivo Y36 5G,Cambio de pantalla,LCD,12500,20000,35000,,40000,
+Vivo,Vivo Y55,Cambio de pantalla,LCD,11250,20000,33000,,40000,
+Vivo,Vivo Y33s / Y51 / Y53s / Y76,Cambio de pantalla,LCD,13990,20000,37000,,45000,
+Vivo,Vivo V20,Cambio de pantalla,Incell,12500,20000,35000,,,
+Vivo,Vivo V20,Cambio de pantalla,OLED,31250,25000,61000,,,
+Vivo,Vivo V21,Cambio de pantalla,Incell,15990,20000,39000,,,
+Vivo,Vivo V21,Cambio de pantalla,OLED,36250,25000,67000,,,
+Vivo,Vivo V25,Cambio de pantalla,Compatible,15990,20000,39000,,,
+Vivo,Vivo (cualquier Y),Cambio de batería,Alta duración,12990,15000,30000,si,,
+Vivo,Vivo Y20 / Y20s / Y20i,Cambio de puerto de carga,Placa de carga,4920,15000,21000,,,
+Vivo,Vivo (otros Y),Cambio de puerto de carga,Placa de carga,4920,15000,21000,si,,
