@@ -1,30 +1,52 @@
-# Propuesta para ordenar la bodega (16-10-2026)
+# Propuesta para ordenar la bodega (16-10-2026, versión 2)
 
 > **Solo es una propuesta: tú decides.** Está cargada en el POS, en Productos → **"📦 Más stock y bodega"**. Cada
 > producto tiene **"✅ Guardar ahí"** (lo agrega a ese lugar) y **"✕ No"** (la descarta). Nada se mueve solo.
 > Hecha con los datos del 16-10-2026: los 149 productos con stock, sus medidas, lo vendido en 90 días y dónde estaban
 > anotados (9 productos).
+> **Versión 2 (con lo que dijiste):** H e I quedan solo para monitores, y los muebles parten desde la derecha (A a la
+> derecha, I a la izquierda).
 
-## Cómo está pensada
+## La bodega
 
-**La bodega:** 9 muebles (A a I) de 5 repisas. La repisa 1 es la de abajo. Supuse que los muebles van de la A a la I
-de izquierda a derecha y que **el A es el más cercano al mesón**. Si no es así, dime cuál es el más cercano y la rehago.
-
-**Un mueble por familia**, para que lo parecido esté junto y lo encuentre cualquiera:
+Son 9 estanterías metálicas armables (tipo "mecano") de **180 cm de alto, 90 cm de ancho y 40 cm de fondo**, con 5
+repisas regulables. La publicación dice que soportan **140 kg**. Las letras van **de derecha a izquierda**: la A es la
+de más a la derecha y la I la de más a la izquierda. La repisa 1 es la de abajo.
 
 | Mueble | Qué va |
 |---|---|
-| A | Cargadores y cables de carga (259 de las 1.262 unidades, y lo que más se pide: al lado del mesón) |
+| A | Cargadores y cables de carga |
 | B | Cables y adaptadores: video, red, poder, audio y USB |
-| C | Almacenamiento, memorias y piezas chicas de PC |
-| D | Periféricos: mouse, teclados, joysticks y cámaras web |
-| E | Audio y energía: audífonos, parlantes, power banks y pilas |
-| F | Celulares, accesorios de auto y TV, y herramientas. **F1, F2 y F5 quedan libres para los repuestos de celular** |
-| G | Hogar chico y oficina |
-| H | Computación grande: monitores, PCs, gabinetes y fuentes |
-| I | Hogar voluminoso. **I5 = "por ordenar"**: lo que llega y todavía no tiene lugar |
+| C | Computación: PCs reacondicionados, gabinetes, fuentes, almacenamiento y piezas de PC |
+| D | Periféricos (mouse, teclados, joysticks, cámaras web) e iluminación para streaming (aros de luz) |
+| E | Audio y energía: audífonos, parlantes, power banks y pilas. **E1 = "por ordenar"** |
+| F | Celulares, accesorios de auto y TV, y herramientas. **F1, F2 y F5 libres para los repuestos de celular** |
+| G | Hogar y oficina |
+| H | **Monitores nuevos** (en su caja). **H3 libre** para los que faltan por cargar |
+| I | **Monitores reacondicionados**. **I3 libre** para los que faltan por cargar |
 
-**En cada mueble:**
+## A qué altura poner las repisas (sugerencia)
+
+Como las repisas se mueven, conviene ajustarlas a lo que va en cada mueble:
+
+| Muebles | Cuántas repisas | Separación |
+|---|---|---|
+| **H e I (monitores)** | **4** (sobra una por mueble) | Tres niveles de **~60 cm** (repisas a 0, 60 y 120 cm) y la de arriba del todo para cajas livianas |
+| **C (computación)** | 5 | La de abajo de **~50 cm** (los gabinetes miden 42 a 48 cm) y las demás de ~35 cm |
+| **G (hogar)** | 5 | La de abajo lo más alta posible (**~55 cm**) para ventiladores y balanzas, y las demás de ~35 cm |
+| **A, B, D, E y F** | 5 | Parejas, de **~40 cm**, para que entren cajas plásticas de hasta ~35 cm |
+
+**Monitores, parados como libros:** la caja de un monitor de 19" a 24" mide ~40 cm de un lado (justo el fondo de la
+repisa), ~60 cm del otro y 10 a 18 cm de grosor. Parada sobre el lado corto, entra al fondo y en un nivel de 60 cm, así
+caben **unos 6 por nivel** (unos 18 por mueble y 36 entre H e I). Hoy hay 24. **Nunca acostados uno encima de otro:**
+el peso se carga sobre la pantalla. Los reacondicionados sin caja van parados, pantalla con pantalla, con un cartón
+entre medio.
+
+**Peso:** un monitor pesa 3 a 6 kg. Con 6 por nivel son ~30 kg, y con 3 niveles ~90 kg, dentro de los 140 kg.
+Lo más pesado va siempre abajo.
+
+## Qué va en cada repisa
+
 - **Repisa 1:** lo pesado o grande, para no levantarlo.
 - **Repisa 2:** la reserva de lo que tiene mucho stock.
 - **Repisa 3:** lo que más se vende, a la altura de la vista.
@@ -52,13 +74,10 @@ recomendación:
   remotos (F4).
 - **Los cables se guardan enrollados con su amarra.** Sueltos se enredan y se ven usados.
 
-## Lo que no pude saber
+## Ojo con G1
 
-- **Cuánto cabe en cada repisa.** No tengo sus medidas. Si una no da, se usa la del lado. Si me mandas el alto, ancho y
-  fondo de una repisa (y una foto de la bodega), la ajusto.
-- **79 de los 149 productos no tienen las medidas completas.** A esos los ubiqué por su categoría y su nombre.
-- **Los 30 ventiladores industriales de 52 cm** seguramente no caben en una repisa. Van en I1 o en el piso junto al
-  mueble I.
+**G1 no alcanza para los 30 ventiladores industriales y las 30 balanzas de baño:** son bultos grandes. Lo que no
+quepa, apílalo en el piso junto al mueble G, con los más pesados abajo.
 
 ## Propuesta por mueble y repisa
 
@@ -96,8 +115,11 @@ recomendación:
 - **B1** (2 productos, 32 unidades)
   - 📦 **Caja "Cables de poder"**: Cable de Poder PC 1.8 Metros – Enchufe Chileno Tipo L a C13 (28); Cable de Poder Tipo 8 C7 (4)
 
-### Mueble C · Almacenamiento, memorias y piezas chicas de PC
+### Mueble C · Computación: PCs, gabinetes, fuentes, almacenamiento y piezas de PC
 
+- **C5** (2 productos, 26 unidades)
+  - Ventilador Gamer RGB 120mm para Gabinete Silent Fan (24)
+  - Disipador CPU Doble Ventilador RGB P22 — Intel / AMD (2)
 - **C4** (10 productos, 116 unidades)
   - 📦 **Caja "Piezas chicas de PC (tornillos, pasta, RAM)"**: Tornillo de Montaje M.2 SSD M2.5 para Placa Madre y Disco NVMe (93); Memoria RAM Hiksemi Armor 8GB DDR4 3200MHz (3); Pasta Térmica Disipadora HY410 10 Gramos (2); Memoria RAM ADATA Premier 8GB DDR4 3200 SO-DIMM AD4S320088G22-SGN (1); Pasta Térmica Kronos KP03 1g con Espátula 6,5 W/m·K (1); Masilla Térmica Thermal Putty CX-H1300 70 g (1)
   - Carcasa M.2 SATA (NGFF) USB Tipo C (9)
@@ -106,16 +128,30 @@ recomendación:
   - SSD Kingston A400 960GB SATA 2.5" – SA400S37/960G (1)
 - **C3** (4 productos, 41 unidades)
   - 📦 **Caja "Pendrives y tarjetas de memoria"**: Pendrive Kingston DataTraveler Exodia 128GB USB 3.2 — Blanco (15); Pendrive Kingston DataTraveler 128GB USB 3.2 DT70 Tipo-C (15); Pendrive Kingston DataTraveler Exodia 64GB USB 3.2 — Negro (6); Tarjeta microSD Dahua 32GB DHI-TF-C100 UHS-I Clase 10 (5)
+- **C2** (6 productos, 8 unidades)
+  - Fuente de poder Clio AC-700W 700W ATX (2)
+  - Placa Madre MSI A520M-A PRO AM4 (2)
+  - Fuente de Poder ATX Kronos 700W — Certificada 80 Plus Bronze (1)
+  - Fuente de Poder ATX Kronos 750W — Certificada 80 Plus Bronze (1)
+  - XPG PYLON PYLON650B-BKCUS / PYLON650B-BKCEU Fuente de Poder 650 W (1)
+  - Fuente de Poder Gigabyte GP-P750BS 750W 80 PLUS Bronze (1)
+- **C1** (5 productos, 9 unidades)
+  - HP 280 G2 SFF Computador Intel Core i5-6500 8GB RAM 1TB HDD Windows 10 Pro Reacondicionado (5)
+  - Gabinete Gamer Darkflash M305 — Panel de Vidrio, 3 Fan ARGB, mATX Blanco (1)
+  - PC HP ProDesk SFF Core i5 4th Gen 8GB RAM HDD 500GB VGA DP Reacondicionado (1)
+  - Computador HP ProDesk 400 G1 Reacondicionado Intel Core i5 8GB RAM 500GB HDD + Wifi y Bluetooth Inalambrico DVI + VGA (1)
+  - Gabinete Kronos Evesky Pink ATX — Vidrio Templado, USB 3.0 (1)
 
-### Mueble D · Periféricos (mouse, teclados, joysticks, cámaras web)
+### Mueble D · Periféricos (mouse, teclados, joysticks, cámaras web) e iluminación para streaming
 
 - **D5** (3 productos, 20 unidades)
   - Combo Teclado y Mouse RGB AB-D335 (13)
   - Kit Teclado y Mouse USB E4U Alámbrico Ergonomico (5)
   - Kit Teclado + Mouse Bluetooth para Tablet, iPad, Celular y PC (2)
-- **D4** (7 productos, 24 unidades)
+- **D4** (8 productos, 28 unidades)
   - Cámara Web USB con Micrófono 720p Color Negro (10)
   - Mouse Inalámbrico Recargable USB-C Silencioso — Dual Bluetooth (4)
+  - Foco Solar Simula Cámara de Seguridad 2178T Farol Blanco (4)
   - Mouse Gamer Reptilex RX0047 Ergonómico 7 Botones USB 800/2400 DPI (3)
   - Mouse Gamer RGB (2)
   - Mouse Gamer RGB - 707775 Cinco Tech (2)
@@ -125,6 +161,10 @@ recomendación:
   - Control Mando Joystick USB para PC / PS3 (7)
 - **D2** (1 productos, 20 unidades)
   - Mouse Urbano Labs Gamer Pro Con Luces Rgb - 3 Botones Negro (20)
+- **D1** (3 productos, 44 unidades)
+  - Anillo de Luz LED 26 cm con Trípode Ajustable — Luz Blanco Frío (29)
+  - Kit Video Streaming con Micrófono, Luz LED y Trípode Estabilizador (10)
+  - Aro Luz LED RGB Multicolor 26cm + Trípode Ajustable (5)
 
 ### Mueble E · Audio y energía (audífonos, parlantes, power banks, pilas)
 
@@ -149,9 +189,11 @@ recomendación:
   - Parlante Karaoke Master-G MGGLADIATOR (3)
   - Parlante Karaoke Master-G MGLUXOR (3)
   - Parlante Inalámbrico Bluetooth Portátil Master-G (1)
+- **E1** · Por ordenar: lo que llegue y todavía no tenga lugar.
 
-### Mueble F · Celulares, accesorios de auto y TV, herramientas
+### Mueble F · Celulares, accesorios de auto y TV, herramientas (F1, F2 y F5 libres: repuestos de celular)
 
+- **F5** · Libre: repuestos de celular livianos.
 - **F4** (3 productos, 12 unidades)
   - 📦 **Caja "Controles remotos"**: Control Remoto Universal Compatible con Samsung TV (5)
   - Limpia Contactos Electrónico Rex 400 ml (6)
@@ -163,85 +205,69 @@ recomendación:
   - Kit Eléctrico Cautín 220V 60W Regulable (5)
   - Juego Destornilladores de Precisión 115 en 1 para Teléfono y Notebook (2)
   - Juego de Dados Mecánicos 46 Piezas 1/4" con Chicharra (1)
+- **F2** · Libre: repuestos de celular.
+- **F1** · Libre: repuestos de celular (pantallas y flex encargados).
 
-### Mueble G · Hogar chico y oficina
+### Mueble G · Hogar y oficina
 
-- **G5** (2 productos, 22 unidades)
+- **G5** (7 productos, 51 unidades)
   - Lámpara Emergencia Barra Led Portátil Multiuso 52cm Closet Color Blanco T530 (12)
   - Raqueta Eléctrica Recargable Mata Moscas y Mosquitos (10)
-- **G4** (4 productos, 22 unidades)
-  - Linterna de Mano HS80297B Solar Potente 500 lm (10)
-  - Mini Ventilador de Escritorio Portátil con Luz LED Multicolor y Carga USB (5) — hoy en A2*
-  - Foco Solar Simula Cámara de Seguridad 2178T Farol Blanco (4)
-  - Lámpara LED Astronauta Sentado Proyector Cielo Estrellado Blanco (3)
-- **G3** (7 productos, 34 unidades)
-  - Rollo Termico 80x80mm 55 Grs Blanco (Unidad) (10)
-  - Kit de Limpieza para Pantallas Laptop Tablet TV LED LCD Opula KCL-1029 (6)
-  - Kit de Limpieza para Zapatillas con Espuma Limpiadora y Blanqueador (6)
-  - Cinta Embalaje Huincha Adhesiva Transparente 300mts (Unidad) (6)
-  - Rollos Termicos 80x80mm 55 Grs Pack 10 Pza Blanco (2)
-  - Cinta Tapagoteras Butilo Impermeable Aluminio 5 cm x 5 m (2)
-  - Pack X6 Cinta Embalaje Huincha Adhesiva Transparente 300mts (2)
-- **G2** (4 productos, 12 unidades)
-  - Mini Impresora Portátil Bluetooth Gatito + 2 Rollos Térmicos (5)
-  - Selladora De Bolsa FS-200 Azul (3)
-  - Balanza Pesa Digital Para Cocina Comercio 10kg (3)
-  - Balanza Digital Comercial 40kg Naranja (1)
-
-### Mueble H · Computación grande (monitores, PCs, gabinetes, fuentes)
-
-- **H5** (2 productos, 26 unidades)
-  - Ventilador Gamer RGB 120mm para Gabinete Silent Fan (24)
-  - Disipador CPU Doble Ventilador RGB P22 — Intel / AMD (2)
-- **H4** (6 productos, 8 unidades)
-  - Fuente de poder Clio AC-700W 700W ATX (2)
-  - Placa Madre MSI A520M-A PRO AM4 (2)
-  - Fuente de Poder ATX Kronos 700W — Certificada 80 Plus Bronze (1)
-  - Fuente de Poder ATX Kronos 750W — Certificada 80 Plus Bronze (1)
-  - XPG PYLON PYLON650B-BKCUS / PYLON650B-BKCEU Fuente de Poder 650 W (1)
-  - Fuente de Poder Gigabyte GP-P750BS 750W 80 PLUS Bronze (1)
-- **H3** (5 productos, 9 unidades)
-  - HP 280 G2 SFF Computador Intel Core i5-6500 8GB RAM 1TB HDD Windows 10 Pro Reacondicionado (5)
-  - Gabinete Gamer Darkflash M305 — Panel de Vidrio, 3 Fan ARGB, mATX Blanco (1)
-  - PC HP ProDesk SFF Core i5 4th Gen 8GB RAM HDD 500GB VGA DP Reacondicionado (1)
-  - Computador HP ProDesk 400 G1 Reacondicionado Intel Core i5 8GB RAM 500GB HDD + Wifi y Bluetooth Inalambrico DVI + VGA (1)
-  - Gabinete Kronos Evesky Pink ATX — Vidrio Templado, USB 3.0 (1)
-- **H2** (7 productos, 11 unidades)
-  - Monitor HP 19" S1933 Reacondicionado (4)
-  - Monitor AOC 19" LED E2070SWN Reacondicionado (2)
-  - Monitor Samsung 19" SyncMaster B1930 Reacondicionado (1)
-  - Monitor HP 19" V190 Reacondicionado (1)
-  - Monitor Dell 19" E1916H Reacondicionado (1)
-  - Monitor HP 19" V193b Reacondicionado (1)
-  - Monitor AOC 19" LCD 931SWL Reacondicionado (1)
-- **H1** (5 productos, 13 unidades)
-  - Monitor HP 21.5" V214a Full HD (1920x1080), HDMI, VGA, Doble Altavoz (5)
-  - Monitor Samsung Essential S30GD 22" Full HD IPS 100Hz (4)
-  - Monitor Samsung 22" VGA/DVI (2)
-  - Monitor ViewSonic 22" VA2231wm Reacondicionado (1)
-  - Monitor Oficina Caixun 24" FHD IPS 100Hz HDR10 Negro C24X3F (1)
-
-### Mueble I · Hogar voluminoso (y repisa 5 = "por ordenar")
-
-- **I5** · Por ordenar: lo que llegue y no tenga lugar todavía.
-- **I4** (7 productos, 68 unidades)
-  - Anillo de Luz LED 26 cm con Trípode Ajustable — Luz Blanco Frío (29)
-  - Kit Video Streaming con Micrófono, Luz LED y Trípode Estabilizador (10)
   - NUEVO Tendedero Colgador Secador de Ropa Plegable 3 Niveles (9)
   - Perchero Organizador 27 Pares 9 Niveles Metal Plástico Gris (5)
   - Zapatero Organizador Colgador Zapatos Armario Perchero Negro (5)
   - Organizador Estante Metálico 3 Niveles Blanco (5)
-  - Aro Luz LED RGB Multicolor 26cm + Trípode Ajustable (5)
-- **I3** (4 productos, 16 unidades)
-  - Mini Parrillera Plegable (9)
   - Basurero Metálico Redondo Papelera Oficina Malla Grande Negro (5)
-  - Especiero Giratorio de Cocina 20 Frascos con Etiquetas y Lápiz (1)
-  - Caja de Seguridad Fuerte Digital Safewell con Teclado y Llaves (1)
-- **I2** (5 productos, 41 unidades)
-  - Balanza Pesa Digital Baño 180kg Vidrio 33cm Transparente (30)
+- **G4** (3 productos, 18 unidades)
+  - Linterna de Mano HS80297B Solar Potente 500 lm (10)
+  - Mini Ventilador de Escritorio Portátil con Luz LED Multicolor y Carga USB (5) — hoy en A2*
+  - Lámpara LED Astronauta Sentado Proyector Cielo Estrellado Blanco (3)
+- **G3** (11 productos, 46 unidades)
+  - Rollo Termico 80x80mm 55 Grs Blanco (Unidad) (10)
+  - Kit de Limpieza para Pantallas Laptop Tablet TV LED LCD Opula KCL-1029 (6)
+  - Kit de Limpieza para Zapatillas con Espuma Limpiadora y Blanqueador (6)
+  - Cinta Embalaje Huincha Adhesiva Transparente 300mts (Unidad) (6)
+  - Mini Impresora Portátil Bluetooth Gatito + 2 Rollos Térmicos (5)
+  - Selladora De Bolsa FS-200 Azul (3)
+  - Balanza Pesa Digital Para Cocina Comercio 10kg (3)
+  - Rollos Termicos 80x80mm 55 Grs Pack 10 Pza Blanco (2)
+  - Cinta Tapagoteras Butilo Impermeable Aluminio 5 cm x 5 m (2)
+  - Pack X6 Cinta Embalaje Huincha Adhesiva Transparente 300mts (2)
+  - Balanza Digital Comercial 40kg Naranja (1)
+- **G2** (7 productos, 22 unidades)
+  - Mini Parrillera Plegable (9)
   - Cocinilla Estufa Portátil de Gas para Camping ZT-202 (4) — hoy en A1*
   - Cocinilla Camping Cocina Portátil Gas 1 Plato Color Negro con Maletín (3)
   - Starlux Cocinilla 2 Platos Encimera a Gas Manual Acero (2)
   - Cocinilla Cocina A Gas Fogón 2 Quemadores (2)
-- **I1** (1 productos, 30 unidades)
+  - Especiero Giratorio de Cocina 20 Frascos con Etiquetas y Lápiz (1)
+  - Caja de Seguridad Fuerte Digital Safewell con Teclado y Llaves (1)
+- **G1** (2 productos, 60 unidades)
   - Ventilador Industrial 18 Plástico Potente 52 Cm Negro Naranja (30)
+  - Balanza Pesa Digital Baño 180kg Vidrio 33cm Transparente (30)
+
+### Mueble H · Monitores nuevos (con caja)
+
+- **H4** · Repisa de arriba: cajas livianas (cables y bases de monitor).
+- **H3** · Libre: monitores nuevos que faltan por cargar.
+- **H2** (3 productos, 7 unidades)
+  - Monitor Samsung Essential S30GD 22" Full HD IPS 100Hz (4)
+  - Monitor Samsung 22" VGA/DVI (2)
+  - Monitor Oficina Caixun 24" FHD IPS 100Hz HDR10 Negro C24X3F (1)
+- **H1** (1 productos, 5 unidades)
+  - Monitor HP 21.5" V214a Full HD (1920x1080), HDMI, VGA, Doble Altavoz (5)
+
+### Mueble I · Monitores reacondicionados y los que faltan por cargar
+
+- **I4** · Repisa de arriba: cajas livianas.
+- **I3** · Libre: monitores que faltan por cargar.
+- **I2** (6 productos, 6 unidades)
+  - Monitor Samsung 19" SyncMaster B1930 Reacondicionado (1)
+  - Monitor ViewSonic 22" VA2231wm Reacondicionado (1)
+  - Monitor HP 19" V190 Reacondicionado (1)
+  - Monitor Dell 19" E1916H Reacondicionado (1)
+  - Monitor HP 19" V193b Reacondicionado (1)
+  - Monitor AOC 19" LCD 931SWL Reacondicionado (1)
+- **I1** (2 productos, 6 unidades)
+  - Monitor HP 19" S1933 Reacondicionado (4)
+  - Monitor AOC 19" LED E2070SWN Reacondicionado (2)

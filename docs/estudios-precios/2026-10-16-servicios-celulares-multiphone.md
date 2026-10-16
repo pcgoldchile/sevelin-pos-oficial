@@ -17,9 +17,8 @@ cámaras, vidrios de cámara, parlantes, auriculares, botones, huellas y bandeja
 - **Se leyó por posición en la página** (modelo, calidad y precio tienen cada uno su tamaño de letra). Así salieron los
   4.281 precios y ninguno quedó sin modelo. Se revisaron contra el PDF las páginas de pantallas de iPhone (5 y 6),
   baterías (16), flex de carga (20), cámaras (29) y tapas (34 y 35).
-- **⚠️ La lista no dice si el precio incluye IVA.** El catálogo de herramientas del 21-08 decía "IVA INCL." en cada
-  precio y su web dice "Impuestos incluidos", así que calculé **con IVA incluido**. Si fueran netos, cada repuesto sube
-  19%. Por ejemplo, la pantalla del Samsung A05 pasaría de $31.000 a $33.000. Hay que preguntarle a Multiphone.
+- **Con IVA incluido:** la lista no lo dice, pero el dueño lo confirmó el 16-10-2026 (vale para las dos listas de
+  Multiphone, la de repuestos y la de herramientas).
 - **Cuando hay varias del mismo modelo y la misma calidad,** se toma la más barata. Si la de su marca propia (CVT-SRVI)
   cuesta hasta $1.000 más, se prefiere esa, porque es la que ellos garantizan.
 

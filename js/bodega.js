@@ -14,16 +14,17 @@
 let bodegaStockDatos = null;
 let bodegaStockFiltro = 'unidades';   // unidades | plata | sin_lugar | propuestas
 
+// Versión 2 (dueño, 16-10-2026): H e I solo para monitores; los muebles parten desde la derecha.
 const BODEGA_GUIA_MUEBLES = [
   ['A', 'Cargadores y cables de carga'],
   ['B', 'Cables y adaptadores (video, red, poder, audio, USB)'],
-  ['C', 'Almacenamiento, memorias y piezas chicas de PC'],
-  ['D', 'Periféricos (mouse, teclados, joysticks, cámaras web)'],
-  ['E', 'Audio y energía (audífonos, parlantes, power banks, pilas)'],
+  ['C', 'Computación: PCs, gabinetes, fuentes, almacenamiento y piezas de PC'],
+  ['D', 'Periféricos e iluminación para streaming (aros de luz)'],
+  ['E', 'Audio y energía (audífonos, parlantes, power banks, pilas); E1 = "por ordenar"'],
   ['F', 'Celulares, accesorios de auto y TV, herramientas (F1, F2 y F5 libres: repuestos de celular)'],
-  ['G', 'Hogar chico y oficina'],
-  ['H', 'Computación grande (monitores, PCs, gabinetes, fuentes)'],
-  ['I', 'Hogar voluminoso; I5 = "por ordenar"'],
+  ['G', 'Hogar y oficina (lo que no quepa en G1, en el piso junto al mueble)'],
+  ['H', 'Monitores nuevos, parados como libros (H3 libre para los que faltan cargar)'],
+  ['I', 'Monitores reacondicionados (I3 libre para los que faltan cargar)'],
 ];
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -46,7 +47,10 @@ document.addEventListener('DOMContentLoaded', () => {
   if (guia) {
     guia.innerHTML = `
       <p>Cada letra es un mueble y cada número una repisa, <b>contando de abajo hacia arriba</b> (A1 = abajo del mueble A).
-        Supuesto: los muebles van de la A a la I de izquierda a derecha y el A es el más cercano al mesón.</p>
+        Los muebles parten desde la derecha: <b>A es el de más a la derecha e I el de más a la izquierda</b>.</p>
+      <p><b>Alturas sugeridas</b> (estantes de 180 × 90 × 40 cm): H e I con 4 repisas, tres niveles de ~60 cm para los
+        monitores parados; C con la de abajo de ~50 cm para los gabinetes; G con la de abajo lo más alta posible; el resto
+        parejas, de ~40 cm.</p>
       <ul>${BODEGA_GUIA_MUEBLES.map(([l, t]) => `<li><b>${l}</b>: ${escHtml(t)}</li>`).join('')}</ul>
       <p><b>Repisa 1:</b> lo pesado o grande. <b>Repisa 3:</b> lo que más se vende, a la altura de la vista.
         <b>Repisa 2:</b> la reserva del que tiene mucho stock. <b>Repisa 5:</b> lo liviano y voluminoso.</p>

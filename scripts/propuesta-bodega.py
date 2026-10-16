@@ -11,30 +11,30 @@ def n(v):
     try: return float(v or 0)
     except: return 0.0
 
-# Familias → mueble. Orden de izquierda a derecha, A = el más cercano al mesón (supuesto a confirmar).
+# Familias → mueble. La bodega parte desde la derecha: A es el de más a la derecha e I el de más a la izquierda
+# (dueño, 16-10-2026). H e I son solo para monitores ("aún falta monitores por cargar").
 MUEBLES = {
     'A': 'Cargadores y cables de carga',
     'B': 'Cables y adaptadores (video, red, poder, audio, USB)',
-    'C': 'Almacenamiento, memorias y piezas chicas de PC',
-    'D': 'Periféricos (mouse, teclados, joysticks, cámaras web)',
+    'C': 'Computación: PCs, gabinetes, fuentes, almacenamiento y piezas de PC',
+    'D': 'Periféricos (mouse, teclados, joysticks, cámaras web) e iluminación para streaming',
     'E': 'Audio y energía (audífonos, parlantes, power banks, pilas)',
-    'F': 'Celulares, accesorios de auto y TV, herramientas',
-    'G': 'Hogar chico y oficina',
-    'H': 'Computación grande (monitores, PCs, gabinetes, fuentes)',
-    'I': 'Hogar voluminoso (y repisa 5 = "por ordenar")',
+    'F': 'Celulares, accesorios de auto y TV, herramientas (F1, F2 y F5 libres: repuestos de celular)',
+    'G': 'Hogar y oficina',
+    'H': 'Monitores nuevos (con caja)',
+    'I': 'Monitores reacondicionados y los que faltan por cargar',
 }
 
 def familia(p):
     nom, cat, sub = (p['nombre'] or '').lower(), (p['cat'] or ''), (p['sub'] or '')
     if cat == 'Cargadores' or sub == 'Cables USB y de Carga': return 'A'
     if cat == 'Cables y Adaptadores': return 'B'
-    if cat == 'Almacenamiento' or sub in ('Memorias RAM',) or re.search(r'pasta t[ée]rmica|masilla t[ée]rmica', nom): return 'C'
-    if cat == 'Periféricos': return 'D'
+    if cat == 'Monitores': return 'I' if 'reacondicionado' in nom else 'H'
+    if cat in ('Almacenamiento', 'Computadores') or sub in ('Memorias RAM', 'Gabinetes', 'Fuentes de poder', 'Placas Madre', 'Coolers y Disipadores') \
+            or re.search(r'pasta t[ée]rmica|masilla t[ée]rmica', nom): return 'C'
+    if cat == 'Periféricos' or sub == 'Iluminación y Streaming' and re.search(r'aro|anillo|streaming', nom): return 'D'
     if cat in ('Audio', 'Energía Portátil'): return 'E'
     if cat in ('Accesorios Móviles', 'Celulares y Smartphones', 'Herramientas') or sub == 'TV y Accesorios': return 'F'
-    if cat in ('Monitores', 'Computadores') or sub in ('Gabinetes', 'Fuentes de poder', 'Placas Madre', 'Coolers y Disipadores'): return 'H'
-    voluminoso = r'ventilador industrial|balanza pesa digital ba|cocinilla|parrill|tendedero|perchero|zapatero|estante met|basurero|aro de luz|anillo de luz|kit video streaming|especiero|caja de seguridad|aro luz'
-    if re.search(voluminoso, nom): return 'I'
     return 'G'
 
 # Cajas para lo chico o suelto (van dentro de una repisa)
@@ -78,21 +78,24 @@ def repisa(p, fam):
 # Reglas puntuales (van antes que la regla general) para repartir los muebles que quedarían repletos
 PUNTUALES = [
     (r'^cargador de pared usb carga r[áa]pida 33w power delivery', 'A1', 'mucho stock (reserva): cajas cerradas abajo'),
-    (r'^monitor .*(19"|19 )', 'H2', 'monitor de 19": segunda repisa'),
-    (r'^monitor', 'H1', 'monitor grande: abajo, no se apila alto'),
-    (r'reacondicionado|computador|^pc hp|^gabinete', 'H3', 'PC o gabinete: a media altura, se levanta con las dos manos'),
-    (r'^fuente de poder|^xpg pylon|^placa madre', 'H4', 'fuentes y placas: cajas medianas'),
-    (r'^ventilador gamer|^disipador', 'H5', 'livianos: arriba'),
-    (r'ventilador industrial', 'I1', 'muy grande: abajo (si no cabe, en el piso junto al mueble I)'),
-    (r'balanza pesa digital ba|cocinilla|^starlux', 'I2', 'pesado: abajo'),
-    (r'parrill|especiero|caja de seguridad|basurero', 'I3', 'mediano'),
-    (r'aro de luz|anillo de luz|aro luz|kit video streaming|perchero|zapatero|estante met|tendedero', 'I4', 'liviano y voluminoso: arriba'),
+    # Monitores: 3 niveles de ~60 cm, parados como libros (ver la guía de alturas)
+    (r'^monitor hp 21', 'H1', 'el que más hay: abajo, parados como libros'),
+    (r'^monitor samsung essential|^monitor oficina caixun|^monitor samsung 22" vga', 'H2', 'monitores nuevos: parados como libros'),
+    (r'^monitor (hp 19" s1933|aoc 19" led)', 'I1', 'reacondicionados con más unidades: abajo'),
+    (r'^monitor .*reacondicionado', 'I2', 'reacondicionados de 1 unidad'),
+    (r'reacondicionado|computador|^pc hp|^gabinete', 'C1', 'PC o gabinete: abajo, pesa (repisa de ~50 cm de alto)'),
+    (r'^fuente de poder|^xpg pylon|^placa madre', 'C2', 'fuentes y placas: cajas medianas'),
+    (r'^ventilador gamer|^disipador', 'C5', 'livianos: arriba'),
+    (r'aro de luz|anillo de luz|aro luz|kit video streaming', 'D1', 'iluminación para streaming: cajas livianas pero grandes'),
+    (r'ventilador industrial|balanza pesa digital ba', 'G1', 'muy voluminoso: abajo (lo que no quepa, apilado en el piso junto al mueble G)'),
+    (r'cocinilla|^starlux|parrill|caja de seguridad|especiero', 'G2', 'cocina y camping: pesado, abajo'),
+    (r'perchero|zapatero|estante met|tendedero|basurero', 'G5', 'liviano y voluminoso: arriba'),
     (r'^parlante', 'E2', 'parlantes: abajo, son voluminosos'),
     (r'power bank|bater[íi]a externa|bater[íi]a port[áa]til|magsafe', 'E3', 'power banks: a la altura de la vista, se venden seguido'),
     (r'aud[íi]fono', 'E4', 'audífonos'),
     (r'kit solar', 'E5', 'liviano y voluminoso: arriba'),
     (r'^cable hdmi (a hdmi 5|15)|^cable displayport a displayport|^capturadora', 'B5', 'cables largos y livianos: arriba'),
-    (r'balanza|selladora|mini impresora', 'G2', 'medianos'),
+    (r'balanza|selladora|mini impresora', 'G3', 'medianos'),
     (r'kit de limpieza|cinta|rollo', 'G3', 'insumos de oficina y limpieza'),
     (r'l[áa]mpara emergencia|raqueta', 'G5', 'largos y livianos: arriba'),
 ]
@@ -128,7 +131,15 @@ for m in 'ABCDEFGHI':
         lug = f'{m}{r}'
         xs = por_lugar.get(lug, [])
         if not xs:
-            if m == 'I' and r == 5: md.append(f'- **{lug}** · Por ordenar: lo que llegue y no tenga lugar todavía.')
+            libres = {'E1': 'Por ordenar: lo que llegue y todavía no tenga lugar.',
+                      'F1': 'Libre: repuestos de celular (pantallas y flex encargados).',
+                      'F2': 'Libre: repuestos de celular.',
+                      'F5': 'Libre: repuestos de celular livianos.',
+                      'H3': 'Libre: monitores nuevos que faltan por cargar.',
+                      'H4': 'Repisa de arriba: cajas livianas (cables y bases de monitor).',
+                      'I3': 'Libre: monitores que faltan por cargar.',
+                      'I4': 'Repisa de arriba: cajas livianas.'}
+            if lug in libres: md.append(f'- **{lug}** · {libres[lug]}')
             continue
         unidades = sum(x['stock'] for x in xs)
         md.append(f'- **{lug}** ({len(xs)} productos, {unidades} unidades)')

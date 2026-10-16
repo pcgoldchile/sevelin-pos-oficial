@@ -41,3 +41,16 @@ En cada mueble, la repisa 1 es para lo pesado, la 3 para lo que más se vende y 
 - **No probado en vivo:** apretar "Guardar ahí" contra la base real. Se prueba con el primer clic del dueño.
 - Hechos `node --check`, los dos chequeos de colisión y el de variables globales. No se usó Tailwind: todo está en
   `css/styles.css`.
+
+## Versión 2 de la propuesta (16-10-2026, más tarde)
+El dueño dijo: H e I son solo para monitores ("aún falta monitores por cargar"), y la bodega parte desde la derecha (A a
+la derecha, I a la izquierda). Los estantes miden 180 × 90 × 40 cm, con 5 repisas regulables y 140 kg. Cambios:
+- **Lo que estaba en H e I se movió:**
+  - computación (PCs, gabinetes, fuentes, placas, ventiladores) a C1, C2 y C5;
+  - hogar voluminoso a G;
+  - aros de luz y kits de streaming a D1.
+- **Los monitores:** nuevos en H1 y H2, reacondicionados en I1 e I2. H3 e I3 quedan libres para los que faltan.
+- **Libres:** E1 queda "por ordenar", y F1, F2 y F5 para repuestos de celular.
+- **Alturas sugeridas por mueble** en la guía y en `docs/bodega-propuesta-2026-10-16.md`: monitores parados como libros
+  en tres niveles de ~60 cm.
+- **149 propuestas actualizadas en la base.** Todas seguían pendientes, así que no se pisó ninguna decisión.
