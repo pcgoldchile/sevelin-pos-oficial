@@ -70,6 +70,11 @@ const API = {
   login: (pin) => apiRequest('/login', { method: 'POST', body: { pin }, silencioso: true }),
   me: () => apiRequest('/me', { silencioso: true }),
 
+  // Cotizador de reparaciones de celulares (sql/102, v157)
+  cotizadorCelulares: {
+    buscar: ({ q, marca, trabajo }) => apiRequest(`/reparaciones/precios?${new URLSearchParams({ q: q || '', marca: marca || '', trabajo: trabajo || 'principales' })}`),
+  },
+
   // Más stock y bodega: dónde guardar cada producto (sql/101, v156)
   bodega: {
     stock: () => apiRequest('/bodega/stock'),

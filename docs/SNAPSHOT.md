@@ -21,10 +21,12 @@ La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `do
   está y la propuesta de repisa o caja. Hay 149 propuestas cargadas, y se aplican solo con su clic
   (`CHANGELOG-V156.md`, `docs/bodega-propuesta-2026-10-16.md`). Supuesto sin confirmar: el mueble A es el más cercano
   al mesón.
-- **Reparación de celulares:** `docs/estudios-precios/2026-10-16-servicios-celulares-multiphone.md`, con 1.875 precios
-  estimados de la lista de Multiphone del 21-09. **Nada cargado.** Faltan su OK a la mano de obra, qué hacer con las
-  fichas publicadas de pantalla ($25.000) y puerto ($10.000), si se construye el cotizador en el POS y en el taller, y
-  preguntarle a Multiphone si la lista es con IVA.
+- **v156, versión 2 de la bodega:** H e I solo para monitores, muebles desde la derecha (A a la derecha) y alturas
+  sugeridas por mueble.
+- **v157 (sql/102), cotizador de reparaciones** en el POS (Servicio Técnico → "📱 Cotizador celulares") y en la app del
+  taller (pestaña "Cotizar"): 1.875 precios estimados con la lista de Multiphone del 21-09, que es **con IVA**
+  (confirmado). La mano de obra quedó como la recomendó Claude, aproximada. Las fichas publicadas subieron de "Desde
+  $25.000" a **"Desde $30.000"** (pantalla) y de "Desde $10.000" a **"Desde $18.000"** (puerto) (`CHANGELOG-V157.md`).
 - También: el Word de la verificación de actividad del SII (MEF, sin firma) y el catálogo para la máquina Haulmer, los
   dos en `Downloads`.
 

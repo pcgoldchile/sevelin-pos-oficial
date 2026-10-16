@@ -1284,6 +1284,22 @@ app.delete('/api/cotizaciones-ref/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// v157: cotizador de celulares con los precios reales del CSV (el mismo que se cargó en producción)
+const preciosReparacionMaqueta = require('fs').readFileSync(path.join(__dirname, '..', 'docs', 'estudios-precios', '2026-10-16-servicios-celulares-multiphone.csv'), 'utf8')
+  .trim().split(/\r?\n/).slice(1).map((linea, i) => {
+    const c = linea.split(',');
+    return { id: i + 1, marca: c[0], equipo: c[1], trabajo: c[2], calidad: c[3], costo_repuesto: Number(c[4]), mano_obra: Number(c[5]), precio: Number(c[6]), proveedor: 'Multiphone', lista_fecha: '2026-09-21' };
+  });
+app.get('/api/reparaciones/precios', (req, res) => {
+  const palabras = String(req.query.q || '').toLowerCase().split(/\s+/).filter(Boolean);
+  const marca = req.query.marca || '', trabajo = req.query.trabajo || 'principales';
+  if (!palabras.length && !marca) return res.json({ filas: [], total: 0 });
+  const filas = preciosReparacionMaqueta.filter(f => palabras.every(p => f.equipo.toLowerCase().includes(p)) && (!marca || f.marca === marca)
+    && (trabajo === 'todos' || (trabajo === 'principales' ? ['Cambio de pantalla', 'Cambio de puerto de carga'].includes(f.trabajo) : f.trabajo === trabajo)))
+    .sort((a, b) => a.equipo.length - b.equipo.length || a.equipo.localeCompare(b.equipo) || a.trabajo.localeCompare(b.trabajo) || a.precio - b.precio).slice(0, 400);
+  res.json({ filas, total: filas.length });
+});
+
 // v156: Productos → "📦 Más stock y bodega" con propuestas de ejemplo
 const propuestasBodegaMaqueta = new Map([
   [104, { lugar: 'B3', caja: 'Adaptadores de video', motivo: 'chico o suelto: en caja rotulada', estado: 'pendiente' }],

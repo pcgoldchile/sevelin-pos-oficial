@@ -220,6 +220,7 @@
   async function cargarLista() {
     if (S.pestana === 'bodega') return cargarLugares();
     if (S.pestana === 'cuentas') return cargarCuentas();
+    if (S.pestana === 'cotizar') { pintar(); return; }
     S.cargandoLista = true;
     pintar();
     try {
@@ -418,6 +419,7 @@
         : 'Todavía no se puede registrar: falta que el administrador diga en el POS quién es el dueño de Sevelin.'}</div>` : '';
     let contenido;
     if (S.pestana === 'bodega') contenido = vistaBodega();
+    else if (S.pestana === 'cotizar') contenido = vistaCotizar();
     else if (S.pestana === 'cuentas') contenido = vistaCuentas();
     else if (S.cargandoLista && !S.trabajos.length) contenido = '<p class="cargando">Cargando…</p>';
     else if (!S.trabajos.length) {
@@ -428,11 +430,12 @@
 
     return barra('Taller Sevelin', { derecha: `<span class="barra-quien">${esc(S.yo.nombre)}</span><button type="button" class="barra-btn" data-a="salir">Salir</button>` }) +
       `<main class="cuerpo">
-        ${S.pestana === 'bodega' ? '' : `<button type="button" class="btn-principal" data-a="nuevo">＋ Nuevo trabajo</button>
+        ${S.pestana === 'bodega' || S.pestana === 'cotizar' ? '' : `<button type="button" class="btn-principal" data-a="nuevo">＋ Nuevo trabajo</button>
         ${faltaPapel}`}
         <div class="pestanas" role="tablist">
           <button type="button" role="tab" class="${S.pestana === 'pendientes' ? 'on' : ''}" data-a="pestana" data-v="pendientes">Pendientes</button>
           <button type="button" role="tab" class="${S.pestana === 'cobrados' ? 'on' : ''}" data-a="pestana" data-v="cobrados">Cobrados</button>
+          <button type="button" role="tab" class="${S.pestana === 'cotizar' ? 'on' : ''}" data-a="pestana" data-v="cotizar">Cotizar</button>
           <button type="button" role="tab" class="${S.pestana === 'bodega' ? 'on' : ''}" data-a="pestana" data-v="bodega">Bodega</button>
           ${S.admin ? `<button type="button" role="tab" class="${S.pestana === 'cuentas' ? 'on' : ''}" data-a="pestana" data-v="cuentas">Cuentas</button>` : ''}
         </div>
@@ -731,6 +734,66 @@
      lector que trae Chrome en Android (BarcodeDetector): sin librerías. */
   const bodegaNueva = () => ({ lugares: null, resultados: null, producto: null, lugar: null, codigoSinDueno: null, texto: '', buscando: false, popup: null, nuevo: null });
   S.bodega = bodegaNueva();
+
+  /* ---------- Cotizar (v157, sql/102): precio estimado de reparaciones de celulares ----------
+     Repuesto de Multiphone + 15% + mano de obra. Arranca en "pantalla y puerto de carga", que es lo
+     que hace hoy el taller; iPhone se integra de a poco. Aquí nunca llega el costo, solo el precio. */
+  S.cotizar = { texto: '', trabajo: 'principales', resultados: null, buscando: false };
+
+  async function buscarCotizar() {
+    const c = S.cotizar;
+    if (c.texto.trim().length < 2) { aviso('Escribe el modelo del celular', true); return; }
+    c.buscando = true;
+    pintar();
+    try {
+      const r = await pedir('/taller/cotizador?' + new URLSearchParams({ q: c.texto.trim(), trabajo: c.trabajo }));
+      c.resultados = r.filas || [];
+    } catch (err) { aviso(err.message, true); }
+    c.buscando = false;
+    pintar();
+  }
+
+  function equiposCotizar() {
+    const grupos = new Map();
+    for (const f of S.cotizar.resultados || []) {
+      if (!grupos.has(f.equipo)) grupos.set(f.equipo, { equipo: f.equipo, marca: f.marca, filas: [] });
+      grupos.get(f.equipo).filas.push(f);
+    }
+    return [...grupos.values()];
+  }
+
+  function textoCotizacion(g) {
+    // La calidad se nombra si hay más de una opción para el mismo trabajo, o si no es la de siempre
+    const opciones = (t) => g.filas.filter(x => x.trabajo === t).length;
+    const lineas = g.filas.map(f => '• ' + f.trabajo + (f.calidad && (opciones(f.trabajo) > 1 || !['Original', 'Normal', 'Compatible'].includes(f.calidad)) ? ' (' + f.calidad + ')' : '') + ': ' + plata(f.precio) + ' aprox.');
+    return ['📱 *' + g.equipo + '*', ...lineas, '',
+      'El valor es aproximado: el repuesto puede cambiar de precio según el día en que se encargue. Te confirmamos el valor final al revisar el equipo.'].join('\n');
+  }
+
+  function vistaCotizar() {
+    const c = S.cotizar;
+    const equipos = equiposCotizar();
+    const resultados = c.resultados === null ? '<p class="paso-ayuda">Escribe el modelo: A05, iPhone 13, G24, Y21s… El precio es aproximado (repuesto de Multiphone + mano de obra).</p>'
+      : !equipos.length ? '<div class="vacio"><b>No encontré ese modelo</b>Prueba con menos palabras (solo "A15") o toca "Todos los trabajos".</div>'
+        : equipos.map((g, i) => `<div class="tarjeta">
+            <div class="trabajo-modelo">${esc(g.equipo)}</div>
+            ${g.marca === 'iPhone' ? '<div class="marcas"><span class="marca ambar">🍏 iPhone: de a poco</span></div>' : ''}
+            ${g.filas.map(f => `<div class="dato"><span>${esc(f.trabajo)}${f.calidad ? `<br><small>${esc(f.calidad)}</small>` : ''}</span><span><b>${plata(f.precio)}</b></span></div>`).join('')}
+            <div class="fila" style="margin-top:10px">
+              <button type="button" class="op ancha" data-a="copiarcotizacion" data-v="${i}">📋 Copiar</button>
+              <a class="op ancha" href="https://wa.me/?text=${encodeURIComponent(textoCotizacion(g))}" target="_blank" rel="noopener">💬 WhatsApp</a>
+            </div>
+          </div>`).join('');
+    return `<form data-form="buscarcotizar" class="buscar-bodega">
+        <input class="campo" id="textoCotizar" maxlength="60" autocomplete="off" enterkeyhint="search" placeholder="Modelo del celular" value="${esc(c.texto)}">
+        <button type="submit" class="btn-principal btn-chico">${c.buscando ? '…' : 'Buscar'}</button>
+      </form>
+      <div class="fila" style="margin-bottom:12px">
+        <button type="button" class="op ancha${c.trabajo === 'principales' ? ' on' : ''}" data-a="cotizartrabajo" data-v="principales">Pantalla y puerto</button>
+        <button type="button" class="op ancha${c.trabajo === 'todos' ? ' on' : ''}" data-a="cotizartrabajo" data-v="todos">Todos los trabajos</button>
+      </div>
+      ${resultados}`;
+  }
 
   async function cargarLugares() {
     try {
@@ -1240,6 +1303,14 @@
     salir: async () => { if (await ventana({ titulo: '¿Salir del taller?', texto: 'Para volver vas a escribir tu PIN.', si: 'Salir', no: 'Quedarme' })) cerrarSesion(); },
     nuevo: () => { Object.assign(S, { vista: 'asistente', borrador: borradorNuevo(), paso: 0, editando: null, errorPaso: '' }); pintar(); arriba(); },
     pestana: (v) => { S.pestana = v; S.trabajos = []; pintar(); cargarLista(); },
+    cotizartrabajo: (v) => { S.cotizar.trabajo = v === 'todos' ? 'todos' : 'principales'; if (S.cotizar.texto.trim().length >= 2) { buscarCotizar(); return false; } },
+    copiarcotizacion: async (v) => {
+      const g = equiposCotizar()[Number(v)];
+      if (!g) return false;
+      try { await navigator.clipboard.writeText(textoCotizacion(g)); aviso('Copiado: pégalo en WhatsApp'); }
+      catch (_) { aviso('No se pudo copiar: usa el botón WhatsApp', true); }
+      return false;
+    },
     abrir: (v) => abrirTrabajo(Number(v)),
     volver,
     atras: () => { S.paso = Math.max(0, S.paso - 1); S.errorPaso = ''; pintar(); arriba(); },
@@ -1505,6 +1576,12 @@
       const p = S.bodega.producto;
       if (!p) return;
       try { if (await guardarEnLugarEscrito(p, document.getElementById('lugarEscrito').value)) pintar(); } catch (err) { aviso(err.message, true); }
+      return;
+    }
+    if (e.target.dataset.form === 'buscarcotizar') {
+      e.preventDefault();
+      S.cotizar.texto = document.getElementById('textoCotizar').value;
+      await buscarCotizar();
       return;
     }
     if (e.target.dataset.form === 'buscarbodega') {

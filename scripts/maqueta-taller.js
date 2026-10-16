@@ -41,6 +41,14 @@ bases.pos.ubicaciones = 'ABCDEFGHI'.split('').flatMap((letra, i) => [1, 2, 3, 4,
   ({ id: i * 5 + n, nombre: letra + n, tipo: 'estante', descripcion: null, foto_url: null, activo: true, creado_en: new Date().toISOString() })));
 bases.pos.producto_ubicaciones = [];
 
+// Cotizador (v157): los precios estimados reales, del mismo CSV que se cargó en producción.
+bases.pos.reparaciones_precios = fs.readFileSync(path.join(POS, 'docs', 'estudios-precios', '2026-10-16-servicios-celulares-multiphone.csv'), 'utf8')
+  .trim().split(/\r?\n/).slice(1).map((linea, i) => {
+    const c = linea.split(',');
+    return { id: i + 1, marca: c[0], equipo: c[1], trabajo: c[2], calidad: c[3], costo_repuesto: Number(c[4]), mano_obra: Number(c[5]), precio: Number(c[6]),
+      proveedor: 'Multiphone', lista_fecha: '2026-09-21', activo: true };
+  });
+
 const api = require(path.join(POS, 'api', 'index.js'));
 const jwt = require('jsonwebtoken');
 const vercel = JSON.parse(fs.readFileSync(path.join(POS, 'vercel.json'), 'utf8'));

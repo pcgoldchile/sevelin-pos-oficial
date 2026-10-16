@@ -18248,6 +18248,50 @@ function sanearCotizacionReferencia(body = {}, esAdministrador) {
   return { datos };
 }
 
+/* ============================================================
+   COTIZADOR DE REPARACIONES DE CELULARES (v157, sql/102)
+   ------------------------------------------------------------
+   Busca en reparaciones_precios por palabras del equipo ("a05", "iphone 13",
+   "moto g24"), marca y trabajo. "principales" = pantalla y puerto de carga,
+   que es lo que hace hoy el taller (dueño, 16-10-2026). El precio es una
+   estimación: repuesto de la lista del proveedor + 15% + mano de obra.
+   El costo y la mano de obra solo los ve el admin.
+   ============================================================ */
+const TRABAJOS_PRINCIPALES_REPARACION = ['Cambio de pantalla', 'Cambio de puerto de carga'];
+
+async function buscarPreciosReparacion(consulta, conCosto) {
+  const palabras = String(consulta?.q || '').toLowerCase().replace(/[%_,()*]/g, ' ').split(/\s+/).filter(Boolean).slice(0, 5);
+  const marca = String(consulta?.marca || '').trim();
+  const trabajo = String(consulta?.trabajo || 'principales').trim();
+  if (!palabras.length && !marca) return { filas: [], total: 0, pide: 'Escribe el modelo (por ejemplo: A05, iPhone 13, G24)' };
+  let pedido = db.from('reparaciones_precios')
+    .select('id, marca, equipo, trabajo, calidad, costo_repuesto, mano_obra, precio, proveedor, lista_fecha')
+    .eq('activo', true);
+  for (const p of palabras) pedido = pedido.ilike('equipo', `%${p}%`);
+  if (marca) pedido = pedido.eq('marca', marca);
+  if (trabajo === 'principales') pedido = pedido.in('trabajo', TRABAJOS_PRINCIPALES_REPARACION);
+  else if (trabajo && trabajo !== 'todos') pedido = pedido.eq('trabajo', trabajo);
+  const { data, error } = await pedido.order('equipo').order('trabajo').order('precio').limit(400);
+  if (error) throw error;
+  const filas = (data || []).map(f => {
+    const fila = { id: f.id, marca: f.marca, equipo: f.equipo, trabajo: f.trabajo, calidad: f.calidad, precio: num(f.precio),
+      proveedor: f.proveedor, lista_fecha: f.lista_fecha };
+    if (conCosto) { fila.costo_repuesto = num(f.costo_repuesto); fila.mano_obra = num(f.mano_obra); }
+    return fila;
+  });
+  // El modelo más corto primero: "iPhone 13" antes que "iPhone 13 Pro Max"
+  filas.sort((a, b) => a.equipo.length - b.equipo.length || a.equipo.localeCompare(b.equipo) || a.trabajo.localeCompare(b.trabajo) || a.precio - b.precio);
+  return { filas, total: filas.length };
+}
+
+app.get('/api/reparaciones/precios', auth(), async (req, res) => {
+  try {
+    res.json(await buscarPreciosReparacion(req.query, req.usuario?.rol === 'admin'));
+  } catch (err) {
+    return enviarErrorBD(res, err, 'GET /api/reparaciones/precios');
+  }
+});
+
 app.get('/api/cotizaciones-ref', auth(), async (req, res) => {
   try {
     const filas = await padresTraerTodo(() => db.from('cotizaciones_referencia').select('*').order('equipo').order('trabajo').order('id'));
@@ -19155,6 +19199,15 @@ async function productosParaBodega(productos) {
   const lugares = await lugaresDeProductosBodega(productos.map(p => p.id));
   return productos.map(p => productoParaBodega(p, lugares[p.id]));
 }
+
+/* Cotizador de reparaciones en la app del taller (v157): el mismo buscador del POS, solo con el precio. */
+app.get('/api/taller/cotizador', authTaller(), async (req, res) => {
+  try {
+    res.json(await buscarPreciosReparacion(req.query, false));
+  } catch (err) {
+    return enviarErrorBD(res, err, 'GET /api/taller/cotizador');
+  }
+});
 
 app.get('/api/taller/bodega/lugares', authTaller(), async (req, res) => {
   try {

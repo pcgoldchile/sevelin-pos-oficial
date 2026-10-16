@@ -161,6 +161,7 @@
           <button class="nav-subitem" data-view="view-taller" data-subtab="ot">Órdenes de Trabajo</button>
           <button class="nav-subitem" data-view="view-taller" data-subtab="repuestos">Repuestos Taller</button>
           <button class="nav-subitem" data-view="view-taller" data-subtab="cotizaciones-ref">Cotizaciones aproximadas</button>
+          <button class="nav-subitem" data-view="view-taller" data-subtab="cotizador-celulares">Cotizador celulares</button>
         </div>
       </div>
 
@@ -706,6 +707,7 @@
         <button class="subtab activo" data-subtab="ot">🔧 Órdenes de Trabajo</button>
         <button class="subtab" data-subtab="repuestos">🔩 Repuestos Taller</button>
         <button class="subtab" data-subtab="cotizaciones-ref">💬 Cotizaciones aprox.</button>
+        <button class="subtab" data-subtab="cotizador-celulares">📱 Cotizador celulares</button>
       </nav>
 
       <div class="panel-taller activo" data-panel-taller="ot">
@@ -922,6 +924,34 @@
       </div>
     
       </div>
+
+<!-- sql/102 (v157): cotizador de reparaciones de celulares — js/cotizador-celulares.js.
+     Precio estimado = repuesto de la lista de Multiphone + 15% + mano de obra. Solo referencia. -->
+<div class="panel-taller" data-panel-taller="cotizador-celulares">
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>📱 Cotizador de reparaciones</h2>
+        <p class="subtitle">Precio estimado = repuesto de Multiphone (con IVA) + 15% por envío y alzas + mano de obra. Es aproximado:
+          el repuesto cambia de precio según el día. Confírmalo al encargar. iPhone, Samsung, Motorola y Vivo.</p>
+      </div>
+    </div>
+    <div class="cotcel-filtros">
+      <input type="search" id="cotCelBuscar" placeholder="Modelo: A05, iPhone 13, G24, Y21s…" autocomplete="off" aria-label="Modelo del celular">
+      <select id="cotCelMarca" aria-label="Marca">
+        <option value="">Todas las marcas</option>
+        <option value="Samsung">Samsung</option>
+        <option value="Motorola">Motorola</option>
+        <option value="Vivo">Vivo</option>
+        <option value="iPhone">iPhone</option>
+      </select>
+      <select id="cotCelTrabajo" aria-label="Trabajo"></select>
+    </div>
+    <div id="cotCelResultados" style="margin-top:12px;">
+      <p class="modal-hint">Escribe el modelo del celular, por ejemplo <b>A05</b>, <b>iPhone 13</b> o <b>G24</b>.</p>
+    </div>
+  </div>
+</div>
 
 <!-- sql/90 (v133): cotizaciones aproximadas — js/cotizaciones-ref.js. Precios de
      referencia por equipo y trabajo. No toca productos ni órdenes. -->
@@ -8328,6 +8358,7 @@
   <script src="js/informe-semanal.js"></script>   <!-- después de balance.js: usa el panel de Finanzas y fmtCLP -->
   <script src="js/acuerdo-padres.js"></script>   <!-- v133 (sql/90): después de pos.js, compras.js y balance.js: pregunta de la caja y panel Mis padres -->
   <script src="js/cotizaciones-ref.js"></script>   <!-- v133 (sql/90): Taller → Cotizaciones aproximadas; usa cerrarModal de balance.js -->
+  <script src="js/cotizador-celulares.js"></script>   <!-- v157 (sql/102): Servicio Técnico → Cotizador celulares -->
   <script src="js/bodega.js"></script>   <!-- v156 (sql/101): Productos → "📦 Más stock y bodega"; usa cerrarModal de balance.js -->
   <script src="js/facebook-rapido.js"></script>   <!-- v136 (sql/93): después de productos.js; usa sus funciones de fotos y la lista -->
   <script src="js/usuarios.js"></script>   <!-- v135 (sql/92): usuarios con RUT y PIN; usa ventanaConfirmar de ventanas.js -->
