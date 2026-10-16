@@ -94,6 +94,8 @@ const REGLAS_ICONO = [
   [/virus|adware/i,                      'escudo'],
   [/desbloqueo/i,                        'candado'],
   [/formateo de celular/i,               'celular'],
+  // 16-10-2026: "pROGRAMas" calzaba con /ram/ y le ponía el icono de memoria
+  [/inicializaci/i,                      'notebook'],
   [/domicilio/i,                         'casa'],
   [/derrame|líquido|liquido|limpieza/i,  'limpieza'],
   [/pines|socket|microsolda|bios/i,      'soldadura'],
