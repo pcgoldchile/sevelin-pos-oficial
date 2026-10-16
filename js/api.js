@@ -70,6 +70,12 @@ const API = {
   login: (pin) => apiRequest('/login', { method: 'POST', body: { pin }, silencioso: true }),
   me: () => apiRequest('/me', { silencioso: true }),
 
+  // Foto "¿Dónde estamos?" que el dueño cambia desde la ficha (sql/100, v155)
+  fotoUbicacion: {
+    obtener: () => apiRequest('/foto-ubicacion', { silencioso: true }),
+    cambiar: (imagenBase64) => apiRequest('/foto-ubicacion', { method: 'POST', body: { imagen_base64: imagenBase64 } }),
+  },
+
   productos: {
     listar: () => apiRequest('/productos'),
     // Archivados: mismo endpoint, ?archivados=1 invierte el filtro

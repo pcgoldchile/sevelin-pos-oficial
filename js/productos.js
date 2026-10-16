@@ -374,6 +374,8 @@ function setupProductosEventListeners() {
       showToast(chkUbicacion.checked ? '"Descargar todas" agrega la foto ¿Dónde estamos?' : '"Descargar todas" ya no agrega la foto de ubicación', 'ok');
     });
   }
+  document.getElementById('btnVerFotoUbicacion')?.addEventListener('click', verFotoUbicacion);
+  document.getElementById('btnCambiarFotoUbicacion')?.addEventListener('click', elegirFotoDondeEstamos);
   document.getElementById('btnDescargarInstagram')?.addEventListener('click', descargarFotosInstagram);
   if (elBtnGenerarSeoIA) elBtnGenerarSeoIA.addEventListener('click', generarSeoConIA);
   if (elBtnGenerarFichaIA) elBtnGenerarFichaIA.addEventListener('click', () => generarTextoConIA('ficha'));
@@ -3047,13 +3049,80 @@ async function entregarVariasFotos(carpeta, subcarpeta, archivos, nombreZip) {
    Con el interruptor encendido, "Descargar todas" agrega esa imagen como
    última foto, para copiar la carpeta completa a Facebook Marketplace.
    El interruptor vale para todos los productos y se recuerda en este
-   navegador. La imagen es img/donde-estamos.webp: se cambia reemplazando
-   ese archivo. */
+   navegador. Desde v155 (sql/100) el dueño la cambia con "🔄 Cambiar": queda
+   en el almacenamiento y vale para todos los equipos. Si nunca se cambió,
+   se usa img/donde-estamos.webp. */
 const CLAVE_FOTO_UBICACION = 'pos_foto_ubicacion';
 let motivoSinCarpetaFotos = '';
 function fotoUbicacionEncendida() { return localStorage.getItem(CLAVE_FOTO_UBICACION) !== '0'; }
+async function urlFotoUbicacion() {
+  try {
+    const r = await API.fotoUbicacion.obtener();
+    if (r?.url) return r.url;
+  } catch (_) { /* sin conexión a la API: la foto de siempre */ }
+  return 'img/donde-estamos.webp';
+}
+
+async function verFotoUbicacion() {
+  abrirVisorImagen([await urlFotoUbicacion()], 0, 'Foto «¿Dónde estamos?»');
+}
+
+/* La foto se guarda tal cual se ve (no se cuadra ni se le pone fondo, como
+   las del catálogo): solo se pasa a webp y se achica si pasa de 1600 px o de
+   ~900 KB, que es lo que acepta el servidor. */
+function elegirFotoDondeEstamos() {
+  if (!esAdmin()) { showToast('Solo el administrador puede cambiar esta foto', 'err'); return; }
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.addEventListener('change', async () => {
+    const archivo = input.files?.[0];
+    if (!archivo) return;
+    const boton = document.getElementById('btnCambiarFotoUbicacion');
+    if (boton) boton.disabled = true;
+    try {
+      const base64 = await fotoUbicacionAWebp(archivo);
+      await API.fotoUbicacion.cambiar(base64);
+      showToast('Foto «¿Dónde estamos?» cambiada. Ya sale en las próximas descargas.', 'ok');
+      verFotoUbicacion();
+    } catch (err) {
+      showToast(err.message || 'No se pudo cambiar la foto', 'err');
+    } finally {
+      if (boton) boton.disabled = false;
+    }
+  });
+  input.click();
+}
+
+function fotoUbicacionAWebp(archivo) {
+  return new Promise((ok, mal) => {
+    const url = URL.createObjectURL(archivo);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let lado = Math.min(FOTO_LADO_MAX_PX, Math.max(img.width, img.height));
+      const intentar = (calidad) => {
+        const escala = lado / Math.max(img.width, img.height);
+        const lienzo = document.createElement('canvas');
+        lienzo.width = Math.round(img.width * escala);
+        lienzo.height = Math.round(img.height * escala);
+        lienzo.getContext('2d').drawImage(img, 0, 0, lienzo.width, lienzo.height);
+        const dataUrl = lienzo.toDataURL('image/webp', calidad);
+        const bytes = Math.round((dataUrl.length - dataUrl.indexOf(',') - 1) * 3 / 4);
+        if (bytes <= FOTO_MAXIMO_BYTES) return ok(dataUrl);
+        if (calidad > FOTO_CALIDAD_MINIMA) return intentar(Math.round((calidad - 0.1) * 100) / 100);
+        if (lado > FOTO_LADO_MIN_PX) { lado = FOTO_LADO_MIN_PX; return intentar(FOTO_CALIDAD_INICIAL); }
+        mal(new Error('La imagen es demasiado pesada incluso achicada. Prueba con otra.'));
+      };
+      intentar(0.9);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); mal(new Error('No se pudo leer esa imagen')); };
+    img.src = url;
+  });
+}
+
 async function traerFotoUbicacion() {
-  const resp = await fetch('img/donde-estamos.webp');
+  const resp = await fetch(await urlFotoUbicacion());
   if (!resp.ok) throw new Error('No se pudo cargar la foto de ubicación');
   return resp.blob();
 }

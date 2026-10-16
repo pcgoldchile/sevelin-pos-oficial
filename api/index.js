@@ -5893,6 +5893,60 @@ app.delete('/api/productos/:id/imagenes', auth(true), async (req, res) => {
    producto ni lugar de la Bodega. El GET solo cuenta; borrar pide la clave del
    dueño y vuelve a calcular la lista en ese momento (nunca borra una lista
    vieja que mandó el navegador). */
+/* FOTO "¿DÓNDE ESTAMOS?" (v155, sql/100 · dueño 16-10-2026)
+   "Dame una opción en el POS para yo mismo reemplazar la imagen de Facebook".
+   Va al bucket en sitio/ y su URL en textos_editables('foto_ubicacion'). Sin
+   fila, el POS usa img/donde-estamos.webp. Al cambiarla se borra la anterior. */
+const CLAVE_FOTO_UBICACION = 'foto_ubicacion';
+
+app.get('/api/foto-ubicacion', auth(), async (req, res) => {
+  const { data, error } = await db.from('textos_editables')
+    .select('contenido, actualizado_en').eq('clave', CLAVE_FOTO_UBICACION).maybeSingle();
+  if (error) return enviarErrorBD(res, error, 'GET /api/foto-ubicacion');
+  res.json({ url: data?.contenido?.url || null, actualizado_en: data?.actualizado_en || null });
+});
+
+app.post('/api/foto-ubicacion', auth(true), async (req, res) => {
+  try {
+    const base64 = String(req.body?.imagen_base64 || '');
+    if (!base64) return enviarError(res, 400, 'Falta la imagen');
+    const buffer = Buffer.from(base64.includes(',') ? base64.split(',')[1] : base64, 'base64');
+    if (!buffer.length) return enviarError(res, 400, 'La imagen viene vacía');
+    if (buffer.length > MAX_BYTES_IMAGEN_PRODUCTO) return enviarError(res, 413, 'La imagen supera 1 MB.');
+
+    const { data: anterior } = await db.from('textos_editables')
+      .select('contenido').eq('clave', CLAVE_FOTO_UBICACION).maybeSingle();
+
+    const ruta = `sitio/donde-estamos-${crypto.randomUUID()}.webp`;
+    const { error: errSubida } = await db.storage.from(BUCKET_IMAGENES_PRODUCTO)
+      .upload(ruta, buffer, { contentType: 'image/webp', upsert: false });
+    if (errSubida) throw new Error(errSubida.message);
+    const { data: pub } = db.storage.from(BUCKET_IMAGENES_PRODUCTO).getPublicUrl(ruta);
+
+    const { data, error } = await db.from('textos_editables')
+      .upsert({ clave: CLAVE_FOTO_UBICACION, contenido: { url: pub.publicUrl }, actualizado_en: new Date().toISOString() }, { onConflict: 'clave' })
+      .select('contenido, actualizado_en').single();
+    if (error) {
+      await db.storage.from(BUCKET_IMAGENES_PRODUCTO).remove([ruta]);
+      return enviarErrorBD(res, error, 'POST /api/foto-ubicacion');
+    }
+
+    // La anterior ya no la usa nadie: fuera del bucket (si no se puede, la limpia "🧹 Fotos sin usar")
+    const marca = `/${BUCKET_IMAGENES_PRODUCTO}/`;
+    const urlVieja = String(anterior?.contenido?.url || '');
+    if (urlVieja.includes(marca)) {
+      const rutaVieja = urlVieja.split(marca)[1];
+      if (rutaVieja && rutaVieja !== ruta) {
+        const { error: errBorrar } = await db.storage.from(BUCKET_IMAGENES_PRODUCTO).remove([rutaVieja]);
+        if (errBorrar) console.error('[FOTO-UBICACION] no se borró la anterior:', errBorrar.message);
+      }
+    }
+    res.status(201).json({ url: data.contenido.url, actualizado_en: data.actualizado_en });
+  } catch (err) {
+    enviarError(res, 500, err.message || 'No se pudo cambiar la foto');
+  }
+});
+
 app.get('/api/productos/fotos-sueltas', auth(true), async (req, res) => {
   const { data, error } = await db.rpc('fotos_sueltas_productos');
   if (error) return enviarErrorBD(res, error, 'GET /api/productos/fotos-sueltas');
