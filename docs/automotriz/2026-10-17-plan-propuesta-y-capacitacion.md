@@ -323,3 +323,37 @@ Lo que deja más y se parece a lo que ya vendes:
 
 Para vender repuestos de auto hace falta el giro 453000 en el SII; agrégalo apenas cierres la verificación que vence el
 23-10-2026.
+
+---
+
+# Versión 3 (17-10-2026, antes del Meet de las 20:00)
+
+- **Aporte del fundador valorizado** (valores de uso, por confirmar con Carlos).
+  - **Una vez, $1.840.000:** computador e impresora $400.000; multímetro y herramientas de electrónica $120.000;
+    gatas y burros $100.000; sistema Sevelin por 1 año, como licencia de $30.000 al mes, $360.000; marca, web y
+    redes $500.000; capacitación de unas 36 horas $360.000.
+  - **Cada mes:** espacio $100.000; cama $100.000 y almuerzo $66.000 por persona.
+  - **En 6 meses** (2 personas con cama y almuerzo de enero a marzo): unos **$3,4 millones**.
+  - **No entra al pozo:** se paga con el 10% de Carlos. Si entrara, los inversionistas tardarían años en recuperar.
+- **Valor de hoy: ≈ $2,5 M** ($1,84 M del aporte del fundador + el kit de $630.000).
+- **Valor a diciembre de 2027** (1,5 a 2,5 veces la ganancia del año, ya pagado el 40% del trabajo y los gastos):
+  - pesimista: $6 a $10 M;
+  - base: $14 a $23 M;
+  - optimista: $23 a $38 M.
+- **Plan de compras por semana:**
+
+  | Cuándo | Qué | Aprox. | Quién pone |
+  |---|---|---:|---|
+  | Semana del 20-oct | Seguridad | $95.000 | Carlos |
+  | Semana del 20-oct | Muestras de electrónica | $90.000 | Carlos |
+  | Semana del 27-oct | Herramientas del cambio de aceite | $197.000 | Inversionistas |
+  | Semana del 27-oct | Aceites y fluidos | $105.000 | Inversionistas |
+  | Noviembre | Tapicería y lector OBD2 | $40.000 | Lo que se venda |
+  | Cuando haga falta | Reserva para trámites | $100.000 | Carlos o reinversión |
+
+- **La regla de después de recuperar se explicó en la presentación:** 0,5% de la ganancia **de cada mes** por cada
+  $100.000 puestos. Hay una tabla "Saca tus cuentas" para aportes de $50.000, $100.000, $200.000 y $350.000.
+- **Capacitación:** la teoría es digital, por videollamada (semanas 2 y 9, y la mitad de la 5). Lo práctico es
+  presencial en San Rafael 896. Las citas se avisan en el grupo de WhatsApp SEVELIN AUTOMOTRIZ.
+- **Presentación final:** 24 láminas. Agregadas: servicios con precios, valorización, cómo funciona el pozo, la regla,
+  "Saca tus cuentas", el ejemplo del acuerdo y una lámina final de motivación.
