@@ -230,3 +230,96 @@ Cuando esté claro que se parte:
 - registro del aceite usado (DS 148).
 
 No se construye antes de tener el CIP.
+
+---
+
+# Versión 2 (17-10-2026, tarde): lo que cambió con las respuestas de Carlos
+
+Esta sección **reemplaza** lo que la versión 1 decía sobre la inversión ("nadie pone plata antes de abril", el préstamo
+y el 40% sin pozos), y también la lista de compras y el modelo de números.
+
+## Decisiones de Carlos (🟢)
+- **La inversión entra desde ya, octubre a diciembre.** Ejemplo real: Guido quiere poner unos $350.000.
+- **Reparto de la ganancia de cada venta o servicio** (ganancia = lo cobrado menos el insumo o repuesto):
+
+  | Parte | % |
+  |---|---:|
+  | Quien hizo el trabajo | 40% |
+  | Reinversión y gastos | 30% |
+  | Pozo de inversionistas | 20% |
+  | Carlos, por el local, el sistema y la gestión | 10% |
+
+  - Si se vende solo un insumo, sin trabajo de taller, el 40% va a reinversión.
+  - El 40% se puede repartir entre dos o más trabajadores, según lo que hizo cada uno.
+  - Carlos, Alejandro y Patricio también cobran del 40% cuando trabajan.
+- **Inversionistas:** sin premios por adelantado.
+  - Cada trimestre deciden si siguen.
+  - El que se sale queda pagado y no vuelve a entrar.
+  - El que sigue recibe un porcentaje según lo que puso.
+  - Hay bono solo si un trimestre llega al escenario optimista.
+- **Trabajadores:** es un proyecto voluntario, sin contrato mientras se prueba. Sueldo fijo o contrato cuando deje
+  plata. Carlos ya conoce el riesgo laboral (sección 6 de la versión 1).
+- **Capital:** lo justo y necesario, uno de cada cosa.
+- **Presentación:** sin el CIP como problema; solo una línea neutra en los próximos pasos. Con los nombres de ejemplo
+  (Jeferson, Gonzalo, Guido). Sin mencionar el Santa María.
+
+## Regla que agregó Claude: cuánto recibe el inversionista después de recuperar (🟡)
+Si el pozo del 20% se repartiera para siempre entre $630.000 de capital, al mes 12 un inversionista de $350.000
+recibiría unos $220.000 al mes: más que un trabajador y desproporcionado frente a lo que puso. Por eso:
+- **Hasta recuperar su plata:** recibe su parte del pozo según lo que puso.
+- **Después:** recibe el **0,5% de la ganancia del mes por cada $100.000 puestos**. Guido, con $350.000, recibe el
+  1,75%.
+- **Lo que sobre del pozo** después de esa regla va a reinversión.
+- **La plata de Carlos** entra al pozo con las mismas reglas.
+
+Carlos puede cambiar el 0,5%.
+
+## Kit "uno de cada cosa": unos $630.000 (🟡)
+| Qué | Aprox. |
+|---|---:|
+| Herramientas | $197.000 |
+| Seguridad | $95.000 |
+| Lector OBD2 básico (el escáner completo se compra en enero con reinversión) | $15.000 |
+| Tapicería y crimpeadora | $25.000 |
+| Un bidón de cada aceite y fluidos | $105.000 |
+| Una radio, una cámara y un kit de sensores | $90.000 |
+| Reserva para trámites | $100.000 |
+| **Total** | **$627.000** |
+
+Ejemplo de financiamiento: Carlos $280.000 + Guido $350.000.
+
+## Gastos fijos
+$100.000 al mes desde enero (luz, agua, publicidad y patente), pagados con la parte de reinversión. El arriendo no se
+carga como gasto: está dentro del 10% de Carlos. **Punto de equilibrio: unos 14 servicios al mes** (14 × $7.200 de
+reinversión).
+
+## Escenarios (ganancia del mes, antes de repartir)
+Supuestos: venta de insumos al mes de $100.000 / $300.000 / $600.000 desde octubre, con 30% de ganancia. Servicios
+desde enero con $24.000 de ganancia cada uno.
+
+| | Oct–Dic, cada mes | Ene 2027 | Feb | Mar |
+|---|---:|---:|---:|---:|
+| Pesimista | $30.000 (solo insumos) | $270.000 (10 servicios) | $390.000 (15) | $510.000 (20) |
+| Base | $90.000 | $570.000 (20) | $762.000 (28) | $930.000 (35) |
+| Optimista | $180.000 | $900.000 (30) | $1.188.000 (42) | $1.500.000 (55) |
+
+**Guido recupera sus $350.000:** en junio de 2027 (pesimista), abril (base) o marzo (optimista). Después recibe unos
+$18.000, $35.000 o $54.000 al mes a diciembre de 2027.
+
+## Qué vender de octubre a diciembre (recomendación de Claude, 🟡)
+Lo que deja más y se parece a lo que ya vendes:
+1. **Electrónica de auto:**
+   - Cámaras de retroceso, sensores de estacionamiento y dashcams.
+   - Radios Android 2 DIN, por encargo.
+   - Cargadores rápidos de auto (USB-C), transmisores Bluetooth y FM, y soportes de celular. Varios de estos ya los
+     tienes en el mueble A de la bodega.
+2. **Lo que se cambia seguido y se puede instalar gratis como gancho:** plumillas en los 4 o 5 tamaños más comunes,
+   ampolletas (H4, H7, H11 y LED) y kits de fusibles.
+3. **Fluidos de rotación:** el aceite de los 3 tipos más usados (5W-30, 10W-40 y 15W-40), líquido de frenos DOT 4,
+   refrigerante y limpiaparabrisas concentrado.
+4. **Solo por encargo, nunca en stock:** filtros y baterías. Hay demasiadas referencias y las baterías inmovilizan
+   plata.
+5. **No vender:** lo que hace el car wash vecino (shampoo, ceras de lavado). Es tu red de derivación.
+
+Para vender repuestos de auto hace falta el giro 453000 en el SII; agrégalo apenas cierres la verificación que vence el
+23-10-2026.
