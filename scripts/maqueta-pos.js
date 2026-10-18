@@ -890,6 +890,28 @@ app.post('/api/productos/:id/ajuste-stock', (req, res) => {
 app.post('/api/productos/sugerir-categoria', (_req, res) => setTimeout(() => res.json({
   categoria: { categoria_id: 'c2', subcategoria_id: 'c2a', categoria: 'Componentes PC', subcategoria: 'Fuentes de poder', texto: 'Componentes PC > Fuentes de poder' }, motivo: null, modelo: 'maqueta'
 }), 300));
+/* v159 (sql/103): filtros de la tienda. El esquema se lee del servidor real (api/index.js) para que la
+   maqueta nunca muestre casillas distintas; la "IA" marca las opciones cuyo texto aparece en el nombre
+   o la descripción (una imitación tonta, solo para ver el flujo). */
+const ESQUEMA_FILTROS_MAQUETA = (() => {
+  const fuente = require('fs').readFileSync(path.join(POS, 'api', 'index.js'), 'utf8');
+  const m = fuente.match(/const CARACTERISTICAS_TIENDA = (\[[\s\S]*?\n\]);/);
+  return m ? new Function(`return ${m[1]};`)() : [];
+})();
+app.get('/api/productos/caracteristicas-esquema', (_req, res) => res.json({ esquema: ESQUEMA_FILTROS_MAQUETA }));
+app.post('/api/productos/sugerir-caracteristicas', (req, res) => {
+  const b = req.body || {};
+  const texto = `${b.nombre || ''} ${String(b.descripcion_html || '').replace(/<[^>]+>/g, ' ')}`.toLowerCase();
+  const grupos = ESQUEMA_FILTROS_MAQUETA.filter(e => e.categoria === b.categoria_web && (!e.subcategoria || e.subcategoria === b.subcategoria_web)).flatMap(e => e.grupos);
+  if (!grupos.length) return res.status(400).json({ error: 'Esta categoría no tiene filtros en la tienda.' });
+  const caracteristicas = {};
+  for (const g of grupos) {
+    let v = g.valores.filter(x => texto.includes(x.toLowerCase().split(' ')[0]));
+    if (!g.multiple) v = v.slice(0, 1);
+    if (v.length) caracteristicas[g.id] = v;
+  }
+  setTimeout(() => res.json({ caracteristicas, modelo: 'maqueta' }), 500);
+});
 // v119: la IA sugiere complementos (acá, dos productos fijos con stock, tras una espera corta).
 app.post('/api/productos/:id/sugerir-complementos', (req, res) => setTimeout(() => res.json({
   sugeridos: productos.filter(p => p.id !== Number(req.params.id) && p.stock > 0).slice(0, 2).map(p => ({ id: p.id, nombre: p.nombre, precio_unitario: p.precio_unitario })),

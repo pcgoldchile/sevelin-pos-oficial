@@ -5209,3 +5209,19 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
 .cotcel-cabeza .btn { margin-left: auto; }
 .cotcel-aviso { font-size: 12px; color: #f59e0b; font-weight: 600; }
 .cotcel-tabla tbody td { padding-top: 6px; padding-bottom: 6px; }
+
+/* ---------- v159: filtros de la tienda en la ficha (js/caracteristicas-producto.js) ---------- */
+.filtros-ficha { display: flex; flex-direction: column; gap: 14px; }
+.filtro-grupo-titulo { font-size: 13px; font-weight: 700; color: var(--text-100); margin: 0 0 6px; }
+.filtro-grupo-titulo small { font-weight: 500; color: var(--text-muted); margin-left: 4px; }
+.filtro-opciones { display: flex; flex-wrap: wrap; gap: 6px; }
+.filtro-opcion {
+    display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+    padding: 6px 10px; border-radius: var(--radius-sm);
+    background: var(--bg-900); border: 1.5px solid var(--border);
+    font-size: 13px; font-weight: 600; color: var(--text-300);
+    transition: border-color var(--speed), background-color var(--speed);
+}
+.filtro-opcion:hover { border-color: var(--blue-light); }
+.filtro-opcion:has(input:checked) { border-color: var(--blue); color: var(--text-100); }
+.filtro-opcion input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--blue); }

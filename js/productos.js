@@ -2241,7 +2241,9 @@ function abrirModalProducto(producto = null) {
     // subcategoría al guardar de nuevo sin tocar el campo.
     poblarSelectCategoriaWeb(producto.subcategoria_web || producto.categoria_web || '')
       .then(cargarCategoriasEditor)
-      .then(() => { if (typeof revisarCompletitudProducto === 'function') revisarCompletitudProducto(); });
+      .then(() => { if (typeof revisarCompletitudProducto === 'function') revisarCompletitudProducto(); })
+      // v159 (sql/103): las casillas de los filtros dependen de la categoría recién puesta
+      .then(() => { if (typeof prepararCaracteristicasProducto === 'function') prepararCaracteristicasProducto(producto.caracteristicas); });
     productoEnEdicionImagenUrls = Array.isArray(producto.imagen_urls) ? [...producto.imagen_urls] : [];
     fotosNuevasStaged = [];
     productoEnEdicionArchivado = !!producto.archivado;
@@ -2306,7 +2308,8 @@ function abrirModalProducto(producto = null) {
     if (elProdMetaTitulo) elProdMetaTitulo.value = '';
     if (elProdMetaDescripcion) elProdMetaDescripcion.value = '';
     actualizarContadoresSeo();
-    poblarSelectCategoriaWeb('').then(cargarCategoriasEditor);
+    poblarSelectCategoriaWeb('').then(cargarCategoriasEditor)
+      .then(() => { if (typeof prepararCaracteristicasProducto === 'function') prepararCaracteristicasProducto({}); });
     productoEnEdicionImagenUrls = [];
     fotosNuevasStaged = [];
     productoEnEdicionArchivado = false;
@@ -2542,6 +2545,8 @@ function construirPayloadProducto() {
     categoria_web,
     categoria_id,
     subcategoria_web,
+    // v159 (sql/103): casillas de los filtros de la tienda; no viaja si el cuadro no cargó
+    ...(typeof leerCaracteristicasProducto === 'function' ? leerCaracteristicasProducto() : {}),
     stock_umbral_web: elProdStockUmbralWeb?.value.trim() ? Number(elProdStockUmbralWeb.value) : null,
     etiqueta_web: elProdEtiquetaWeb?.value || null,
     urgencia_stock_web: elProdUrgenciaStockWeb ? elProdUrgenciaStockWeb.checked : true,
@@ -3774,6 +3779,8 @@ function aplicarSeleccionCategoria() {
       (categoria ? `<option value="${escHtml(categoria.nombre)}" data-id="${categoria.id}" selected>${escHtml(categoria.nombre)}</option>` : '');
     elProdCategoriaWeb.value = categoria ? categoria.nombre : '';
   }
+  // v159: otra categoría, otras casillas de filtros
+  if (typeof pintarCaracteristicasProducto === 'function') pintarCaracteristicasProducto();
   // Elegir una categoría puede tachar un aviso: se revisa en el momento
   if (typeof revisarCompletitudProducto === 'function') revisarCompletitudProducto();
 }

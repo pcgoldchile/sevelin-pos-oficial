@@ -1083,8 +1083,177 @@ const CAMPOS_PRODUCTO = [
   // sql/93 y sql/95 (v139): textos para redes, guardados también desde la ficha
   'facebook_texto', 'instagram_texto',
   // sql/98 (v151): nota solo para el POS; la tienda no la recibe
-  'nota_interna'
+  'nota_interna',
+  // sql/103 (v159): casillas de los filtros de sevelin.cl, ver CARACTERISTICAS_TIENDA
+  'caracteristicas'
 ];
+
+/* ============================================================
+   FILTROS DE LA TIENDA (v159, sql/103, dueño 18-10-2026)
+   ------------------------------------------------------------
+   Qué casillas tiene cada categoría. La ficha del producto las muestra según
+   su categoría y subcategoría (las de la categoría valen para todas sus
+   subcategorías), y sevelin.cl arma con ellas el panel "Filtrar".
+
+   PAREJA EXACTA en sevelin-tienda/src/lib/filtros.ts (GRUPOS_FILTRO): si se
+   cambia algo acá (un grupo, un valor, el orden), se cambia allá igual. Un
+   valor que la tienda no conozca igual se muestra, al final del grupo; uno que
+   se renombre acá deja huérfanos los productos que ya lo tenían marcado, así
+   que renombrar = corregir esos productos también.
+
+   multiple: true  → el producto puede tener varios (puertos, extras). En la
+                     tienda, marcar dos pide los dos ("HDMI y VGA").
+   multiple: false → tiene uno solo (tamaño, capacidad). En la tienda, marcar
+                     dos muestra cualquiera de los dos.
+   pista: solo para la IA, cuando el texto suele decirlo de otra forma.
+
+   Marca, precio y estado (nuevo/reacondicionado) NO están acá: la tienda los
+   saca de campos que ya existen. */
+const CARACTERISTICAS_TIENDA = [
+  { categoria: 'Monitores', subcategoria: null, grupos: [
+    { id: 'entradas', nombre: 'Entradas de video', multiple: true, valores: ['HDMI', 'VGA', 'DisplayPort', 'DVI', 'USB-C'] },
+    { id: 'extras', nombre: 'Extras', multiple: true, valores: ['Parlantes incluidos', 'Trae cable HDMI', 'VESA (se cuelga en la pared)'],
+      pista: '"Trae cable HDMI" solo si dice que el cable HDMI viene incluido en la caja (un cable VGA no cuenta). VESA solo si lo nombra.' },
+    { id: 'tamano', nombre: 'Tamaño', multiple: false, valores: ['Hasta 20"', '21" a 22"', '23" a 25"', '27" o más'],
+      pista: 'Usa el tamaño con que se vende: 18,5" vendido como 19" va en "Hasta 20"", 21,5" vendido como 22" va en "21" a 22"".' },
+    { id: 'resolucion', nombre: 'Resolución', multiple: false, valores: ['Menor a Full HD', 'Full HD (1920×1080)', '2K o más'],
+      pista: '1366×768, 1368×768, 1440×900 y 1600×900 son "Menor a Full HD".' },
+    { id: 'hz', nombre: 'Velocidad', multiple: false, valores: ['60 a 75 Hz', '100 a 144 Hz', '165 Hz o más'] },
+    { id: 'uso', nombre: 'Uso', multiple: false, valores: ['Oficina y hogar', 'Gamer'] }
+  ] },
+  { categoria: 'Componentes PC', subcategoria: 'Tarjetas de Video', grupos: [
+    { id: 'chip', nombre: 'Chip', multiple: false, valores: ['NVIDIA', 'AMD', 'Intel'],
+      pista: 'GeForce/RTX/GTX = NVIDIA; Radeon/RX = AMD; Arc = Intel.' },
+    { id: 'memoria_video', nombre: 'Memoria de video', multiple: false, valores: ['Hasta 4 GB', '6 GB', '8 GB', '12 GB', '16 GB o más'] },
+    { id: 'salidas', nombre: 'Salidas de video', multiple: true, valores: ['HDMI', 'DisplayPort', 'DVI', 'VGA'] },
+    { id: 'extras', nombre: 'Extras', multiple: true, valores: ['Perfil bajo (low profile)'] }
+  ] },
+  { categoria: 'Componentes PC', subcategoria: 'Fuentes de poder', grupos: [
+    { id: 'potencia', nombre: 'Potencia', multiple: false, valores: ['Hasta 500 W', '550 a 650 W', '700 W o más'] },
+    { id: 'certificacion', nombre: 'Certificación', multiple: false, valores: ['80 Plus', '80 Plus Bronze', '80 Plus Gold o superior'],
+      pista: 'Solo si la certificación está escrita. Si no dice ninguna, deja vacío.' }
+  ] },
+  { categoria: 'Componentes PC', subcategoria: 'Memorias RAM', grupos: [
+    { id: 'tipo_memoria', nombre: 'Tipo', multiple: false, valores: ['DDR3', 'DDR4', 'DDR5'] },
+    { id: 'formato_ram', nombre: 'Para', multiple: false, valores: ['PC de escritorio (DIMM)', 'Notebook (SO-DIMM)'],
+      pista: 'UDIMM o DIMM = PC de escritorio; SO-DIMM o SODIMM = Notebook.' },
+    { id: 'capacidad_ram', nombre: 'Capacidad', multiple: false, valores: ['4 GB', '8 GB', '16 GB', '32 GB o más'] }
+  ] },
+  { categoria: 'Componentes PC', subcategoria: 'Placas Madre', grupos: [
+    { id: 'plataforma', nombre: 'Procesador', multiple: false, valores: ['Intel', 'AMD'],
+      pista: 'Socket AM4/AM5 = AMD; LGA = Intel.' },
+    { id: 'tipo_memoria', nombre: 'Memoria', multiple: true, valores: ['DDR3', 'DDR4', 'DDR5'] },
+    { id: 'formato_placa', nombre: 'Formato', multiple: false, valores: ['ATX', 'Micro ATX', 'Mini ITX'] }
+  ] },
+  { categoria: 'Componentes PC', subcategoria: 'Gabinetes', grupos: [
+    { id: 'formato_placa', nombre: 'Placa que recibe', multiple: true, valores: ['ATX', 'Micro ATX', 'Mini ITX'],
+      pista: 'mATX y M-ATX = Micro ATX; ITX = Mini ITX.' },
+    { id: 'extras', nombre: 'Extras', multiple: true, valores: ['Vidrio templado', 'Ventiladores incluidos', 'Iluminación RGB'],
+      pista: '"Ventiladores incluidos" solo si dice que trae ventiladores (si dice que no incluye, no). ARGB y FRGB cuentan como RGB.' }
+  ] },
+  { categoria: 'Componentes PC', subcategoria: 'Coolers y Disipadores', grupos: [
+    { id: 'tipo_cooler', nombre: 'Tipo', multiple: false, valores: ['Disipador de procesador', 'Refrigeración líquida', 'Ventilador de gabinete', 'Pasta o masilla térmica'] },
+    { id: 'compatible', nombre: 'Compatible con', multiple: true, valores: ['Intel', 'AMD'] },
+    { id: 'extras', nombre: 'Extras', multiple: true, valores: ['Iluminación RGB'], pista: 'ARGB cuenta como RGB.' }
+  ] },
+  { categoria: 'Cables y Adaptadores', subcategoria: null, grupos: [
+    { id: 'conectores', nombre: 'Conectores', multiple: true,
+      valores: ['HDMI', 'VGA', 'DisplayPort', 'DVI', 'USB-C', 'USB-A', 'Micro USB', 'Lightning', 'Red (RJ45)', 'Fibra óptica', 'Audio 3,5 mm', 'SATA', 'Enchufe de poder'],
+      pista: 'Marca TODOS los conectores que tiene, en los dos extremos. "USB 3.0", "USB 2.0" o "USB" a secas en un adaptador o dongle = USB-A. Tipo C = USB-C.' },
+    { id: 'largo', nombre: 'Largo', multiple: false, valores: ['Menos de 1 m', '1 a 2 m', '3 a 5 m', 'Más de 5 m'],
+      pista: '1 m y 1,8 m van en "1 a 2 m". Solo si el largo está escrito.' },
+    { id: 'funciones', nombre: 'Funciones', multiple: true, valores: ['Soporta 4K', 'Carga rápida', 'WiFi', 'Bluetooth'] }
+  ] },
+  { categoria: 'Cargadores', subcategoria: null, grupos: [
+    { id: 'conector', nombre: 'Conector', multiple: true, valores: ['USB-C', 'Lightning', 'Micro USB', 'USB-A', 'Para notebook'],
+      pista: 'Los puertos del cargador y los del cable que trae. "Para notebook" si es un cargador de notebook.' },
+    { id: 'potencia', nombre: 'Potencia', multiple: false, valores: ['Hasta 20 W', '25 a 45 W', '65 W o más'],
+      pista: 'Solo si los watts están escritos.' },
+    { id: 'extras', nombre: 'Extras', multiple: true, valores: ['Carga rápida', 'Incluye cable'] }
+  ] },
+  { categoria: 'Energía Portátil', subcategoria: null, grupos: [
+    { id: 'capacidad_bateria', nombre: 'Capacidad', multiple: false, valores: ['Hasta 5.000 mAh', '10.000 mAh', '20.000 mAh o más'],
+      pista: 'Solo baterías portátiles (power banks). Una pila no lleva capacidad.' },
+    { id: 'puertos', nombre: 'Puertos', multiple: true, valores: ['USB-C', 'USB-A', 'Micro USB', 'Lightning'] },
+    { id: 'extras', nombre: 'Extras', multiple: true,
+      valores: ['Carga rápida', 'MagSafe (se pega al iPhone)', 'Pantalla de batería', 'Cable incluido o integrado', 'Sirve para notebook'] }
+  ] },
+  { categoria: 'Energía Portátil', subcategoria: 'Pilas y Energía Solar', grupos: [
+    { id: 'tipo_pila', nombre: 'Tipo', multiple: false, valores: ['AA', 'AAA', '9V', 'Botón (CR2032 y similares)', 'Kit solar'] }
+  ] },
+  { categoria: 'Almacenamiento', subcategoria: null, grupos: [
+    { id: 'capacidad', nombre: 'Capacidad', multiple: false, valores: ['32 GB o menos', '64 GB', '128 GB', '256 GB', '480 a 512 GB', '960 GB a 1 TB', '2 TB o más'],
+      pista: 'Solo la capacidad del producto mismo. "Soporta discos de hasta 4 TB" en un cofre NO es capacidad.' },
+    { id: 'conexion', nombre: 'Conexión', multiple: true, valores: ['USB-A', 'USB-C', 'SATA 2,5"', 'M.2 NVMe', 'M.2 SATA', 'microSD'] }
+  ] },
+  { categoria: 'Periféricos', subcategoria: null, grupos: [
+    { id: 'conexion', nombre: 'Conexión', multiple: true, valores: ['Inalámbrico con receptor USB', 'Bluetooth', 'Con cable USB'],
+      pista: '2.4 GHz = Inalámbrico con receptor USB. "Con cable USB" solo si dice alámbrico, cableado o con cable.' },
+    { id: 'extras', nombre: 'Extras', multiple: true, valores: ['Gamer', 'Iluminación RGB', 'Recargable', 'Silencioso'] }
+  ] },
+  { categoria: 'Periféricos', subcategoria: 'Mandos y Joystick', grupos: [
+    { id: 'compatible', nombre: 'Compatible con', multiple: true, valores: ['PC', 'PlayStation', 'Xbox', 'Nintendo Switch', 'Celular'] }
+  ] },
+  { categoria: 'Audio', subcategoria: null, grupos: [
+    { id: 'conexion', nombre: 'Conexión', multiple: true, valores: ['Bluetooth', 'Cable 3,5 mm', 'USB'],
+      pista: '"Entrada auxiliar 3.5 mm" cuenta como Cable 3,5 mm.' },
+    { id: 'extras', nombre: 'Extras', multiple: true,
+      valores: ['Micrófono incluido', 'Cancelación de ruido', 'Iluminación RGB', 'Radio FM', 'Batería recargable', 'Gamer'] }
+  ] },
+  { categoria: 'Computadores', subcategoria: null, grupos: [
+    { id: 'tipo_equipo', nombre: 'Tipo', multiple: false, valores: ['PC de escritorio', 'Notebook', 'All in one'],
+      pista: 'SFF, torre o "de escritorio" = PC de escritorio.' },
+    { id: 'procesador', nombre: 'Procesador', multiple: false, valores: ['Intel Core i3', 'Intel Core i5', 'Intel Core i7', 'AMD Ryzen'] },
+    { id: 'ram', nombre: 'Memoria RAM', multiple: false, valores: ['4 GB', '8 GB', '16 GB o más'] },
+    { id: 'disco', nombre: 'Disco', multiple: true, valores: ['SSD', 'Disco duro (HDD)'] }
+  ] }
+];
+
+/* Los grupos que le tocan a un producto: los de su categoría y, encima, los de
+   su subcategoría. Si los dos traen el mismo id (no pasa hoy), gana el de la
+   subcategoría. Sin categoría, ninguno. */
+function gruposCaracteristicasDe(categoria, subcategoria) {
+  if (!categoria) return [];
+  const porId = new Map();
+  for (const e of CARACTERISTICAS_TIENDA) {
+    if (e.categoria !== categoria) continue;
+    if (e.subcategoria && e.subcategoria !== subcategoria) continue;
+    for (const g of e.grupos) {
+      if (!e.subcategoria && porId.has(g.id)) continue;
+      porId.set(g.id, g);
+    }
+  }
+  return [...porId.values()];
+}
+
+/* Deja solo grupos y valores que existen para esa categoría, en el orden del
+   esquema y sin repetidos; un grupo de "uno solo" queda con el primero. Con
+   `categoria` undefined (un PUT que no la trae) valida contra todos los grupos
+   que existen: igual descarta lo inventado. */
+function limpiarCaracteristicas(valor, categoria, subcategoria) {
+  if (!valor || typeof valor !== 'object' || Array.isArray(valor)) return {};
+  let grupos;
+  if (categoria === undefined) {
+    // El mismo id aparece en varias categorías (extras, tipo_memoria…): se juntan
+    // sus valores y no se recorta a uno, porque no se sabe cuál de ellos es.
+    const juntos = new Map();
+    for (const g of CARACTERISTICAS_TIENDA.flatMap(e => e.grupos)) {
+      const previo = juntos.get(g.id);
+      juntos.set(g.id, { id: g.id, multiple: true, valores: [...new Set([...(previo?.valores || []), ...g.valores])] });
+    }
+    grupos = [...juntos.values()];
+  } else {
+    grupos = gruposCaracteristicasDe(categoria, subcategoria);
+  }
+  const limpio = {};
+  for (const g of grupos) {
+    const marcados = Array.isArray(valor[g.id]) ? valor[g.id].map(v => String(v)) : [];
+    let elegidos = g.valores.filter(v => marcados.includes(v));
+    if (!g.multiple) elegidos = elegidos.slice(0, 1);
+    if (elegidos.length) limpio[g.id] = elegidos;
+  }
+  return limpio;
+}
 
 /* Normaliza el código de barras: SOLO dígitos.
    ------------------------------------------------------------
@@ -1152,6 +1321,15 @@ function sanearProducto(body = {}) {
     if (p[campo] === undefined) continue;
     const texto = String(p[campo] ?? '').trim();
     if (texto === '' || texto.toLowerCase() === 'null' || texto.toLowerCase() === 'undefined') p[campo] = null;
+  }
+
+  // sql/103: solo grupos y valores que existen para la categoría que se está guardando
+  if (p.caracteristicas !== undefined) {
+    p.caracteristicas = limpiarCaracteristicas(
+      p.caracteristicas,
+      body.categoria_web !== undefined ? (body.categoria_web || null) : undefined,
+      body.subcategoria_web || null
+    );
   }
 
   p.requiere_sn = !!p.requiere_sn;
@@ -1979,6 +2157,69 @@ Reglas:
     });
   } catch (err) {
     return responderFalloGemini(res, err, 'sugerir-categoria', 'La categoría se puede elegir a mano.');
+  }
+});
+
+/* Filtros de la tienda (v159, sql/103). El esquema lo pide la ficha para dibujar
+   las casillas; vive solo acá para que el navegador y la validación no se
+   desincronicen (la pareja de la tienda está en su src/lib/filtros.ts). */
+app.get('/api/productos/caracteristicas-esquema', auth(true), (req, res) => {
+  res.json({ esquema: CARACTERISTICAS_TIENDA });
+});
+
+/* "✨ Rellenar con IA": marca las casillas a partir del nombre y la descripción.
+   Regla del proyecto: nunca inventa. Lo que el texto no dice queda sin marcar, y
+   lo que dice que NO trae ("no incluye HDMI") tampoco se marca. Responde números
+   de opción (como sugerir-categoria) y el servidor los traduce: un número fuera
+   de la lista se descarta. No guarda: el dueño revisa y aprieta Guardar. */
+app.post('/api/productos/sugerir-caracteristicas', auth(true), async (req, res) => {
+  const nombre = String(req.body?.nombre || '').trim().slice(0, 200);
+  const descripcion = textoPlanoParaPrompt(req.body?.descripcion_html).slice(0, 4000);
+  const categoria = String(req.body?.categoria_web || '').trim() || null;
+  const subcategoria = String(req.body?.subcategoria_web || '').trim() || null;
+  const grupos = gruposCaracteristicasDe(categoria, subcategoria);
+  if (!grupos.length) return enviarError(res, 400, 'Esta categoría no tiene filtros en la tienda.');
+  if (!nombre && !descripcion) return enviarError(res, 400, 'Escribe el nombre y la descripción primero: la IA marca solo lo que dice el texto.');
+
+  const prompt = `Marca las características de un producto de Sevelin (tienda de electrónica en Arica, Chile) para los filtros de su tienda web.
+
+Producto: ${nombre || '(sin nombre)'}
+Categoría: ${categoria}${subcategoria ? ` > ${subcategoria}` : ''}
+${descripcion ? `Descripción:\n"""\n${descripcion}\n"""\n` : '(sin descripción: usa solo el nombre)\n'}
+Para cada grupo, responde los NÚMEROS de las opciones que el nombre o la descripción dicen de forma EXPLÍCITA.
+
+Reglas:
+- Si el texto no lo dice, deja el grupo vacío: []. Nunca lo supongas por la marca, el modelo o lo que "suelen traer" productos parecidos.
+- Si el texto dice que NO trae algo ("no incluye HDMI", "no trae parlantes"), no lo marques.
+- En los grupos "elige una" marca como mucho una opción.
+
+Grupos:
+${grupos.map(g => `${g.id} — ${g.nombre} (${g.multiple ? 'puede tener varias' : 'elige una'}):
+${g.valores.map((v, i) => `  ${i + 1}. ${v}`).join('\n')}${g.pista ? `\n  Ojo: ${g.pista}` : ''}`).join('\n\n')}`;
+
+  try {
+    const { texto, modelo } = await pedirAGemini(prompt, {
+      temperature: 0.1,
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: 'OBJECT',
+        properties: Object.fromEntries(grupos.map(g => [g.id, { type: 'ARRAY', items: { type: 'INTEGER' } }])),
+        required: grupos.map(g => g.id)
+      }
+    });
+    let respuesta = null;
+    try { respuesta = JSON.parse(texto); } catch { respuesta = null; }
+    if (!respuesta || typeof respuesta !== 'object') {
+      return enviarError(res, 502, 'Google devolvió una respuesta ilegible. Intenta de nuevo, o marca las casillas a mano.');
+    }
+    const marcadas = {};
+    for (const g of grupos) {
+      const numeros = Array.isArray(respuesta[g.id]) ? respuesta[g.id].map(Number) : [];
+      marcadas[g.id] = numeros.filter(n => Number.isInteger(n) && n >= 1 && n <= g.valores.length).map(n => g.valores[n - 1]);
+    }
+    res.json({ caracteristicas: limpiarCaracteristicas(marcadas, categoria, subcategoria), modelo });
+  } catch (err) {
+    return responderFalloGemini(res, err, 'sugerir-caracteristicas', 'Las casillas se pueden marcar a mano.');
   }
 });
 

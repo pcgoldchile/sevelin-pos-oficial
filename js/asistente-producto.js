@@ -38,8 +38,8 @@ const PASOS_ASISTENTE_PRODUCTO = [
     ayuda: 'La primera es la foto principal. Se guardan al subirlas.' },
   { clave: 'categoria', titulo: 'Categoría, condición y garantía', secciones: ['categoria', 'garantia'],
     ayuda: 'Revisa lo que propuso la IA, o pídele que proponga la categoría y la subcategoría con su botón.' },
-  { clave: 'web', titulo: 'Tienda web y complementos', secciones: ['web', 'complementos'],
-    ayuda: 'Publicación, SEO y qué productos se ofrecen junto a este. "Sugerir con IA" elige complementos de tu catálogo.' },
+  { clave: 'web', titulo: 'Tienda web y complementos', secciones: ['web', 'filtros', 'complementos'],
+    ayuda: 'Publicación, SEO, las casillas de los filtros de sevelin.cl ("✨ Rellenar con IA" las marca con la descripción) y qué productos se ofrecen junto a este.' },
   { clave: 'bodega', titulo: 'Medidas, envío y dónde está guardado', secciones: ['medidas', 'ubicacion'],
     ayuda: 'El peso y las medidas deciden cuánto cuesta el despacho. Se guardan con su propio botón.' }
 ];

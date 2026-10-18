@@ -3395,6 +3395,18 @@
             <p class="subtitle" id="prodSeoIAAviso">Escribe la Descripción primero — la IA reescribe lo que ya está ahí, nunca inventa características nuevas.</p>
           </div>
 
+          <!-- v159 (sql/103): las casillas del panel "Filtrar" de sevelin.cl. Cambian con la categoría
+               (js/caracteristicas-producto.js). Se guardan con el producto. -->
+          <div class="card card-plegable" data-seccion="filtros">
+            <div class="card-head"><div><h2>🔎 Filtros de la tienda</h2>
+              <p class="subtitle">Con esto el cliente filtra en sevelin.cl (ej. "monitores con HDMI"). <span id="prodCaracteristicasResumen"></span></p>
+            </div></div>
+            <div id="prodCaracteristicas" class="filtros-ficha"></div>
+            <button type="button" class="btn btn-outline btn-sm" id="btnCaracteristicasIA" style="margin-top:10px;" hidden>✨ Rellenar con IA</button>
+            <p class="modal-hint" id="prodCaracteristicasIA" style="margin-top:6px;"></p>
+            <p class="subtitle">La IA marca solo lo que dice la descripción: si algo no está escrito, márcalo a mano. Marca, precio y nuevo/reacondicionado salen solos.</p>
+          </div>
+
           <!-- v102 (sql/75): "Complementa tu compra" en la ficha de sevelin.cl. Se guarda al tocar,
                por su propia ruta (como las fotos), no con el botón Guardar del producto. -->
           <div class="card card-plegable" data-seccion="complementos">
@@ -8371,6 +8383,7 @@
   <script src="js/cotizaciones-ref.js"></script>   <!-- v133 (sql/90): Taller → Cotizaciones aproximadas; usa cerrarModal de balance.js -->
   <script src="js/cotizador-celulares.js"></script>   <!-- v157 (sql/102): Servicio Técnico → Cotizador celulares -->
   <script src="js/bodega.js"></script>   <!-- v156 (sql/101): Productos → "📦 Más stock y bodega"; usa cerrarModal de balance.js -->
+  <script src="js/caracteristicas-producto.js"></script>   <!-- v159 (sql/103): después de productos.js y asistente-producto.js; filtros de la tienda en la ficha -->
   <script src="js/facebook-rapido.js"></script>   <!-- v136 (sql/93): después de productos.js; usa sus funciones de fotos y la lista -->
   <script src="js/usuarios.js"></script>   <!-- v135 (sql/92): usuarios con RUT y PIN; usa ventanaConfirmar de ventanas.js -->
   <script src="js/finanzas-gate.js"></script>   <!-- después de balance/config: intercepta la navegación a Finanzas -->

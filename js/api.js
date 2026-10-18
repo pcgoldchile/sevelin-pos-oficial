@@ -201,6 +201,9 @@ const API = {
     sugerirComplementos: (id) => apiRequest(`/productos/${id}/sugerir-complementos`, { method: 'POST', body: {} }),
     // v122 — la IA elige categoría y subcategoría de la lista real (no guarda)
     sugerirCategoria: (datos) => apiRequest('/productos/sugerir-categoria', { method: 'POST', body: datos }),
+    // v159 (sql/103) — filtros de sevelin.cl: qué casillas tiene cada categoría, y la IA que las marca (no guarda)
+    esquemaCaracteristicas: () => apiRequest('/productos/caracteristicas-esquema', { silencioso: true }),
+    sugerirCaracteristicas: (datos) => apiRequest('/productos/sugerir-caracteristicas', { method: 'POST', body: datos }),
     // La mercadería en camino llegó: sube el stock y apaga "por llegar"
     compraRecibida: (ingresoId) => apiRequest(`/ingresos/${ingresoId}/recibida`, { method: 'PUT' }),
     // v134: una o varias llegadas juntas; cada una puede traer { cantidad_recibida, resto } si llegaron menos
