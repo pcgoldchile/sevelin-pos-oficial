@@ -69,6 +69,30 @@ function descripcionTarjeta(metodo) {
     : (porLink ? `Por el ${maquina.toLowerCase()}` : `Por la máquina ${maquina}`);
 }
 
+/* ¿De dónde vino el cliente? (sql/96, v163). Solo en el cobro de una venta nueva
+   (configPago.pedirOrigen). Los botones escriben en el <select> del carrito, que es lo
+   que se manda al guardar (pos.js → origen_cliente); tocar el mismo otra vez lo borra. */
+function renderOrigenPago() {
+  const caja = document.getElementById('pagoVinoBox');
+  const botones = document.getElementById('pagoVinoBotones');
+  const select = document.getElementById('posOrigenCliente');
+  if (!caja || !botones) return;
+  if (!configPago?.pedirOrigen || !select) { caja.style.display = 'none'; return; }
+  caja.style.display = '';
+  const actual = select.value;
+  botones.innerHTML = ORIGENES_CLIENTE.map(o => `
+    <button type="button" class="entrega-tipo-btn pago-vino-btn${o.valor === actual ? ' activo' : ''}"
+            data-origen="${escHtml(o.valor)}" aria-pressed="${o.valor === actual ? 'true' : 'false'}">${escHtml(o.texto)}</button>`).join('');
+  botones.querySelectorAll('[data-origen]').forEach(b => b.addEventListener('click', () => elegirOrigenPago(b.dataset.origen)));
+}
+
+function elegirOrigenPago(valor) {
+  const select = document.getElementById('posOrigenCliente');
+  if (!select) return;
+  select.value = select.value === valor ? '' : valor;
+  renderOrigenPago();
+}
+
 function renderMaquinaTarjeta() {
   const caja = document.getElementById('pagoMaquinaBox');
   if (!caja) return;
@@ -174,6 +198,7 @@ function abrirSelectorPago(opciones) {
   // Cada cobro parte en la máquina de siempre: el link no se arrastra (sql/89).
   maquinaTarjetaElegida = leerMaquinaTarjeta();
   renderMaquinaTarjeta();
+  renderOrigenPago();
   renderMetodosPago();
   if (elModalPago) elModalPago.classList.add('show');
 

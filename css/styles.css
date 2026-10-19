@@ -4802,6 +4802,10 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
 .pago-maquina-titulo { font-size: 12px; font-weight: 600; color: var(--text-muted); }
 .pago-maquina-botones { display: flex; gap: 8px; flex: 1; min-width: 220px; }
 .pago-maquina-btn { padding: 8px 10px; }
+/* v163: ¿de dónde vino el cliente? en el cobro */
+.pago-vino { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.pago-vino-botones { display: flex; flex-wrap: wrap; gap: 6px; }
+.pago-vino-btn { padding: 6px 10px; font-size: 12.5px; flex: 0 0 auto; }
 
 .folio-venta { margin: 14px auto 4px; max-width: 380px; text-align: left; }
 .folio-venta label, .venta-documento-titulo { display: block; font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; }

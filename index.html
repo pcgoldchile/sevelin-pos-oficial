@@ -5740,6 +5740,14 @@
         <strong id="pagoTotal">$0</strong>
       </div>
 
+      <!-- sql/96 (v163): ¿de dónde vino el cliente?, a la vista en el cobro y de un toque. Antes
+           estaba solo como lista en el carrito y en 0 de 26 ventas (15 al 19-10-2026) quedó anotado.
+           Escribe en el mismo #posOrigenCliente del carrito (una sola fuente para la venta). -->
+      <div class="pago-vino" id="pagoVinoBox" style="display:none;">
+        <span class="pago-maquina-titulo">¿De dónde vino el cliente?</span>
+        <div class="pago-vino-botones" id="pagoVinoBotones" role="group" aria-label="De dónde vino el cliente"></div>
+      </div>
+
       <!-- sql/79 (v108): por cuál máquina pasa la tarjeta. Cada una cobra una
            comisión distinta; se recuerda la última usada en este equipo. -->
       <div class="pago-maquina" id="pagoMaquinaBox">
