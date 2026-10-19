@@ -16774,9 +16774,15 @@ const hashCodigoCanje = (cuentaId, codigo) => crypto.createHash('sha256').update
 /* Saldo con vencimiento por orden de llegada (copia de calcularSaldo de la tienda) */
 function calcularSaldoPuntos(movs, ahora = Date.now()) {
   const validos = (movs || []).filter(m => !m.anulado).sort((a, b) => Date.parse(a.creado_en) - Date.parse(b.creado_en));
-  const lotes = validos.filter(m => m.puntos > 0).map(m => ({ resto: m.puntos, desde: Date.parse(m.disponible_desde), vence: m.vence_en ? Date.parse(m.vence_en) : Infinity }));
-  let gasto = validos.filter(m => m.puntos < 0).reduce((t, m) => t - m.puntos, 0);
-  for (const l of lotes) { if (gasto <= 0) break; const usa = Math.min(l.resto, gasto); l.resto -= usa; gasto -= usa; }
+  const lotes = validos.filter(m => m.puntos > 0).map(m => ({ resto: m.puntos, creado: Date.parse(m.creado_en), desde: Date.parse(m.disponible_desde), vence: m.vence_en ? Date.parse(m.vence_en) : Infinity }));
+  /* Cada canje o reverso gasta lo más viejo VIGENTE en ese momento (nunca puntos ya vencidos);
+     lo que no alcance (un reverso de algo por confirmar) sale de cualquier lote que quede. */
+  for (const m of validos.filter(x => x.puntos < 0)) {
+    let falta = -m.puntos;
+    const t = Date.parse(m.creado_en);
+    for (const l of lotes) { if (falta <= 0) break; if (l.resto <= 0 || l.creado > t || l.vence <= t) continue; const usa = Math.min(l.resto, falta); l.resto -= usa; falta -= usa; }
+    for (const l of lotes) { if (falta <= 0) break; if (l.resto <= 0 || l.vence <= t) continue; const usa = Math.min(l.resto, falta); l.resto -= usa; falta -= usa; }
+  }
   let disponible = 0, pendiente = 0, porVencer30 = 0;
   for (const l of lotes) {
     if (l.resto <= 0 || l.vence <= ahora) continue;
