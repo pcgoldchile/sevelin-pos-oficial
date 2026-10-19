@@ -16678,6 +16678,7 @@ app.get('/api/pos/reponer-tendencia', auth(true), async (req, res) => {
 const REDES_FORMATOS = ['historia', 'post', 'carrusel', 'reel'];
 const REDES_ESTILOS = ['dinamico', 'minimalista', 'precio', 'beneficios', 'confianza'];
 const REDES_REDES = ['instagram', 'facebook'];
+const REDES_ANIMACIONES = ['clasica', 'impacto', 'suave', 'neon', 'galeria'];   // v165, sql/105
 /* Un producto se puede volver a mostrar recién a los 14 días sin que cuente como repetido. */
 const REDES_DIAS_REPETIDO = 14;
 
@@ -16712,6 +16713,7 @@ app.post('/api/redes/registro', auth(true), async (req, res) => {
       formato: b.formato,
       estilo: b.estilo,
       gancho: b.gancho ? String(b.gancho).trim().slice(0, 120) : null,
+      animacion: b.formato === 'reel' && REDES_ANIMACIONES.includes(b.animacion) ? b.animacion : null,
       creado_por: req.usuario?.nombre || req.usuario?.rol || null,
     };
     const { data, error } = await db.from('contenido_redes').insert(fila).select().single();

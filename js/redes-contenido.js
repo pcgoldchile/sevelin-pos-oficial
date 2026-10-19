@@ -36,6 +36,16 @@ const CONTENIDO_REDES_ESTILOS = [
   { id: 'beneficios', texto: 'Beneficios', detalle: 'Lo que dice su ficha' },
   { id: 'confianza', texto: 'Por qué Sevelin', detalle: 'Garantía y retiro' },
 ];
+/* Animaciones del reel (v165, dueño 19-10-2026: "dame animaciones nuevas, con diferentes estilos
+   para elegir"). Todas duran 12 s y terminan con el mismo cierre (WhatsApp y la web). */
+const CONTENIDO_REDES_ANIMACIONES = [
+  { id: 'clasica', texto: 'Clásica', detalle: 'La del estilo elegido' },
+  { id: 'impacto', texto: 'Impacto', detalle: 'Golpes, destellos y contador' },
+  { id: 'suave', texto: 'Suave', detalle: 'Claro, lento y elegante' },
+  { id: 'neon', texto: 'Neón', detalle: 'Partículas y borde de luz' },
+  { id: 'galeria', texto: 'Galería', detalle: 'Las fotos pasan deslizando' },
+];
+
 /* Frases grandes. Todas son ciertas para cualquier producto de la tienda (nada de "el más
    vendido" sin el dato). Se elige una que este producto no haya usado en 30 días. */
 const CONTENIDO_REDES_GANCHOS = {
@@ -478,7 +488,7 @@ async function abrirContenidoRedes(productoOId) {
       Promise.all((p.imagen_urls || []).slice(0, 4).map(u => contenidoRedesCargarFoto(u).catch(() => null))),
       API.redes.registro(30, p.id).then(r => r.piezas || []).catch(() => []),
     ]);
-    contenidoRedesEstado = { producto: p, formato: 'post', fotos: fotos.filter(Boolean), registro, beneficios: contenidoRedesBeneficios(p), saltar: 0 };
+    contenidoRedesEstado = { producto: p, formato: 'post', animacion: 'impacto', fotos: fotos.filter(Boolean), registro, beneficios: contenidoRedesBeneficios(p), saltar: 0 };
     if (!contenidoRedesEstado.fotos.length) throw new Error('No se pudo cargar ninguna foto del producto');
     Object.assign(contenidoRedesEstado, contenidoRedesElegirVariante(contenidoRedesEstado, 0));
     contenidoRedesPintarControles();
@@ -491,6 +501,7 @@ async function abrirContenidoRedes(productoOId) {
 }
 
 function cerrarContenidoRedes() {
+  contenidoRedesPreviaId++;
   document.getElementById('modalContenidoRedes')?.classList.remove('show');
   contenidoRedesEstado = null;
 }
@@ -503,6 +514,9 @@ function contenidoRedesPintarControles() {
       <b>${escHtml(x.texto)}</b><small>${escHtml(x.detalle)}</small></button>`).join('');
   document.getElementById('contenidoRedesFormatos').innerHTML = chips(CONTENIDO_REDES_FORMATOS, e.formato, 'formato');
   document.getElementById('contenidoRedesEstilos').innerHTML = chips(CONTENIDO_REDES_ESTILOS, e.estilo, 'estilo');
+  const caja = document.getElementById('contenidoRedesAnimacionesCaja');
+  if (caja) caja.hidden = e.formato !== 'reel';
+  document.getElementById('contenidoRedesAnimaciones').innerHTML = chips(CONTENIDO_REDES_ANIMACIONES, e.animacion, 'animacion');
   document.getElementById('contenidoRedesGancho').value = e.gancho || '';
   document.getElementById('contenidoRedesFotos').innerHTML = (e.producto.imagen_urls || []).slice(0, e.fotos.length).map((u, i) => `
     <button type="button" class="contenido-redes-foto${i === e.iFoto ? ' activo' : ''}" data-foto="${i}" aria-label="Usar la foto ${i + 1}"><img src="${escHtml(u)}" alt=""></button>`).join('');
@@ -545,7 +559,16 @@ function contenidoRedesRedibujar() {
   if (!e || !vista) return;
   vista.innerHTML = '';
   vista.dataset.formato = e.formato;
-  const laminas = e.formato === 'carrusel' ? contenidoRedesLaminasCarrusel(e) : e.formato === 'reel' ? [null, { tipo: 'cierre' }] : [null];
+  contenidoRedesPreviaId++;   // corta la vista previa anterior
+  if (e.formato === 'reel') {
+    const c = document.createElement('canvas');
+    c.className = 'contenido-redes-canvas';
+    c.setAttribute('role', 'img');
+    c.setAttribute('aria-label', 'Vista previa animada del reel');
+    vista.appendChild(c);
+    contenidoRedesReproducirPrevia(c, e);
+  }
+  const laminas = e.formato === 'carrusel' ? contenidoRedesLaminasCarrusel(e) : e.formato === 'reel' ? [] : [null];
   laminas.forEach((l, i) => {
     const c = document.createElement('canvas');
     c.className = 'contenido-redes-canvas';
@@ -557,7 +580,7 @@ function contenidoRedesRedibujar() {
   if (e.formato === 'reel') {
     const nota = document.createElement('p');
     nota.className = 'texto-apagado contenido-redes-nota';
-    nota.textContent = 'El reel dura 12 segundos: la frase entra, aparece el producto pasando por sus fotos, el precio con un golpe y cierra con WhatsApp y la web. Sin música: se la pones en Instagram al subirlo.';
+    nota.textContent = 'Así se mueve el reel (12 segundos, en bucle). Elige la animación a la izquierda. Sin música: se la pones en Instagram al subirlo.';
     vista.appendChild(nota);
   }
 }
@@ -580,6 +603,7 @@ function contenidoRedesOtraVersion() {
   if (!e) return;
   e.saltar = (e.saltar || 0) + 1;
   Object.assign(e, contenidoRedesElegirVariante(e, e.saltar));
+  if (e.formato === 'reel') e.animacion = CONTENIDO_REDES_ANIMACIONES[e.saltar % CONTENIDO_REDES_ANIMACIONES.length].id;
   contenidoRedesPintarControles();
   contenidoRedesRedibujar();
 }
@@ -592,13 +616,287 @@ function contenidoRedesCanvasABlob(canvas) {
 
 function contenidoRedesNombreArchivo(e, sufijo, ext) {
   const base = typeof slugArchivo === 'function' ? slugArchivo(e.producto.nombre) : 'producto';
-  return `${base}-${e.formato}-${e.estilo}${sufijo ? `-${sufijo}` : ''}.${ext}`;
+  return `${base}-${e.formato}-${e.formato === 'reel' ? e.animacion : e.estilo}${sufijo ? `-${sufijo}` : ''}.${ext}`;
+}
+
+/* ---------- Animaciones del reel ---------- */
+
+const CONTENIDO_REDES_DURACION_REEL = 12000;
+const contenidoRedesTramo = (t, desde, hasta) => Math.max(0, Math.min(1, (t - desde) / (hasta - desde)));
+const contenidoRedesSalida = (x) => 1 - Math.pow(1 - x, 3);
+/* Rebote al llegar (sobrepasa un poco y vuelve) */
+const contenidoRedesRebote = (x) => { const c = 1.70158; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
+
+/* El precio contando desde 0, de a $10, hasta el real */
+function contenidoRedesPrecioContado(pr, v) {
+  const n = Math.round((pr.precio * contenidoRedesSalida(v)) / 10) * 10;
+  return (pr.desde ? 'Desde ' : '') + fmtCLP(v >= 1 ? pr.precio : n);
+}
+
+/* Partículas fijas (siempre las mismas para el mismo producto) que suben despacio */
+function contenidoRedesParticulas(ctx, W, H, t, semilla, color) {
+  let x = semilla || 7;
+  const azar = () => { x = (x * 9301 + 49297) % 233280; return x / 233280; };
+  ctx.save();
+  for (let k = 0; k < 46; k++) {
+    const px = azar() * W, py = (azar() * H - t * (120 + azar() * 260) + H) % H, r = 2 + azar() * 5;
+    ctx.globalAlpha = 0.25 + azar() * 0.55;
+    ctx.fillStyle = color;
+    ctx.shadowColor = color; ctx.shadowBlur = r * 4;
+    ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+/* Clásica: la de siempre (frase, lámina del estilo animada, cierre) */
+function contenidoRedesCuadroClasico(ctx, W, H, e, t) {
+  if (t < 0.17) {
+    const v = Math.min(1, t / 0.08);
+    const claro = e.estilo === 'minimalista';
+    if (claro) { ctx.fillStyle = '#f3f4f6'; ctx.fillRect(0, 0, W, H); } else contenidoRedesFondoOscuro(ctx, W, H, t);
+    contenidoRedesLogo(ctx, W / 2, 140, 54, !claro);
+    ctx.save();
+    ctx.globalAlpha = v * (t > 0.14 ? Math.max(0, 1 - (t - 0.14) / 0.03) : 1);
+    ctx.translate(W / 2, H / 2);
+    const s = 0.7 + 0.3 * contenidoRedesSalida(v);
+    ctx.scale(s, s);
+    contenidoRedesTexto(ctx, String(e.gancho).toUpperCase(), -470, -160, 940, { tam: 130, peso: 700, color: claro ? '#0f172a' : '#ffffff', maxLineas: 3, interlineado: 1.0, sombra: claro ? null : 'rgba(59,130,246,0.9)' });
+    ctx.restore();
+  } else if (t < 0.74) {
+    const a = Math.min(1, (t - 0.17) / 0.4);
+    const iFoto = e.fotos.length ? (e.iFoto + Math.floor((t - 0.17) / 0.14)) % e.fotos.length : 0;
+    ctx.clearRect(0, 0, W, H);
+    contenidoRedesDibujarLamina(ctx, W, H, e, { a, iFoto });
+  } else {
+    ctx.clearRect(0, 0, W, H);
+    contenidoRedesDibujarCierre(ctx, W, H, e, Math.min(1, (t - 0.74) / 0.2));
+  }
+}
+
+/* Impacto: palabras que caen de a una con rebote, destellos blancos, la foto entra de golpe con un
+   temblor, cada foto nueva con un zoom, y el precio contando. Oscuro y rápido. */
+function contenidoRedesCuadroImpacto(ctx, W, H, e, t) {
+  const pr = contenidoRedesPrecio(e.producto);
+  if (t >= 0.72) { contenidoRedesDibujarCierre(ctx, W, H, { ...e, estilo: 'dinamico' }, contenidoRedesTramo(t, 0.72, 0.9)); contenidoRedesDestello(ctx, W, H, 1 - contenidoRedesTramo(t, 0.72, 0.75)); return; }
+  contenidoRedesFondoOscuro(ctx, W, H, t * 2);
+  contenidoRedesLogo(ctx, W / 2, 120, 52, true);
+  if (t < 0.15) {
+    const palabras = String(e.gancho).toUpperCase().split(/\s+/);
+    const porPalabra = 0.12 / Math.max(1, palabras.length);
+    const visibles = palabras.filter((_, k) => t >= k * porPalabra);
+    ctx.save();
+    const ultima = contenidoRedesTramo(t, (visibles.length - 1) * porPalabra, visibles.length * porPalabra);
+    ctx.translate(W / 2, H / 2 - 120);
+    const s = visibles.length ? 0.85 + 0.15 * contenidoRedesRebote(ultima) : 1;
+    ctx.scale(s, s);
+    contenidoRedesTexto(ctx, visibles.join(' '), -480, 0, 960, { tam: 150, peso: 800, color: '#ffffff', maxLineas: 3, interlineado: 0.98, sombra: 'rgba(59,130,246,1)' });
+    ctx.restore();
+    contenidoRedesDestello(ctx, W, H, 1 - contenidoRedesTramo(t, 0, 0.03));
+    return;
+  }
+  /* La foto: entra grande y se asienta con un temblor; cada 1,2 s cambia con zoom y destello */
+  const llegada = contenidoRedesTramo(t, 0.15, 0.22);
+  const temblor = llegada >= 1 && t < 0.25 ? Math.sin(t * 900) * 10 * (1 - contenidoRedesTramo(t, 0.22, 0.25)) : 0;
+  const cambio = Math.floor(Math.max(0, t - 0.2) / 0.1);
+  const iFoto = e.fotos.length ? (e.iFoto + cambio) % e.fotos.length : 0;
+  const dentro = (Math.max(0, t - 0.2) % 0.1) / 0.1;
+  const escala = (1.45 - 0.45 * contenidoRedesSalida(llegada)) * (1 + 0.06 * (1 - contenidoRedesSalida(Math.min(1, dentro * 3))));
+  const lado = 820;
+  ctx.save();
+  ctx.translate(W / 2 + temblor, 300 + lado / 2);
+  ctx.scale(escala, escala);
+  ctx.globalAlpha = contenidoRedesSalida(llegada);
+  contenidoRedesFoto(ctx, e.fotos[iFoto], -lado / 2, -lado / 2, lado, lado, { radio: 50, borde: 'rgba(59,130,246,0.7)', brillo: 'rgba(59,130,246,0.6)' });
+  ctx.restore();
+  if (t > 0.2 && dentro < 0.1) contenidoRedesDestello(ctx, W, H, 0.5 * (1 - dentro / 0.1));
+  /* Nombre desde la izquierda y precio contando */
+  const nombre = contenidoRedesSalida(contenidoRedesTramo(t, 0.24, 0.32));
+  ctx.save(); ctx.globalAlpha = nombre; ctx.translate(-(1 - nombre) * 300, 0);
+  contenidoRedesTexto(ctx, e.producto.nombre, 80, 1180, W - 160, { tam: 50, peso: 600, color: '#f4f4f5', maxLineas: 2 });
+  ctx.restore();
+  const cuenta = contenidoRedesTramo(t, 0.42, 0.52);
+  if (cuenta > 0) {
+    const pulso = t > 0.52 ? 1 + 0.05 * Math.sin((t - 0.52) * 60) * (1 - contenidoRedesTramo(t, 0.52, 0.6)) : 1;
+    ctx.save(); ctx.translate(W / 2, 1420); ctx.scale(pulso, pulso);
+    contenidoRedesTexto(ctx, contenidoRedesPrecioContado(pr, cuenta), -500, -80, 1000, { tam: 160, peso: 800, color: '#ffffff', maxLineas: 1, sombra: 'rgba(59,130,246,1)' });
+    ctx.restore();
+  }
+  ctx.globalAlpha = contenidoRedesSalida(contenidoRedesTramo(t, 0.55, 0.62));
+  contenidoRedesSellos(ctx, W, 1600, contenidoRedesSellosDe(e.producto), true, 36);
+  ctx.globalAlpha = 1;
+}
+
+function contenidoRedesDestello(ctx, W, H, fuerza) {
+  if (fuerza <= 0) return;
+  ctx.save(); ctx.globalAlpha = Math.min(1, fuerza); ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, H); ctx.restore();
+}
+
+/* Suave: fondo claro, la frase se escribe letra por letra, la foto aparece y se acerca muy lento,
+   cambia de foto con un fundido largo, y el precio se subraya con una línea que se dibuja. */
+function contenidoRedesCuadroSuave(ctx, W, H, e, t) {
+  const pr = contenidoRedesPrecio(e.producto);
+  if (t >= 0.74) { contenidoRedesDibujarCierre(ctx, W, H, { ...e, estilo: 'minimalista' }, contenidoRedesTramo(t, 0.74, 0.95)); return; }
+  ctx.fillStyle = '#f5f5f4'; ctx.fillRect(0, 0, W, H);
+  contenidoRedesLogo(ctx, W / 2, 130, 46, false);
+  const frase = String(e.gancho);
+  if (t < 0.22) {
+    const letras = Math.floor(frase.length * contenidoRedesTramo(t, 0.02, 0.16));
+    const cursor = Math.floor(t * 40) % 2 === 0 ? '|' : ' ';
+    contenidoRedesTexto(ctx, frase.slice(0, letras) + (t < 0.2 ? cursor : ''), 90, H / 2 - 120, W - 180, { tam: 92, peso: 600, color: '#1c1917', maxLineas: 3, interlineado: 1.15 });
+    return;
+  }
+  contenidoRedesTexto(ctx, frase, 90, 230, W - 180, { tam: 58, peso: 600, color: '#1c1917', maxLineas: 2 });
+  const lado = 840;
+  const aparece = contenidoRedesSalida(contenidoRedesTramo(t, 0.22, 0.32));
+  const acerca = 1 + 0.07 * contenidoRedesTramo(t, 0.22, 0.74);
+  const n = Math.max(1, e.fotos.length);
+  const pos = Math.max(0, t - 0.22) / 0.17;           // una foto cada ~2 s
+  const actual = Math.floor(pos) % n, siguiente = (actual + 1) % n, mezcla = contenidoRedesTramo(pos % 1, 0.75, 1);
+  ctx.save();
+  ctx.globalAlpha = aparece;
+  ctx.translate(W / 2, 420 + lado / 2 + (1 - aparece) * 40);
+  ctx.scale(acerca, acerca);
+  contenidoRedesFoto(ctx, e.fotos[(e.iFoto + actual) % n], -lado / 2, -lado / 2, lado, lado, { radio: 30 });
+  if (n > 1 && mezcla > 0) { ctx.globalAlpha = aparece * mezcla; contenidoRedesFoto(ctx, e.fotos[(e.iFoto + siguiente) % n], -lado / 2, -lado / 2, lado, lado, { radio: 30 }); }
+  ctx.restore();
+  const nombre = contenidoRedesSalida(contenidoRedesTramo(t, 0.34, 0.44));
+  ctx.globalAlpha = nombre;
+  contenidoRedesTexto(ctx, e.producto.nombre, 110, 1310 + (1 - nombre) * 20, W - 220, { tam: 38, peso: 400, color: '#57534e', maxLineas: 2 });
+  const precio = contenidoRedesSalida(contenidoRedesTramo(t, 0.46, 0.56));
+  ctx.globalAlpha = precio;
+  const fin = contenidoRedesTexto(ctx, (pr.desde ? 'Desde ' : '') + fmtCLP(pr.precio), 90, 1440, W - 180, { tam: 112, peso: 600, color: '#1d4ed8', maxLineas: 1 });
+  ctx.globalAlpha = 1;
+  const linea = contenidoRedesSalida(contenidoRedesTramo(t, 0.55, 0.66));
+  if (linea > 0) { ctx.fillStyle = '#1d4ed8'; ctx.fillRect(W / 2 - 220 * linea, fin + 6, 440 * linea, 5); }
+  ctx.globalAlpha = contenidoRedesSalida(contenidoRedesTramo(t, 0.6, 0.7));
+  contenidoRedesPie(ctx, W, 1640, false, 0.95);
+  ctx.globalAlpha = 1;
+}
+
+/* Neón: partículas que suben, una barra de luz que barre y deja ver la frase, el borde de la foto
+   que se dibuja como un tubo de neón, un halo que gira y el precio que parpadea al encender. */
+function contenidoRedesCuadroNeon(ctx, W, H, e, t) {
+  const pr = contenidoRedesPrecio(e.producto);
+  const cian = '#22d3ee', rosa = '#e879f9';
+  if (t >= 0.74) { contenidoRedesDibujarCierre(ctx, W, H, { ...e, estilo: 'dinamico' }, contenidoRedesTramo(t, 0.74, 0.92)); contenidoRedesParticulas(ctx, W, H, t, e.producto.id, cian); return; }
+  ctx.fillStyle = '#05010d'; ctx.fillRect(0, 0, W, H);
+  const halo = ctx.createRadialGradient(W / 2 + Math.cos(t * 6) * 200, H * 0.4 + Math.sin(t * 6) * 150, 0, W / 2, H * 0.4, W);
+  halo.addColorStop(0, 'rgba(232,121,249,0.28)'); halo.addColorStop(1, 'rgba(5,1,13,0)');
+  ctx.fillStyle = halo; ctx.fillRect(0, 0, W, H);
+  contenidoRedesParticulas(ctx, W, H, t, e.producto.id, cian);
+  contenidoRedesLogo(ctx, W / 2, 120, 50, true);
+  if (t < 0.18) {
+    const barrido = contenidoRedesTramo(t, 0.01, 0.12);
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, 0, W * barrido, H); ctx.clip();
+    contenidoRedesTexto(ctx, String(e.gancho).toUpperCase(), 70, H / 2 - 200, W - 140, { tam: 130, peso: 800, color: '#ffffff', maxLineas: 3, interlineado: 1.0, sombra: rosa });
+    ctx.restore();
+    if (barrido < 1) { ctx.save(); ctx.fillStyle = cian; ctx.shadowColor = cian; ctx.shadowBlur = 60; ctx.fillRect(W * barrido - 6, H / 2 - 260, 12, 520); ctx.restore(); }
+    return;
+  }
+  const lado = 800, x = (W - lado) / 2, y = 300;
+  const n = Math.max(1, e.fotos.length);
+  const iFoto = (e.iFoto + Math.floor(Math.max(0, t - 0.2) / 0.15)) % n;
+  const aparece = contenidoRedesSalida(contenidoRedesTramo(t, 0.18, 0.28));
+  ctx.globalAlpha = aparece;
+  contenidoRedesFoto(ctx, e.fotos[iFoto], x, y, lado, lado, { radio: 48 });
+  ctx.globalAlpha = 1;
+  /* Borde de neón que se dibuja solo */
+  const trazo = contenidoRedesTramo(t, 0.2, 0.36);
+  ctx.save();
+  contenidoRedesRedondeado(ctx, x - 10, y - 10, lado + 20, lado + 20, 56);
+  ctx.setLineDash([4 * (lado + 20) * trazo, 99999]);
+  ctx.lineWidth = 8; ctx.strokeStyle = cian; ctx.shadowColor = cian; ctx.shadowBlur = 40;
+  ctx.stroke();
+  ctx.restore();
+  const nombre = contenidoRedesSalida(contenidoRedesTramo(t, 0.33, 0.42));
+  ctx.globalAlpha = nombre;
+  contenidoRedesTexto(ctx, e.producto.nombre, 80, 1150, W - 160, { tam: 48, peso: 600, color: '#f5f3ff', maxLineas: 2 });
+  ctx.globalAlpha = 1;
+  /* Precio: parpadea al encender, como un letrero */
+  const enciende = contenidoRedesTramo(t, 0.44, 0.52);
+  if (enciende > 0) {
+    const parpadeo = enciende < 1 ? (Math.floor(t * 120) % 3 === 0 ? 0.25 : 1) : 1;
+    ctx.globalAlpha = parpadeo;
+    contenidoRedesTexto(ctx, (pr.desde ? 'Desde ' : '') + fmtCLP(pr.precio), 80, 1330, W - 160, { tam: 160, peso: 800, color: '#ffffff', maxLineas: 1, sombra: rosa });
+    ctx.globalAlpha = 1;
+  }
+  ctx.globalAlpha = contenidoRedesSalida(contenidoRedesTramo(t, 0.56, 0.64));
+  contenidoRedesPie(ctx, W, 1600, true, 0.95);
+  ctx.globalAlpha = 1;
+}
+
+/* Galería: las fotos pasan de derecha a izquierda como un carrusel de Instagram, con puntitos
+   de avance; el nombre y el precio quedan fijos abajo. Si hay una sola foto, se acerca y aleja. */
+function contenidoRedesCuadroGaleria(ctx, W, H, e, t) {
+  const pr = contenidoRedesPrecio(e.producto);
+  const claro = e.estilo === 'minimalista';
+  if (t >= 0.74) { contenidoRedesDibujarCierre(ctx, W, H, e, contenidoRedesTramo(t, 0.74, 0.92)); return; }
+  if (claro) { ctx.fillStyle = '#f3f4f6'; ctx.fillRect(0, 0, W, H); } else contenidoRedesFondoOscuro(ctx, W, H, t);
+  contenidoRedesLogo(ctx, W / 2, 120, 50, !claro);
+  const baja = contenidoRedesSalida(contenidoRedesTramo(t, 0, 0.1));
+  contenidoRedesTexto(ctx, String(e.gancho).toUpperCase(), 70, 210 - (1 - baja) * 120, W - 140, { tam: 82, peso: 700, color: claro ? '#0f172a' : '#ffffff', maxLineas: 2, interlineado: 1.02, sombra: claro ? null : 'rgba(59,130,246,0.9)' });
+  const n = Math.max(1, e.fotos.length);
+  const lado = 860, y = 430;
+  const avance = Math.max(0, t - 0.12) / (0.6 / n);    // reparte las fotos en ~7 s
+  const k = Math.min(n - 1, Math.floor(avance));
+  const desliza = n > 1 && k < n - 1 ? contenidoRedesSalida(contenidoRedesTramo(avance % 1, 0.7, 1)) : 0;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, y - 40, W, lado + 80); ctx.clip();
+  for (let d = 0; d <= 1; d++) {
+    const idx = k + d;
+    if (idx >= n) continue;
+    const x = (W - lado) / 2 + (d - desliza) * (lado + 60);
+    const zoom = n === 1 ? 1 + 0.06 * Math.sin(t * 5) : 1;
+    ctx.save(); ctx.translate(x + lado / 2, y + lado / 2); ctx.scale(zoom, zoom);
+    contenidoRedesFoto(ctx, e.fotos[(e.iFoto + idx) % n], -lado / 2, -lado / 2, lado, lado, { radio: 44, brillo: claro ? null : 'rgba(59,130,246,0.45)' });
+    ctx.restore();
+  }
+  ctx.restore();
+  if (n > 1) {
+    const activo = Math.min(n - 1, Math.round(k + desliza));
+    for (let d = 0; d < n; d++) {
+      ctx.fillStyle = d === activo ? '#3b82f6' : (claro ? '#cbd5e1' : 'rgba(255,255,255,0.35)');
+      const w = d === activo ? 44 : 16;
+      const total = n * 16 + 28 + (n - 1) * 14;
+      const x0 = (W - total) / 2 + d * 30 + (d > activo ? 28 : 0);
+      contenidoRedesRedondeado(ctx, x0, y + lado + 30, w, 16, 8); ctx.fill();
+    }
+  }
+  contenidoRedesTexto(ctx, e.producto.nombre, 80, 1400, W - 160, { tam: 44, peso: 600, color: claro ? '#334155' : '#f4f4f5', maxLineas: 2 });
+  const precio = contenidoRedesSalida(contenidoRedesTramo(t, 0.3, 0.4));
+  ctx.globalAlpha = precio;
+  contenidoRedesTexto(ctx, (pr.desde ? 'Desde ' : '') + fmtCLP(pr.precio), 80, 1530, W - 160, { tam: 120, peso: 700, color: claro ? '#1d4ed8' : '#ffffff', maxLineas: 1, sombra: claro ? null : 'rgba(59,130,246,0.85)' });
+  ctx.globalAlpha = 1;
+}
+
+/* Un cuadro del reel en el milisegundo `ms` (lo usan la grabación y la vista previa) */
+function contenidoRedesCuadroReel(ctx, W, H, e, ms) {
+  const t = Math.min(1, ms / CONTENIDO_REDES_DURACION_REEL);
+  ctx.clearRect(0, 0, W, H);
+  const animar = { impacto: contenidoRedesCuadroImpacto, suave: contenidoRedesCuadroSuave, neon: contenidoRedesCuadroNeon, galeria: contenidoRedesCuadroGaleria }[e.animacion] || contenidoRedesCuadroClasico;
+  animar(ctx, W, H, e, t);
+}
+
+/* Vista previa animada en el modal: corre en bucle hasta que se cierra o se cambia algo */
+let contenidoRedesPreviaId = 0;
+function contenidoRedesReproducirPrevia(canvas, e) {
+  const id = ++contenidoRedesPreviaId;
+  canvas.width = 1080; canvas.height = 1920;
+  const ctx = canvas.getContext('2d');
+  const inicio = performance.now();
+  const paso = () => {
+    if (id !== contenidoRedesPreviaId || !document.body.contains(canvas)) return;
+    contenidoRedesCuadroReel(ctx, 1080, 1920, e, (performance.now() - inicio) % (CONTENIDO_REDES_DURACION_REEL + 1200));
+    requestAnimationFrame(paso);
+  };
+  requestAnimationFrame(paso);
 }
 
 /* Graba el reel en tiempo real (12 s) desde un canvas: MP4 donde el navegador lo permite (Chrome
    reciente), si no WebM. */
 async function contenidoRedesGrabarReel(e, alAvanzar) {
-  const W = 1080, H = 1920, DURACION = 12000;
+  const W = 1080, H = 1920, DURACION = CONTENIDO_REDES_DURACION_REEL;
   const canvas = document.createElement('canvas');
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext('2d');
@@ -610,40 +908,13 @@ async function contenidoRedesGrabarReel(e, alAvanzar) {
   const trozos = [];
   grabador.ondataavailable = (ev) => { if (ev.data.size) trozos.push(ev.data); };
   const listo = new Promise(ok => { grabador.onstop = ok; });
-  const cuadro = (ms) => {
-    const t = ms / DURACION;
-    if (t < 0.17) {
-      /* Escena 1: la frase sola, entrando */
-      const v = Math.min(1, t / 0.08);
-      const claro = e.estilo === 'minimalista';
-      if (claro) { ctx.fillStyle = '#f3f4f6'; ctx.fillRect(0, 0, W, H); } else contenidoRedesFondoOscuro(ctx, W, H, t);
-      contenidoRedesLogo(ctx, W / 2, 140, 54, !claro);
-      ctx.save();
-      ctx.globalAlpha = v * (t > 0.14 ? Math.max(0, 1 - (t - 0.14) / 0.03) : 1);
-      ctx.translate(W / 2, H / 2);
-      const s = 0.7 + 0.3 * (1 - Math.pow(1 - v, 3));
-      ctx.scale(s, s);
-      contenidoRedesTexto(ctx, String(e.gancho).toUpperCase(), -470, -160, 940, { tam: 130, peso: 700, color: claro ? '#0f172a' : '#ffffff', maxLineas: 3, interlineado: 1.0, sombra: claro ? null : 'rgba(59,130,246,0.9)' });
-      ctx.restore();
-    } else if (t < 0.74) {
-      /* Escena 2: la lámina del estilo, animada, pasando por las fotos */
-      const a = Math.min(1, (t - 0.17) / 0.4);
-      const iFoto = e.fotos.length ? (e.iFoto + Math.floor((t - 0.17) / 0.14)) % e.fotos.length : 0;
-      ctx.clearRect(0, 0, W, H);
-      contenidoRedesDibujarLamina(ctx, W, H, e, { a, iFoto });
-    } else {
-      /* Escena 3: cierre */
-      ctx.clearRect(0, 0, W, H);
-      contenidoRedesDibujarCierre(ctx, W, H, e, Math.min(1, (t - 0.74) / 0.2));
-    }
-  };
-  cuadro(0);
+  contenidoRedesCuadroReel(ctx, W, H, e, 0);
   grabador.start(250);
   const inicio = performance.now();
   await new Promise(ok => {
     const paso = () => {
       const ms = performance.now() - inicio;
-      cuadro(Math.min(ms, DURACION));
+      contenidoRedesCuadroReel(ctx, W, H, e, Math.min(ms, DURACION));
       alAvanzar?.(Math.min(1, ms / DURACION));
       if (ms < DURACION) requestAnimationFrame(paso); else ok();
     };
@@ -681,7 +952,7 @@ async function contenidoRedesDescargar() {
       dispararDescargaBlob(await contenidoRedesCanvasABlob(c), contenidoRedesNombreArchivo(e, '', 'png'));
     }
     /* Queda en el registro como "generado"; se marca publicado desde el panel */
-    const fila = await API.redes.registrar({ producto_id: e.producto.id, formato: e.formato, estilo: e.estilo, gancho: e.gancho });
+    const fila = await API.redes.registrar({ producto_id: e.producto.id, formato: e.formato, estilo: e.estilo, gancho: e.gancho, animacion: e.formato === 'reel' ? e.animacion : null });
     e.registro = [fila, ...(e.registro || [])];
     contenidoRedesPintarAviso();
     showToast('Listo: quedó en el registro de Redes. Márcalo como publicado cuando lo subas.', 'ok');
@@ -817,6 +1088,9 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('contenidoRedesEstilos')?.addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-estilo]'); if (b && !b.disabled) contenidoRedesCambiar('estilo', b.dataset.estilo);
+  });
+  document.getElementById('contenidoRedesAnimaciones')?.addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-animacion]'); if (b) contenidoRedesCambiar('animacion', b.dataset.animacion);
   });
   document.getElementById('contenidoRedesFotos')?.addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-foto]'); if (b) contenidoRedesCambiar('iFoto', Number(b.dataset.foto));

@@ -927,7 +927,7 @@ app.get('/api/redes/registro', (req, res) => {
 app.post('/api/redes/registro', (req, res) => {
   const p = productos.find(x => x.id === Number(req.body?.producto_id));
   if (!p) return res.status(404).json({ error: 'El producto no existe' });
-  const fila = { id: registroRedesMaqueta.length + 1, producto_id: p.id, producto_nombre: p.nombre, formato: req.body.formato, estilo: req.body.estilo, gancho: req.body.gancho || null, estado: 'generado', redes: [], publicado_en: null, creado_en: new Date().toISOString() };
+  const fila = { id: registroRedesMaqueta.length + 1, producto_id: p.id, producto_nombre: p.nombre, formato: req.body.formato, estilo: req.body.estilo, gancho: req.body.gancho || null, animacion: req.body.animacion || null, estado: 'generado', redes: [], publicado_en: null, creado_en: new Date().toISOString() };
   registroRedesMaqueta.unshift(fila);
   res.json(fila);
 });
