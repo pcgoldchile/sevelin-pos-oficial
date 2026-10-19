@@ -5787,6 +5787,16 @@
         <div class="pago-vino-botones" id="pagoVinoBotones" role="group" aria-label="De dónde vino el cliente"></div>
       </div>
 
+      <!-- v167: Puntos Sevelin (js/puntos-caja.js). Solo en el cobro de una venta nueva. -->
+      <div class="pago-puntos" id="pagoPuntosBox" hidden>
+        <span class="pago-maquina-titulo">⭐ Puntos Sevelin</span>
+        <div class="pago-puntos-buscar">
+          <input type="text" id="pagoPuntosBuscar" class="campo-pos" placeholder="Celular, RUT o código SEV del cliente" autocomplete="off">
+          <button type="button" class="btn btn-sm btn-outline" id="btnPagoPuntosBuscar">Buscar</button>
+        </div>
+        <div id="pagoPuntosResultado"></div>
+      </div>
+
       <!-- sql/79 (v108): por cuál máquina pasa la tarjeta. Cada una cobra una
            comisión distinta; se recuerda la última usada en este equipo. -->
       <div class="pago-maquina" id="pagoMaquinaBox">
@@ -8457,6 +8467,7 @@
   <script src="js/inactividad-global.js"></script>
   <script src="js/pinpad.js"></script>
   <script src="js/pago.js"></script>
+  <script src="js/puntos-caja.js"></script>   <!-- v167: Puntos Sevelin en el cobro (después de pago.js) -->
   <script src="js/alta-producto.js"></script>
   <script src="js/lotes.js"></script>
   <script src="js/redes-texto.js"></script>   <!-- v139 (sql/95): arma el texto de Facebook e Instagram desde la Descripción, sin IA -->

@@ -562,6 +562,16 @@ const API = {
   reponerTendencia: {
     obtener: () => apiRequest('/pos/reponer-tendencia', { silencioso: true })
   },
+  // v167: Puntos Sevelin en la caja (cuentas y movimientos viven en la base de la tienda)
+  puntos: {
+    buscar: (q) => apiRequest(`/puntos/buscar?q=${encodeURIComponent(q)}`),
+    crear: (datos) => apiRequest('/puntos/cuentas', { method: 'POST', body: datos }),
+    actualizar: (id, datos) => apiRequest(`/puntos/cuentas/${id}`, { method: 'PUT', body: datos }),
+    codigo: (cuentaId) => apiRequest('/puntos/codigo', { method: 'POST', body: { cuenta_id: cuentaId } }),
+    verificar: (cuentaId, codigo) => apiRequest('/puntos/verificar-codigo', { method: 'POST', body: { cuenta_id: cuentaId, codigo } }),
+    tope: (datos) => apiRequest('/puntos/tope', { method: 'POST', body: datos }),
+    resumen: () => apiRequest('/puntos/resumen'),
+  },
   // v164 (sql/104): Redes sociales — registro de lo promocionado y sugeridos
   redes: {
     registro: (dias = 30, productoId = null) => apiRequest(`/redes/registro?dias=${dias}${productoId ? `&producto_id=${productoId}` : ''}`),

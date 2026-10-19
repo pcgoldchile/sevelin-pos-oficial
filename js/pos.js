@@ -1595,6 +1595,8 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
     cliente: elPosCliente?.value.trim() || null,
     cliente_telefono: elPosClienteTelefono?.value.trim() || null,
     origen_cliente: elPosOrigenCliente?.value || null,
+    // v167: Puntos Sevelin — la cuenta que suma y, si canjea, el canje con su código
+    puntos: typeof puntosCajaParaVenta === 'function' ? puntosCajaParaVenta() : null,
     metodo_pago: metodoPago,
     // Descuento sobre el TOTAL de la venta (no por ítem) — el monto real
     // siempre lo vuelve a calcular el servidor, ver calcularDescuentoMonto().
@@ -1635,6 +1637,8 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
   }
 
   ultimaVentaRegistrada = venta;
+  if (venta?.puntos_ganados > 0) showToast(`⭐ Sumó ${Number(venta.puntos_ganados).toLocaleString('es-CL')} puntos${venta.puntos_bono ? ' (con el bono de bienvenida)' : ''}`, 'ok');
+  if (venta?.puntos_aviso) showToast(venta.puntos_aviso, 'err');
   document.dispatchEvent(new CustomEvent('pos:iva-cambio'));   // v128: el chip "IVA a favor" se recalcula
   claveCobroEnCurso = null;
   autorizacionMargen = null;

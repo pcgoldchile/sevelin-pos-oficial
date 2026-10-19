@@ -5281,3 +5281,15 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
 .contenido-redes-subido { border: 1px solid #3b82f6; border-radius: 12px; padding: 10px 14px; margin: 0 0 12px; background: rgba(59,130,246,.08); }
 .contenido-redes-subido p { margin: 0 0 8px; font-size: 14px; }
 .contenido-redes-subido-botones { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* ===== v167: Puntos Sevelin en el cobro (js/puntos-caja.js) ===== */
+.pago-puntos { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
+.pago-puntos-buscar { display: flex; gap: 6px; }
+.pago-puntos-buscar input { flex: 1; }
+.puntos-caja-cuenta { display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; }
+.puntos-caja-saldo { font-size: 13px; }
+.puntos-caja-canje { color: #16a34a; }
+.puntos-caja-nueva { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.puntos-caja-nueva p { margin: 0; }
+.puntos-caja-codigo, .puntos-caja-correo { display: flex; gap: 6px; }
+.puntos-caja-codigo input, .puntos-caja-correo input { flex: 1; }

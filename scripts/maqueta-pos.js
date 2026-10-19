@@ -918,6 +918,26 @@ app.get('/api/pos/reponer-tendencia', (_req, res) => res.json({ total: 2, produc
   { id: 104, nombre: 'Adaptador HDMI a VGA', stock: 2, vistas_7d: 22, vistas_30d: 90, vendidos_30d: 5, motivos: ['destacado', 'se vende'], ya_viene: false, stock_por_llegar: 0 },
   { id: 291, nombre: 'Adaptador USB WiFi 6 + Bluetooth 5.4 AX900', stock: 1, vistas_7d: 7, vistas_30d: 40, vendidos_30d: 4, motivos: ['se vende'], ya_viene: true, stock_por_llegar: 10 },
 ] }));
+// v167: Puntos Sevelin — una cuenta de ejemplo con saldo (celular 912345678), en memoria.
+const cuentasPuntosMaqueta = [{ id: 'c-1', codigo: 'SEV-ABCDE7', nombre: 'Carlos S.', telefono: '+569 ••• 5678', tel: '+56912345678', es_personal: false, tiene_correo: false, tiene_web: false, saldo: { disponible: 4500, pendiente: 600, por_vencer_30: 0 } }];
+app.get('/api/puntos/buscar', (req, res) => {
+  const q = String(req.query.q || '').replace(/\D/g, '').slice(-8);
+  const c = cuentasPuntosMaqueta.find(x => x.tel.endsWith(q) || x.codigo === String(req.query.q).toUpperCase());
+  res.json(c ? { cuenta: c } : { cuenta: null, telefono: q.length === 8 ? '+569' + q : null });
+});
+app.post('/api/puntos/cuentas', (req, res) => {
+  if (!req.body?.consentimiento) return res.status(400).json({ error: 'El cliente tiene que aceptar las bases y el uso de sus datos' });
+  const c = { id: 'c-' + (cuentasPuntosMaqueta.length + 1), codigo: 'SEV-NUEVO' + (cuentasPuntosMaqueta.length + 1), nombre: String(req.body.nombre || '').split(' ')[0], telefono: '+569 ••• ' + String(req.body.telefono).slice(-4), tel: '+569' + String(req.body.telefono).replace(/\D/g, '').slice(-8), es_personal: false, tiene_correo: !!req.body.correo, tiene_web: false, saldo: { disponible: 0, pendiente: 0, por_vencer_30: 0 } };
+  cuentasPuntosMaqueta.push(c);
+  res.status(201).json({ cuenta: c });
+});
+app.put('/api/puntos/cuentas/:id', (req, res) => { const c = cuentasPuntosMaqueta.find(x => x.id === req.params.id); if (c && req.body.correo) c.tiene_correo = true; res.json({ cuenta: c }); });
+app.post('/api/puntos/codigo', (req, res) => res.json({ whatsapp: 'https://wa.me/56912345678?text=' + encodeURIComponent('Tu código es 123456'), minutos: 10 }));
+app.post('/api/puntos/verificar-codigo', (req, res) => req.body?.codigo === '123456' ? res.json({ ok: true }) : res.status(400).json({ error: 'Código incorrecto' }));
+app.post('/api/puntos/tope', (req, res) => {
+  const total = (req.body.items || []).reduce((a, i) => a + Number(i.precio_unitario || i.precio || 0) * Number(i.cantidad || 1), 0);
+  res.json(total < 10000 ? { disponible: 4500, tope: 0, motivo: 'Se canjea en compras desde $10.000', total } : { disponible: 4500, tope: Math.min(4500, Math.floor(total * 0.1)), motivo: null, total });
+});
 // v164: Redes sociales — registro en memoria y sugeridos sacados de los productos de la maqueta.
 const registroRedesMaqueta = [];
 app.get('/api/redes/registro', (req, res) => {

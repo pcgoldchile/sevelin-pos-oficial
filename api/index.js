@@ -7561,6 +7561,7 @@ app.post('/api/ventas', auth(), async (req, res) => {
   const clave = claveIdempotenciaValida(req.body?.clave_idempotencia);
   let stockDescontadoConClave = false;
   let ventaGuardada = false;
+  let puntosCuenta = null, canjePuntos = null;   // v167
 
   // De paso, devuelve el stock de cobros abandonados tras un corte (sql/50).
   // No bloquea ni falla la venta si no resulta.
@@ -7601,7 +7602,37 @@ app.post('/api/ventas', auth(), async (req, res) => {
        si no es válido la venta se rechaza con la base intacta. Ni el
        descuento ni el redondeo dependen del costo, así que pueden calcularse
        antes del PEPS. */
-    const ajusteRedondeo = ajusteRedondeoValido(req.body?.ajuste_redondeo, descuentoMonto);
+    /* Puntos Sevelin (v167): la cuenta que suma y, si canjea, el canje (descuento extra con
+       los dos topes, validado con el código de su WhatsApp). Se reserva ANTES de guardar la
+       venta y se anula si la venta falla: nunca queda un descuento sin descontar puntos. */
+    puntosCuenta = null;
+    if (req.body?.puntos?.cuenta_id && !ventaExistente) {
+      const { data: c, error: errC } = await dbWeb.from('cuentas_puntos').select('*').eq('id', req.body.puntos.cuenta_id).maybeSingle();
+      if (errC) throw new Error(errC.message);
+      if (!c) return enviarError(res, 400, 'La cuenta de puntos no existe');
+      puntosCuenta = c;
+      const pedido = Math.floor(num(req.body.puntos.canjear));
+      if (pedido > 0) {
+        const totalSinCanje = items.reduce((a, i) => a + num(i.subtotal), 0) - descuentoMonto;
+        const saldo = calcularSaldoPuntos(await movimientosPuntos(c.id));
+        const { tope } = topeCanjeDe(await itemsConDatosParaPuntos(items), totalSinCanje);
+        if (totalSinCanje < PUNTOS.compraMinimaCanje) return enviarError(res, 400, `Los puntos se canjean en compras desde ${clpPuntos(PUNTOS.compraMinimaCanje)}`);
+        if (saldo.disponible < PUNTOS.minimoCanje) return enviarError(res, 400, 'No tiene puntos suficientes para canjear');
+        if (await canjeHoy(c.id)) return enviarError(res, 400, 'Esta cuenta ya canjeó hoy: un canje por día');
+        const monto = Math.min(pedido, saldo.disponible, tope);
+        if (monto <= 0) return enviarError(res, 400, 'En esta compra no se pueden canjear puntos');
+        const cod = await revisarCodigoCanje(c.id, req.body.puntos.codigo, true);
+        if (cod.error) return enviarError(res, 400, `Puntos: ${cod.error}`);
+        const { data: mov, error: errM } = await dbWeb.from('movimientos_puntos').insert([{
+          cuenta_id: c.id, tipo: 'canje', puntos: -monto, anulado: false, disponible_desde: new Date().toISOString(), origen: 'pos', venta_ref: `pendiente:${clave || crypto.randomUUID()}`,
+          detalle: { tope, pedido }, creado_por: req.usuario?.nombre || req.usuario?.rol || 'pos',
+        }]).select('id').single();
+        if (errM) throw new Error(errM.message);
+        canjePuntos = { monto, movId: mov.id };
+      }
+    }
+    const descuentoConCanje = descuentoMonto + (canjePuntos?.monto || 0);
+    const ajusteRedondeo = ajusteRedondeoValido(req.body?.ajuste_redondeo, descuentoConCanje);
 
     /* BIZ-02: se comprueba el stock Y se descuenta en una sola llamada
        atómica ANTES de escribir la venta. Si algo no alcanza, la función
@@ -7620,7 +7651,7 @@ app.post('/api/ventas', auth(), async (req, res) => {
        está completando un cobro cortado), no se vuelve a consumir. */
     const { consumos } = ventaExistente ? { consumos: [] } : await aplicarCostosFifo(items);
 
-    const totales = totalizar(items, descuentoMonto, ajusteRedondeo);
+    const totales = totalizar(items, descuentoConCanje, ajusteRedondeo);
     // sql/90: cuánto de cada servicio va al pozo del papá (con el descuento ya repartido)
     aplicarPozo(items, totales, tipoDteValido(req.body?.tipo_dte));
 
@@ -7673,8 +7704,11 @@ app.post('/api/ventas', auth(), async (req, res) => {
       // Sin descuento real, se guarda tipo=NULL/valor=0 aunque el cajero
       // haya dejado algo tipeado a medias (ej. "%" sin número) — mismo
       // criterio que descuentoMonto === 0 arriba.
-      descuento_tipo: totales.descuento_monto > 0 ? descuentoTipo : null,
-      descuento_valor: totales.descuento_monto > 0 ? descuentoValor : 0,
+      descuento_tipo: totales.descuento_monto > 0 ? (descuentoTipo || 'MONTO') : null,
+      descuento_valor: totales.descuento_monto > 0 ? (descuentoTipo ? descuentoValor : totales.descuento_monto) : 0,
+      // Puntos Sevelin (sql/106): el canje ya va dentro de descuento_monto
+      puntos_cuenta_id: puntosCuenta?.id || null,
+      puntos_canjeados: canjePuntos?.monto || 0,
       comision_pos: comisionPos,
       maquina_tarjeta: maquinaTarjeta,
       pago_mixto: !!pagosMixtos,
@@ -7713,6 +7747,7 @@ app.post('/api/ventas', auth(), async (req, res) => {
       venta = data;
     }
     ventaGuardada = true;
+    if (canjePuntos) await dbWeb.from('movimientos_puntos').update({ venta_ref: String(venta.id) }).eq('id', canjePuntos.movId);
 
     /* _fifo y _stockAtomico son marcas internas de este proceso: no
        existen como columna, así que se quitan antes de insertar o
@@ -7754,7 +7789,10 @@ app.post('/api/ventas', auth(), async (req, res) => {
     // Costo del despacho (sql/50). Nunca anula la venta: si falla, avisa.
     const envio = await registrarEnvioDeVenta(venta, req.body);
 
-    res.status(201).json({ ...venta, items, envio_aviso: envio.aviso || null });
+    // Puntos Sevelin (v167): lo que suma esta venta. Nunca anula la venta.
+    const puntos = puntosCuenta ? await acreditarPuntosVentaPos(venta, items, puntosCuenta) : { puntos: 0 };
+
+    res.status(201).json({ ...venta, items, envio_aviso: envio.aviso || null, puntos_ganados: puntos.puntos, puntos_bono: puntos.bono || 0, puntos_aviso: puntos.aviso || null });
   } catch (err) {
     const mensaje = err.message || 'No se pudo registrar la venta';
 
@@ -7765,6 +7803,11 @@ app.post('/api/ventas', auth(), async (req, res) => {
       return enviarError(res, 503, clave
         ? 'Supabase no respondió a tiempo. Vuelve a apretar "Registrar venta": no se va a cobrar ni descontar stock dos veces.'
         : 'Supabase no respondió a tiempo. Revisa el historial antes de volver a cobrar.');
+    }
+
+    // v167: si la venta no quedó, el canje reservado se anula (el cliente no pierde sus puntos)
+    if (canjePuntos && !ventaGuardada) {
+      await dbWeb.from('movimientos_puntos').update({ anulado: true }).eq('id', canjePuntos.movId).then(() => {}, () => {});
     }
 
     /* Error definitivo (sin stock, dato inválido…): si se alcanzó a
@@ -8230,7 +8273,7 @@ app.delete('/api/ventas', auth(true), exigirPinAdmin, async (req, res) => {
    declarado, y la diferencia reaparece en el F29 sin rastro. */
 app.delete('/api/ventas/:id', auth(true), async (req, res) => {
   const { data: venta } = await db.from('ventas')
-    .select('id, fecha, tipo_dte, estado').eq('id', req.params.id).maybeSingle();
+    .select('id, fecha, tipo_dte, estado, total, puntos_cuenta_id, puntos_ganados').eq('id', req.params.id).maybeSingle();
   if (!venta) return enviarError(res, 404, 'Venta no encontrada');
 
   const conDocumento = venta.tipo_dte && String(venta.tipo_dte).toUpperCase() !== 'SIN DTE';
@@ -8247,6 +8290,7 @@ app.delete('/api/ventas/:id', auth(true), async (req, res) => {
 
   try {
     await revertirEfectosDeVentas([Number(req.params.id)]);
+    await revertirPuntosDeVenta(venta, { total: true });   // v167
   } catch (err) {
     return enviarError(res, 500, `${err.message}. La venta no se borró: intenta de nuevo.`);
   }
@@ -8604,6 +8648,8 @@ app.post('/api/ventas/:id/devolucion', auth(), async (req, res) => {
     }
     const { error: errVta } = await db.from('ventas').update(cambios).eq('id', ventaId);
     if (errVta) throw new Error(errVta.message);
+    // v167: los puntos de esa venta se revierten (total: todo; parcial: en proporción)
+    await revertirPuntosDeVenta(venta, { total: tipo === 'TOTAL', montoDevuelto: montoTotal });
 
     // ---- 4) El cajón, si salió efectivo ----
     let movimientoCaja = null, avisoCaja = null;
@@ -16668,6 +16714,348 @@ app.get('/api/pos/reponer-tendencia', auth(true), async (req, res) => {
   } catch (e) {
     return enviarErrorBD(res, e, 'GET /api/pos/reponer-tendencia');
   }
+});
+
+/* ============================================================
+   PUNTOS SEVELIN (v167 — sql/106 aquí, supabase/47 en la tienda)
+   ------------------------------------------------------------
+   Dueño, 19-10-2026: "construir los puntos primero… que nunca salgamos perdiendo".
+   Diseño y auditoría: docs/fidelizacion/DISENO-PUNTOS-SEVELIN.md. Las cuentas y el libro
+   de movimientos están en la base de la tienda (dbWeb); estas reglas son una copia de
+   sevelin-tienda/src/lib/puntos-reglas.ts: si cambia una, se cambia en las dos.
+   ============================================================ */
+const PUNTOS = {
+  diasPendiente: 10, mesesVigencia: 12, bienvenida: 1000, compraMinimaBienvenida: 10000,
+  minimoCanje: 2000, compraMinimaCanje: 10000, topeCanjeTotal: 0.10, topeCanjeUtilidad: 0.50,
+  topePorCompra: 20000, topePorMes: 50000, canjesPorDia: 1, minutosCodigo: 10, intentosCodigo: 5,
+};
+const LETRAS_CODIGO_SEV = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const clpPuntos = n => '$' + Math.round(Number(n)).toLocaleString('es-CL');
+/* Medianoche de hoy en Chile (con horario de verano o sin él) */
+const inicioHoyChilePuntos = () => marcaDeTiempoChile(fechaHoyChile(), '00:00');
+
+function tasaPuntosLinea(it) {
+  if (it.precio_tipo === 'MAYORISTA') return 0;
+  if (it.es_servicio) return 0.02;
+  const costo = num(it.costo_unitario), precio = num(it.precio_unitario);
+  if (!(costo > 0) || !(precio > 0)) return 0.0025;
+  const margen = (precio - costo) / precio;
+  return margen >= 0.2 ? 0.01 : margen >= 0.1 ? 0.005 : 0.0025;
+}
+
+function normalizarTelefonoPuntos(valor) {
+  const d = String(valor || '').replace(/\D/g, '');
+  const ocho = d.length === 11 && d.startsWith('569') ? d.slice(3) : d.length === 9 && d.startsWith('9') ? d.slice(1) : null;
+  return ocho && /^\d{8}$/.test(ocho) ? `+569${ocho}` : null;
+}
+function digitoSev(cuerpo) {
+  return [...cuerpo].reduce((s, c, i) => s + (LETRAS_CODIGO_SEV.indexOf(c) + 1) * (i + 2), 0) % 10;
+}
+function nuevoCodigoSev() {
+  const cuerpo = Array.from({ length: 5 }, () => LETRAS_CODIGO_SEV[crypto.randomInt(LETRAS_CODIGO_SEV.length)]).join('');
+  return `SEV-${cuerpo}${digitoSev(cuerpo)}`;
+}
+function codigoSevValido(c) {
+  const m = /^SEV-([A-HJ-NP-Z2-9]{5})(\d)$/.exec(String(c || '').toUpperCase().replace(/\s/g, ''));
+  return m && digitoSev(m[1]) === Number(m[2]) ? `SEV-${m[1]}${m[2]}` : null;
+}
+function rutPuntosValido(valor) {
+  const limpio = String(valor || '').replace(/[^0-9kK]/g, '').toUpperCase();
+  if (limpio.length < 8 || limpio.length > 9) return null;
+  const cuerpo = limpio.slice(0, -1), dv = limpio.slice(-1);
+  let suma = 0, factor = 2;
+  for (let i = cuerpo.length - 1; i >= 0; i--) { suma += Number(cuerpo[i]) * factor; factor = factor === 7 ? 2 : factor + 1; }
+  const resto = 11 - (suma % 11);
+  const esperado = resto === 11 ? '0' : resto === 10 ? 'K' : String(resto);
+  return dv === esperado ? `${Number(cuerpo)}-${dv}` : null;
+}
+const hashCodigoCanje = (cuentaId, codigo) => crypto.createHash('sha256').update(`${cuentaId}:${codigo}`).digest('hex');
+
+/* Saldo con vencimiento por orden de llegada (copia de calcularSaldo de la tienda) */
+function calcularSaldoPuntos(movs, ahora = Date.now()) {
+  const validos = (movs || []).filter(m => !m.anulado).sort((a, b) => Date.parse(a.creado_en) - Date.parse(b.creado_en));
+  const lotes = validos.filter(m => m.puntos > 0).map(m => ({ resto: m.puntos, desde: Date.parse(m.disponible_desde), vence: m.vence_en ? Date.parse(m.vence_en) : Infinity }));
+  let gasto = validos.filter(m => m.puntos < 0).reduce((t, m) => t - m.puntos, 0);
+  for (const l of lotes) { if (gasto <= 0) break; const usa = Math.min(l.resto, gasto); l.resto -= usa; gasto -= usa; }
+  let disponible = 0, pendiente = 0, porVencer30 = 0;
+  for (const l of lotes) {
+    if (l.resto <= 0 || l.vence <= ahora) continue;
+    if (l.desde > ahora) { pendiente += l.resto; continue; }
+    disponible += l.resto;
+    if (l.vence - ahora <= 30 * 86400000) porVencer30 += l.resto;
+  }
+  return { disponible, pendiente, por_vencer_30: porVencer30 };
+}
+
+/* Lo que ve el cajero: nombre y teléfono a medias, para confirmar que es la persona */
+function cuentaPuntosParaCaja(c, saldo) {
+  const partes = String(c.nombre || '').trim().split(/\s+/);
+  return {
+    id: c.id, codigo: c.codigo, es_personal: !!c.es_personal,
+    nombre: partes[0] + (partes[1] ? ` ${partes[1][0]}.` : ''),
+    telefono: `+569 ••• ${String(c.telefono).slice(-4)}`,
+    tiene_correo: !!c.correo, tiene_web: !!c.user_id,
+    saldo,
+  };
+}
+
+async function movimientosPuntos(cuentaId) {
+  const { data, error } = await dbWeb.from('movimientos_puntos').select('*').eq('cuenta_id', cuentaId).limit(2000);
+  if (error) throw error;
+  return data || [];
+}
+
+/* Las líneas del carrito no siempre traen el costo ni la marca de servicio: se completan con
+   la ficha del producto, para que la tasa y el tope usen el margen real. */
+async function itemsConDatosParaPuntos(items) {
+  const ids = [...new Set(items.map(i => Number(i.producto_id)).filter(Boolean))];
+  if (!ids.length) return items;
+  const { data } = await db.from('productos').select('id, costo_unitario, es_servicio, categoria_web').in('id', ids);
+  const porId = new Map((data || []).map(p => [Number(p.id), p]));
+  return items.map(i => {
+    const p = porId.get(Number(i.producto_id));
+    if (!p) return i;
+    return { ...i, costo_unitario: num(i.costo_unitario) > 0 ? i.costo_unitario : num(p.costo_unitario),
+      es_servicio: !!i.es_servicio || !!p.es_servicio || p.categoria_web === 'Servicios Técnicos' };
+  });
+}
+
+/* Tope de canje de una venta: 10% del total y 50% de su utilidad (con los costos reales) */
+function topeCanjeDe(items, totalSinCanje) {
+  const subtotal = items.reduce((a, i) => a + num(i.subtotal), 0);
+  const costo = items.reduce((a, i) => a + num(i.costo_unitario) * num(i.cantidad), 0);
+  const sinCosto = items.some(i => !i.es_servicio && !(num(i.costo_unitario) > 0));
+  const utilidad = Math.max(0, totalSinCanje - costo);
+  const porTotal = Math.floor(totalSinCanje * PUNTOS.topeCanjeTotal);
+  const porUtilidad = Math.floor(utilidad * PUNTOS.topeCanjeUtilidad);
+  /* Sin costo cargado no se sabe la utilidad: el canje no pasa del 5% (abuso #7) */
+  const tope = sinCosto ? Math.min(porTotal, Math.floor(totalSinCanje * 0.05)) : Math.min(porTotal, porUtilidad);
+  return { tope: Math.max(0, tope), subtotal, utilidad, sin_costo: sinCosto };
+}
+
+async function buscarCuentaPuntos(q) {
+  const texto = String(q || '').trim();
+  const codigo = codigoSevValido(texto);
+  const telefono = normalizarTelefonoPuntos(texto);
+  const rut = !codigo && !telefono ? rutPuntosValido(texto) : null;
+  if (!codigo && !telefono && !rut) return { error: 'Escribe un celular (9 1234 5678), un RUT o un código SEV-…' };
+  let consulta = dbWeb.from('cuentas_puntos').select('*');
+  consulta = codigo ? consulta.eq('codigo', codigo) : telefono ? consulta.eq('telefono', telefono) : consulta.eq('rut', rut);
+  const { data, error } = await consulta.maybeSingle();
+  if (error) throw error;
+  return { cuenta: data || null, telefono, rut };
+}
+
+app.get('/api/puntos/buscar', auth(), async (req, res) => {
+  try {
+    const r = await buscarCuentaPuntos(req.query.q);
+    if (r.error) return enviarError(res, 400, r.error);
+    if (!r.cuenta) return res.json({ cuenta: null, telefono: r.telefono, rut: r.rut });
+    res.json({ cuenta: cuentaPuntosParaCaja(r.cuenta, calcularSaldoPuntos(await movimientosPuntos(r.cuenta.id))) });
+  } catch (e) { return enviarErrorBD(res, e, 'GET /api/puntos/buscar'); }
+});
+
+/* Inscribir a un cliente en la caja: celular + nombre + "el cliente aceptó" (Ley 21.719) */
+app.post('/api/puntos/cuentas', auth(), async (req, res) => {
+  try {
+    const b = req.body || {};
+    const telefono = normalizarTelefonoPuntos(b.telefono);
+    if (!telefono) return enviarError(res, 400, 'El celular no es válido (ej: 9 1234 5678)');
+    const nombre = String(b.nombre || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    if (nombre.length < 2) return enviarError(res, 400, 'Falta el nombre del cliente');
+    if (b.consentimiento !== true) return enviarError(res, 400, 'El cliente tiene que aceptar las bases y el uso de sus datos');
+    const rut = b.rut ? rutPuntosValido(b.rut) : null;
+    if (b.rut && !rut) return enviarError(res, 400, 'Revisa el RUT: el dígito verificador no calza');
+    const correo = String(b.correo || '').trim().toLowerCase().slice(0, 120) || null;
+    if (correo && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) return enviarError(res, 400, 'El correo no es válido');
+    const { data: ya } = await dbWeb.from('cuentas_puntos').select('id').eq('telefono', telefono).maybeSingle();
+    if (ya) return enviarError(res, 409, 'Ese celular ya tiene cuenta de puntos: búscalo');
+    for (let intento = 0; intento < 5; intento++) {
+      const { data, error } = await dbWeb.from('cuentas_puntos').insert([{
+        codigo: nuevoCodigoSev(), telefono, nombre, rut, correo, consentimiento: true, es_personal: false, bono_bienvenida: false,
+        consentimiento_en: new Date().toISOString(), creado_por: req.usuario?.nombre || req.usuario?.rol || 'pos',
+      }]).select().single();
+      if (!error) return res.status(201).json({ cuenta: cuentaPuntosParaCaja(data, { disponible: 0, pendiente: 0, por_vencer_30: 0 }) });
+      if (/rut/.test(error.message)) return enviarError(res, 409, 'Ese RUT ya tiene cuenta de puntos: búscalo');
+      if (!/codigo/.test(error.message)) throw error;
+    }
+    throw new Error('No se pudo crear el código de la cuenta');
+  } catch (e) { return enviarErrorBD(res, e, 'POST /api/puntos/cuentas'); }
+});
+
+/* Agregar correo o RUT (con el correo, la cuenta web del cliente se une sola); marcar personal: solo admin */
+app.put('/api/puntos/cuentas/:id', auth(), async (req, res) => {
+  try {
+    const cambios = {};
+    if (req.body?.correo !== undefined) {
+      const correo = String(req.body.correo || '').trim().toLowerCase().slice(0, 120) || null;
+      if (correo && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) return enviarError(res, 400, 'El correo no es válido');
+      cambios.correo = correo;
+    }
+    if (req.body?.rut !== undefined) {
+      const rut = req.body.rut ? rutPuntosValido(req.body.rut) : null;
+      if (req.body.rut && !rut) return enviarError(res, 400, 'Revisa el RUT');
+      cambios.rut = rut;
+    }
+    if (req.body?.es_personal !== undefined) {
+      if (req.usuario.rol !== 'admin') return enviarError(res, 403, 'Solo el administrador marca cuentas del personal');
+      cambios.es_personal = req.body.es_personal === true;
+    }
+    if (!Object.keys(cambios).length) return enviarError(res, 400, 'Nada que cambiar');
+    const { data, error } = await dbWeb.from('cuentas_puntos').update(cambios).eq('id', req.params.id).select().maybeSingle();
+    if (error) return enviarError(res, /duplicate|23505/.test(error.message) ? 409 : 500, /duplicate|23505/.test(error.message) ? 'Ese RUT ya está en otra cuenta' : error.message);
+    if (!data) return enviarError(res, 404, 'No existe esa cuenta');
+    res.json({ cuenta: cuentaPuntosParaCaja(data, calcularSaldoPuntos(await movimientosPuntos(data.id))) });
+  } catch (e) { return enviarErrorBD(res, e, 'PUT /api/puntos/cuentas/:id'); }
+});
+
+/* Código de canje: 6 números, 10 minutos. La caja lo manda al WhatsApp del celular DE LA CUENTA */
+app.post('/api/puntos/codigo', auth(), async (req, res) => {
+  try {
+    const { data: c, error } = await dbWeb.from('cuentas_puntos').select('*').eq('id', req.body?.cuenta_id).maybeSingle();
+    if (error) throw error;
+    if (!c) return enviarError(res, 404, 'No existe esa cuenta');
+    const codigo = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+    const { error: e2 } = await dbWeb.from('codigos_canje').insert([{
+      cuenta_id: c.id, codigo_hash: hashCodigoCanje(c.id, codigo), intentos: 0,
+      expira_en: new Date(Date.now() + PUNTOS.minutosCodigo * 60000).toISOString(), creado_por: req.usuario?.nombre || req.usuario?.rol || 'pos',
+    }]);
+    if (e2) throw e2;
+    const mensaje = `Hola ${String(c.nombre).split(' ')[0]}, tu código para usar tus Puntos Sevelin es ${codigo}. Vale ${PUNTOS.minutosCodigo} minutos. Si no estás comprando en Sevelin, ignora este mensaje.`;
+    res.json({ whatsapp: `https://wa.me/${c.telefono.replace('+', '')}?text=${encodeURIComponent(mensaje)}`, minutos: PUNTOS.minutosCodigo });
+  } catch (e) { return enviarErrorBD(res, e, 'POST /api/puntos/codigo'); }
+});
+
+/* Revisa el código sin gastarlo (cada error suma un intento; al quinto se bloquea) */
+async function revisarCodigoCanje(cuentaId, codigo, gastar) {
+  const limpio = String(codigo || '').replace(/\D/g, '');
+  if (limpio.length !== 6) return { error: 'El código tiene 6 números' };
+  const { data: filas, error } = await dbWeb.from('codigos_canje').select('*').eq('cuenta_id', cuentaId)
+    .is('usado_en', null).gt('expira_en', new Date().toISOString()).order('creado_en', { ascending: false }).limit(3);
+  if (error) throw error;
+  const vigente = (filas || [])[0];
+  if (!vigente) return { error: 'No hay un código vigente: manda uno nuevo' };
+  if (vigente.intentos >= PUNTOS.intentosCodigo) return { error: 'Demasiados intentos: manda un código nuevo' };
+  const fila = (filas || []).find(f => f.codigo_hash === hashCodigoCanje(cuentaId, limpio) && f.intentos < PUNTOS.intentosCodigo);
+  if (!fila) {
+    await dbWeb.from('codigos_canje').update({ intentos: vigente.intentos + 1 }).eq('id', vigente.id);
+    return { error: 'Código incorrecto' };
+  }
+  if (gastar) {
+    const { data: gastado } = await dbWeb.from('codigos_canje').update({ usado_en: new Date().toISOString() }).eq('id', fila.id).is('usado_en', null).select('id');
+    if (!gastado?.length) return { error: 'Ese código ya se usó' };
+  }
+  return { ok: true };
+}
+
+app.post('/api/puntos/verificar-codigo', auth(), async (req, res) => {
+  try {
+    const r = await revisarCodigoCanje(req.body?.cuenta_id, req.body?.codigo, false);
+    if (r.error) return enviarError(res, 400, r.error);
+    res.json({ ok: true });
+  } catch (e) { return enviarErrorBD(res, e, 'POST /api/puntos/verificar-codigo'); }
+});
+
+/* Cuánto puede canjear en este carrito: lo menor entre su saldo y los dos topes */
+app.post('/api/puntos/tope', auth(), async (req, res) => {
+  try {
+    const items = await itemsConDatosParaPuntos(await normalizarItems(req.body?.items, req.usuario.rol));
+    const descuentoTipo = ['MONTO', 'PORCENTAJE'].includes(req.body?.descuento_tipo) ? req.body.descuento_tipo : null;
+    const descuento = descuentoTipo ? calcularDescuentoMonto(items, descuentoTipo, Math.max(0, num(req.body?.descuento_valor))) : 0;
+    const total = items.reduce((a, i) => a + num(i.subtotal), 0) - descuento;
+    const saldo = calcularSaldoPuntos(await movimientosPuntos(req.body?.cuenta_id));
+    const t = topeCanjeDe(items, total);
+    let motivo = null;
+    if (total < PUNTOS.compraMinimaCanje) motivo = `Se canjea en compras desde ${clpPuntos(PUNTOS.compraMinimaCanje)}`;
+    else if (saldo.disponible < PUNTOS.minimoCanje) motivo = `Se canjea desde ${PUNTOS.minimoCanje.toLocaleString('es-CL')} puntos disponibles`;
+    else if (await canjeHoy(req.body?.cuenta_id)) motivo = 'Ya canjeó hoy: un canje por día';
+    res.json({ disponible: saldo.disponible, tope: motivo ? 0 : Math.min(saldo.disponible, t.tope), motivo, total });
+  } catch (e) { return enviarErrorBD(res, e, 'POST /api/puntos/tope'); }
+});
+
+async function canjeHoy(cuentaId) {
+  const inicio = new Date(inicioHoyChilePuntos()).toISOString();
+  const { data } = await dbWeb.from('movimientos_puntos').select('id').eq('cuenta_id', cuentaId).eq('tipo', 'canje').eq('anulado', false).gte('creado_en', inicio).limit(1);
+  return !!(data || []).length;
+}
+
+/* Lo que suma una venta del POS (llamado después de guardar). Nunca lanza: devuelve un aviso. */
+async function acreditarPuntosVentaPos(venta, items, cuenta) {
+  try {
+    if (!cuenta || cuenta.es_personal || venta.estado !== 'PAGADA') return { puntos: 0 };
+    items = await itemsConDatosParaPuntos(items);
+    const subtotal = items.reduce((a, i) => a + num(i.subtotal), 0);
+    const factor = subtotal > 0 ? Math.min(1, num(venta.total) / subtotal) : 0;
+    let puntos = Math.floor(items.reduce((a, i) => a + num(i.subtotal) * tasaPuntosLinea(i), 0) * factor);
+    const desdeMes = new Date(Date.now() - 30 * 86400000).toISOString();
+    const { data: delMes } = await dbWeb.from('movimientos_puntos').select('puntos').eq('cuenta_id', cuenta.id).eq('tipo', 'compra').eq('anulado', false).gte('creado_en', desdeMes);
+    const ganadoMes = (delMes || []).reduce((a, m) => a + num(m.puntos), 0);
+    puntos = Math.max(0, Math.min(puntos, PUNTOS.topePorCompra, PUNTOS.topePorMes - ganadoMes));
+    const ahora = Date.now();
+    const desde = new Date(ahora + PUNTOS.diasPendiente * 86400000).toISOString();
+    const vence = new Date(ahora + PUNTOS.mesesVigencia * 30.44 * 86400000).toISOString();
+    const quien = 'pos';
+    if (puntos > 0) {
+      const { error } = await dbWeb.from('movimientos_puntos').insert([{ cuenta_id: cuenta.id, tipo: 'compra', puntos, anulado: false, origen: 'pos', venta_ref: String(venta.id), disponible_desde: desde, vence_en: vence, detalle: { total: num(venta.total) }, creado_por: quien }]);
+      if (error && !/duplicate|23505/.test(error.message)) throw error;
+    }
+    let bono = 0;
+    if (!cuenta.bono_bienvenida && num(venta.total) >= PUNTOS.compraMinimaBienvenida) {
+      const { data: marcada } = await dbWeb.from('cuentas_puntos').update({ bono_bienvenida: true }).eq('id', cuenta.id).eq('bono_bienvenida', false).select('id');
+      if (marcada?.length) {
+        await dbWeb.from('movimientos_puntos').insert([{ cuenta_id: cuenta.id, tipo: 'bienvenida', puntos: PUNTOS.bienvenida, anulado: false, origen: 'pos', venta_ref: String(venta.id), disponible_desde: desde, vence_en: vence, creado_por: quien }]);
+        bono = PUNTOS.bienvenida;
+      }
+    }
+    if (puntos + bono > 0) await db.from('ventas').update({ puntos_ganados: puntos + bono }).eq('id', venta.id);
+    return { puntos: puntos + bono, bono };
+  } catch (err) {
+    console.error('[PUNTOS] no se acreditaron los puntos de la venta', venta?.id, err.message);
+    return { puntos: 0, aviso: 'La venta quedó, pero los puntos no se sumaron. Avísale a Claude para revisarlo.' };
+  }
+}
+
+/* Devolución o borrado: se revierten los puntos de esa venta (abuso #4 de la auditoría).
+   Total → se anulan lo ganado y el canje (el cliente recupera lo que canjeó).
+   Parcial → se descuenta lo ganado en proporción a lo devuelto. */
+async function revertirPuntosDeVenta(venta, { total, montoDevuelto = 0 } = {}) {
+  try {
+    if (!venta?.puntos_cuenta_id) return;
+    if (total) {
+      await dbWeb.from('movimientos_puntos').update({ anulado: true }).eq('origen', 'pos').eq('venta_ref', String(venta.id)).in('tipo', ['compra', 'bienvenida', 'canje']);
+      return;
+    }
+    const proporcion = num(venta.total) > 0 ? Math.min(1, montoDevuelto / num(venta.total)) : 0;
+    const quitar = Math.floor(num(venta.puntos_ganados) * proporcion);
+    if (quitar > 0) await dbWeb.from('movimientos_puntos').insert([{ cuenta_id: venta.puntos_cuenta_id, tipo: 'reverso', puntos: -quitar, anulado: false, disponible_desde: new Date().toISOString(), origen: 'pos', venta_ref: String(venta.id), detalle: { devuelto: montoDevuelto }, creado_por: 'pos' }]);
+  } catch (err) {
+    console.error('[PUNTOS] no se revirtieron los puntos de la venta', venta?.id, err.message);
+  }
+}
+
+/* Resumen para el dueño: cuánto se debe en puntos y señales de abuso */
+app.get('/api/puntos/resumen', auth(true), async (req, res) => {
+  try {
+    const [{ data: cuentas, error: e1 }, { data: movs, error: e2 }] = await Promise.all([
+      dbWeb.from('cuentas_puntos').select('id, nombre, codigo, es_personal, creado_en'),
+      dbWeb.from('movimientos_puntos').select('cuenta_id, tipo, puntos, anulado, disponible_desde, vence_en, creado_en').limit(20000),
+    ]);
+    if (e1) throw e1; if (e2) throw e2;
+    const porCuenta = new Map();
+    (movs || []).forEach(m => { if (!porCuenta.has(m.cuenta_id)) porCuenta.set(m.cuenta_id, []); porCuenta.get(m.cuenta_id).push(m); });
+    let disponible = 0, pendiente = 0;
+    const inicioHoy = new Date(inicioHoyChilePuntos()).getTime();
+    const alertas = [];
+    for (const c of cuentas || []) {
+      const lista = porCuenta.get(c.id) || [];
+      const s = calcularSaldoPuntos(lista);
+      disponible += s.disponible; pendiente += s.pendiente;
+      const hoy = lista.filter(m => m.tipo === 'compra' && !m.anulado && Date.parse(m.creado_en) >= inicioHoy).length;
+      const mes = lista.filter(m => m.tipo === 'compra' && !m.anulado && Date.now() - Date.parse(m.creado_en) < 30 * 86400000).length;
+      if (hoy > 3 || mes > 10) alertas.push({ codigo: c.codigo, nombre: c.nombre, compras_hoy: hoy, compras_mes: mes });
+    }
+    res.json({ cuentas: (cuentas || []).length, deuda_disponible: disponible, deuda_pendiente: pendiente, alertas });
+  } catch (e) { return enviarErrorBD(res, e, 'GET /api/puntos/resumen'); }
 });
 
 /* REDES SOCIALES (v164, sql/104 — dueño 19-10-2026): "crear contenido a partir de un

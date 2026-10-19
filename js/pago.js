@@ -199,6 +199,8 @@ function abrirSelectorPago(opciones) {
   maquinaTarjetaElegida = leerMaquinaTarjeta();
   renderMaquinaTarjeta();
   renderOrigenPago();
+  // v167: Puntos Sevelin (js/puntos-caja.js), solo en una venta nueva
+  if (typeof puntosCajaPreparar === 'function') puntosCajaPreparar(configPago);
   renderMetodosPago();
   if (elModalPago) elModalPago.classList.add('show');
 
