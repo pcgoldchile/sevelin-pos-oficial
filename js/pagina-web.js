@@ -11,6 +11,7 @@ const elSubtabsPaginaWeb = document.getElementById('subtabsPaginaWeb');
 const elMasBuscadosDias = document.getElementById('masBuscadosDias');
 const elMasBuscadosTerminosBody = document.getElementById('masBuscadosTerminosBody');
 const elMasBuscadosProductosBody = document.getElementById('masBuscadosProductosBody');
+const elMasBuscadosSinResultadoBody = document.getElementById('masBuscadosSinResultadoBody');   // v160
 const elBtnRecargarMetricasWeb = document.getElementById('btnRecargarMetricasWeb');
 const elFiltrosRangoMetricas = document.querySelector('#view-pagina-web .filtros-rango [data-rango-metricas]')?.closest('.filtros-rango');
 const elBtnMetricasRangoPersonalizado = document.getElementById('btnMetricasRangoPersonalizado');
@@ -84,6 +85,7 @@ async function cargarMasBuscados() {
   const dias = elMasBuscadosDias?.value || 30;
   if (elMasBuscadosTerminosBody) elMasBuscadosTerminosBody.innerHTML = '<tr class="empty-row"><td colspan="2">Cargando…</td></tr>';
   if (elMasBuscadosProductosBody) elMasBuscadosProductosBody.innerHTML = '<tr class="empty-row"><td colspan="2">Cargando…</td></tr>';
+  if (elMasBuscadosSinResultadoBody) elMasBuscadosSinResultadoBody.innerHTML = '<tr class="empty-row"><td colspan="4">Cargando…</td></tr>';
 
   try {
     const datos = await API.masBuscados.obtener(dias);
@@ -93,6 +95,7 @@ async function cargarMasBuscados() {
     const mensaje = `<tr class="empty-row"><td colspan="2">${escHtml(err.message || 'No se pudo cargar')}</td></tr>`;
     if (elMasBuscadosTerminosBody) elMasBuscadosTerminosBody.innerHTML = mensaje;
     if (elMasBuscadosProductosBody) elMasBuscadosProductosBody.innerHTML = mensaje;
+    if (elMasBuscadosSinResultadoBody) elMasBuscadosSinResultadoBody.innerHTML = mensaje.replace('colspan="2"', 'colspan="4"');
   }
 }
 
@@ -114,6 +117,20 @@ function renderMasBuscados(datos) {
           <td class="num">${p.veces}</td>
         </tr>`).join('')
       : '<tr class="empty-row"><td colspan="2">Todavía no hay vistas registradas en este período.</td></tr>';
+  }
+
+  // v160: demanda no satisfecha
+  const sinResultado = datos?.buscados_sin_resultado || [];
+  if (elMasBuscadosSinResultadoBody) {
+    elMasBuscadosSinResultadoBody.innerHTML = sinResultado.length
+      ? sinResultado.map(t => `
+        <tr>
+          <td>${escHtml(t.termino)}</td>
+          <td>${t.parecidos ? 'Solo parecidos' : '<strong>Nada</strong>'}</td>
+          <td class="num">${t.veces}</td>
+          <td>${t.ultima ? escHtml(tsAChile(t.ultima)) : '—'}</td>
+        </tr>`).join('')
+      : '<tr class="empty-row"><td colspan="4">En este período todo lo que buscaron estaba en la tienda.</td></tr>';
   }
 }
 

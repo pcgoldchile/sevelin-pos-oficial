@@ -16527,7 +16527,30 @@ app.get('/api/pos/mas-buscados', auth(true), async (req, res) => {
     }));
   }
 
-  res.json({ dias, terminos_mas_buscados: terminosTop, productos_mas_vistos: productosTop });
+  /* v160 (tienda supabase/45): lo que se buscó y la tienda no tenía. La tienda
+     guarda cuántos productos encontró cada búsqueda; las de antes del 18-10-2026
+     se recalcularon una vez. Se agrupa sin tildes ni mayúsculas. */
+  let sinResultado = [];
+  const { data: busquedas, error: errB } = await dbWeb
+    .from('eventos_web')
+    .select('termino, resultados, parecidos, creado_en')
+    .eq('tipo', 'busqueda')
+    .eq('resultados', 0)
+    .gte('creado_en', desde)
+    .order('creado_en', { ascending: false })
+    .limit(2000);
+  if (errB) console.error('[mas-buscados] sin resultado:', errB.message);
+  const porTermino = new Map();
+  for (const b of busquedas || []) {
+    const clave = String(b.termino || '').trim().toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/\s+/g, ' ');
+    if (!clave) continue;
+    const actual = porTermino.get(clave);
+    if (actual) { actual.veces++; if (!b.parecidos) actual.parecidos = false; }
+    else porTermino.set(clave, { termino: String(b.termino).trim(), veces: 1, parecidos: !!b.parecidos, ultima: b.creado_en });
+  }
+  sinResultado = [...porTermino.values()].sort((a, b) => b.veces - a.veces || String(b.ultima).localeCompare(String(a.ultima))).slice(0, 40);
+
+  res.json({ dias, terminos_mas_buscados: terminosTop, productos_mas_vistos: productosTop, buscados_sin_resultado: sinResultado });
 });
 
 /* Panel "Página Web → Salud": integraciones OPCIONALES, con su estado

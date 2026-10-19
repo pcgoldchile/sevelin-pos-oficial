@@ -34,6 +34,9 @@ La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `do
   y "✨ Rellenar con IA". En la tienda, panel "Filtrar" con esas casillas más marca, precio y estado. Las casillas de
   144 productos quedaron escritas con el OK del dueño (`docs/filtros/propuesta-casillas-2026-10-18.md`), y la marca
   de #157 y #232 (`CHANGELOG-V159.md`).
+- **v160, 12 mejoras de sevelin.cl** (buscador que perdona, sugerencias, WhatsApp con el producto, ficha técnica,
+  comparar, `/que-me-sirve`, atajos, vistos…) y en el POS **"Lo que buscan y no tenemos"** en Página Web → Más buscados
+  (`CHANGELOG-V160.md`; tienda `supabase/45`).
 - También: el Word de la verificación de actividad del SII (MEF, sin firma) y el catálogo para la máquina Haulmer, los
   dos en `Downloads`.
 

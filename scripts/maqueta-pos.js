@@ -912,6 +912,18 @@ app.post('/api/productos/sugerir-caracteristicas', (req, res) => {
   }
   setTimeout(() => res.json({ caracteristicas, modelo: 'maqueta' }), 500);
 });
+// v160: Página Web → Más buscados, con "Lo que buscan y no tenemos" (datos de ejemplo del 18-10-2026).
+app.get('/api/pos/mas-buscados', (req, res) => res.json({
+  dias: Number(req.query.dias) || 30,
+  terminos_mas_buscados: [{ termino: 'nv3', veces: 8 }, { termino: 'pendrive', veces: 6 }, { termino: 'pasta', veces: 6 }],
+  productos_mas_vistos: [{ producto_id: 213, veces: 133, nombre: 'Monitor Oficina Caixun 24"', sku: null, publicado_web: true }],
+  buscados_sin_resultado: [
+    { termino: 'fuentes  de poder 12 /220 volts', veces: 4, parecidos: true, ultima: '2026-10-15T18:20:00Z' },
+    { termino: 'escurridor', veces: 3, parecidos: false, ultima: '2026-10-12T14:02:00Z' },
+    { termino: 'mando nintendo', veces: 1, parecidos: true, ultima: '2026-10-09T21:40:00Z' },
+    { termino: 'lentes vr', veces: 1, parecidos: false, ultima: '2026-10-03T16:11:00Z' },
+  ],
+}));
 // v119: la IA sugiere complementos (acá, dos productos fijos con stock, tras una espera corta).
 app.post('/api/productos/:id/sugerir-complementos', (req, res) => setTimeout(() => res.json({
   sugeridos: productos.filter(p => p.id !== Number(req.params.id) && p.stock > 0).slice(0, 2).map(p => ({ id: p.id, nombre: p.nombre, precio_unitario: p.precio_unitario })),
