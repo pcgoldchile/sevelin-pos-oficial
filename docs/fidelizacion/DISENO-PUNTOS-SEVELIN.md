@@ -60,7 +60,8 @@ inscritos, 60% canjea) son **$5.000 a $7.000 al mes**. Y ninguna venta puede que
   verificador validado, **único**), nombre, correo y fecha de nacimiento (opcional, para el cumpleaños).
 - **En la web es automático:** se crea al registrarse en sevelin.cl (la tabla `perfiles_clientes` ya existe, con
   consentimiento de privacidad y de marketing). Cada compra con la sesión iniciada suma sola.
-- **En el local:** el cliente dice **su teléfono o su RUT**. El POS muestra la cuenta con el nombre a medias
+- **En el local:** el cliente dice **su teléfono, su RUT o su código SEV-XXXXX** (dueño, 19-10-2026: "o que también
+  pueda decir su identificador único"). El POS muestra la cuenta con el nombre a medias
   ("Carlos S.", "+569 ••• 0828") para confirmar que es él, y los puntos van ahí. Si no tiene cuenta, la caja la crea en
   10 segundos (teléfono + nombre + "el cliente aceptó"), y le queda el SEV-XXXXX.
 
@@ -70,7 +71,7 @@ inscritos, 60% canjea) son **$5.000 a $7.000 al mes**. Y ninguna venta puede que
 
 | # | Abuso posible | Qué pasa si no se cierra | Cómo se cierra |
 |---|---|---|---|
-| 1 | **Robar puntos dictando el teléfono de otro** | Cualquiera que sepa tu número gasta tus puntos | **Sumar** pide solo teléfono/RUT (regalarle puntos a otro no le quita nada a nadie). **Canjear** pide además el **código de canje**: 6 números que el cliente ve en su cuenta de sevelin.cl, que duran 10 minutos. Sin cuenta web, se canjea con un **PIN de 4 números** que el cliente elige al inscribirse en la caja |
+| 1 | **Robar puntos dictando el teléfono de otro** | Cualquiera que sepa tu número gasta tus puntos | **Sumar** pide solo teléfono, RUT o código SEV (regalarle puntos a otro no le quita nada a nadie). **Canjear** pide además el **código de canje**: 6 números que duran 10 minutos y que el cliente recibe **por WhatsApp en ese momento** (pedido del dueño, 19-10-2026) o ve en su cuenta de sevelin.cl. Ver §3.1 |
 | 2 | **Un trabajador carga a su propia cuenta las ventas de clientes que no dieron su teléfono** | Es el abuso más probable en un negocio chico, y el más silencioso | (a) Las cuentas del personal se marcan y **no suman**. (b) Los puntos se asignan **solo al cobrar**, no después (el admin puede corregir dentro de 24 horas, y queda registrado quién). (c) **Alerta** al dueño si una cuenta suma en más de 3 ventas en un día o más de 10 en un mes |
 | 3 | **Cuentas falsas para el bono de bienvenida** | Mil cuentas = mil bonos | El bono se paga solo con la **primera compra de $10.000 o más**, y un teléfono/RUT = una cuenta |
 | 4 | **Comprar, canjear y devolver** | Se queda con el descuento | Al anular o devolver, se revierten los puntos ganados **y** se devuelven los canjeados descontados del reembolso. Los ganados quedan 10 días pendientes |
@@ -82,6 +83,15 @@ inscritos, 60% canjea) son **$5.000 a $7.000 al mes**. Y ninguna venta puede que
 | 10 | **Que el dueño no sepa cuánto debe en puntos** | Una deuda que no se ve | Finanzas muestra **"Puntos por canjear: $X"** como deuda, y cuántos vencen este mes |
 | 11 | **El canje y el IVA** | Boleta mal hecha | El canje es un **descuento** en la venta (baja la base del IVA), no un medio de pago. Se anota como descuento con motivo "Puntos" |
 | 12 | **Un error de la caja suma de más** | Puntos regalados | Todo movimiento queda en un registro (quién, cuándo, venta) que no se borra; el ajuste es otro movimiento, nunca una edición |
+
+### 3.1 El código de canje por WhatsApp (dueño, 19-10-2026)
+
+Dos formas de mandarlo; se parte por la primera:
+
+| | Cómo | Costo | Riesgo |
+|---|---|---|---|
+| **A. Un clic en la caja** (recomendada para partir) | Al pedir el canje, el POS genera el código y abre WhatsApp con el mensaje listo ("Tu código para usar tus puntos Sevelin es 482913, vale 10 minutos") al número de la cuenta; el cajero solo aprieta enviar. El cliente lo dicta de vuelta | $0 | Sale desde el WhatsApp de la tienda, igual que hoy. El código solo llega al teléfono de la cuenta, así que dictar el número de otro no sirve |
+| B. Automático | WhatsApp Cloud API de Meta con una plantilla de "autenticación" aprobada | Unos pocos pesos por mensaje (tarifa de Meta para Chile, a confirmar); requiere registrar el número en la API (hoy Meta permite usarlo a la vez con la app de WhatsApp Business) | Otro trámite con Meta y una llave más. Vale la pena solo si los canjes son muchos |
 
 ---
 
@@ -115,7 +125,7 @@ servicio con test.
 | | Propuesta |
 |---|---|
 | **Qué incluye** | **2 mantenimientos preventivos en 12 meses** (uno al comprar, otro a los 6 meses) + **10% de descuento en formateo** mientras dure + el recordatorio del segundo |
-| **Precio** | **$70.000** (dos sueltos son $80.000: ahorra $10.000) — **falta tu OK en el precio** |
+| **Precio** | **$70.000** (dos sueltos son $80.000: ahorra $10.000) — **aprobado por el dueño el 19-10-2026** |
 | **Margen** | 100% igual que el servicio suelto. Y si el cliente no viene al segundo, el servicio igual se le debe hasta el día 12 |
 | **Puntos** | Suma como servicio (2% = 1.400 puntos) |
 | **Cómo se lleva** | Un producto de servicio "Plan Equipo Sano" en el POS. Al venderlo, la cuenta del cliente queda con **1 mantenimiento a favor**, que vence a los 12 meses y que la caja descuenta al usarlo (como un abono). Finanzas lo muestra como servicio por entregar |
@@ -135,4 +145,5 @@ servicio con test.
 6. **Alertas y deuda** en el POS (trabajador que carga mucho a una cuenta, puntos por canjear en Finanzas).
 7. **Recordatorio de mantenimiento** y **Plan Equipo Sano**.
 
-Antes de empezar, del dueño: **OK al precio del plan ($70.000)**, y si los números de la tabla 1 le parecen bien.
+Del dueño: el precio del plan ($70.000) quedó aprobado el 19-10-2026 y pidió que Claude ajuste las reglas "según tú mejor
+creas… que nunca salgamos perdiendo"; las de la tabla 1 son esas. Falta su OK para empezar a construir.
