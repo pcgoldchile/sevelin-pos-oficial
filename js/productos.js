@@ -1021,6 +1021,7 @@ function renderProductosTabla(items, origen) {
         <div class="cell-actions">
           ${urlProductoWeb(p) ? `<a class="btn btn-icon btn-icon-view" href="${escHtml(urlProductoWeb(p))}" target="_blank" rel="noopener noreferrer" title="Ver este producto en sevelin.cl">${ICO_VER_WEB_PROD}</a>` : ''}
           ${esAdmin() && origen !== 'archivados' && typeof botonFacebookDeFila === 'function' ? botonFacebookDeFila(p) : ''}
+          ${esAdmin() && origen !== 'archivados' && typeof botonContenidoRedesDeFila === 'function' ? botonContenidoRedesDeFila(p) : ''}
           <button class="btn btn-icon btn-icon-view" data-etiqueta="${p.id}" title="Imprimir etiqueta de código de barras">${ICO_ETIQUETA_PROD}</button>
           <button class="btn btn-icon btn-icon-edit" data-editar="${p.id}" title="Editar producto">${ICO_EDITAR_PROD}</button>
           ${origen === 'archivados'

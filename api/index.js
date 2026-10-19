@@ -16670,6 +16670,109 @@ app.get('/api/pos/reponer-tendencia', auth(true), async (req, res) => {
   }
 });
 
+/* REDES SOCIALES (v164, sql/104 — dueño 19-10-2026): "crear contenido a partir de un
+   producto con un botón… y que haya un registro de qué se ha promocionado últimamente,
+   para saber qué tanto estoy repitiendo". Las piezas (historia, post, carrusel, reel) se
+   dibujan en el navegador (js/redes-contenido.js); aquí queda solo el registro y la lista
+   de sugeridos. Todo admin. */
+const REDES_FORMATOS = ['historia', 'post', 'carrusel', 'reel'];
+const REDES_ESTILOS = ['dinamico', 'minimalista', 'precio', 'beneficios', 'confianza'];
+const REDES_REDES = ['instagram', 'facebook'];
+/* Un producto se puede volver a mostrar recién a los 14 días sin que cuente como repetido. */
+const REDES_DIAS_REPETIDO = 14;
+
+app.get('/api/redes/registro', auth(true), async (req, res) => {
+  try {
+    const dias = Math.min(Math.max(parseInt(req.query.dias, 10) || 30, 1), 120);
+    let q = db.from('contenido_redes').select('*').gte('creado_en', new Date(Date.now() - dias * 86400000).toISOString())
+      .order('creado_en', { ascending: false }).limit(500);
+    const productoId = parseInt(req.query.producto_id, 10);
+    if (productoId > 0) q = q.eq('producto_id', productoId);
+    const { data, error } = await q;
+    if (error) throw error;
+    res.json({ dias, piezas: data || [] });
+  } catch (e) {
+    return enviarErrorBD(res, e, 'GET /api/redes/registro');
+  }
+});
+
+app.post('/api/redes/registro', auth(true), async (req, res) => {
+  try {
+    const b = req.body || {};
+    const productoId = parseInt(b.producto_id, 10);
+    if (!(productoId > 0)) return res.status(400).json({ error: 'Falta el producto' });
+    if (!REDES_FORMATOS.includes(b.formato)) return res.status(400).json({ error: 'Formato no válido' });
+    if (!REDES_ESTILOS.includes(b.estilo)) return res.status(400).json({ error: 'Estilo no válido' });
+    const { data: prod, error: e1 } = await db.from('productos').select('id, nombre').eq('id', productoId).maybeSingle();
+    if (e1) throw e1;
+    if (!prod) return res.status(404).json({ error: 'El producto no existe' });
+    const fila = {
+      producto_id: prod.id,
+      producto_nombre: prod.nombre,
+      formato: b.formato,
+      estilo: b.estilo,
+      gancho: b.gancho ? String(b.gancho).trim().slice(0, 120) : null,
+      creado_por: req.usuario?.nombre || req.usuario?.rol || null,
+    };
+    const { data, error } = await db.from('contenido_redes').insert(fila).select().single();
+    if (error) throw error;
+    res.json(data);
+  } catch (e) {
+    return enviarErrorBD(res, e, 'POST /api/redes/registro');
+  }
+});
+
+/* Marcar dónde y cuándo se publicó (o volver a "generado" con redes vacías). */
+app.put('/api/redes/registro/:id', auth(true), async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!(id > 0)) return res.status(400).json({ error: 'Id no válido' });
+    const redes = [...new Set((Array.isArray(req.body?.redes) ? req.body.redes : []).filter(r => REDES_REDES.includes(r)))];
+    const fecha = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.publicado_en || '')) ? req.body.publicado_en : fechaHoyChile();
+    const cambios = redes.length
+      ? { estado: 'publicado', redes, publicado_en: fecha }
+      : { estado: 'generado', redes: [], publicado_en: null };
+    if (req.body?.nota !== undefined) cambios.nota = req.body.nota ? String(req.body.nota).trim().slice(0, 300) : null;
+    const { data, error } = await db.from('contenido_redes').update(cambios).eq('id', id).select().maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'No existe esa pieza' });
+    res.json(data);
+  } catch (e) {
+    return enviarErrorBD(res, e, 'PUT /api/redes/registro/:id');
+  }
+});
+
+/* "Sugeridos para hoy": con stock y foto, que no se hayan mostrado en 14 días, primero
+   lo que está arriba en Destacados de sevelin.cl (puntaje del día) y los servicios. */
+app.get('/api/redes/sugeridos', auth(true), async (req, res) => {
+  try {
+    const desde = new Date(Date.now() - REDES_DIAS_REPETIDO * 86400000).toISOString();
+    const [prods, recientes, web] = await Promise.all([
+      db.from('productos').select('id, nombre, precio_unitario, stock, stock_ilimitado, es_servicio, imagen_urls, archivado, publicado_web, es_pedido_encargo, precio_a_consultar')
+        .eq('archivado', false).eq('publicado_web', true),
+      db.from('contenido_redes').select('producto_id, creado_en').gte('creado_en', desde),
+      /* El puntaje de Destacados es un extra: sin la base de la tienda, igual hay sugeridos */
+      dbWeb ? dbWeb.from('productos_web').select('producto_pos_id, puntaje_destacado, motivo_destacado').eq('publicado_web', true) : Promise.resolve({ data: [] }),
+    ]);
+    for (const r of [prods, recientes]) if (r.error) throw r.error;
+    const usados = new Set((recientes.data || []).map(f => f.producto_id));
+    const puntaje = new Map(((web && !web.error && web.data) || []).map(f => [f.producto_pos_id, f]));
+    const lista = (prods.data || [])
+      .filter(p => !p.es_pedido_encargo && (p.imagen_urls || []).length && (p.stock_ilimitado || p.es_servicio || Number(p.stock) > 0))
+      .filter(p => !usados.has(p.id))
+      .map(p => ({
+        id: p.id, nombre: p.nombre, precio: Number(p.precio_unitario) || 0, es_servicio: !!p.es_servicio,
+        foto: p.imagen_urls[0], puntaje: Number(puntaje.get(p.id)?.puntaje_destacado) || 0,
+        motivo: puntaje.get(p.id)?.motivo_destacado || null,
+      }))
+      .sort((a, b) => b.puntaje - a.puntaje || Number(b.es_servicio) - Number(a.es_servicio))
+      .slice(0, 12);
+    res.json({ dias_sin_repetir: REDES_DIAS_REPETIDO, productos: lista });
+  } catch (e) {
+    return enviarErrorBD(res, e, 'GET /api/redes/sugeridos');
+  }
+});
+
 /* Panel "Página Web → Salud": integraciones OPCIONALES, con su estado
    (configurada o no) — antes el único aviso de que faltaba alguna era un
    console.warn/error en los logs de Vercel, que nadie del negocio revisa.

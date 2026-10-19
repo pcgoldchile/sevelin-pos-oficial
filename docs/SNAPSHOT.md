@@ -39,6 +39,7 @@ La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `do
   (`CHANGELOG-V160.md`; tienda `supabase/45`).
 - **v161, Destacados automáticos:** el POS manda cada día a las 07:30 las ventas del mes (`/api/cron/mas-vendidos`) y la
   tienda recalcula con vistas, tendencia, la etiqueta "🔥 Tendencia" y el calor de Arica (`CHANGELOG-V161.md`).
+- **v164, "📣 Redes sociales"**: historia, post, carrusel o reel de un producto con un botón, 5 estilos, "Otra versión" y registro de lo promocionado (sql/104, `CHANGELOG-V164.md`).
 - **v163, "¿De dónde vino el cliente?"** como botones en el cobro (antes solo en el carrito y nadie lo anotaba) (`CHANGELOG-V163.md`).
 - **v162, "🔥 Reponer"** en el encabezado: lo que se mueve en sevelin.cl y tiene 3 o menos (`CHANGELOG-V162.md`).
 - También: el Word de la verificación de actividad del SII (MEF, sin firma) y el catálogo para la máquina Haulmer, los

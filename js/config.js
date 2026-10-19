@@ -536,6 +536,8 @@ function activarVista(viewId, subtab) {
      para no quedar pegado la próxima vez que se entre por el atajo normal. */
   // v102: Productos → Agotados (js/agotados-panel.js)
   if (viewId === 'view-agotados' && typeof cargarPanelAgotados === 'function') cargarPanelAgotados();
+  // v164 (sql/104): Redes sociales (js/redes-contenido.js)
+  if (viewId === 'view-redes' && typeof cargarPanelRedes === 'function') cargarPanelRedes();
 
   if (viewId === 'view-productos') {
     const elOrden = document.getElementById('ordenProductos');

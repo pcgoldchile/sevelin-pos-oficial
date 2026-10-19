@@ -175,6 +175,9 @@
         </div>
       </div>
 
+      <!-- v164 (sql/104): Redes sociales — crear historia, post, carrusel o reel de un producto y registro de lo promocionado (js/redes-contenido.js) -->
+      <button class="nav-btn admin-only" data-view="view-redes"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10v4a1 1 0 0 0 1 1h2l5 4V5L7 9H5a1 1 0 0 0-1 1Z"/><path d="M16 9a4 4 0 0 1 0 6"/><path d="M18.5 6.5a8 8 0 0 1 0 11"/></svg>Redes sociales</button>
+
       <div class="nav-group">
         <button class="nav-btn" data-view="view-garantias"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4.5 6v5.5c0 4.4 3.2 8.3 7.5 9.5 4.3-1.2 7.5-5.1 7.5-9.5V6Z"/><path d="m9 12 2 2 4-4"/></svg>Garantías</button>
         <div class="nav-subitems">
@@ -2425,6 +2428,42 @@
 
     <!-- v102: PRODUCTOS → AGOTADOS. Todos los agotados físicos (también los por llegar y los ya
          decididos): decidir, ver quién los espera en la tienda y abrir su ficha para corregir. -->
+    <!-- v164 (sql/104): Redes sociales (js/redes-contenido.js) -->
+    <section id="view-redes" class="view-section admin-only">
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h2>📣 Redes sociales</h2>
+            <p class="subtitle">Elige un producto y arma su historia, post, carrusel o reel con sus fotos y datos reales. Todo lo que descargas queda anotado aquí, para no repetir lo mismo.</p>
+          </div>
+          <div class="toolbar-group">
+            <button class="btn btn-outline" id="btnRedesRecargar" type="button">↻ Actualizar</button>
+          </div>
+        </div>
+        <div class="redes-resumen" id="redesResumen"></div>
+      </div>
+
+      <div class="card">
+        <h3 class="antes-seccion">Sugeridos para hoy</h3>
+        <p class="modal-hint">Con stock y foto, sin mostrar en los últimos 14 días. Primero lo que está arriba en Destacados de sevelin.cl.</p>
+        <div class="redes-sugeridos" id="redesSugeridos"></div>
+        <h3 class="antes-seccion">O busca un producto</h3>
+        <input type="search" id="redesBuscar" class="campo-pos" placeholder="Nombre del producto o servicio…" autocomplete="off" style="max-width:420px;">
+        <div class="redes-resultados" id="redesResultados"></div>
+      </div>
+
+      <div class="card">
+        <h3 class="antes-seccion">Registro de los últimos 30 días</h3>
+        <p class="modal-hint">Cuando lo subas, toca IG o FB para marcar dónde quedó publicado.</p>
+        <div class="table-container">
+          <table>
+            <thead><tr><th>Fecha</th><th>Producto</th><th>Formato</th><th>Estilo</th><th>Estado</th><th>Publicado en</th></tr></thead>
+            <tbody id="redesRegistroBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <section id="view-agotados" class="view-section admin-only">
       <div class="card">
         <div class="card-head">
@@ -7647,6 +7686,40 @@
   </div>
 
   <!-- v136 (sql/93): Facebook desde la lista de productos, sin abrir la ficha — js/facebook-rapido.js -->
+  <!-- v164 (sql/104): crear contenido de un producto (js/redes-contenido.js) -->
+  <div id="modalContenidoRedes" class="modal-overlay">
+    <div class="modal-box contenido-redes-modal">
+      <h2>📣 Crear contenido</h2>
+      <p class="modal-hint" id="contenidoRedesNombre">—</p>
+      <div class="contenido-redes-aviso" id="contenidoRedesAviso"></div>
+      <div class="contenido-redes-grid">
+        <div class="contenido-redes-controles">
+          <span class="section-label">Formato</span>
+          <div class="contenido-redes-chips" id="contenidoRedesFormatos" role="group" aria-label="Formato"></div>
+          <span class="section-label">Estilo</span>
+          <div class="contenido-redes-chips" id="contenidoRedesEstilos" role="group" aria-label="Estilo"></div>
+          <div class="field">
+            <label for="contenidoRedesGancho">Frase grande</label>
+            <input type="text" id="contenidoRedesGancho" maxlength="60" autocomplete="off">
+          </div>
+          <button type="button" class="btn btn-outline btn-sm" id="btnContenidoRedesOtra" title="Otro estilo, otra frase y otra foto, eligiendo lo que este producto no ha usado">🎲 Otra versión</button>
+          <span class="section-label">Foto</span>
+          <div class="contenido-redes-fotos" id="contenidoRedesFotos"></div>
+          <div class="field">
+            <label for="contenidoRedesTexto">Texto para pegar en la publicación</label>
+            <textarea id="contenidoRedesTexto" rows="6"></textarea>
+          </div>
+          <button type="button" class="btn btn-outline btn-sm" id="btnContenidoRedesCopiar">📋 Copiar texto</button>
+        </div>
+        <div class="contenido-redes-vista" id="contenidoRedesVista"></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" id="btnCerrarContenidoRedes">Cerrar</button>
+        <button type="button" class="btn btn-primary" id="btnContenidoRedesDescargar">⬇️ Descargar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modalFacebookRapido" class="modal-overlay">
     <div class="modal-box" style="max-width:760px;">
       <h2>📘 Publicar en Facebook</h2>
@@ -8429,7 +8502,8 @@
   <script src="js/cotizador-celulares.js"></script>   <!-- v157 (sql/102): Servicio Técnico → Cotizador celulares -->
   <script src="js/bodega.js"></script>   <!-- v156 (sql/101): Productos → "📦 Más stock y bodega"; usa cerrarModal de balance.js -->
   <script src="js/caracteristicas-producto.js"></script>   <!-- v159 (sql/103): después de productos.js y asistente-producto.js; filtros de la tienda en la ficha -->
-  <script src="js/facebook-rapido.js"></script>   <!-- v136 (sql/93): después de productos.js; usa sus funciones de fotos y la lista -->
+  <script src="js/facebook-rapido.js"></script>
+  <script src="js/redes-contenido.js"></script>   <!-- v164 (sql/104): después de productos.js y redes-texto.js (usa sus funciones) -->   <!-- v136 (sql/93): después de productos.js; usa sus funciones de fotos y la lista -->
   <script src="js/usuarios.js"></script>   <!-- v135 (sql/92): usuarios con RUT y PIN; usa ventanaConfirmar de ventanas.js -->
   <script src="js/finanzas-gate.js"></script>   <!-- después de balance/config: intercepta la navegación a Finanzas -->
   <script src="js/reportes.js"></script>

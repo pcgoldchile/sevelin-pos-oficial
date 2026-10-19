@@ -918,6 +918,29 @@ app.get('/api/pos/reponer-tendencia', (_req, res) => res.json({ total: 2, produc
   { id: 104, nombre: 'Adaptador HDMI a VGA', stock: 2, vistas_7d: 22, vistas_30d: 90, vendidos_30d: 5, motivos: ['destacado', 'se vende'], ya_viene: false, stock_por_llegar: 0 },
   { id: 291, nombre: 'Adaptador USB WiFi 6 + Bluetooth 5.4 AX900', stock: 1, vistas_7d: 7, vistas_30d: 40, vendidos_30d: 4, motivos: ['se vende'], ya_viene: true, stock_por_llegar: 10 },
 ] }));
+// v164: Redes sociales — registro en memoria y sugeridos sacados de los productos de la maqueta.
+const registroRedesMaqueta = [];
+app.get('/api/redes/registro', (req, res) => {
+  const id = Number(req.query.producto_id) || null;
+  res.json({ dias: Number(req.query.dias) || 30, piezas: registroRedesMaqueta.filter(r => !id || r.producto_id === id) });
+});
+app.post('/api/redes/registro', (req, res) => {
+  const p = productos.find(x => x.id === Number(req.body?.producto_id));
+  if (!p) return res.status(404).json({ error: 'El producto no existe' });
+  const fila = { id: registroRedesMaqueta.length + 1, producto_id: p.id, producto_nombre: p.nombre, formato: req.body.formato, estilo: req.body.estilo, gancho: req.body.gancho || null, estado: 'generado', redes: [], publicado_en: null, creado_en: new Date().toISOString() };
+  registroRedesMaqueta.unshift(fila);
+  res.json(fila);
+});
+app.put('/api/redes/registro/:id', (req, res) => {
+  const fila = registroRedesMaqueta.find(r => r.id === Number(req.params.id));
+  if (!fila) return res.status(404).json({ error: 'No existe esa pieza' });
+  const redes = (req.body?.redes || []).filter(r => ['instagram', 'facebook'].includes(r));
+  Object.assign(fila, redes.length ? { estado: 'publicado', redes, publicado_en: new Date().toISOString().slice(0, 10) } : { estado: 'generado', redes: [], publicado_en: null });
+  res.json(fila);
+});
+app.get('/api/redes/sugeridos', (_req, res) => res.json({ dias_sin_repetir: 14, productos: productos
+  .filter(p => (p.imagen_urls || []).length && Number(p.stock) > 0 && !registroRedesMaqueta.some(r => r.producto_id === p.id))
+  .slice(0, 8).map((p, i) => ({ id: p.id, nombre: p.nombre, precio: p.precio_unitario, es_servicio: false, foto: p.imagen_urls[0], puntaje: 10 - i, motivo: i === 0 ? 'tendencia' : null })) }));
 // v160: Página Web → Más buscados, con "Lo que buscan y no tenemos" (datos de ejemplo del 18-10-2026).
 app.get('/api/pos/mas-buscados', (req, res) => res.json({
   dias: Number(req.query.dias) || 30,

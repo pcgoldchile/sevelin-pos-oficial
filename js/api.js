@@ -562,6 +562,13 @@ const API = {
   reponerTendencia: {
     obtener: () => apiRequest('/pos/reponer-tendencia', { silencioso: true })
   },
+  // v164 (sql/104): Redes sociales — registro de lo promocionado y sugeridos
+  redes: {
+    registro: (dias = 30, productoId = null) => apiRequest(`/redes/registro?dias=${dias}${productoId ? `&producto_id=${productoId}` : ''}`),
+    registrar: (datos) => apiRequest('/redes/registro', { method: 'POST', body: datos }),
+    marcar: (id, datos) => apiRequest(`/redes/registro/${id}`, { method: 'PUT', body: datos }),
+    sugeridos: () => apiRequest('/redes/sugeridos')
+  },
 
   // Panel "Métricas" (Página Web → Métricas) — totales de visitas, carritos
   // y cuentas de cliente, agregados de Supabase Web.
