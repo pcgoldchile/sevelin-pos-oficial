@@ -538,6 +538,7 @@ function activarVista(viewId, subtab) {
   if (viewId === 'view-agotados' && typeof cargarPanelAgotados === 'function') cargarPanelAgotados();
   // v164 (sql/104): Redes sociales (js/redes-contenido.js)
   if (viewId === 'view-redes' && typeof cargarPanelRedes === 'function') cargarPanelRedes();
+  if (viewId === 'view-redes' && typeof cargarPlanContenido === 'function') cargarPlanContenido();
 
   if (viewId === 'view-productos') {
     const elOrden = document.getElementById('ordenProductos');

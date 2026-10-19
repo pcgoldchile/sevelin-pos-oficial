@@ -12062,6 +12062,8 @@ app.get('/api/cron/mas-vendidos', async (req, res) => {
   if (!secreto || req.headers.authorization !== `Bearer ${secreto}`) return enviarError(res, 401, 'No autorizado');
   try {
     const r = await enviarMasVendidosATienda();
+    // v168: de paso, borra las imágenes y videos de contenido ya publicado o descartado
+    try { r.contenido_borrados = await borrarArchivosContenidoViejos(); } catch (err) { console.error('[cron contenido]', err.message); }
     if (!r.ok) {
       console.error('[cron mas-vendidos]', r.mensaje);
       registrarErrorSalud({ origen: 'POS', ruta: 'Destacados tienda', metodo: 'robot', mensaje: `Más vendidos a la tienda: ${r.mensaje}` });
@@ -16715,6 +16717,110 @@ app.get('/api/pos/reponer-tendencia', auth(true), async (req, res) => {
     return enviarErrorBD(res, e, 'GET /api/pos/reponer-tendencia');
   }
 });
+
+/* ============================================================
+   PLAN DE CONTENIDO (v168, sql/107 — dueño 19-10-2026)
+   ------------------------------------------------------------
+   El calendario de piezas con sus fases, la cola de pedidos del dueño y el aviso del encabezado
+   ("cuándo dejar el PC encendido"). Lo llena el robot de contenido (tarea programada de Claude en el
+   PC de la tienda: docs/contenido/ROBOT-CONTENIDO.md), que escribe con la CLI de Supabase; el POS
+   solo lee, aprueba y pide. Todo admin.
+   ============================================================ */
+const PLAN_FORMATOS = ['historia', 'post', 'carrusel', 'reel', 'wow'];
+const PLAN_TIPOS = ['producto', 'servicio', 'educativo', 'noticia', 'tienda'];
+const PLAN_DIAS_BORRAR = 3;   // los archivos se borran 3 días después de publicados o descartados
+
+app.get('/api/contenido/plan', auth(true), async (req, res) => {
+  try {
+    const desde = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+    const [piezas, robot] = await Promise.all([
+      db.from('contenido_plan').select('*').gte('fecha', desde).order('fecha', { ascending: true }).order('id', { ascending: true }).limit(200),
+      db.from('contenido_robot').select('*').eq('id', 1).maybeSingle(),
+    ]);
+    if (piezas.error) throw piezas.error;
+    const lista = piezas.data || [];
+    const cuenta = (e) => lista.filter(p => p.estado === e).length;
+    res.json({
+      robot: robot.data || null,
+      piezas: lista,
+      resumen: { idea: cuenta('idea'), preparando: cuenta('preparando'), para_aprobar: cuenta('para_aprobar'), aprobado: cuenta('aprobado'), programado: cuenta('programado'), publicado: cuenta('publicado') },
+    });
+  } catch (e) { return enviarErrorBD(res, e, 'GET /api/contenido/plan'); }
+});
+
+/* El aviso del encabezado: liviano, se pide cada 30 minutos */
+app.get('/api/contenido/aviso', auth(true), async (req, res) => {
+  try {
+    const [{ data: piezas, error }, { data: robot }] = await Promise.all([
+      db.from('contenido_plan').select('estado, pedido_por').in('estado', ['idea', 'preparando', 'para_aprobar', 'aprobado']),
+      db.from('contenido_robot').select('proxima_corrida, ventana_texto, ultima_corrida, uso_claude').eq('id', 1).maybeSingle(),
+    ]);
+    if (error) throw error;
+    const c = (e) => (piezas || []).filter(p => p.estado === e).length;
+    res.json({ para_aprobar: c('para_aprobar'), aprobadas: c('aprobado'), en_cola: c('idea') + c('preparando'), robot: robot || null });
+  } catch (e) { return enviarErrorBD(res, e, 'GET /api/contenido/aviso'); }
+});
+
+/* "➕ Pedir": el dueño pide una pieza (ej. un video wow de un producto, un tema educativo) */
+app.post('/api/contenido/plan', auth(true), async (req, res) => {
+  try {
+    const b = req.body || {};
+    if (!PLAN_FORMATOS.includes(b.formato)) return enviarError(res, 400, 'Formato no válido');
+    if (!PLAN_TIPOS.includes(b.tipo)) return enviarError(res, 400, 'Tipo no válido');
+    const tema = String(b.tema || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+    if (tema.length < 2) return enviarError(res, 400, 'Escribe de qué se trata');
+    const fecha = /^\d{4}-\d{2}-\d{2}$/.test(String(b.fecha || '')) ? b.fecha : fechaHoyChile();
+    const productoId = parseInt(b.producto_id, 10) > 0 ? parseInt(b.producto_id, 10) : null;
+    const { data, error } = await db.from('contenido_plan').insert([{
+      fecha, formato: b.formato, tipo: b.tipo, tema, producto_id: productoId, estado: 'idea', pedido_por: 'dueno',
+      nota_dueno: b.nota ? String(b.nota).trim().slice(0, 500) : null,
+    }]).select().single();
+    if (error) throw error;
+    res.status(201).json(data);
+  } catch (e) { return enviarErrorBD(res, e, 'POST /api/contenido/plan'); }
+});
+
+/* Aprobar, pedir cambios (vuelve a "idea" con la nota), descartar, programado, publicado */
+app.put('/api/contenido/plan/:id', auth(true), async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const accion = String(req.body?.accion || '');
+    const ahora = new Date().toISOString();
+    const cambios = { actualizado_en: ahora };
+    if (accion === 'aprobar') Object.assign(cambios, { estado: 'aprobado', aprobado_en: ahora });
+    else if (accion === 'cambios') {
+      const nota = String(req.body?.nota || '').trim().slice(0, 500);
+      if (!nota) return enviarError(res, 400, 'Escribe qué cambiar');
+      Object.assign(cambios, { estado: 'idea', nota_dueno: nota });
+    } else if (accion === 'descartar') cambios.estado = 'descartado';
+    else if (accion === 'programado') cambios.estado = 'programado';
+    else if (accion === 'publicado') Object.assign(cambios, { estado: 'publicado', publicado_en: ahora });
+    else return enviarError(res, 400, 'Acción no válida');
+    const { data, error } = await db.from('contenido_plan').update(cambios).eq('id', id).select().maybeSingle();
+    if (error) throw error;
+    if (!data) return enviarError(res, 404, 'No existe esa pieza');
+    res.json(data);
+  } catch (e) { return enviarErrorBD(res, e, 'PUT /api/contenido/plan/:id'); }
+});
+
+/* Limpieza (la llama el cron diario): borra del almacenamiento lo publicado o descartado hace 3 días */
+async function borrarArchivosContenidoViejos() {
+  const limite = new Date(Date.now() - PLAN_DIAS_BORRAR * 86400000).toISOString();
+  const { data, error } = await db.from('contenido_plan').select('id, archivos, estado, publicado_en, actualizado_en')
+    .in('estado', ['publicado', 'descartado']).is('archivos_borrados_en', null).lt('actualizado_en', limite).limit(100);
+  if (error) throw error;
+  let borrados = 0;
+  for (const p of data || []) {
+    const rutas = (Array.isArray(p.archivos) ? p.archivos : []).map(a => a?.ruta).filter(Boolean);
+    if (rutas.length) {
+      const { error: e2 } = await db.storage.from('contenido-temporal').remove(rutas);
+      if (e2) { console.error('[contenido] no se pudieron borrar archivos de', p.id, e2.message); continue; }
+      borrados += rutas.length;
+    }
+    await db.from('contenido_plan').update({ archivos: [], archivos_borrados_en: new Date().toISOString() }).eq('id', p.id);
+  }
+  return borrados;
+}
 
 /* ============================================================
    PUNTOS SEVELIN (v167 — sql/106 aquí, supabase/47 en la tienda)

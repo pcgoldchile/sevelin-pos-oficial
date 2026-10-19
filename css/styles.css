@@ -5293,3 +5293,37 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
 .puntos-caja-nueva p { margin: 0; }
 .puntos-caja-codigo, .puntos-caja-correo { display: flex; gap: 6px; }
 .puntos-caja-codigo input, .puntos-caja-correo input { flex: 1; }
+
+/* ===== v168: Plan de contenido (js/plan-contenido.js) ===== */
+.btn-aviso-contenido[hidden] { display: none; }
+.btn-aviso-contenido {
+    background: linear-gradient(90deg, #2563eb, #7c3aed);
+    color: #ffffff; border: 1px solid rgba(196,181,253,.9);
+    order: -1;
+    box-shadow: 0 0 0 1px rgba(147,197,253,.25), 0 0 18px rgba(99,102,241,.35);
+    font-weight: 700;
+}
+.btn-aviso-contenido.urgente { animation: aviso-contenido-pulso 2.4s ease-in-out infinite; }
+@keyframes aviso-contenido-pulso { 0%,100% { box-shadow: 0 0 0 1px rgba(147,197,253,.25), 0 0 10px rgba(99,102,241,.3); } 50% { box-shadow: 0 0 0 2px rgba(147,197,253,.55), 0 0 26px rgba(99,102,241,.6); } }
+@media (prefers-reduced-motion: reduce) { .btn-aviso-contenido.urgente { animation: none; } }
+.plan-robot { border: 1px solid rgba(147,197,253,.5); background: linear-gradient(135deg, rgba(59,130,246,.10), rgba(168,85,247,.10)); border-radius: 14px; padding: 14px 16px; margin: 12px 0; display: grid; gap: 4px; font-size: 14px; }
+.plan-robot b.plan-ventana { font-size: 18px; }
+.plan-fases { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; padding: 0; margin: 6px 0 14px; }
+.plan-fases li { border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; font-size: 12.5px; }
+.plan-fases li b { margin-left: 4px; }
+.plan-fases li.activa { border-color: #3b82f6; background: rgba(59,130,246,.12); }
+.plan-pedir { border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 14px; display: grid; gap: 10px; }
+.plan-pedir label { display: grid; gap: 4px; font-size: 13px; }
+.plan-pedir-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.plan-dias { display: grid; gap: 14px; }
+.plan-dia h4 { margin: 0 0 6px; font-size: 14px; }
+.plan-dia h4 small { color: var(--text-muted); font-weight: 500; margin-left: 6px; }
+.plan-piezas { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.plan-pieza { border: 1px solid var(--border); border-radius: 12px; padding: 10px; display: grid; gap: 8px; }
+.plan-pieza.para_aprobar { border-color: #f59e0b; }
+.plan-pieza-medios { display: flex; gap: 6px; overflow-x: auto; }
+.plan-pieza-medios img, .plan-pieza-medios video { height: 150px; border-radius: 8px; background: #000; flex: none; }
+.plan-pieza-tema { font-weight: 600; font-size: 14px; }
+.plan-pieza-texto { font-size: 12.5px; white-space: pre-wrap; max-height: 7.5em; overflow: auto; color: var(--text-muted); }
+.plan-pieza-acciones { display: flex; flex-wrap: wrap; gap: 6px; }
+.plan-vacio { color: var(--text-muted); font-size: 13px; }

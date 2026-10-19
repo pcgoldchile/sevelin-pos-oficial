@@ -562,6 +562,13 @@ const API = {
   reponerTendencia: {
     obtener: () => apiRequest('/pos/reponer-tendencia', { silencioso: true })
   },
+  // v168 (sql/107): plan de contenido y aviso del robot
+  contenido: {
+    plan: () => apiRequest('/contenido/plan'),
+    aviso: () => apiRequest('/contenido/aviso', { silencioso: true }),
+    pedir: (datos) => apiRequest('/contenido/plan', { method: 'POST', body: datos }),
+    accion: (id, accion, nota) => apiRequest(`/contenido/plan/${id}`, { method: 'PUT', body: { accion, nota } }),
+  },
   // v167: Puntos Sevelin en la caja (cuentas y movimientos viven en la base de la tienda)
   puntos: {
     buscar: (q) => apiRequest(`/puntos/buscar?q=${encodeURIComponent(q)}`),

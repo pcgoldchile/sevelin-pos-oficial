@@ -245,6 +245,10 @@
       </button>
       <!-- v162 (dueño 18-10-2026): lo que se mueve en sevelin.cl y tiene poco stock, para
            reponer a tiempo (js/reponer-tendencia.js). Solo aparece si hay algo. -->
+      <!-- v168 (sql/107): Plan de contenido — cuándo dejar el PC encendido y qué falta aprobar (js/plan-contenido.js) -->
+      <button id="btnAvisoContenido" class="btn-notificaciones btn-aviso-contenido admin-only" title="Plan de contenido para redes" hidden>
+        <span class="chip-punto" aria-hidden="true"></span><span id="textoAvisoContenido">📅 Contenido</span>
+      </button>
       <button id="btnReponerTendencia" class="btn-notificaciones btn-reponer admin-only" title="En tendencia en la tienda y con poco stock" hidden>
         <span class="chip-punto" aria-hidden="true"></span><span id="textoReponerTendencia">🔥 Reponer</span>
       </button>
@@ -2441,6 +2445,34 @@
           </div>
         </div>
         <div class="redes-resumen" id="redesResumen"></div>
+      </div>
+
+      <!-- v168 (sql/107): el plan de contenido, con fases y aprobación (js/plan-contenido.js) -->
+      <div class="card" id="planContenidoCard">
+        <div class="card-head">
+          <div>
+            <h2>📅 Plan de contenido</h2>
+            <p class="subtitle">Lo que arma el robot de contenido y lo que tú pides. Apruébalo desde aquí o desde el celular.</p>
+          </div>
+          <div class="toolbar-group">
+            <button class="btn btn-primary" id="btnPlanPedir" type="button">➕ Pedir una pieza</button>
+          </div>
+        </div>
+        <div class="plan-robot" id="planRobot"></div>
+        <ol class="plan-fases" id="planFases" aria-label="Fases del contenido"></ol>
+        <div class="plan-pedir" id="planPedir" hidden>
+          <div class="plan-pedir-grid">
+            <label>Qué<select id="planPedirFormato" class="campo-pos">
+              <option value="wow">🎬 Video wow (IA)</option><option value="reel">Reel</option><option value="carrusel">Carrusel</option><option value="post">Post</option><option value="historia">Historia</option></select></label>
+            <label>De qué tipo<select id="planPedirTipo" class="campo-pos">
+              <option value="producto">Un producto</option><option value="servicio">Un servicio</option><option value="educativo">Educativo (¿qué es…?)</option><option value="noticia">Noticia de tecnología</option><option value="tienda">La tienda</option></select></label>
+            <label>Para el día<input type="date" id="planPedirFecha" class="campo-pos"></label>
+          </div>
+          <label>De qué se trata<input type="text" id="planPedirTema" class="campo-pos" maxlength="160" placeholder="Ej: el ventilador industrial girando · ¿qué es un SSD? · la nueva RTX"></label>
+          <label>Nota para el robot (opcional)<input type="text" id="planPedirNota" class="campo-pos" maxlength="500" placeholder="Ej: que se vea el viento, estilo minimalista"></label>
+          <div class="modal-actions"><button class="btn btn-outline" type="button" id="btnPlanPedirCancelar">Cancelar</button><button class="btn btn-primary" type="button" id="btnPlanPedirGuardar">Pedir</button></div>
+        </div>
+        <div class="plan-dias" id="planDias"></div>
       </div>
 
       <div class="card">
@@ -8523,7 +8555,8 @@
   <script src="js/bodega.js"></script>   <!-- v156 (sql/101): Productos → "📦 Más stock y bodega"; usa cerrarModal de balance.js -->
   <script src="js/caracteristicas-producto.js"></script>   <!-- v159 (sql/103): después de productos.js y asistente-producto.js; filtros de la tienda en la ficha -->
   <script src="js/facebook-rapido.js"></script>
-  <script src="js/redes-contenido.js"></script>   <!-- v164 (sql/104): después de productos.js y redes-texto.js (usa sus funciones) -->   <!-- v136 (sql/93): después de productos.js; usa sus funciones de fotos y la lista -->
+  <script src="js/redes-contenido.js"></script>
+  <script src="js/plan-contenido.js"></script>   <!-- v168 (sql/107): plan de contenido y aviso del encabezado -->   <!-- v164 (sql/104): después de productos.js y redes-texto.js (usa sus funciones) -->   <!-- v136 (sql/93): después de productos.js; usa sus funciones de fotos y la lista -->
   <script src="js/usuarios.js"></script>   <!-- v135 (sql/92): usuarios con RUT y PIN; usa ventanaConfirmar de ventanas.js -->
   <script src="js/finanzas-gate.js"></script>   <!-- después de balance/config: intercepta la navegación a Finanzas -->
   <script src="js/reportes.js"></script>

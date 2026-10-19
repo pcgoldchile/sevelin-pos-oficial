@@ -39,6 +39,7 @@ La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `do
   (`CHANGELOG-V160.md`; tienda `supabase/45`).
 - **v161, Destacados automáticos:** el POS manda cada día a las 07:30 las ventas del mes (`/api/cron/mas-vendidos`) y la
   tienda recalcula con vistas, tendencia, la etiqueta "🔥 Tendencia" y el calor de Arica (`CHANGELOG-V161.md`).
+- **v168, Plan de contenido**: calendario con fases, aprobación desde el celular, "➕ Pedir" y aviso "📅 Contenido" de cuándo dejar el PC encendido (sql/107, `CHANGELOG-V168.md`).
 - **v167, Puntos Sevelin en la caja**: buscar o inscribir al cliente, sumar y canjear con código por WhatsApp; reglas y topes en el servidor (sql/106 + tienda supabase/47, `CHANGELOG-V167.md`). Lo público sigue apagado hasta la prueba del dueño.
 - **v166, carrusel de 6 láminas**, frase de arriba, cierre con medios de pago y "¿Lo subiste?" (`CHANGELOG-V166.md`).
 - **v165, reel con 5 animaciones** (Clásica, Impacto, Suave, Neón, Galería) y vista previa animada (sql/105, `CHANGELOG-V165.md`).

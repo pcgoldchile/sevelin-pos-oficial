@@ -918,6 +918,26 @@ app.get('/api/pos/reponer-tendencia', (_req, res) => res.json({ total: 2, produc
   { id: 104, nombre: 'Adaptador HDMI a VGA', stock: 2, vistas_7d: 22, vistas_30d: 90, vendidos_30d: 5, motivos: ['destacado', 'se vende'], ya_viene: false, stock_por_llegar: 0 },
   { id: 291, nombre: 'Adaptador USB WiFi 6 + Bluetooth 5.4 AX900', stock: 1, vistas_7d: 7, vistas_30d: 40, vendidos_30d: 4, motivos: ['se vende'], ya_viene: true, stock_por_llegar: 10 },
 ] }));
+// v168: Plan de contenido — piezas de ejemplo en memoria (fotos reales del catálogo).
+const hoyPlanMaqueta = () => new Date().toISOString().slice(0, 10);
+const enDias = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+const planMaqueta = [
+  { id: 1, fecha: hoyPlanMaqueta(), formato: 'carrusel', tipo: 'educativo', tema: '¿Qué es un SSD y por qué tu PC enciende en segundos?', estado: 'para_aprobar', pedido_por: 'robot', texto: '¿Tu PC se demora en encender? 🐢 Un SSD lo cambia todo… Desliza para ver las diferencias con un disco duro.', fuentes: [{ titulo: 'Kingston: SSD vs HDD', url: 'https://www.kingston.com/es/blog/pc-performance/ssd-vs-hdd' }], archivos: productos.slice(0, 3).map((x, i) => ({ ruta: `m/${i}.png`, url: x.imagen_urls[0] })) },
+  { id: 2, fecha: hoyPlanMaqueta(), formato: 'historia', tipo: 'producto', tema: productos[1].nombre, estado: 'aprobado', pedido_por: 'robot', texto: null, fuentes: [], archivos: [{ ruta: 'm/h.png', url: productos[1].imagen_urls[0] }] },
+  { id: 3, fecha: enDias(2), formato: 'wow', tipo: 'producto', tema: 'Ventilador industrial girando con el viento', estado: 'idea', pedido_por: 'dueno', nota_dueno: 'que se vea el viento', fuentes: [], archivos: [] },
+  { id: 4, fecha: enDias(3), formato: 'post', tipo: 'noticia', tema: 'Nueva generación de tarjetas de video: lo que cambia para jugar', estado: 'preparando', pedido_por: 'robot', fuentes: [], archivos: [] },
+];
+const robotMaqueta = { id: 1, ventana_texto: 'Miércoles 22, de 10:00 a 13:00', proxima_corrida: new Date(Date.now() + 2 * 86400000).toISOString(), ultima_corrida: new Date(Date.now() - 5 * 86400000).toISOString(), ultimo_resumen: '7 piezas armadas, 1 video wow', uso_claude: '42% del límite semanal' };
+const resumenPlan = () => Object.fromEntries(['idea', 'preparando', 'para_aprobar', 'aprobado', 'programado', 'publicado'].map(e => [e, planMaqueta.filter(p => p.estado === e).length]));
+app.get('/api/contenido/plan', (_req, res) => res.json({ robot: robotMaqueta, piezas: planMaqueta, resumen: resumenPlan() }));
+app.get('/api/contenido/aviso', (_req, res) => { const r = resumenPlan(); res.json({ para_aprobar: r.para_aprobar, aprobadas: r.aprobado, en_cola: r.idea + r.preparando, robot: robotMaqueta }); });
+app.post('/api/contenido/plan', (req, res) => { const p = { id: planMaqueta.length + 1, ...req.body, estado: 'idea', pedido_por: 'dueno', fuentes: [], archivos: [] }; planMaqueta.push(p); res.status(201).json(p); });
+app.put('/api/contenido/plan/:id', (req, res) => {
+  const p = planMaqueta.find(x => x.id === Number(req.params.id));
+  const mapa = { aprobar: 'aprobado', cambios: 'idea', descartar: 'descartado', programado: 'programado', publicado: 'publicado' };
+  if (p) { p.estado = mapa[req.body.accion] || p.estado; if (req.body.nota) p.nota_dueno = req.body.nota; }
+  res.json(p);
+});
 // v167: Puntos Sevelin — una cuenta de ejemplo con saldo (celular 912345678), en memoria.
 const cuentasPuntosMaqueta = [{ id: 'c-1', codigo: 'SEV-ABCDE7', nombre: 'Carlos S.', telefono: '+569 ••• 5678', tel: '+56912345678', es_personal: false, tiene_correo: false, tiene_web: false, saldo: { disponible: 4500, pendiente: 600, por_vencer_30: 0 } }];
 app.get('/api/puntos/buscar', (req, res) => {
