@@ -16610,6 +16610,66 @@ app.get('/api/pos/mas-buscados', auth(true), async (req, res) => {
   res.json({ dias, terminos_mas_buscados: terminosTop, productos_mas_vistos: productosTop, buscados_sin_resultado: sinResultado });
 });
 
+/* "🔥 Reponer" (v162, dueño 18-10-2026): lo que se está moviendo en sevelin.cl y tiene
+   poco stock, para reponer a tiempo. "Se está moviendo" = está entre los 10 mejores
+   puntajes de Destacados (ventas y vistas del mes, tendencia, calor; tienda
+   src/lib/destacados.ts), o entre los 10 más vistos de la semana, o se vendieron 2+ en
+   30 días. "Poco stock" = 3 o menos, o bajo su stock mínimo. Lo que ya está por llegar
+   sale aparte, sin contar para el aviso.
+   Calibrado con los datos del 18-10-2026: casi todo el catálogo recibe 13-24 vistas por
+   semana (mediana 13), así que un corte fijo de vistas prendía 36 productos; con los
+   "10 más vistos" quedan 15, todos con razón (ej. el escurridor: 0 en stock, 3 vendidos). */
+const REPONER_TOP_PUNTAJE = 10;
+const REPONER_TOP_VISTAS = 10;
+const REPONER_VENTAS_MES = 2;
+const REPONER_STOCK_BAJO = 3;
+
+app.get('/api/pos/reponer-tendencia', auth(true), async (req, res) => {
+  try {
+    const hace = (dias) => new Date(Date.now() - dias * 86400000).toISOString();
+    const [v7, v30, web] = await Promise.all([
+      dbWeb.rpc('vistas_por_producto', { desde: hace(7) }),
+      dbWeb.rpc('vistas_por_producto', { desde: hace(30) }),
+      dbWeb.from('productos_web').select('producto_pos_id, puntaje_destacado, motivo_destacado, vendidos_30d').eq('publicado_web', true),
+    ]);
+    for (const r of [v7, v30, web]) if (r.error) throw r.error;
+    const vistas7 = new Map((v7.data || []).map(f => [f.producto_pos_id, Number(f.vistas) || 0]));
+    const vistas30 = new Map((v30.data || []).map(f => [f.producto_pos_id, Number(f.vistas) || 0]));
+    const porId = new Map((web.data || []).map(f => [f.producto_pos_id, f]));
+    const top = new Set([...(web.data || [])].filter(f => Number(f.puntaje_destacado) > 0)
+      .sort((a, b) => Number(b.puntaje_destacado) - Number(a.puntaje_destacado)).slice(0, REPONER_TOP_PUNTAJE).map(f => f.producto_pos_id));
+    const masVistos = new Set([...vistas7.entries()].sort((a, b) => b[1] - a[1]).slice(0, REPONER_TOP_VISTAS).map(([id]) => id));
+    const candidatos = new Set([...top, ...masVistos]);
+    for (const f of web.data || []) if ((f.vendidos_30d || 0) >= REPONER_VENTAS_MES) candidatos.add(f.producto_pos_id);
+    if (!candidatos.size) return res.json({ total: 0, productos: [] });
+
+    const { data: prods, error } = await db.from('productos')
+      .select('id, nombre, stock, stock_minimo, stock_ilimitado, es_servicio, es_pedido_encargo, archivado, por_llegar, stock_por_llegar, publicado_web')
+      .in('id', [...candidatos]);
+    if (error) throw error;
+    const lista = (prods || [])
+      .filter(p => !p.archivado && p.publicado_web && !p.stock_ilimitado && !p.es_servicio && !p.es_pedido_encargo)
+      .filter(p => Number(p.stock) <= Math.max(REPONER_STOCK_BAJO, Number(p.stock_minimo) || 0))
+      .map(p => {
+        const w = porId.get(p.id) || {};
+        const motivos = [];
+        if (top.has(p.id)) motivos.push('destacado');
+        if (masVistos.has(p.id)) motivos.push('de lo más visto esta semana');
+        if ((w.vendidos_30d || 0) >= REPONER_VENTAS_MES) motivos.push('se vende');
+        return {
+          id: p.id, nombre: p.nombre, stock: Number(p.stock) || 0,
+          vistas_7d: vistas7.get(p.id) || 0, vistas_30d: vistas30.get(p.id) || 0,
+          vendidos_30d: w.vendidos_30d || 0, motivo_destacado: w.motivo_destacado || null, motivos,
+          ya_viene: !!p.por_llegar && Number(p.stock_por_llegar) > 0, stock_por_llegar: Number(p.stock_por_llegar) || 0,
+        };
+      })
+      .sort((a, b) => Number(a.ya_viene) - Number(b.ya_viene) || a.stock - b.stock || b.vistas_7d - a.vistas_7d);
+    res.json({ total: lista.filter(p => !p.ya_viene).length, productos: lista });
+  } catch (e) {
+    return enviarErrorBD(res, e, 'GET /api/pos/reponer-tendencia');
+  }
+});
+
 /* Panel "Página Web → Salud": integraciones OPCIONALES, con su estado
    (configurada o no) — antes el único aviso de que faltaba alguna era un
    console.warn/error en los logs de Vercel, que nadie del negocio revisa.

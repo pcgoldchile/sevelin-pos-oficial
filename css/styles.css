@@ -5225,3 +5225,11 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
 .filtro-opcion:hover { border-color: var(--blue-light); }
 .filtro-opcion:has(input:checked) { border-color: var(--blue); color: var(--text-100); }
 .filtro-opcion input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--blue); }
+
+/* v162: "🔥 Reponer" del encabezado (js/reponer-tendencia.js). Naranja: se está moviendo y queda poco. */
+.btn-reponer[hidden] { display: none; }
+.btn-reponer {
+    background: rgba(249, 115, 22, .12);
+    color: #fb923c;
+    border-color: rgba(249, 115, 22, .45);
+}

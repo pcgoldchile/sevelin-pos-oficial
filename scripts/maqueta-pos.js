@@ -912,6 +912,12 @@ app.post('/api/productos/sugerir-caracteristicas', (req, res) => {
   }
   setTimeout(() => res.json({ caracteristicas, modelo: 'maqueta' }), 500);
 });
+// v162: "🔥 Reponer" (datos de ejemplo del 18-10-2026).
+app.get('/api/pos/reponer-tendencia', (_req, res) => res.json({ total: 2, productos: [
+  { id: 157, nombre: 'Monitor Gamer MSI MAG 255F E20 24.5" Full HD', stock: 0, vistas_7d: 32, vistas_30d: 110, vendidos_30d: 3, motivos: ['se vende', 'de lo más visto esta semana'], ya_viene: false, stock_por_llegar: 0 },
+  { id: 104, nombre: 'Adaptador HDMI a VGA', stock: 2, vistas_7d: 22, vistas_30d: 90, vendidos_30d: 5, motivos: ['destacado', 'se vende'], ya_viene: false, stock_por_llegar: 0 },
+  { id: 291, nombre: 'Adaptador USB WiFi 6 + Bluetooth 5.4 AX900', stock: 1, vistas_7d: 7, vistas_30d: 40, vendidos_30d: 4, motivos: ['se vende'], ya_viene: true, stock_por_llegar: 10 },
+] }));
 // v160: Página Web → Más buscados, con "Lo que buscan y no tenemos" (datos de ejemplo del 18-10-2026).
 app.get('/api/pos/mas-buscados', (req, res) => res.json({
   dias: Number(req.query.dias) || 30,

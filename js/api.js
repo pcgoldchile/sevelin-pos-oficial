@@ -558,6 +558,10 @@ const API = {
   masBuscados: {
     obtener: (dias) => apiRequest('/pos/mas-buscados' + (dias ? `?dias=${encodeURIComponent(dias)}` : ''))
   },
+  // v162: lo que se mueve en sevelin.cl y tiene poco stock (botón "🔥 Reponer" del encabezado)
+  reponerTendencia: {
+    obtener: () => apiRequest('/pos/reponer-tendencia', { silencioso: true })
+  },
 
   // Panel "Métricas" (Página Web → Métricas) — totales de visitas, carritos
   // y cuentas de cliente, agregados de Supabase Web.

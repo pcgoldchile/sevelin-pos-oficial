@@ -240,6 +240,11 @@
       <button id="btnFichasIncompletas" class="btn-notificaciones btn-fichas admin-only" title="Productos a los que les falta algo" hidden>
         <span class="chip-punto" aria-hidden="true"></span><span id="textoFichasIncompletas">Por completar</span>
       </button>
+      <!-- v162 (dueño 18-10-2026): lo que se mueve en sevelin.cl y tiene poco stock, para
+           reponer a tiempo (js/reponer-tendencia.js). Solo aparece si hay algo. -->
+      <button id="btnReponerTendencia" class="btn-notificaciones btn-reponer admin-only" title="En tendencia en la tienda y con poco stock" hidden>
+        <span class="chip-punto" aria-hidden="true"></span><span id="textoReponerTendencia">🔥 Reponer</span>
+      </button>
       <!-- Mercadería comprada que todavía no llega (sql/59). Rojo cuando la
            fecha estimada ya pasó: eso hay que confirmarlo o corregirlo. -->
       <button id="btnEnCamino" class="btn-notificaciones btn-camino" title="Mercadería comprada que todavía no llega" hidden>
@@ -7498,6 +7503,23 @@
     </div>
   </div>
 
+  <!-- v162: "🔥 Reponer" — en tendencia en la tienda y con poco stock (js/reponer-tendencia.js) -->
+  <div id="modalReponerTendencia" class="modal-overlay">
+    <div class="modal-box" style="max-width:760px;">
+      <h2>🔥 Se está moviendo y queda poco</h2>
+      <p class="modal-hint">Productos que se venden (2 o más en el mes), que están entre los 10 más vistos de la semana en sevelin.cl o en Destacados, y tienen 3 o menos en stock (o menos que su mínimo). Para reponer antes de que se agoten. Se revisa cada 30 minutos.</p>
+      <div class="table-wrapper" style="max-height:56vh; overflow:auto;">
+        <table class="data-table">
+          <thead><tr><th>Producto</th><th class="num">Stock</th><th class="num">Vistas 7 días</th><th class="num">Vendidos 30 días</th><th></th></tr></thead>
+          <tbody id="reponerTendenciaBody"><tr class="empty-row"><td colspan="5">Cargando…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCerrarReponerTendencia" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ELIMINAR UNA CATEGORÍA (v126, js/categorias-web.js): pregunta a dónde van sus productos -->
   <div id="modalCatwEliminar" class="modal-overlay">
     <div class="modal-box modal-sm">
@@ -8374,6 +8396,7 @@
   <script src="js/notas-credito.js"></script>   <!-- v120 (sql/85): después de notificaciones.js (fechaCortaAviso) y productos.js (plazosProveedores) -->
   <script src="js/ofertas.js"></script>   <!-- v116 (sql/83): interruptor de ofertas web -->
   <script src="js/completitud.js"></script>
+  <script src="js/reponer-tendencia.js"></script>   <!-- v162: después de completitud.js (usa abrirProductoDesdeAviso) -->
   <script src="js/carga-masiva.js"></script>   <!-- v125: después de productos.js (productsList, acortar) y compras.js (abrirGastoPrellenado) -->
   <script src="js/ubicaciones.js"></script>   <!-- usa API.pedidosWeb (js/api.js) y activarVista (js/config.js), ya cargados antes -->
   <script src="js/garantias.js"></script>
