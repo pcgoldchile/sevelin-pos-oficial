@@ -39,6 +39,7 @@ La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `do
   (`CHANGELOG-V160.md`; tienda `supabase/45`).
 - **v161, Destacados automáticos:** el POS manda cada día a las 07:30 las ventas del mes (`/api/cron/mas-vendidos`) y la
   tienda recalcula con vistas, tendencia, la etiqueta "🔥 Tendencia" y el calor de Arica (`CHANGELOG-V161.md`).
+- **v166, carrusel de 6 láminas**, frase de arriba, cierre con medios de pago y "¿Lo subiste?" (`CHANGELOG-V166.md`).
 - **v165, reel con 5 animaciones** (Clásica, Impacto, Suave, Neón, Galería) y vista previa animada (sql/105, `CHANGELOG-V165.md`).
 - **v164, "📣 Redes sociales"**: historia, post, carrusel o reel de un producto con un botón, 5 estilos, "Otra versión" y registro de lo promocionado (sql/104, `CHANGELOG-V164.md`).
 - **v163, "¿De dónde vino el cliente?"** como botones en el cobro (antes solo en el carrito y nadie lo anotaba) (`CHANGELOG-V163.md`).

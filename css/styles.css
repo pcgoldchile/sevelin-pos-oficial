@@ -5278,3 +5278,6 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
 .contenido-redes-vista[data-formato="historia"] .contenido-redes-canvas, .contenido-redes-vista[data-formato="reel"] .contenido-redes-canvas { width: 240px; }
 .contenido-redes-nota { flex-basis: 100%; font-size: 12.5px; }
 @media (max-width: 820px) { .contenido-redes-grid { grid-template-columns: 1fr; } }
+.contenido-redes-subido { border: 1px solid #3b82f6; border-radius: 12px; padding: 10px 14px; margin: 0 0 12px; background: rgba(59,130,246,.08); }
+.contenido-redes-subido p { margin: 0 0 8px; font-size: 14px; }
+.contenido-redes-subido-botones { display: flex; flex-wrap: wrap; gap: 6px; }

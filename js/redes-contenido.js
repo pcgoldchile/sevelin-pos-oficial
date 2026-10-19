@@ -51,8 +51,14 @@ const CONTENIDO_REDES_ANIMACIONES = [
 const CONTENIDO_REDES_GANCHOS = {
   producto: ['Lo pides hoy, lo tienes hoy', '¿Lo andabas buscando?', 'Ya está en Sevelin', 'Para tu día a día', 'Míralo en San Rafael 896', 'Con garantía Sevelin', 'Hecho para durar'],
   servicio: ['Tu equipo como nuevo', '¿Tu equipo anda lento?', 'Lo dejamos funcionando', 'Servicio técnico en Arica', 'Con garantía, sin vueltas'],
-  precio: ['Precio Sevelin', 'Mira este precio', 'Así de simple'],
+  precio: ['Mira este precio', 'Precio claro, garantía real', 'Lo vale', 'Así de simple'],
 };
+
+/* Cómo se paga en el local y en la web (POS: máquinas TUU y Banco de Chile, efectivo y
+   transferencia; sevelin.cl: transferencia y tarjeta). */
+const CONTENIDO_REDES_PAGOS = ['💳 Débito', '💳 Crédito', '💵 Efectivo', '🏦 Transferencia'];
+/* Los Puntos Sevelin todavía no funcionan: ninguna pieza los nombra hasta que existan (dueño, 19-10-2026). */
+const CONTENIDO_REDES_PUNTOS_ACTIVOS = false;
 
 let contenidoRedesEstado = null;     // { producto, formato, estilo, gancho, iFoto, fotos[], registro[], beneficios[] }
 let contenidoRedesRegistroCache = [];
@@ -76,6 +82,18 @@ function contenidoRedesBeneficios(p) {
     .map(l => l.replace(/^✅\s*/, '').replace(/\s+/g, ' ').trim())
     .filter(l => l.length >= 6 && l.length <= 70)
     .slice(0, 4);
+}
+
+/* La ficha técnica sale de las casillas de filtros del producto (v159): "Entradas: HDMI, VGA". */
+async function contenidoRedesFicha(p) {
+  try {
+    if (typeof cargarEsquemaCaracteristicas !== 'function' || typeof gruposFiltroDeCategoria !== 'function') return [];
+    await cargarEsquemaCaracteristicas();
+    const marcadas = p.caracteristicas && typeof p.caracteristicas === 'object' ? p.caracteristicas : {};
+    return gruposFiltroDeCategoria(p.categoria_web, p.subcategoria_web)
+      .filter(g => Array.isArray(marcadas[g.id]) && marcadas[g.id].length)
+      .map(g => ({ nombre: g.nombre, valor: marcadas[g.id].join(' · ') }));
+  } catch (_) { return []; }
 }
 
 function contenidoRedesEsServicio(p) {
@@ -221,11 +239,11 @@ function contenidoRedesPie(ctx, W, y, oscuro, escala = 1) {
   ctx.restore();
 }
 
-function contenidoRedesSellos(ctx, W, y, textos, oscuro, tam = 34) {
+function contenidoRedesSellos(ctx, W, y, textos, oscuro, tam = 34, soloMedir = false, marca = '✓ ') {
   ctx.save();
   ctx.font = `600 ${tam}px ${CONTENIDO_REDES_LETRA}`;
   const pads = 28, sep = 16;
-  const anchos = textos.map(t => ctx.measureText(`✓ ${t}`).width + pads * 2);
+  const anchos = textos.map(t => ctx.measureText(`${marca}${t}`).width + pads * 2);
   /* En filas que caben en 980 px */
   const filas = [[]];
   let ancho = 0;
@@ -234,6 +252,7 @@ function contenidoRedesSellos(ctx, W, y, textos, oscuro, tam = 34) {
     filas[filas.length - 1].push(i);
     ancho += anchos[i] + sep;
   });
+  if (soloMedir) { ctx.restore(); return filas.length * tam * 2.1; }
   filas.forEach((fila, f) => {
     const total = fila.reduce((s, i) => s + anchos[i], 0) + sep * (fila.length - 1);
     let x = (W - total) / 2;
@@ -248,12 +267,46 @@ function contenidoRedesSellos(ctx, W, y, textos, oscuro, tam = 34) {
       ctx.fillStyle = oscuro ? '#f4f4f5' : '#1e3a8a';
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'left';
-      ctx.fillText(`✓ ${textos[i]}`, x + pads, yy + tam * 0.9);
+      ctx.fillText(`${marca}${textos[i]}`, x + pads, yy + tam * 0.9);
       x += anchos[i] + sep;
     });
   });
   ctx.restore();
   return y + filas.length * tam * 2.1;
+}
+
+/* La frase chica de arriba (dueño, 19-10-2026: "agrega otra frase al inicio"). Sale de la categoría. */
+function contenidoRedesKickerDe(p) {
+  if (contenidoRedesEsServicio(p)) return 'Servicio técnico en Arica';
+  const c = String(p.subcategoria_web || p.categoria_web || '').trim();
+  return c ? `${c} en Arica` : 'Tecnología en Arica';
+}
+function contenidoRedesKickers(p) {
+  const lista = [contenidoRedesKickerDe(p), 'Tecnología en Arica'];
+  if (contenidoRedesEsServicio(p)) lista.push('Con garantía Sevelin');
+  else if (p.stock_ilimitado || Number(p.stock) > 0) lista.push('Disponible hoy en Sevelin');
+  return [...new Set(lista)];
+}
+
+/* Píldora con letras separadas, centrada. Devuelve dónde termina. */
+function contenidoRedesKicker(ctx, W, y, texto, oscuro, tam = 30) {
+  if (!texto) return y;
+  ctx.save();
+  ctx.font = `700 ${tam}px ${CONTENIDO_REDES_LETRA}`;
+  if ('letterSpacing' in ctx) ctx.letterSpacing = `${Math.round(tam * 0.14)}px`;
+  const t = String(texto).toUpperCase();
+  const w = ctx.measureText(t).width + tam * 1.6, h = tam * 1.9;
+  const x = (W - w) / 2;
+  contenidoRedesRedondeado(ctx, x, y, w, h, h / 2);
+  ctx.fillStyle = oscuro ? 'rgba(59,130,246,0.14)' : '#e0ecff';
+  ctx.fill();
+  ctx.strokeStyle = oscuro ? 'rgba(147,197,253,0.55)' : '#bfd6fb';
+  ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = oscuro ? '#bfdbfe' : '#1d4ed8';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(t, W / 2, y + h / 2 + 1);
+  ctx.restore();
+  return y + h;
 }
 
 function contenidoRedesSellosDe(p) {
@@ -271,14 +324,14 @@ function contenidoRedesDibujarLamina(ctx, W, H, e, opciones = {}) {
   const a = opciones.a ?? 1;
   const entra = (desde, hasta) => Math.max(0, Math.min(1, (a - desde) / (hasta - desde)));
   const suave = (x) => 1 - Math.pow(1 - x, 3);
-  const libreAbajo = historia ? 230 : 0;   // aire para el sticker de enlace de la historia
+  const libreAbajo = historia ? 170 : 0;   // aire para el sticker de enlace de la historia
   const pieY = H - libreAbajo - (historia ? 170 : 132);
 
   if (estilo === 'minimalista') {
     ctx.fillStyle = '#f3f4f6'; ctx.fillRect(0, 0, W, H);
-    contenidoRedesLogo(ctx, W / 2, historia ? 120 : 60, historia ? 46 : 40, false);
-    let y = (historia ? 230 : 140);
-    const lado = historia ? 860 : 700;
+    contenidoRedesLogo(ctx, W / 2, historia ? 120 : 52, historia ? 46 : 40, false);
+    let y = contenidoRedesKicker(ctx, W, historia ? 196 : 108, e.kicker, false, historia ? 30 : 26) + (historia ? 34 : 22);
+    const lado = historia ? 820 : 640;
     ctx.globalAlpha = suave(entra(0, 0.35));
     contenidoRedesFoto(ctx, foto, (W - lado) / 2, y + (1 - suave(entra(0, 0.35))) * 60, lado, lado, { radio: 36 });
     ctx.globalAlpha = 1;
@@ -309,8 +362,8 @@ function contenidoRedesDibujarLamina(ctx, W, H, e, opciones = {}) {
     ctx.fillText(String(gancho).toUpperCase(), 0, 4);
     ctx.restore();
     contenidoRedesLogo(ctx, W / 2, historia ? 110 : 44, historia ? 46 : 38, true);
-    const lado = historia ? 720 : 500;
-    let y = historia ? 440 : 320;
+    const lado = historia ? 700 : 470;
+    let y = contenidoRedesKicker(ctx, W, historia ? 386 : 292, e.kicker, true, historia ? 30 : 26) + 24;
     ctx.globalAlpha = suave(entra(0, 0.35));
     contenidoRedesFoto(ctx, foto, (W - lado) / 2, y, lado, lado, { radio: 40, brillo: 'rgba(0,0,0,0.5)' });
     ctx.globalAlpha = 1;
@@ -337,7 +390,7 @@ function contenidoRedesDibujarLamina(ctx, W, H, e, opciones = {}) {
   /* dinamico, beneficios y confianza comparten el fondo oscuro */
   contenidoRedesFondoOscuro(ctx, W, H, a);
   contenidoRedesLogo(ctx, W / 2, historia ? 110 : 50, historia ? 50 : 42, true);
-  let y = historia ? 210 : 120;
+  let y = contenidoRedesKicker(ctx, W, historia ? 192 : 104, e.kicker, true, historia ? 30 : 26) + 18;
   y = contenidoRedesTexto(ctx, String(gancho).toUpperCase(), 70, y + (1 - suave(entra(0, 0.25))) * 40, W - 140, { tam: historia ? 98 : 80, peso: 700, color: '#ffffff', maxLineas: 2, interlineado: 1.02, sombra: 'rgba(59,130,246,0.9)' });
 
   if (estilo === 'beneficios' && e.beneficios.length) {
@@ -368,9 +421,12 @@ function contenidoRedesDibujarLamina(ctx, W, H, e, opciones = {}) {
 
   /* La foto toma lo que sobra: así el nombre, el precio y los sellos nunca chocan con el pie */
   const conSellos = estilo === 'confianza' || historia;
-  const reserva = 40 + 106 + 18 + (historia ? 150 : 128) + (pr.antes ? 50 : 0) + (conSellos ? 30 + (historia ? 75 : 66) : 0) + 24;
-  y += 36;
-  const lado = Math.max(380, Math.min(historia ? 760 : 600, pieY - y - reserva));
+  const tamSellos = historia ? 34 : 30;
+  /* Se mide de verdad cuántas filas ocupan los sellos (antes se suponía una y a veces eran dos) */
+  const altoSellos = conSellos ? 30 + contenidoRedesSellos(ctx, W, 0, contenidoRedesSellosDe(p), true, tamSellos, true) : 0;
+  const reserva = 40 + 106 + 18 + (historia ? 150 : 128) + (pr.antes ? 50 : 0) + altoSellos + 30;
+  y += 32;
+  const lado = Math.max(300, Math.min(historia ? 760 : 600, pieY - y - reserva));
   const v = suave(entra(0.05, 0.4));
   ctx.globalAlpha = v;
   contenidoRedesFoto(ctx, foto, (W - lado) / 2, y + (1 - v) * 120, lado, lado, { radio: 50, borde: 'rgba(59,130,246,0.55)', brillo: 'rgba(59,130,246,0.5)' });
@@ -386,7 +442,7 @@ function contenidoRedesDibujarLamina(ctx, W, H, e, opciones = {}) {
   if (pr.antes) y = contenidoRedesTexto(ctx, `Antes ${fmtCLP(pr.antes)}`, 80, y + 4, W - 160, { tam: 38, peso: 400, color: '#a1a1aa', maxLineas: 1 });
   if (conSellos) {
     ctx.globalAlpha = suave(entra(0.55, 0.75));
-    contenidoRedesSellos(ctx, W, y + 30, contenidoRedesSellosDe(p), true, historia ? 34 : 30);
+    contenidoRedesSellos(ctx, W, y + 30, contenidoRedesSellosDe(p), true, tamSellos);
     ctx.globalAlpha = 1;
   }
   contenidoRedesPie(ctx, W, pieY, true, 0.95);
@@ -429,17 +485,194 @@ function contenidoRedesDibujarCierre(ctx, W, H, e, a = 1) {
   opcion(1, '#3b82f6', '🛒', servicio ? 'Agenda en la web' : 'Cómpralo en la web', servicio ? `${CONTENIDO_REDES_TIENDA.web}/diagnostico` : `${CONTENIDO_REDES_TIENDA.web} · despacho o retiro`);
   y += 30;
   y = contenidoRedesTexto(ctx, `📍 ${CONTENIDO_REDES_TIENDA.direccion}`, 80, y, W - 160, { tam: 40, peso: 400, color: claro ? '#475569' : '#a1a1aa', maxLineas: 1 });
-  contenidoRedesTexto(ctx, CONTENIDO_REDES_TIENDA.entrada, 80, y + 8, W - 160, { tam: 42, peso: 700, color: tinta, maxLineas: 1 });
+  y = contenidoRedesTexto(ctx, CONTENIDO_REDES_TIENDA.entrada, 80, y + 8, W - 160, { tam: 42, peso: 700, color: tinta, maxLineas: 1 });
+  /* Medios de pago y lo que da confianza (dueño, 19-10-2026: "al final deja todo, medio de pago, suma puntos…") */
+  const resto = Math.max(0, Math.min(1, (a - 0.5) / 0.35));
+  ctx.save();
+  ctx.globalAlpha = 1 - Math.pow(1 - resto, 3);
+  y = contenidoRedesTexto(ctx, 'Paga como quieras', 80, y + 46, W - 160, { tam: 36, peso: 600, color: claro ? '#64748b' : '#93c5fd', maxLineas: 1 });
+  y = contenidoRedesSellos(ctx, W, y + 14, CONTENIDO_REDES_PAGOS, !claro, 32, false, '');
+  y = contenidoRedesSellos(ctx, W, y + 10, servicio ? ['🛡️ Con garantía', '🔧 Técnicos propios'] : ['🛡️ Garantía', '🚚 Despacho en Arica', '📦 Envíos a Chile'], !claro, 32, false, '');
+  if (CONTENIDO_REDES_PUNTOS_ACTIVOS) contenidoRedesTexto(ctx, '⭐ Y sumas Puntos Sevelin en cada compra', 80, y + 20, W - 160, { tam: 38, peso: 700, color: claro ? '#1d4ed8' : '#fde68a', maxLineas: 1 });
+  ctx.restore();
+}
+
+/* ---------- Carrusel (v166): hasta 6 láminas que se sienten una sola al deslizar ---------- */
+
+/* Fondo de la lámina i de n: el del estilo, más una cinta de luz que cruza todas las láminas
+   (cada una dibuja su tramo, así al deslizar la cinta sigue de una a la otra). */
+function contenidoRedesFondoCarrusel(ctx, W, H, e, i, n) {
+  const claro = e.estilo === 'minimalista';
+  if (claro) { ctx.fillStyle = '#f4f5f7'; ctx.fillRect(0, 0, W, H); }
+  else if (e.estilo === 'precio') { const g = ctx.createLinearGradient(0, 0, W, H); g.addColorStop(0, '#1d4ed8'); g.addColorStop(1, '#0b1640'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); }
+  else contenidoRedesFondoOscuro(ctx, W, H, i / Math.max(1, n - 1));
+  const gx = -i * W, total = n * W;
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(gx, H * 0.86);
+  ctx.bezierCurveTo(gx + total * 0.3, H * 0.98, gx + total * 0.6, H * 0.12, gx + total, H * 0.2);
+  ctx.lineTo(gx + total, H * 0.2 + 150);
+  ctx.bezierCurveTo(gx + total * 0.6, H * 0.12 + 150, gx + total * 0.3, H * 0.98 + 150, gx, H * 0.86 + 150);
+  ctx.closePath();
+  const cinta = ctx.createLinearGradient(gx, 0, gx + total, 0);
+  cinta.addColorStop(0, claro ? 'rgba(59,130,246,0.10)' : 'rgba(59,130,246,0.16)');
+  cinta.addColorStop(1, claro ? 'rgba(14,165,233,0.14)' : 'rgba(34,211,238,0.18)');
+  ctx.fillStyle = cinta; ctx.fill();
+  ctx.restore();
+  /* Logo a la izquierda y "2/6" a la derecha */
+  ctx.save();
+  ctx.font = `700 34px ${CONTENIDO_REDES_LETRA}`;
+  const anchoLogo = ctx.measureText('SEVELIN').width;
+  ctx.restore();
+  contenidoRedesLogo(ctx, 70 + anchoLogo / 2 + 20, 56, 34, !claro);
+  ctx.save();
+  const etiqueta = `${i + 1}/${n}`;
+  ctx.font = `700 28px ${CONTENIDO_REDES_LETRA}`;
+  const w = ctx.measureText(etiqueta).width + 36;
+  contenidoRedesRedondeado(ctx, W - 70 - w, 50, w, 50, 25);
+  ctx.fillStyle = claro ? '#e2e8f0' : 'rgba(255,255,255,0.12)'; ctx.fill();
+  ctx.fillStyle = claro ? '#334155' : '#e2e8f0'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(etiqueta, W - 70 - w / 2, 76);
+  ctx.restore();
+  return claro;
+}
+
+function contenidoRedesTituloLamina(ctx, W, y, texto, claro, tam = 76) {
+  return contenidoRedesTexto(ctx, texto, 80, y, W - 160, { tam, peso: 800, color: claro ? '#0f172a' : '#ffffff', maxLineas: 2, interlineado: 1.04, alinear: 'left', sombra: claro ? null : 'rgba(59,130,246,0.7)' });
+}
+
+function contenidoRedesTarjeta(ctx, x, y, w, h, claro, borde = null) {
+  contenidoRedesRedondeado(ctx, x, y, w, h, 28);
+  ctx.fillStyle = claro ? '#ffffff' : 'rgba(13,13,16,0.82)';
+  ctx.fill();
+  ctx.strokeStyle = borde || (claro ? '#e2e8f0' : 'rgba(148,163,184,0.25)');
+  ctx.lineWidth = 2; ctx.stroke();
+}
+
+function contenidoRedesDibujarCarrusel(ctx, W, H, e, lamina) {
+  const { i, n } = lamina;
+  const p = e.producto;
+  const pr = contenidoRedesPrecio(p);
+  const claro = contenidoRedesFondoCarrusel(ctx, W, H, e, i, n);
+  const tinta = claro ? '#0f172a' : '#ffffff';
+  const suave = claro ? '#475569' : '#cbd5e1';
+  const foto = e.fotos[(lamina.iFoto ?? e.iFoto) % Math.max(1, e.fotos.length)] || null;
+  const servicio = contenidoRedesEsServicio(p);
+
+  if (lamina.tipo === 'portada') {
+    let y = contenidoRedesKicker(ctx, W, 140, e.kicker, !claro, 28) + 22;
+    y = contenidoRedesTexto(ctx, String(e.gancho).toUpperCase(), 70, y, W - 140, { tam: 96, peso: 800, color: tinta, maxLineas: 2, interlineado: 1.0, sombra: claro ? null : 'rgba(59,130,246,0.9)' });
+    const lado = Math.min(720, H - y - 250);
+    contenidoRedesFoto(ctx, foto, (W - lado) / 2, y + 30, lado, lado, { radio: 44, brillo: claro ? 'rgba(15,23,42,0.12)' : 'rgba(59,130,246,0.5)', borde: claro ? null : 'rgba(59,130,246,0.5)' });
+    contenidoRedesTexto(ctx, p.nombre, 90, y + 30 + lado + 26, W - 180, { tam: 38, peso: 600, color: suave, maxLineas: 2 });
+    /* "Desliza →" */
+    ctx.save();
+    ctx.font = `700 30px ${CONTENIDO_REDES_LETRA}`;
+    const txt = 'Desliza  →';
+    const w = ctx.measureText(txt).width + 50;
+    contenidoRedesRedondeado(ctx, W - 70 - w, H - 100, w, 60, 30);
+    ctx.fillStyle = '#3b82f6'; ctx.fill();
+    ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(txt, W - 70 - w / 2, H - 69);
+    ctx.restore();
+    return;
+  }
+
+  if (lamina.tipo === 'beneficios') {
+    const lado = 300;
+    contenidoRedesFoto(ctx, foto, W - 80 - lado, 140, lado, lado, { radio: 32, brillo: claro ? null : 'rgba(59,130,246,0.4)' });
+    contenidoRedesTexto(ctx, servicio ? 'QUÉ INCLUYE' : 'LO QUE TRAE', 80, 160, W - 160 - lado - 40, { tam: 30, peso: 700, color: '#3b82f6', maxLineas: 1, alinear: 'left' });
+    contenidoRedesTituloLamina(ctx, W - lado - 40, 210, servicio ? 'Todo lo que hacemos' : 'Por qué te va a servir', claro, 66);
+    let y = 500;
+    e.beneficios.slice(0, 4).forEach((b, k) => {
+      const h = 140;
+      contenidoRedesTarjeta(ctx, 80, y, W - 160, h, claro);
+      ctx.save();
+      ctx.fillStyle = '#3b82f6';
+      ctx.beginPath(); ctx.arc(150, y + h / 2, 36, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font = `800 38px ${CONTENIDO_REDES_LETRA}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(String(k + 1), 150, y + h / 2 + 2);
+      ctx.restore();
+      const lineas = contenidoRedesLineas(ctx, b, W - 380, 38, 600, 2, 30);
+      const alto = lineas.lineas.length * lineas.tam * 1.15;
+      contenidoRedesTexto(ctx, b, 220, y + (h - alto) / 2, W - 380, { tam: 38, peso: 600, color: tinta, maxLineas: 2, alinear: 'left', minimo: 30 });
+      y += h + 22;
+    });
+    return;
+  }
+
+  if (lamina.tipo === 'ficha') {
+    contenidoRedesTexto(ctx, 'FICHA TÉCNICA', 80, 160, W - 160, { tam: 30, peso: 700, color: '#3b82f6', maxLineas: 1, alinear: 'left' });
+    let y = contenidoRedesTituloLamina(ctx, W, 210, p.nombre, claro, 52) + 40;
+    e.ficha.slice(0, 6).forEach((f) => {
+      const h = 128;
+      contenidoRedesTarjeta(ctx, 80, y, W - 160, h, claro);
+      contenidoRedesTexto(ctx, String(f.nombre).toUpperCase(), 120, y + 22, W - 240, { tam: 24, peso: 700, color: claro ? '#64748b' : '#93c5fd', maxLineas: 1, alinear: 'left' });
+      contenidoRedesTexto(ctx, f.valor, 120, y + 60, W - 240, { tam: 40, peso: 600, color: tinta, maxLineas: 1, alinear: 'left', minimo: 28 });
+      y += h + 18;
+    });
+    return;
+  }
+
+  if (lamina.tipo === 'detalle') {
+    const lado = 880;
+    contenidoRedesFoto(ctx, foto, (W - lado) / 2, 140, lado, lado, { radio: 44, margen: 0.04, brillo: claro ? 'rgba(15,23,42,0.12)' : 'rgba(59,130,246,0.45)' });
+    contenidoRedesTexto(ctx, 'Míralo de cerca', 80, 1060, W - 160, { tam: 60, peso: 800, color: tinta, maxLineas: 1, sombra: claro ? null : 'rgba(59,130,246,0.7)' });
+    contenidoRedesTexto(ctx, servicio ? 'Así trabajamos tu equipo en el taller' : 'Ven a verlo en la tienda antes de llevarlo', 80, 1150, W - 160, { tam: 34, peso: 400, color: suave, maxLineas: 2 });
+    return;
+  }
+
+  if (lamina.tipo === 'precio') {
+    contenidoRedesTexto(ctx, servicio ? '¿CUÁNTO VALE?' : '¿CUÁNTO CUESTA?', 80, 170, W - 160, { tam: 32, peso: 700, color: '#3b82f6', maxLineas: 1 });
+    let y = contenidoRedesTexto(ctx, (pr.desde ? 'Desde ' : '') + fmtCLP(pr.precio), 60, 230, W - 120, { tam: 190, peso: 800, color: e.estilo === 'precio' ? '#facc15' : tinta, maxLineas: 1, sombra: claro ? null : (e.estilo === 'precio' ? 'rgba(250,204,21,0.45)' : 'rgba(59,130,246,0.9)') });
+    if (pr.antes) y = contenidoRedesTexto(ctx, `Antes ${fmtCLP(pr.antes)}`, 80, y + 4, W - 160, { tam: 40, peso: 600, color: suave, maxLineas: 1 });
+    else if (pr.desde) y = contenidoRedesTexto(ctx, 'Según tu modelo: te lo cotizamos al tiro', 80, y + 4, W - 160, { tam: 36, peso: 400, color: suave, maxLineas: 1 });
+    y += 60;
+    contenidoRedesTexto(ctx, 'Paga como quieras', 80, y, W - 160, { tam: 44, peso: 700, color: tinta, maxLineas: 1, alinear: 'left' });
+    y += 80;
+    const cw = (W - 160 - 24) / 2, ch = 130;
+    CONTENIDO_REDES_PAGOS.forEach((m, k) => {
+      const x = 80 + (k % 2) * (cw + 24), yy = y + Math.floor(k / 2) * (ch + 24);
+      contenidoRedesTarjeta(ctx, x, yy, cw, ch, claro, 'rgba(59,130,246,0.45)');
+      contenidoRedesTexto(ctx, m, x, yy + 40, cw, { tam: 44, peso: 700, color: tinta, maxLineas: 1 });
+    });
+    y += 2 * (ch + 24) + 30;
+    contenidoRedesTexto(ctx, 'En el local, o en línea en sevelin.cl', 80, y, W - 160, { tam: 34, peso: 400, color: suave, maxLineas: 1 });
+    return;
+  }
+
+  /* cierre */
+  contenidoRedesTexto(ctx, servicio || pr.desde ? 'COTÍZALO HOY' : 'PÍDELO HOY', 80, 160, W - 160, { tam: 32, peso: 700, color: '#3b82f6', maxLineas: 1 });
+  let y = contenidoRedesTexto(ctx, '¿Lo quieres?', 80, 210, W - 160, { tam: 92, peso: 800, color: tinta, maxLineas: 1, sombra: claro ? null : 'rgba(59,130,246,0.9)' }) + 34;
+  const opciones = [
+    ['#22c55e', '💬', servicio ? 'Cotiza por WhatsApp' : 'Escríbenos por WhatsApp', CONTENIDO_REDES_TIENDA.whatsapp],
+    ['#3b82f6', '🛒', servicio ? 'Agenda en la web' : 'Cómpralo en la web', servicio ? `${CONTENIDO_REDES_TIENDA.web}/diagnostico` : `${CONTENIDO_REDES_TIENDA.web} · despacho o retiro`],
+    ['#f59e0b', '📍', 'Ven a la tienda', `${CONTENIDO_REDES_TIENDA.direccion.split(',')[0]} · ${CONTENIDO_REDES_TIENDA.entrada.toLowerCase().replace('av. robinson rojas', 'Av. Robinson Rojas')}`],
+  ];
+  opciones.forEach(([color, icono, titulo, detalle]) => {
+    const h = 170;
+    contenidoRedesTarjeta(ctx, 80, y, W - 160, h, claro, color);
+    contenidoRedesRedondeado(ctx, 108, y + 28, 114, 114, 28); ctx.fillStyle = color; ctx.fill();
+    ctx.save(); ctx.font = `600 58px ${CONTENIDO_REDES_LETRA}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff'; ctx.fillText(icono, 165, y + 88); ctx.restore();
+    contenidoRedesTexto(ctx, titulo, 250, y + 32, W - 370, { tam: 46, peso: 700, color: tinta, maxLineas: 1, alinear: 'left', minimo: 34 });
+    contenidoRedesTexto(ctx, detalle, 250, y + 98, W - 370, { tam: 32, peso: 600, color, maxLineas: 1, alinear: 'left', minimo: 24 });
+    y += h + 22;
+  });
+  y = contenidoRedesSellos(ctx, W, y + 14, servicio ? ['🛡️ Con garantía', '🔧 Técnicos propios', '💳 Débito y crédito'] : ['🛡️ Garantía', '🚚 Despacho en Arica', '📦 Envíos a Chile', '💳 Débito y crédito'], !claro, 30, false, '');
+  if (CONTENIDO_REDES_PUNTOS_ACTIVOS) contenidoRedesTexto(ctx, '⭐ Y sumas Puntos Sevelin en cada compra', 80, y + 16, W - 160, { tam: 36, peso: 700, color: claro ? '#1d4ed8' : '#fde68a', maxLineas: 1 });
 }
 
 /* Las láminas del carrusel: portada, beneficios (o segunda foto), detalle, precio y sellos, cierre. */
+/* Portada → lo que trae (las ✅ de la ficha) → ficha técnica (las casillas de filtros) → la foto de
+   cerca → precio y medios de pago → cómo comprarlo. Lo que el producto no tiene, no sale. */
 function contenidoRedesLaminasCarrusel(e) {
-  const laminas = [{ tipo: 'lamina', estilo: e.estilo, iFoto: e.iFoto }];
-  if (e.beneficios.length) laminas.push({ tipo: 'lamina', estilo: 'beneficios', iFoto: (e.iFoto + 1) % Math.max(1, e.fotos.length) });
-  if (e.fotos.length > 1) laminas.push({ tipo: 'lamina', estilo: e.estilo === 'minimalista' ? 'minimalista' : 'dinamico', iFoto: (e.iFoto + 2) % e.fotos.length, gancho: 'Míralo de cerca' });
-  laminas.push({ tipo: 'lamina', estilo: e.estilo === 'precio' ? 'confianza' : 'precio', iFoto: e.iFoto, gancho: 'Precio Sevelin' });
-  laminas.push({ tipo: 'cierre' });
-  return laminas.slice(0, 5);
+  const n = Math.max(1, e.fotos.length);
+  const tipos = ['portada'];
+  if (e.beneficios.length >= 2) tipos.push('beneficios');
+  if ((e.ficha || []).length >= 2) tipos.push('ficha');
+  if (e.fotos.length > 1) tipos.push('detalle');
+  tipos.push('precio', 'cierre');
+  return tipos.map((tipo, i) => ({ tipo, i, n: tipos.length, iFoto: (e.iFoto + (tipo === 'beneficios' ? 1 : tipo === 'detalle' ? 2 : 0)) % n }));
 }
 
 function contenidoRedesDibujarEn(canvas, e, lamina = null) {
@@ -447,6 +680,7 @@ function contenidoRedesDibujarEn(canvas, e, lamina = null) {
   canvas.width = f.ancho;
   canvas.height = f.alto;
   const ctx = canvas.getContext('2d');
+  if (e.formato === 'carrusel' && lamina) { contenidoRedesDibujarCarrusel(ctx, f.ancho, f.alto, e, lamina); return; }
   if (lamina?.tipo === 'cierre') { contenidoRedesDibujarCierre(ctx, f.ancho, f.alto, e); return; }
   const variante = lamina ? { ...e, estilo: lamina.estilo || e.estilo, gancho: lamina.gancho || e.gancho } : e;
   contenidoRedesDibujarLamina(ctx, f.ancho, f.alto, variante, { iFoto: lamina?.iFoto ?? e.iFoto });
@@ -481,6 +715,8 @@ async function abrirContenidoRedes(productoOId) {
   document.getElementById('contenidoRedesNombre').textContent = p.nombre || '';
   document.getElementById('contenidoRedesVista').innerHTML = '<p class="texto-apagado">Cargando las fotos…</p>';
   document.getElementById('contenidoRedesAviso').innerHTML = '';
+  const subido = document.getElementById('contenidoRedesSubido');
+  if (subido) { subido.hidden = true; subido.innerHTML = ''; }
   modal.classList.add('show');
   try {
     await contenidoRedesCargarLetras();
@@ -488,7 +724,7 @@ async function abrirContenidoRedes(productoOId) {
       Promise.all((p.imagen_urls || []).slice(0, 4).map(u => contenidoRedesCargarFoto(u).catch(() => null))),
       API.redes.registro(30, p.id).then(r => r.piezas || []).catch(() => []),
     ]);
-    contenidoRedesEstado = { producto: p, formato: 'post', animacion: 'impacto', fotos: fotos.filter(Boolean), registro, beneficios: contenidoRedesBeneficios(p), saltar: 0 };
+    contenidoRedesEstado = { producto: p, formato: 'post', animacion: 'impacto', fotos: fotos.filter(Boolean), registro, beneficios: contenidoRedesBeneficios(p), ficha: await contenidoRedesFicha(p), kicker: contenidoRedesKickerDe(p), saltar: 0 };
     if (!contenidoRedesEstado.fotos.length) throw new Error('No se pudo cargar ninguna foto del producto');
     Object.assign(contenidoRedesEstado, contenidoRedesElegirVariante(contenidoRedesEstado, 0));
     contenidoRedesPintarControles();
@@ -518,6 +754,7 @@ function contenidoRedesPintarControles() {
   if (caja) caja.hidden = e.formato !== 'reel';
   document.getElementById('contenidoRedesAnimaciones').innerHTML = chips(CONTENIDO_REDES_ANIMACIONES, e.animacion, 'animacion');
   document.getElementById('contenidoRedesGancho').value = e.gancho || '';
+  document.getElementById('contenidoRedesKicker').value = e.kicker || '';
   document.getElementById('contenidoRedesFotos').innerHTML = (e.producto.imagen_urls || []).slice(0, e.fotos.length).map((u, i) => `
     <button type="button" class="contenido-redes-foto${i === e.iFoto ? ' activo' : ''}" data-foto="${i}" aria-label="Usar la foto ${i + 1}"><img src="${escHtml(u)}" alt=""></button>`).join('');
   const boton = document.getElementById('btnContenidoRedesDescargar');
@@ -604,6 +841,8 @@ function contenidoRedesOtraVersion() {
   e.saltar = (e.saltar || 0) + 1;
   Object.assign(e, contenidoRedesElegirVariante(e, e.saltar));
   if (e.formato === 'reel') e.animacion = CONTENIDO_REDES_ANIMACIONES[e.saltar % CONTENIDO_REDES_ANIMACIONES.length].id;
+  const kickers = contenidoRedesKickers(e.producto);
+  e.kicker = kickers[e.saltar % kickers.length];
   contenidoRedesPintarControles();
   contenidoRedesRedibujar();
 }
@@ -954,13 +1193,49 @@ async function contenidoRedesDescargar() {
     /* Queda en el registro como "generado"; se marca publicado desde el panel */
     const fila = await API.redes.registrar({ producto_id: e.producto.id, formato: e.formato, estilo: e.estilo, gancho: e.gancho, animacion: e.formato === 'reel' ? e.animacion : null });
     e.registro = [fila, ...(e.registro || [])];
+    e.ultimaPieza = fila;
     contenidoRedesPintarAviso();
-    showToast('Listo: quedó en el registro de Redes. Márcalo como publicado cuando lo subas.', 'ok');
+    contenidoRedesPreguntarSubido();
     if (document.getElementById('view-redes')?.classList.contains('active')) cargarPanelRedes();
   } catch (err) {
     showToast(err.message || 'No se pudo descargar', 'err');
   } finally {
     if (boton) { boton.disabled = false; boton.textContent = textoBoton; }
+  }
+}
+
+/* Después de descargar: "¿Lo subiste?" (dueño, 19-10-2026). Si dice "todavía no", queda como
+   descargada y el panel se lo recuerda. */
+function contenidoRedesPreguntarSubido() {
+  const el = document.getElementById('contenidoRedesSubido');
+  if (!el) return;
+  el.hidden = false;
+  el.innerHTML = `
+    <p><b>✅ Descargado.</b> ¿Ya lo subiste?</p>
+    <div class="contenido-redes-subido-botones">
+      <button type="button" class="btn btn-sm btn-primary" data-subido="instagram">A Instagram</button>
+      <button type="button" class="btn btn-sm btn-primary" data-subido="facebook">A Facebook</button>
+      <button type="button" class="btn btn-sm btn-primary" data-subido="ambas">A las dos</button>
+      <button type="button" class="btn btn-sm btn-outline" data-subido="no">Todavía no</button>
+    </div>`;
+}
+
+async function contenidoRedesResponderSubido(respuesta) {
+  const e = contenidoRedesEstado;
+  const el = document.getElementById('contenidoRedesSubido');
+  if (!e?.ultimaPieza || !el) return;
+  if (respuesta === 'no') {
+    el.innerHTML = '<p>Quedó como <b>descargada</b>. En Redes sociales te recuerdo las que falta marcar.</p>';
+    return;
+  }
+  const redes = respuesta === 'ambas' ? ['instagram', 'facebook'] : [respuesta];
+  try {
+    const fila = await API.redes.marcar(e.ultimaPieza.id, { redes });
+    Object.assign(e.ultimaPieza, fila);
+    el.innerHTML = `<p><b>Marcado como publicado</b> en ${redes.map(r => r === 'instagram' ? 'Instagram' : 'Facebook').join(' y ')}.</p>`;
+    if (document.getElementById('view-redes')?.classList.contains('active')) cargarPanelRedes();
+  } catch (err) {
+    showToast(err.message || 'No se pudo marcar', 'err');
   }
 }
 
@@ -1002,11 +1277,13 @@ function contenidoRedesPintarResumen(el) {
   en(CONTENIDO_REDES_DIAS_REPETIDO).forEach(r => porProducto.set(r.producto_id, (porProducto.get(r.producto_id) || 0) + 1));
   const repetidos = [...porProducto.values()].filter(n => n >= 2).length;
   const publicadas = reg.filter(r => r.estado === 'publicado').length;
+  const sinMarcar = reg.filter(r => r.estado !== 'publicado' && Date.now() - new Date(r.creado_en).getTime() > 86400000).length;
   el.innerHTML = `
     <div class="redes-cifra"><b>${en(7).length}</b><span>${en(7).length === 1 ? 'pieza' : 'piezas'} en 7 días · ${distintos(en(7))}</span></div>
     <div class="redes-cifra"><b>${reg.length}</b><span>${reg.length === 1 ? 'pieza' : 'piezas'} en 30 días · ${distintos(reg)}</span></div>
     <div class="redes-cifra"><b>${publicadas}</b><span>marcadas como publicadas</span></div>
-    <div class="redes-cifra${repetidos ? ' redes-cifra-alerta' : ''}"><b>${repetidos}</b><span>productos repetidos en ${CONTENIDO_REDES_DIAS_REPETIDO} días</span></div>`;
+    <div class="redes-cifra${repetidos ? ' redes-cifra-alerta' : ''}"><b>${repetidos}</b><span>productos repetidos en ${CONTENIDO_REDES_DIAS_REPETIDO} días</span></div>
+    ${sinMarcar ? `<div class="redes-cifra redes-cifra-alerta"><b>${sinMarcar}</b><span>descargadas hace más de un día sin marcar: ¿las subiste? Márcalas abajo</span></div>` : ''}`;
 }
 
 function contenidoRedesPintarRegistro(tbody) {
@@ -1082,6 +1359,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!contenidoRedesEstado) return;
     contenidoRedesEstado.gancho = ev.target.value.slice(0, 60);
     contenidoRedesRedibujar();
+  });
+  document.getElementById('contenidoRedesKicker')?.addEventListener('input', (ev) => {
+    if (!contenidoRedesEstado) return;
+    contenidoRedesEstado.kicker = ev.target.value.slice(0, 40);
+    contenidoRedesRedibujar();
+  });
+  document.getElementById('contenidoRedesSubido')?.addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-subido]'); if (b) contenidoRedesResponderSubido(b.dataset.subido);
   });
   document.getElementById('contenidoRedesFormatos')?.addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-formato]'); if (b) contenidoRedesCambiar('formato', b.dataset.formato);
