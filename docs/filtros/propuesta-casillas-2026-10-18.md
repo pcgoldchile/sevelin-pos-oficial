@@ -1,7 +1,7 @@
 # Propuesta de casillas para los filtros de sevelin.cl (18-10-2026)
 
-Las leí de la descripción de cada producto publicado. **Todavía no están guardadas**: se escriben en la base cuando des el OK.
-Si algo está mal o falta, dímelo con el número (ej. "#212 también trae VESA") o corrígelo después en la ficha.
+Las leí de la descripción de cada producto publicado. **Guardadas en la base el 18-10-2026 con el OK del dueño.**
+Si algo está mal o falta, se corrige en la ficha del producto (tarjeta "🔎 Filtros de la tienda").
 
 - Solo marqué lo que la ficha dice. Si la ficha no lo dice, quedó sin marcar aunque el producto lo tenga.
 - Marca, precio y nuevo/reacondicionado no van acá: salen solos de la ficha.

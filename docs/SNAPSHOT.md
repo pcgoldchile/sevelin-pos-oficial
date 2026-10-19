@@ -31,9 +31,9 @@ La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `do
   mismo día, el servicio nuevo #373 Inicialización de Notebook Nuevo, $15.000 (`CHANGELOG-V158.md`).
 - **v159 (sql/103 + tienda supabase/44), filtros de sevelin.cl:** cuadro "🔎 Filtros de la tienda" en la ficha, con
   casillas por categoría (`CARACTERISTICAS_TIENDA` en `api/index.js`, copia exacta en `sevelin-tienda/src/lib/filtros.ts`)
-  y "✨ Rellenar con IA". En la tienda, panel "Filtrar" con esas casillas más marca, precio y estado. La propuesta de
-  casillas de 144 productos está en `docs/filtros/propuesta-casillas-2026-10-18.md` y **espera el OK del dueño** para
-  escribirse (`CHANGELOG-V159.md`).
+  y "✨ Rellenar con IA". En la tienda, panel "Filtrar" con esas casillas más marca, precio y estado. Las casillas de
+  144 productos quedaron escritas con el OK del dueño (`docs/filtros/propuesta-casillas-2026-10-18.md`), y la marca
+  de #157 y #232 (`CHANGELOG-V159.md`).
 - También: el Word de la verificación de actividad del SII (MEF, sin firma) y el catálogo para la máquina Haulmer, los
   dos en `Downloads`.
 

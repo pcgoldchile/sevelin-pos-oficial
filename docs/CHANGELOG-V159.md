@@ -54,10 +54,15 @@ ya muestra solo lo que tiene stock.
 - **No probado:** la IA de verdad (Gemini) sobre una ficha real: en la maqueta es una imitación. Se prueba con el
   primer "✨ Rellenar con IA" del dueño.
 
-## Lo que falta
+## Casillas escritas (mismo día)
 
-- **OK del dueño a la propuesta** `docs/filtros/propuesta-casillas-2026-10-18.md` (144 productos; el `.json` de al
-  lado es lo que se escribe). Con el OK: un `update productos set caracteristicas = …` por producto, y revisar
-  `productos_web` después.
-- Dos monitores sin marca en la ficha (#157 MSI y #232 ViewSonic): no salen en el filtro "Marca" hasta que se cargue.
+El dueño dio el OK ("haz de esto, continúalo"). Se escribieron las casillas de los 144 productos de
+`docs/filtros/propuesta-casillas-2026-10-18.json` (solo donde no había nada) y la marca que faltaba en #157 (MSI) y
+#232 (ViewSonic), en un solo `UPDATE` para que cada producto viajara una sola vez a la tienda. Verificado:
+`productos` y `productos_web` calzan en los 144, y en sevelin.cl/productos?categoria=Monitores el filtro HDMI deja 3 de
+12 (el Samsung 22" VGA/DVI queda fuera). Pendiente #109 cerrado.
+
+## Para después
+
 - Si se cambia el esquema, se cambia en los dos repos (ver el comentario de `CARACTERISTICAS_TIENDA`).
+- Los productos nuevos parten sin casillas: se marcan en la ficha ("✨ Rellenar con IA" o a mano).
