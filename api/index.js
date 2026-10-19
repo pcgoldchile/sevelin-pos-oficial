@@ -11970,6 +11970,63 @@ app.get('/api/cron/sii-rcv', async (req, res) => {
   res.json(await sincronizarRcv('robot'));
 });
 
+/* Destacados automáticos de sevelin.cl (v161, dueño 18-10-2026). Cada día (vercel.json,
+   07:30 de Chile) se le manda a la tienda cuánto se vendió de cada producto: el total
+   de siempre y los últimos 30 días. Antes lo hacía scripts/sincronizar-mas-vendidos.js
+   solo cuando alguien lo corría a mano, y Destacados no cambiaba nunca. La tienda,
+   al recibirlo, recalcula Destacados (sevelin-tienda/src/lib/destacados.ts).
+   Mismo criterio que el script: solo ventas PAGADAS, sin servicios ni ítems sin producto. */
+async function enviarMasVendidosATienda() {
+  if (!SYNC_SECRET) return { ok: false, mensaje: 'Falta SYNC_SECRET' };
+  const hace30 = new Date(Date.now() - 30 * 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Santiago' });
+  const total = new Map();
+  const mes = new Map();
+  const PAGINA = 1000;
+  for (let desde = 0; ; desde += PAGINA) {
+    const { data, error } = await db.from('venta_items')
+      .select('producto_id, cantidad, es_servicio, ventas!inner(estado, fecha)')
+      .eq('ventas.estado', 'PAGADA')
+      .order('id', { ascending: true })
+      .range(desde, desde + PAGINA - 1);
+    if (error) return { ok: false, mensaje: error.message };
+    for (const it of data || []) {
+      if (it.es_servicio || !it.producto_id) continue;
+      const n = Number(it.cantidad) || 0;
+      total.set(it.producto_id, (total.get(it.producto_id) || 0) + n);
+      if (it.ventas?.fecha && it.ventas.fecha >= hace30) mes.set(it.producto_id, (mes.get(it.producto_id) || 0) + n);
+    }
+    if (!data || data.length < PAGINA) break;
+  }
+  const ventas = [...total.entries()].map(([producto_pos_id, unidades]) => ({ producto_pos_id, unidades, unidades_30d: mes.get(producto_pos_id) || 0 }));
+  if (!ventas.length) return { ok: true, enviados: 0 };
+  const url = process.env.TIENDA_MAS_VENDIDOS_URL || 'https://www.sevelin.cl/api/sync/mas-vendidos';
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-sync-secret': SYNC_SECRET },
+    body: JSON.stringify({ ventas }),
+    signal: AbortSignal.timeout(45000)
+  });
+  const cuerpo = await r.json().catch(() => ({}));
+  if (!r.ok) return { ok: false, mensaje: `La tienda respondió ${r.status}: ${cuerpo?.error || ''}`.trim() };
+  return { ok: true, enviados: ventas.length, con_ventas_del_mes: [...mes.values()].filter(n => n > 0).length, tienda: cuerpo };
+}
+
+app.get('/api/cron/mas-vendidos', async (req, res) => {
+  const secreto = process.env.CRON_SECRET;
+  if (!secreto || req.headers.authorization !== `Bearer ${secreto}`) return enviarError(res, 401, 'No autorizado');
+  try {
+    const r = await enviarMasVendidosATienda();
+    if (!r.ok) {
+      console.error('[cron mas-vendidos]', r.mensaje);
+      registrarErrorSalud({ origen: 'POS', ruta: 'Destacados tienda', metodo: 'robot', mensaje: `Más vendidos a la tienda: ${r.mensaje}` });
+    }
+    res.json(r);
+  } catch (e) {
+    console.error('[cron mas-vendidos]', e.message);
+    res.status(500).json({ ok: false, mensaje: e.message });
+  }
+});
+
 // Botón "Sincronizar ahora". Con 2 minutos de espera entre intentos, para no martillar al SII.
 app.post('/api/finanzas/sii/sincronizar', auth(true), async (req, res) => {
   const { data: ultima } = await db.from('sii_sync').select('creado_en').order('creado_en', { ascending: false }).limit(1).maybeSingle();

@@ -37,6 +37,8 @@ La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `do
 - **v160, 12 mejoras de sevelin.cl** (buscador que perdona, sugerencias, WhatsApp con el producto, ficha técnica,
   comparar, `/que-me-sirve`, atajos, vistos…) y en el POS **"Lo que buscan y no tenemos"** en Página Web → Más buscados
   (`CHANGELOG-V160.md`; tienda `supabase/45`).
+- **v161, Destacados automáticos:** el POS manda cada día a las 07:30 las ventas del mes (`/api/cron/mas-vendidos`) y la
+  tienda recalcula con vistas, tendencia, la etiqueta "🔥 Tendencia" y el calor de Arica (`CHANGELOG-V161.md`).
 - También: el Word de la verificación de actividad del SII (MEF, sin firma) y el catálogo para la máquina Haulmer, los
   dos en `Downloads`.
 

@@ -4,7 +4,8 @@
     "api/index.js": { "maxDuration": 60 }
   },
   "crons": [
-    { "path": "/api/cron/sii-rcv", "schedule": "0 10 * * *" }
+    { "path": "/api/cron/sii-rcv", "schedule": "0 10 * * *" },
+    { "path": "/api/cron/mas-vendidos", "schedule": "30 10 * * *" }
   ],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index" }
