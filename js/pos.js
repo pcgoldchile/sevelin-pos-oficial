@@ -1610,7 +1610,9 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
     // sql/79: por cuál máquina pasó la tarjeta (el servidor la ignora si no hubo tarjeta)
     maquina_tarjeta: datosPago.maquina || null,
     // Vincula la venta al turno de caja abierto, para el arqueo (punto 4)
-    caja_id: (typeof cajaActivaActual !== 'undefined' && cajaActivaActual) ? cajaActivaActual.id : null,
+    /* v169: una venta atrasada que se registra desde "Cuadrar con el SII" no entra en la caja de hoy */
+    caja_id: (typeof cuadreSiiVentaAtrasada === 'function' && cuadreSiiVentaAtrasada()) ? null
+      : (typeof cajaActivaActual !== 'undefined' && cajaActivaActual) ? cajaActivaActual.id : null,
     /* Datos de entrega (punto 3): retiro/despacho, dirección, notas,
        origen del pago y comisión de pasarela. El backend los normaliza
        (retiro → entregado, despacho → pendiente de envío). */
@@ -1637,6 +1639,8 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
   }
 
   ultimaVentaRegistrada = venta;
+  // v169: js/cuadre-sii.js le anota el N° de boleta si era una venta atrasada (antes de la ventana de éxito)
+  document.dispatchEvent(new CustomEvent('pos:venta-registrada', { detail: venta }));
   if (venta?.puntos_ganados > 0) showToast(`⭐ Sumó ${Number(venta.puntos_ganados).toLocaleString('es-CL')} puntos${venta.puntos_bono ? ' (con el bono de bienvenida)' : ''}`, 'ok');
   if (venta?.puntos_aviso) showToast(venta.puntos_aviso, 'err');
   document.dispatchEvent(new CustomEvent('pos:iva-cambio'));   // v128: el chip "IVA a favor" se recalcula

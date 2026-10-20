@@ -152,6 +152,7 @@
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="fijos">Gastos Fijos</button>
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="activos">Activos de uso interno</button>
           <button class="nav-subitem" data-view="view-finanzas" data-subtab="padres">Mis padres</button>
+          <button class="nav-subitem" data-view="view-finanzas" data-subtab="sii">Cuadrar con el SII</button>
         </div>
       </div>
 
@@ -282,6 +283,10 @@
            fijos del mes vencidos o por vencer sin registrar. Solo admin; ocultos si no hay nada. -->
       <button id="btnSiiPorAceptar" class="btn-notificaciones btn-facturas admin-only" title="Facturas recibidas que el SII tiene por aceptar" hidden>
         <span class="chip-punto" aria-hidden="true"></span><span id="textoSiiPorAceptar">SII</span>
+      </button>
+      <!-- v169 (sql/108): boletas y facturas del SII que no cuadran con el POS (js/cuadre-sii.js) -->
+      <button id="btnSiiPorCuadrar" class="btn-notificaciones btn-facturas admin-only" title="Cuadrar con el SII" hidden>
+        <span class="chip-punto" aria-hidden="true"></span><span id="textoSiiPorCuadrar">SII</span>
       </button>
       <button id="btnFijosPorPagar" class="btn-notificaciones btn-facturas admin-only" title="Gastos fijos del mes sin registrar" hidden>
         <span class="chip-punto" aria-hidden="true"></span><span id="textoFijosPorPagar">Gastos fijos</span>
@@ -505,6 +510,9 @@
                   <h2 class="titulo-pos"><span aria-hidden="true">/</span> Carrito de venta</h2>
                   <span id="posCartConteo" class="text-[12px] font-medium text-slate-500 dark:text-slate-400 tabular-nums"></span>
                 </div>
+
+                <!-- v169: se está registrando una boleta del SII que no se anotó (js/cuadre-sii.js) -->
+                <div id="cuadreSiiBannerPos" class="cuadre-sii-banner" role="status" hidden></div>
 
                 <div class="pos-cart-controles grid grid-cols-2 gap-2.5 mb-3">
                   <div>
@@ -1159,6 +1167,7 @@
         <button class="subtab" data-subtab="fijos">🔁 Gastos Fijos</button>
         <button class="subtab" data-subtab="activos">🛠️ Activos</button>
         <button class="subtab" data-subtab="padres">👪 Mis padres</button>
+        <button class="subtab" data-subtab="sii">🧾 Cuadrar con el SII</button>
       </nav>
 
       <!-- ============================================================
@@ -2101,6 +2110,26 @@
           <div id="padresPozoAviso"></div>
           <div class="kpi-grid" id="padresPozoKpis"></div>
           <div id="padresPozoDetalle"></div>
+        </div>
+      </div>
+
+      <!-- v169 (sql/108): cada boleta y factura del RCV del SII contra las ventas y los gastos del POS
+           (js/cuadre-sii.js). Lo que calza se propone y se confirma; lo que falta se registra desde aquí. -->
+      <div class="panel-finanzas" data-panel-finanzas="sii">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>🧾 Cuadrar con el SII</h2>
+              <p class="subtitle">Cada boleta que emitiste y cada factura que te hicieron, contra lo anotado en el POS. Lo que falta queda aquí hasta que lo resuelvas.</p>
+            </div>
+            <div class="toolbar-group">
+              <input type="month" id="cuadreSiiMes" aria-label="Mes a cuadrar">
+              <button class="btn btn-outline" id="btnCuadreSiiSubir" type="button" title="El CSV de VENTAS del Registro de Compras y Ventas">📤 Subir boletas (CSV)</button>
+              <input type="file" id="cuadreSiiArchivo" accept=".csv,text/csv" hidden>
+              <button class="btn btn-ghost" id="btnCuadreSiiActualizar" type="button">🔄 Actualizar</button>
+            </div>
+          </div>
+          <div id="cuadreSiiContenido"><p class="modal-hint">Elige el mes.</p></div>
         </div>
       </div>
 
@@ -8072,6 +8101,18 @@
     </div>
   </div>
 
+  <!-- v169: asociar a mano o crear el gasto de una factura (js/cuadre-sii.js) -->
+  <div id="modalCuadreSii" class="modal-overlay">
+    <div class="modal-box" style="max-width:640px;">
+      <h2 id="cuadreSiiModalTitulo">🧾 Cuadrar con el SII</h2>
+      <div id="cuadreSiiModalCuerpo" style="max-height:62vh; overflow:auto;"></div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnCuadreSiiModalCancelar" type="button">Cancelar</button>
+        <button class="btn btn-primary" id="btnCuadreSiiModalOk" type="button">Aceptar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modalSiiPorAceptar" class="modal-overlay">
     <div class="modal-box" style="max-width:740px;">
       <h2>🧾 Facturas por aceptar en el SII</h2>
@@ -8549,6 +8590,7 @@
   <script src="js/inteligencia.js"></script>   <!-- después de balance.js: reutiliza calcularRango y el panel de Finanzas -->
   <script src="js/informe-compras.js"></script>   <!-- después de balance.js: usa cerrarModal -->
   <script src="js/informe-semanal.js"></script>   <!-- después de balance.js: usa el panel de Finanzas y fmtCLP -->
+  <script src="js/cuadre-sii.js"></script>   <!-- v169 (sql/108): después de notificaciones.js (fechaCortaAviso), balance.js (cerrarModal) y pos.js (evento pos:venta-registrada) -->
   <script src="js/acuerdo-padres.js"></script>   <!-- v133 (sql/90): después de pos.js, compras.js y balance.js: pregunta de la caja y panel Mis padres -->
   <script src="js/cotizaciones-ref.js"></script>   <!-- v133 (sql/90): Taller → Cotizaciones aproximadas; usa cerrarModal de balance.js -->
   <script src="js/cotizador-celulares.js"></script>   <!-- v157 (sql/102): Servicio Técnico → Cotizador celulares -->

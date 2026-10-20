@@ -1137,6 +1137,107 @@ app.get('/api/finanzas/sii/iva', (_req, res) => {
 });
 app.post('/api/finanzas/sii/sincronizar', (_req, res) => res.json({ ok: true, documentos: 3 }));
 
+// v169 (sql/108): Cuadrar con el SII. Documentos inventados con los mismos casos que se vieron en
+// septiembre real (boletas de $7.000 parecidas, una venta grande sin anotar, 3 facturas = 1 gasto,
+// factura anulada con nota de crédito, comisiones de TUU). El cruce de verdad está en api/index.js.
+const ventaCuadre = (id, fecha, total, tipo_dte, extra = {}) => ({ id, numero_orden: id, fecha, total, tipo_dte, metodo_pago: 'Efectivo', cliente: null, dte_folio: null, ...extra });
+const gastoCuadre = (id, dia, proveedor, costo_total, extra = {}) => ({ id, dia, fecha: `${dia}T15:00:00Z`, proveedor, costo_total, tiene_factura: false, iva_credito: 0, descripcion: null, ...extra });
+const docCuadre = (id, operacion, tipo_doc, rut, razon_social, folio, fecha_doc, total, extra = {}) => ({
+  id, operacion, tipo_doc, rut, razon_social, folio, fecha_doc, total, iva: total - Math.round(total / 1.19), periodo: '202609', estado: 'REGISTRO',
+  cuadre_estado: 'pendiente', cuadre_nota: null, venta: null, compra: null, propuesta: null, sugerencias: [], cuadrado_por: null, ...extra });
+let sigGastoCuadre = 60;
+const cuadreDocsMaqueta = [
+  docCuadre(1, 'VENTA', 39, '66666666-6', null, 28083, '2026-09-03', 38000, { propuesta: { venta_id: 164, venta: ventaCuadre(164, '2026-09-03', 38000, 'BOLETA'), confianza: 'alta', motivo: 'mismo día, venta marcada con boleta' } }),
+  docCuadre(2, 'VENTA', 39, '66666666-6', null, 28085, '2026-09-05', 7000, { propuesta: { venta_id: 168, venta: ventaCuadre(168, '2026-09-05', 7000, 'BOLETA'), confianza: 'alta', motivo: 'mismo día, venta marcada con boleta · hay otras del mismo monto' } }),
+  docCuadre(3, 'VENTA', 39, '66666666-6', null, 28088, '2026-09-05', 7000, { propuesta: { venta_id: 178, venta: ventaCuadre(178, '2026-09-06', 7000, 'SIN DTE', { cliente: 'Cliente <b>Demo</b>' }), confianza: 'media', motivo: '1 día de diferencia, venta marcada sin boleta · hay otras del mismo monto' } }),
+  docCuadre(4, 'VENTA', 39, '66666666-6', null, 28109, '2026-09-17', 440000),
+  docCuadre(5, 'VENTA', 39, '66666666-6', null, 28114, '2026-09-22', 170000, { sugerencias: [ventaCuadre(231, '2026-09-21', 170000, 'SIN DTE', { metodo_pago: 'Transferencia' })] }),
+  docCuadre(6, 'VENTA', 39, '66666666-6', null, 28081, '2026-09-01', 74000),
+  docCuadre(7, 'VENTA', 39, '66666666-6', null, 28091, '2026-09-10', 20000, { cuadre_estado: 'asociado', venta: ventaCuadre(190, '2026-09-10', 20000, 'BOLETA', { dte_folio: '28091' }), cuadrado_por: 'robot' }),
+  docCuadre(20, 'COMPRA', 33, '76795561-8', 'HAULMER CHILE SPA', 1972272, '2026-08-31', 22078, { cuadre_estado: 'comision' }),
+  docCuadre(21, 'COMPRA', 33, '76795561-8', 'HAULMER CHILE SPA', 1972273, '2026-08-31', 5259, { cuadre_estado: 'comision' }),
+  ...[[22, 40816, 99990], [23, 40815, 199980], [24, 40818, 199980]].map(([id, folio, total]) =>
+    docCuadre(id, 'COMPRA', 33, '96000000-1', 'Computación Ejemplo S.A.', folio, '2026-09-13', total, { propuesta: { compra_id: 9, compra: gastoCuadre(9, '2026-09-13', 'MercadoLibre', 499950, { descripcion: 'Computadores + monitor' }), confianza: 'alta', grupo: [22, 23, 24], motivo: '3 facturas del mismo proveedor y día suman el gasto' } })),
+  docCuadre(25, 'COMPRA', 33, '77000000-2', 'Tienda Grande Demo S.A.', 5735835, '2026-09-02', 117365, { propuesta: { nc: { id: 99, folio: 30391725, fecha_doc: '2026-09-09' }, confianza: 'alta', motivo: 'nota de crédito N° 30391725 del 2026-09-09 por el mismo monto' } }),
+  docCuadre(26, 'COMPRA', 33, '27000000-3', 'Repuestos Demo', 10130, '2026-09-05', 10916, { clasificacion_sugerida: 'Mercadería / Productos para Reventa' }),
+  docCuadre(27, 'COMPRA', 33, '27000000-3', 'Repuestos Demo', 10131, '2026-09-05', 11299, { clasificacion_sugerida: 'Mercadería / Productos para Reventa' }),
+  docCuadre(28, 'COMPRA', 33, '76000000-4', 'Importadora Ejemplo SpA', 7435, '2026-09-22', 169990, { clasificacion_sugerida: 'Mercadería / Productos para Reventa', sugerencias: [gastoCuadre(41, '2026-09-20', 'Importadora', 168000)] }),
+  docCuadre(29, 'COMPRA', 33, '76585000-5', 'Mayorista Demo SpA', 8041, '2026-09-10', 315504, { cuadre_estado: 'asociado', compra: gastoCuadre(8, '2026-09-10', 'Mayorista', 315504, { descripcion: 'Monitores' }), compra_sin_factura: true, iva_de_las_facturas: 50375, cuadrado_por: 'Carlos' }),
+];
+const resumenCuadre = (ops) => {
+  const l = cuadreDocsMaqueta.filter(x => x.operacion === ops);
+  const c = (e) => l.filter(x => x.cuadre_estado === e).length;
+  return { total: l.length, asociado: c('asociado'), pendiente: c('pendiente'), ignorado: c('ignorado'), comision: c('comision'),
+    monto_pendiente: l.filter(x => x.cuadre_estado === 'pendiente').reduce((s, x) => s + x.total, 0), propuestas: l.filter(x => x.cuadre_estado === 'pendiente' && x.propuesta).length };
+};
+app.get('/api/finanzas/sii/cuadre', (req, res) => {
+  const vista = cuadreDocsMaqueta.map(x => ({ ...x, propuesta: x.cuadre_estado === 'pendiente' ? x.propuesta : null, sugerencias: x.cuadre_estado === 'pendiente' ? x.sugerencias : [] }));
+  res.json({ periodo: String(req.query.periodo || '202609'), automaticos: 0,
+    resumen: { ventas: resumenCuadre('VENTA'), compras: resumenCuadre('COMPRA'), pos_sin_documento: 1 },
+    ventas: vista.filter(x => x.operacion === 'VENTA'), compras: vista.filter(x => x.operacion === 'COMPRA'),
+    comisiones: [{ mes: '2026-08', facturado: 27337, iva: 4365, pos: 16468 }],
+    pos_sin_documento: [ventaCuadre(233, '2026-09-25', 15000, 'BOLETA')], hay_boletas: true,
+    ultima_sync: { creado_en: new Date(Date.now() - 3 * 3600000).toISOString(), ok: true, origen: 'robot' },
+    ultimo_reajuste: { BANCO: '2026-09-12', EFECTIVO: '2026-09-12' } });
+});
+app.get('/api/finanzas/sii/cuadre-aviso', (_req, res) => {
+  const p = cuadreDocsMaqueta.filter(x => x.cuadre_estado === 'pendiente');
+  const v = p.filter(x => x.operacion === 'VENTA'), c = p.filter(x => x.operacion === 'COMPRA');
+  res.json({ ventas: v.length, compras: c.length, monto_ventas: v.reduce((s, x) => s + x.total, 0), monto_compras: c.reduce((s, x) => s + x.total, 0), periodos: p.length ? ['202609'] : [], falta_csv_ventas: null });
+});
+app.post('/api/finanzas/sii/cuadre/ventas-csv', (req, res) => res.json({ ok: true, documentos: Math.max(0, String(req.body?.csv || '').split(/\r?\n/).filter(l => l.trim()).length - 1), automaticos: 0 }));
+app.post('/api/finanzas/sii/cuadre/confirmar', (req, res) => {
+  let aplicadas = 0;
+  (req.body?.propuestas || []).forEach(p => {
+    const d = cuadreDocsMaqueta.find(x => x.id === Number(p.doc_id));
+    if (!d || d.cuadre_estado !== 'pendiente' || !d.propuesta) return;
+    if (d.propuesta.nc) Object.assign(d, { cuadre_estado: 'ignorado', cuadre_nota: `Anulada con la nota de crédito N° ${d.propuesta.nc.folio}` });
+    else Object.assign(d, { cuadre_estado: 'asociado', venta: d.propuesta.venta || null, compra: d.propuesta.compra || null, cuadrado_por: 'Maqueta' });
+    aplicadas++;
+  });
+  res.json({ ok: true, aplicadas, omitidas: (req.body?.propuestas || []).length - aplicadas });
+});
+app.post('/api/finanzas/sii/cuadre/:id/asociar', (req, res) => {
+  const d = cuadreDocsMaqueta.find(x => x.id === Number(req.params.id));
+  if (!d) return res.status(404).json({ error: 'No existe ese documento' });
+  if (d.operacion === 'VENTA') {
+    const id = Number(req.body?.venta_id) || Number(req.body?.numero_orden);
+    const v = ventasMaqueta.find(x => x.id === id) || d.sugerencias.find(x => x.id === id) || ventaCuadre(id, d.fecha_doc, d.total, 'BOLETA');
+    v.dte_folio = String(d.folio); if (!v.tipo_dte || v.tipo_dte === 'SIN DTE') v.tipo_dte = 'BOLETA';
+    Object.assign(d, { cuadre_estado: 'asociado', venta: v, cuadrado_por: 'Maqueta' });
+    return res.json({ ok: true, aviso: Number(v.total) === d.total ? null : `Ojo: la venta es de $${Number(v.total).toLocaleString('es-CL')} y la boleta de $${d.total.toLocaleString('es-CL')}` });
+  }
+  const g = d.sugerencias.find(x => x.id === Number(req.body?.compra_id)) || gastoCuadre(Number(req.body?.compra_id), d.fecha_doc, 'Gasto', d.total);
+  Object.assign(d, { cuadre_estado: 'asociado', compra: g, cuadrado_por: 'Maqueta' });
+  res.json({ ok: true, aviso: null });
+});
+app.post('/api/finanzas/sii/cuadre/crear-gasto', (req, res) => {
+  const docs = (req.body?.ids || []).map(id => cuadreDocsMaqueta.find(x => x.id === Number(id))).filter(Boolean);
+  if (!docs.length) return res.status(400).json({ error: 'Elige al menos una factura' });
+  if (new Set(docs.map(x => x.rut)).size > 1) return res.status(400).json({ error: 'Un gasto junta facturas de un solo proveedor' });
+  const total = docs.reduce((s, x) => s + x.total, 0), iva = docs.reduce((s, x) => s + x.iva, 0);
+  const g = gastoCuadre(++sigGastoCuadre, docs[0].fecha_doc, req.body?.proveedor || docs[0].razon_social, total, { tiene_factura: true, iva_credito: iva, descripcion: `Facturas N° ${docs.map(x => x.folio).join(', ')} (RCV del SII)` });
+  docs.forEach(x => Object.assign(x, { cuadre_estado: 'asociado', compra: g, cuadrado_por: 'Maqueta' }));
+  res.status(201).json({ ok: true, compra_id: g.id, total, iva });
+});
+app.post('/api/finanzas/sii/cuadre/:id/marcar-factura', (req, res) => {
+  const d = cuadreDocsMaqueta.find(x => x.id === Number(req.params.id));
+  if (d) d.compra_sin_factura = false;
+  res.json({ ok: true, iva_credito: d?.iva_de_las_facturas || 0 });
+});
+app.post('/api/finanzas/sii/cuadre/:id/ignorar', (req, res) => {
+  if (!String(req.body?.nota || '').trim()) return res.status(400).json({ error: 'Escribe por qué no corresponde' });
+  const d = cuadreDocsMaqueta.find(x => x.id === Number(req.params.id));
+  if (d) Object.assign(d, { cuadre_estado: 'ignorado', cuadre_nota: req.body.nota });
+  res.json({ ok: true });
+});
+app.post('/api/finanzas/sii/cuadre/:id/reabrir', (req, res) => {
+  const d = cuadreDocsMaqueta.find(x => x.id === Number(req.params.id));
+  if (d) Object.assign(d, { cuadre_estado: 'pendiente', cuadre_nota: null, venta: null, compra: null });
+  res.json({ ok: true });
+});
+
+
 // v132: Finanzas → Utilidades con el IVA real del SII. Cifras de septiembre 2026 (las reales, redondeadas):
 // el POS habría restado $226.882 de IVA y al SII se le pagó $0. `?iva=pos` muestra el respaldo sin datos del SII.
 app.get('/api/finanzas/utilidades', (req, res) => {

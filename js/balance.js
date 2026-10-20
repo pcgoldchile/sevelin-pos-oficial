@@ -95,6 +95,8 @@ function mostrarPanelFinanzas(nombre) {
   if (nombre === 'activos' && typeof cargarActivos === 'function') cargarActivos();
   // Mis padres (js/acuerdo-padres.js, sql/90): se recalcula entero cada vez que se entra
   if (nombre === 'padres' && typeof cargarPanelPadres === 'function') cargarPanelPadres();
+  // v169 (sql/108): Cuadrar con el SII (js/cuadre-sii.js)
+  if (nombre === 'sii' && typeof cargarCuadreSii === 'function') cargarCuadreSii();
   // Balance no tenía rama acá: nunca se refrescaba al entrar, así que
   // mostraba lo último que quedó cargado (por defecto "Este mes", ver
   // cargarBalance) hasta que el usuario apretaba "Hoy" a mano. Ahora cada

@@ -11997,6 +11997,22 @@ async function sincronizarRcv(origen) {
       }
     }
 
+    /* v169: las boletas de venta (si el SII las entrega por esta vía) y el cuadre automático del mes */
+    for (const periodo of periodos) {
+      const base = { rutEmisor: rut, dvEmisor: dv.toUpperCase(), ptributario: periodo };
+      try {
+        for (const codTipoDoc of ['0', '39']) {
+          const json = await siiFacade('getDetalleVentaExport', { ...base, operacion: 'VENTA', estadoContab: 'REGISTRO', codTipoDoc }, sesion);
+          const texto = Array.isArray(json?.data) ? json.data.join('\n') : String(json?.data || '');
+          const docs = siiParsearCsvRcv(texto, periodo, 'VENTA', 'REGISTRO', 'robot');
+          if (docs.length) { documentos += await siiGuardarDocumentos(docs); break; }
+        }
+      } catch (e) {
+        avisos.push(`${periodo} boletas de venta: ${e.message}`);
+      }
+      try { await cuadrarPeriodoSii(periodo, 'robot'); } catch (e) { avisos.push(`${periodo} cuadre: ${e.message}`); }
+    }
+
     const mensajeOk = avisos.length ? enmascararSecretos(`Con avisos: ${avisos.join(' | ')}`).slice(0, 500) : null;
     await db.from('sii_sync').insert([{ origen, ok: true, periodos: periodos.join(','), documentos, mensaje: mensajeOk }]);
     return { ok: true, periodos, documentos, avisos };
@@ -12102,6 +12118,510 @@ app.post('/api/finanzas/sii/rcv-csv', auth(true), async (req, res) => {
   } catch (err) {
     enviarError(res, 400, err.message || 'No se pudo leer el archivo');
   }
+});
+
+/* ============================================================
+   CUADRAR CON EL SII (v169, sql/108 — dueño 20-10-2026)
+   ------------------------------------------------------------
+   Cruza cada documento del RCV con el POS: las boletas emitidas con las ventas (N° de boleta en
+   dte_folio) y las facturas recibidas con los gastos de Finanzas. Pidió "que queden como
+   pendientes… para yo rellenarlas, y que me salgan en notis".
+   · Solo se asocia SOLO lo que no cambia nada del POS: la boleta cuyo N° ya está anotado en la
+     venta, y las facturas de las máquinas de pago (su comisión ya se descuenta venta por venta).
+   · Lo que calza por monto y fecha se PROPONE (confianza alta o media) y el dueño lo confirma.
+     Probado con septiembre real: varias boletas de $7.000 el mismo día, ventas que se anotan un
+     día después y gastos que juntan varias facturas (3 facturas = 1 gasto de $499.950).
+   · Lo que falta: "Registrar la venta" (boleta sin venta) o "Crear el gasto" (factura sin gasto).
+   ============================================================ */
+const CUADRE_TIPOS_VENTA = { 39: 'BOLETA', 41: 'BOLETA', 33: 'FACTURA', 34: 'FACTURA' };
+const CUADRE_TIPOS_COMPRA = [33, 34, 46, 914];   // facturas y la DIN de importación; las NC van aparte
+const CUADRE_DIAS_COMPRA = 10;
+/* Quien factura la comisión de una máquina o pasarela de pago (TUU es Haulmer) */
+const CUADRE_RE_COMISION = /haulmer|banchile|khipu|\bflow\b|transbank|getnet|mercado ?pago|sumup|klap/i;
+
+const cuadreDias = (a, b) => Math.round((Date.parse(`${String(a).slice(0, 10)}T12:00:00Z`) - Date.parse(`${String(b).slice(0, 10)}T12:00:00Z`)) / 86400000);
+const cuadreSumarDias = (fecha, n) => new Date(Date.parse(`${fecha}T12:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+const cuadreTolerancia = (monto) => Math.max(10, Math.round(Math.abs(num(monto)) * 0.001));
+const cuadreQuien = (req) => String(req.usuario?.nombre || req.usuario?.rol || 'admin').slice(0, 60);
+const cuadreEsComision = (doc) => doc.operacion === 'COMPRA' && CUADRE_RE_COMISION.test(String(doc.razon_social || ''));
+function cuadreRango(periodo) {
+  const a = Number(periodo.slice(0, 4)), m = Number(periodo.slice(4));
+  return { desde: `${periodo.slice(0, 4)}-${periodo.slice(4)}-01`, hasta: new Date(Date.UTC(a, m, 0)).toISOString().slice(0, 10) };
+}
+/* Sugerencia de clasificación para el gasto que nace de una factura */
+function cuadreClasificacionSugerida(razon) {
+  const r = String(razon || '').toLowerCase();
+  if (/nic chile|universidad de chile|entel|movistar|claro|wom|vtr|mundo|gtd|google|meta platforms|vercel|supabase/.test(r)) return 'Gastos Operativos (Servicios, Arriendo, Sueldos, etc.)';
+  if (/tesorer|servicio de impuestos/.test(r)) return 'Impuestos / Contribuciones (SII, Tesorería, etc.)';
+  return 'Mercadería / Productos para Reventa';
+}
+
+async function cuadreCargar(periodo) {
+  const { desde, hasta } = cuadreRango(periodo);
+  const [docs, ncs, ventas, compras, ligados] = await Promise.all([
+    db.from('sii_rcv_documentos').select('*').eq('periodo', periodo).eq('estado', 'REGISTRO').order('fecha_doc', { ascending: true }).order('folio', { ascending: true }),
+    /* Notas de crédito cercanas (pueden caer en el mes siguiente): anulan una factura del mismo monto */
+    db.from('sii_rcv_documentos').select('id, rut, folio, fecha_doc, total').eq('operacion', 'COMPRA').eq('tipo_doc', 61)
+      .gte('fecha_doc', cuadreSumarDias(desde, -45)).lte('fecha_doc', cuadreSumarDias(hasta, 45)),
+    db.from('ventas').select('id, numero_orden, fecha, hora, total, envio_cobrado, tipo_dte, dte_folio, metodo_pago, cliente, estado')
+      .gte('fecha', cuadreSumarDias(desde, -4)).lte('fecha', cuadreSumarDias(hasta, 4))
+      .eq('estado', 'PAGADA').order('fecha', { ascending: true }).limit(5000),
+    db.from('compras').select('id, fecha, proveedor, clasificacion, costo_total, tiene_factura, iva_credito, descripcion, origen')
+      .gte('fecha', cuadreSumarDias(desde, -CUADRE_DIAS_COMPRA - 1)).lte('fecha', finDiaChile(cuadreSumarDias(hasta, CUADRE_DIAS_COMPRA + 1))).limit(5000),
+    /* Lo ya ligado a cualquier documento, de este u otro mes */
+    db.from('sii_rcv_documentos').select('id, venta_id, compra_id').or('venta_id.not.is.null,compra_id.not.is.null'),
+  ]);
+  for (const r of [docs, ncs, ventas, compras, ligados]) if (r.error) throw r.error;
+  const comprasLigadas = new Map();
+  (ligados.data || []).filter(x => x.compra_id).forEach(x => {
+    const k = Number(x.compra_id);
+    comprasLigadas.set(k, [...(comprasLigadas.get(k) || []), x.id]);
+  });
+  return {
+    periodo, desde, hasta,
+    docs: docs.data || [], ncs: ncs.data || [],
+    ventas: ventas.data || [],
+    compras: (compras.data || []).filter(c => c.origen !== 'MERMA').map(c => ({ ...c, dia: fechaChileDeTs(c.fecha) })),
+    ventasLigadas: new Map((ligados.data || []).filter(x => x.venta_id).map(x => [Number(x.venta_id), x.id])),
+    comprasLigadas,
+  };
+}
+
+/* ---------- Ventas: puntaje de una boleta contra una venta ----------
+   Mismo monto (o monto + despacho cobrado); la venta hasta 3 días antes o 1 después de la boleta.
+   Se prefiere la venta del mismo día y la que ya está marcada con boleta. */
+function cuadrePuntajeVenta(doc, v) {
+  const montos = [Math.round(num(v.total)), Math.round(num(v.total) + num(v.envio_cobrado))];
+  if (!montos.includes(Math.round(num(doc.total)))) return -1;
+  const dif = cuadreDias(doc.fecha_doc, v.fecha);
+  if (dif < -1 || dif > 3) return -1;
+  const conDte = v.tipo_dte === 'BOLETA' || v.tipo_dte === 'FACTURA';
+  return 100 - 20 * Math.abs(dif) + (conDte ? 30 : 0);
+}
+function cuadreVentaLibre(v, doc, d) {
+  const ligada = d.ventasLigadas.get(Number(v.id));
+  if (ligada && ligada !== doc.id) return false;
+  return !v.dte_folio || String(v.dte_folio).trim() === String(doc.folio);
+}
+
+/* Propuestas del mes: Map docId → { venta_id | compra_id | nc, confianza, motivo }, y las
+   sugerencias (otros candidatos) para elegir a mano. Nada se escribe aquí. */
+function cuadreProponer(d) {
+  const propuestas = new Map();
+  const sugerencias = new Map();
+
+  /* Ventas: asignación por puntaje, de la pareja más clara a la menos clara */
+  const docsV = d.docs.filter(x => x.operacion === 'VENTA' && x.cuadre_estado === 'pendiente');
+  const pares = [];
+  const candDoc = new Map(), candVenta = new Map();
+  for (const doc of docsV) {
+    for (const v of d.ventas) {
+      if (!cuadreVentaLibre(v, doc, d)) continue;
+      const pts = cuadrePuntajeVenta(doc, v);
+      if (pts < 0) continue;
+      pares.push({ doc, v, pts });
+      candDoc.set(doc.id, [...(candDoc.get(doc.id) || []), { v, pts }]);
+      candVenta.set(v.id, [...(candVenta.get(v.id) || []), { doc, pts }]);
+    }
+  }
+  /* "Gemelas": dos boletas del mismo día y monto, o dos ventas del mismo día, monto y tipo.
+     Intercambiarlas no cambia nada, así que no restan confianza. */
+  const gemelaV = (a, b) => a.fecha === b.fecha && Math.round(num(a.total)) === Math.round(num(b.total)) && (a.tipo_dte || 'SIN DTE') === (b.tipo_dte || 'SIN DTE');
+  const gemelaD = (a, b) => a.fecha_doc === b.fecha_doc && Math.round(num(a.total)) === Math.round(num(b.total));
+  pares.sort((x, y) => y.pts - x.pts || cuadreDias(x.doc.fecha_doc, x.v.fecha) - cuadreDias(y.doc.fecha_doc, y.v.fecha) || x.doc.folio - y.doc.folio);
+  const usadosDoc = new Set(), usadasVenta = new Set();
+  for (const { doc, v, pts } of pares) {
+    if (usadosDoc.has(doc.id) || usadasVenta.has(v.id)) continue;
+    usadosDoc.add(doc.id); usadasVenta.add(v.id);
+    const otrasV = (candDoc.get(doc.id) || []).filter(c => c.v.id !== v.id);
+    const otrosD = (candVenta.get(v.id) || []).filter(c => c.doc.id !== doc.id);
+    const unica = !otrasV.length && !otrosD.length;
+    const sinRival = otrasV.every(c => c.pts < pts || gemelaV(c.v, v)) && otrosD.every(c => c.pts < pts || gemelaD(c.doc, doc));
+    const conDte = v.tipo_dte === 'BOLETA' || v.tipo_dte === 'FACTURA';
+    const dif = Math.abs(cuadreDias(doc.fecha_doc, v.fecha));
+    const alta = (unica && pts >= 80) || (conDte && dif <= 1 && sinRival);
+    propuestas.set(doc.id, {
+      venta_id: v.id, confianza: alta ? 'alta' : 'media',
+      motivo: `${dif === 0 ? 'mismo día' : dif === 1 ? '1 día de diferencia' : `${dif} días de diferencia`}${conDte ? ', venta marcada con boleta' : ', venta marcada sin boleta'}${unica ? '' : ' · hay otras del mismo monto'}`,
+    });
+  }
+  for (const doc of docsV) {
+    sugerencias.set(doc.id, (candDoc.get(doc.id) || []).sort((a, b) => b.pts - a.pts).slice(0, 6).map(c => c.v));
+  }
+
+  /* Compras */
+  const docsC = d.docs.filter(x => x.operacion === 'COMPRA' && x.cuadre_estado === 'pendiente' && CUADRE_TIPOS_COMPRA.includes(Number(x.tipo_doc)) && !cuadreEsComision(x));
+  const gastoLibre = (c) => !d.comprasLigadas.has(Number(c.id));
+  const calzaMonto = (a, b) => Math.abs(num(a) - num(b)) <= cuadreTolerancia(b);
+  const ncUsadas = new Set();
+  /* 1) Factura con una nota de crédito del mismo proveedor y monto: quedó anulada */
+  for (const doc of docsC) {
+    const nc = d.ncs.find(n => !ncUsadas.has(n.id) && n.rut === doc.rut && calzaMonto(n.total, doc.total) && cuadreDias(n.fecha_doc, doc.fecha_doc) >= 0 && cuadreDias(n.fecha_doc, doc.fecha_doc) <= 45);
+    if (nc) { ncUsadas.add(nc.id); propuestas.set(doc.id, { nc: { id: nc.id, folio: nc.folio, fecha_doc: nc.fecha_doc }, confianza: 'alta', motivo: `nota de crédito N° ${nc.folio} del ${nc.fecha_doc} por el mismo monto` }); }
+  }
+  /* 2) Una factura = un gasto: de la pareja más parecida (monto, después fecha) a la menos.
+     Los gastos se anotan a mano: $280.940 por una factura de $280.942 es la misma compra. */
+  const paresC = [];
+  for (const doc of docsC.filter(x => !propuestas.has(x.id))) {
+    for (const c of d.compras) {
+      if (!gastoLibre(c) || !calzaMonto(c.costo_total, doc.total)) continue;
+      const dias = Math.abs(cuadreDias(doc.fecha_doc, c.dia));
+      if (dias <= CUADRE_DIAS_COMPRA) paresC.push({ doc, c, difMonto: Math.round(Math.abs(num(c.costo_total) - num(doc.total))), dias });
+    }
+  }
+  paresC.sort((a, b) => a.difMonto - b.difMonto || a.dias - b.dias);
+  const gastosPropuestos = new Set();
+  for (const par of paresC) {
+    const { doc, c, difMonto, dias } = par;
+    if (propuestas.has(doc.id) || gastosPropuestos.has(c.id)) continue;
+    gastosPropuestos.add(c.id);
+    const empate = paresC.some(o => o !== par && (o.doc.id === doc.id || o.c.id === c.id) && o.difMonto === difMonto && o.dias === dias);
+    propuestas.set(doc.id, {
+      compra_id: c.id, confianza: difMonto <= 10 && dias <= 3 && !empate ? 'alta' : 'media',
+      motivo: `${difMonto ? `${clpPuntos(difMonto)} de diferencia` : 'mismo monto'}, ${dias === 0 ? 'mismo día' : `${dias} día(s) de diferencia`}${empate ? ' · hay otro igual' : ''}`,
+    });
+  }
+  /* 3) Varias facturas del mismo proveedor y día = un gasto (ej. 3 facturas de $499.950 en total) */
+  const grupos = new Map();
+  docsC.filter(x => !propuestas.has(x.id)).forEach(x => {
+    const k = `${x.rut}|${x.fecha_doc}`;
+    grupos.set(k, [...(grupos.get(k) || []), x]);
+  });
+  for (const lista of grupos.values()) {
+    if (lista.length < 2) continue;
+    const total = lista.reduce((a, x) => a + num(x.total), 0);
+    const gastos = d.compras.filter(c => gastoLibre(c) && !gastosPropuestos.has(c.id) && calzaMonto(c.costo_total, total) && Math.abs(cuadreDias(lista[0].fecha_doc, c.dia)) <= CUADRE_DIAS_COMPRA);
+    if (gastos.length !== 1) continue;
+    gastosPropuestos.add(gastos[0].id);
+    lista.forEach(x => propuestas.set(x.id, { compra_id: gastos[0].id, confianza: 'alta', grupo: lista.map(y => y.id), motivo: `${lista.length} facturas del mismo proveedor y día suman el gasto` }));
+  }
+  /* Sugerencias para elegir a mano: gastos cercanos; primero los libres y de monto parecido */
+  const tomado = (c) => d.comprasLigadas.has(Number(c.id)) || gastosPropuestos.has(c.id);
+  for (const doc of docsC) {
+    const cerca = d.compras.filter(c => Math.abs(cuadreDias(doc.fecha_doc, c.dia)) <= 15);
+    sugerencias.set(doc.id, cerca.sort((a, b) => (tomado(a) - tomado(b)) || Math.abs(num(a.costo_total) - num(doc.total)) - Math.abs(num(b.costo_total) - num(doc.total))).slice(0, 8)
+      .map(c => ({ ...c, tomado: tomado(c) })));
+  }
+  return { propuestas, sugerencias };
+}
+
+async function cuadreLigarVenta(doc, venta, quien) {
+  const tipo = CUADRE_TIPOS_VENTA[Number(doc.tipo_doc)] || null;
+  const cambios = { dte_folio: String(doc.folio) };
+  if (tipo && (!venta.tipo_dte || venta.tipo_dte === 'SIN DTE')) cambios.tipo_dte = tipo;
+  const { error: e1 } = await db.from('ventas').update(cambios).eq('id', venta.id);
+  if (e1) throw e1;
+  if (cambios.tipo_dte) {
+    const { error: eA } = await db.from('auditoria_dte').insert([{ venta_id: venta.id, tipo_anterior: venta.tipo_dte || null, tipo_nuevo: cambios.tipo_dte, rol: 'admin' }]);
+    if (eA) console.error('[AUDITORÍA DTE] no se pudo registrar el cambio:', eA.message);
+  }
+  const { error: e2 } = await db.from('sii_rcv_documentos').update({ cuadre_estado: 'asociado', venta_id: venta.id, compra_id: null, cuadre_nota: null, cuadrado_en: new Date().toISOString(), cuadrado_por: quien }).eq('id', doc.id);
+  if (e2) throw e2;
+}
+async function cuadreLigarCompra(docId, compraId, quien, nota = null) {
+  const { error } = await db.from('sii_rcv_documentos').update({ cuadre_estado: 'asociado', compra_id: compraId, venta_id: null, cuadre_nota: nota, cuadrado_en: new Date().toISOString(), cuadrado_por: quien }).eq('id', docId);
+  if (error) throw error;
+}
+async function cuadreMarcar(docId, estado, nota, quien) {
+  const { error } = await db.from('sii_rcv_documentos').update({ cuadre_estado: estado, cuadre_nota: nota ? String(nota).slice(0, 300) : null, venta_id: null, compra_id: null, cuadrado_en: new Date().toISOString(), cuadrado_por: quien }).eq('id', docId);
+  if (error) throw error;
+}
+
+/* Lo automático (robot y cada vez que se abre el cuadre). No cambia nada del POS:
+   la boleta cuyo N° ya está en una venta, y las facturas de comisiones. */
+async function cuadrarPeriodoSii(periodo, quien = 'robot') {
+  const d = await cuadreCargar(periodo);
+  let n = 0;
+  for (const doc of d.docs.filter(x => x.cuadre_estado === 'pendiente')) {
+    if (doc.operacion === 'VENTA') {
+      const v = d.ventas.find(x => x.dte_folio && String(x.dte_folio).trim() === String(doc.folio) && !d.ventasLigadas.has(Number(x.id)) && (!x.tipo_dte || x.tipo_dte === 'SIN DTE' || x.tipo_dte === CUADRE_TIPOS_VENTA[Number(doc.tipo_doc)]));
+      if (v) { await cuadreLigarVenta(doc, v, quien); d.ventasLigadas.set(Number(v.id), doc.id); doc.cuadre_estado = 'asociado'; n++; }
+    } else if (CUADRE_TIPOS_COMPRA.includes(Number(doc.tipo_doc)) && cuadreEsComision(doc)) {
+      await cuadreMarcar(doc.id, 'comision', 'Comisión de la máquina o pasarela de pago: ya se descuenta en cada venta', quien);
+      doc.cuadre_estado = 'comision'; n++;
+    }
+  }
+  return n;
+}
+
+/* Las boletas de venta del CSV del RCV (el robot baja las compras; las ventas, si el SII las da) */
+app.post('/api/finanzas/sii/cuadre/ventas-csv', auth(true), async (req, res) => {
+  const periodo = String(req.body?.periodo || '').replace('-', '');
+  if (!/^\d{6}$/.test(periodo)) return enviarError(res, 400, 'Indica el mes del archivo (AAAA-MM)');
+  const texto = String(req.body?.csv || '');
+  if (texto.length > 3 * 1024 * 1024) return enviarError(res, 413, 'El archivo es demasiado grande');
+  let docs;
+  try {
+    docs = siiParsearCsvRcv(texto, periodo, 'VENTA', 'REGISTRO', 'csv');
+  } catch (err) {
+    return enviarError(res, 400, err.message || 'No se pudo leer el archivo');
+  }
+  if (!docs.length) return enviarError(res, 400, 'El archivo no trae documentos');
+  const fuera = docs.filter(x => x.fecha_doc && x.fecha_doc.slice(0, 7).replace('-', '') !== periodo).length;
+  if (fuera > docs.length / 2) return enviarError(res, 400, `Ese archivo parece de otro mes: la mayoría de las boletas no son de ${periodo.slice(4)}-${periodo.slice(0, 4)}`);
+  try {
+    const n = await siiGuardarDocumentos(docs);
+    await db.from('sii_sync').insert([{ origen: 'csv', ok: true, periodos: periodo, documentos: n, mensaje: 'Boletas de venta (cuadre)' }]);
+    const automaticos = await cuadrarPeriodoSii(periodo, cuadreQuien(req));
+    res.json({ ok: true, documentos: n, automaticos });
+  } catch (e) { return enviarErrorBD(res, e, 'POST /api/finanzas/sii/cuadre/ventas-csv'); }
+});
+
+/* El cuadre de un mes: lo automático, y todo lo demás con su propuesta y sugerencias */
+app.get('/api/finanzas/sii/cuadre', auth(true), async (req, res) => {
+  try {
+    const periodo = String(req.query.periodo || '').replace('-', '');
+    if (!/^\d{6}$/.test(periodo)) return enviarError(res, 400, 'Período inválido (AAAAMM)');
+    const automaticos = await cuadrarPeriodoSii(periodo, cuadreQuien(req));
+    const d = await cuadreCargar(periodo);
+    const { propuestas, sugerencias } = cuadreProponer(d);
+    const ventaPorId = new Map(d.ventas.map(v => [Number(v.id), v]));
+    const compraPorId = new Map(d.compras.map(c => [Number(c.id), c]));
+    /* Ventas o gastos ligados que quedaron fuera de la ventana cargada */
+    const faltanV = d.docs.filter(x => x.venta_id && !ventaPorId.has(Number(x.venta_id))).map(x => x.venta_id);
+    const faltanC = d.docs.filter(x => x.compra_id && !compraPorId.has(Number(x.compra_id))).map(x => x.compra_id);
+    if (faltanV.length) {
+      const { data } = await db.from('ventas').select('id, numero_orden, fecha, hora, total, envio_cobrado, tipo_dte, dte_folio, metodo_pago, cliente, estado').in('id', faltanV);
+      (data || []).forEach(v => ventaPorId.set(Number(v.id), v));
+    }
+    if (faltanC.length) {
+      const { data } = await db.from('compras').select('id, fecha, proveedor, clasificacion, costo_total, tiene_factura, iva_credito, descripcion, origen').in('id', faltanC);
+      (data || []).forEach(c => compraPorId.set(Number(c.id), { ...c, dia: fechaChileDeTs(c.fecha) }));
+    }
+    const ventas = d.docs.filter(x => x.operacion === 'VENTA').map(x => {
+      const prop = propuestas.get(x.id);
+      return {
+        ...x,
+        venta: x.venta_id ? ventaPorId.get(Number(x.venta_id)) || { id: x.venta_id } : null,
+        propuesta: prop ? { ...prop, venta: ventaPorId.get(Number(prop.venta_id)) } : null,
+        sugerencias: x.cuadre_estado === 'pendiente' ? (sugerencias.get(x.id) || []) : [],
+      };
+    });
+    /* IVA de las facturas ligadas a cada gasto: para avisar si el gasto no tiene la factura marcada */
+    const ivaPorCompra = new Map();
+    d.docs.filter(x => x.compra_id).forEach(x => ivaPorCompra.set(Number(x.compra_id), (ivaPorCompra.get(Number(x.compra_id)) || 0) + num(x.iva)));
+    const compras = d.docs.filter(x => x.operacion === 'COMPRA' && CUADRE_TIPOS_COMPRA.includes(Number(x.tipo_doc))).map(x => {
+      const prop = propuestas.get(x.id);
+      const compra = x.compra_id ? compraPorId.get(Number(x.compra_id)) || { id: x.compra_id } : null;
+      return {
+        ...x,
+        compra,
+        compra_sin_factura: !!(compra && compra.tiene_factura === false),
+        iva_de_las_facturas: compra ? ivaPorCompra.get(Number(compra.id)) || 0 : 0,
+        propuesta: prop ? { ...prop, compra: prop.compra_id ? compraPorId.get(Number(prop.compra_id)) : null } : null,
+        sugerencias: x.cuadre_estado === 'pendiente' ? (sugerencias.get(x.id) || []) : [],
+        clasificacion_sugerida: cuadreClasificacionSugerida(x.razon_social),
+      };
+    });
+    /* Comisiones: lo facturado por las máquinas contra lo que el POS calculó, por mes del servicio */
+    const comis = compras.filter(x => x.cuadre_estado === 'comision');
+    const mesesComision = [...new Set(comis.map(x => String(x.fecha_doc).slice(0, 7)))].sort();
+    const comisionPos = {};
+    for (const mes of mesesComision) {
+      const [a, m] = mes.split('-').map(Number);
+      const { data } = await db.from('ventas').select('comision_pos').eq('estado', 'PAGADA')
+        .gte('fecha', `${mes}-01`).lte('fecha', new Date(Date.UTC(a, m, 0)).toISOString().slice(0, 10)).limit(5000);
+      comisionPos[mes] = (data || []).reduce((s, v) => s + num(v.comision_pos), 0);
+    }
+    const comisiones = mesesComision.map(mes => ({
+      mes,
+      facturado: comis.filter(x => String(x.fecha_doc).slice(0, 7) === mes).reduce((s, x) => s + num(x.total), 0),
+      iva: comis.filter(x => String(x.fecha_doc).slice(0, 7) === mes).reduce((s, x) => s + num(x.iva), 0),
+      pos: comisionPos[mes] || 0,
+    }));
+    /* Ventas del mes marcadas con boleta que no tienen documento en el SII */
+    const hayBoletas = d.docs.some(x => x.operacion === 'VENTA');
+    const posSinDocumento = !hayBoletas ? [] : d.ventas.filter(v => v.fecha >= d.desde && v.fecha <= d.hasta && (v.tipo_dte === 'BOLETA' || v.tipo_dte === 'FACTURA') && !d.ventasLigadas.has(Number(v.id)) && ![...propuestas.values()].some(p => p.venta_id === v.id));
+    const cuenta = (lista, e) => lista.filter(x => x.cuadre_estado === e).length;
+    const suma = (lista, e) => lista.filter(x => x.cuadre_estado === e).reduce((a, x) => a + num(x.total), 0);
+    const { data: sync } = await db.from('sii_sync').select('creado_en, ok, origen').order('creado_en', { ascending: false }).limit(1);
+    /* Último "Reajuste" del saldo (ajustes_saldo): lo pagado o cobrado ANTES ya quedó dentro del
+       saldo. Un gasto de esa fecha se crea sin mover el saldo, y una venta atrasada lo infla. */
+    const { data: reaj } = await db.from('ajustes_saldo').select('canal, creado_en').order('creado_en', { ascending: false }).limit(50);
+    const ultimoReajuste = {};
+    (reaj || []).forEach(a => { if (!ultimoReajuste[a.canal]) ultimoReajuste[a.canal] = fechaChileDeTs(a.creado_en); });
+    res.json({
+      periodo, automaticos,
+      resumen: {
+        ventas: { total: ventas.length, asociado: cuenta(ventas, 'asociado'), pendiente: cuenta(ventas, 'pendiente'), ignorado: cuenta(ventas, 'ignorado'), monto_pendiente: suma(ventas, 'pendiente'), propuestas: ventas.filter(x => x.propuesta).length },
+        compras: { total: compras.length, asociado: cuenta(compras, 'asociado'), pendiente: cuenta(compras, 'pendiente'), ignorado: cuenta(compras, 'ignorado'), comision: cuenta(compras, 'comision'), monto_pendiente: suma(compras, 'pendiente'), propuestas: compras.filter(x => x.propuesta).length },
+        pos_sin_documento: posSinDocumento.length,
+      },
+      ventas, compras, comisiones, pos_sin_documento: posSinDocumento, hay_boletas: hayBoletas,
+      ultima_sync: sync?.[0] || null, ultimo_reajuste: ultimoReajuste,
+    });
+  } catch (e) { return enviarErrorBD(res, e, 'GET /api/finanzas/sii/cuadre'); }
+});
+
+/* Confirmar las propuestas que el dueño dejó marcadas. Se recalculan en el servidor: solo se
+   aplica lo que sigue siendo la misma propuesta que vio. */
+app.post('/api/finanzas/sii/cuadre/confirmar', auth(true), async (req, res) => {
+  try {
+    const periodo = String(req.body?.periodo || '').replace('-', '');
+    if (!/^\d{6}$/.test(periodo)) return enviarError(res, 400, 'Período inválido (AAAAMM)');
+    const pedidas = Array.isArray(req.body?.propuestas) ? req.body.propuestas.slice(0, 500) : [];
+    if (!pedidas.length) return enviarError(res, 400, 'No marcaste ninguna');
+    const d = await cuadreCargar(periodo);
+    const { propuestas } = cuadreProponer(d);
+    const docPorId = new Map(d.docs.map(x => [x.id, x]));
+    const ventaPorId = new Map(d.ventas.map(v => [Number(v.id), v]));
+    const quien = cuadreQuien(req);
+    let aplicadas = 0, omitidas = 0;
+    for (const p of pedidas) {
+      const doc = docPorId.get(Number(p.doc_id));
+      const prop = doc && propuestas.get(doc.id);
+      const igual = prop && ((prop.venta_id && Number(p.venta_id) === Number(prop.venta_id)) || (prop.compra_id && Number(p.compra_id) === Number(prop.compra_id)) || (prop.nc && Number(p.nc_id) === Number(prop.nc.id)));
+      if (!igual || doc.cuadre_estado !== 'pendiente') { omitidas++; continue; }
+      if (prop.venta_id) await cuadreLigarVenta(doc, ventaPorId.get(Number(prop.venta_id)), quien);
+      else if (prop.compra_id) await cuadreLigarCompra(doc.id, prop.compra_id, quien);
+      else await cuadreMarcar(doc.id, 'ignorado', `Anulada con la nota de crédito N° ${prop.nc.folio} (${prop.nc.fecha_doc})`, quien);
+      doc.cuadre_estado = 'hecho';
+      aplicadas++;
+    }
+    res.json({ ok: true, aplicadas, omitidas });
+  } catch (e) { return enviarErrorBD(res, e, 'POST /api/finanzas/sii/cuadre/confirmar'); }
+});
+
+/* Asociar a mano un documento con una venta o un gasto */
+app.post('/api/finanzas/sii/cuadre/:id/asociar', auth(true), async (req, res) => {
+  try {
+    const { data: doc, error } = await db.from('sii_rcv_documentos').select('*').eq('id', req.params.id).maybeSingle();
+    if (error) throw error;
+    if (!doc) return enviarError(res, 404, 'No existe ese documento');
+    const quien = cuadreQuien(req);
+    if (doc.operacion === 'VENTA') {
+      let ventaId = parseInt(req.body?.venta_id, 10);
+      /* A mano se escribe el N° de orden que se ve en el POS, no el id interno */
+      if (!ventaId && req.body?.numero_orden) {
+        const { data: vo, error: eO } = await db.from('ventas').select('id').eq('numero_orden', parseInt(req.body.numero_orden, 10)).limit(1);
+        if (eO) throw eO;
+        ventaId = vo?.[0]?.id;
+      }
+      if (!ventaId) return enviarError(res, 404, 'No existe esa venta');
+      const { data: v, error: eV } = await db.from('ventas').select('id, total, envio_cobrado, tipo_dte, dte_folio, estado').eq('id', ventaId).maybeSingle();
+      if (eV) throw eV;
+      if (!v) return enviarError(res, 404, 'No existe esa venta');
+      if (v.estado === 'ANULADA') return enviarError(res, 409, 'Esa venta está anulada');
+      if (v.dte_folio && String(v.dte_folio).trim() !== String(doc.folio)) return enviarError(res, 409, `Esa venta ya tiene anotada la boleta N° ${v.dte_folio}`);
+      const { data: otro } = await db.from('sii_rcv_documentos').select('id, folio').eq('venta_id', ventaId).neq('id', doc.id).maybeSingle();
+      if (otro) return enviarError(res, 409, `Esa venta ya está asociada a la boleta N° ${otro.folio}`);
+      await cuadreLigarVenta(doc, v, quien);
+      const calza = [Math.round(num(v.total)), Math.round(num(v.total) + num(v.envio_cobrado))].includes(Math.round(num(doc.total)));
+      return res.json({ ok: true, aviso: calza ? null : `Ojo: la venta es de ${clpPuntos(v.total)} y la boleta de ${clpPuntos(doc.total)}` });
+    }
+    const compraId = parseInt(req.body?.compra_id, 10);
+    const { data: c, error: eC } = await db.from('compras').select('id, costo_total').eq('id', compraId).maybeSingle();
+    if (eC) throw eC;
+    if (!c) return enviarError(res, 404, 'No existe ese gasto');
+    await cuadreLigarCompra(doc.id, compraId, quien);
+    /* Un gasto puede juntar varias facturas: se avisa si la suma no calza */
+    const { data: hermanas } = await db.from('sii_rcv_documentos').select('total').eq('compra_id', compraId);
+    const sumaFacturas = (hermanas || []).reduce((s, x) => s + num(x.total), 0);
+    const calza = Math.abs(sumaFacturas - num(c.costo_total)) <= cuadreTolerancia(c.costo_total);
+    res.json({ ok: true, aviso: calza ? null : `Ojo: el gasto es de ${clpPuntos(c.costo_total)} y sus facturas suman ${clpPuntos(sumaFacturas)}` });
+  } catch (e) { return enviarErrorBD(res, e, 'POST /api/finanzas/sii/cuadre/:id/asociar'); }
+});
+
+/* Facturas sin gasto: se crea UN gasto con una o varias facturas del mismo proveedor.
+   afecta_saldo lo decide el dueño: false = ese pago ya estaba fuera del saldo de Finanzas. */
+app.post('/api/finanzas/sii/cuadre/crear-gasto', auth(true), async (req, res) => {
+  try {
+    const ids = (Array.isArray(req.body?.ids) ? req.body.ids : []).map(Number).filter(Number.isInteger).slice(0, 60);
+    if (!ids.length) return enviarError(res, 400, 'Elige al menos una factura');
+    const { data: docs, error } = await db.from('sii_rcv_documentos').select('*').in('id', ids);
+    if (error) throw error;
+    if ((docs || []).length !== ids.length) return enviarError(res, 404, 'Alguna factura ya no existe');
+    if (docs.some(x => x.operacion !== 'COMPRA' || !CUADRE_TIPOS_COMPRA.includes(Number(x.tipo_doc)))) return enviarError(res, 400, 'Solo se crean gastos de facturas recibidas');
+    if (docs.some(x => x.cuadre_estado !== 'pendiente')) return enviarError(res, 409, 'Alguna de esas facturas ya está resuelta');
+    if (new Set(docs.map(x => x.rut)).size > 1) return enviarError(res, 400, 'Un gasto junta facturas de un solo proveedor');
+    docs.sort((a, b) => String(a.fecha_doc).localeCompare(String(b.fecha_doc)) || a.folio - b.folio);
+    const total = docs.reduce((s, x) => s + num(x.total), 0);
+    const iva = docs.reduce((s, x) => s + num(x.iva), 0);
+    const nombre = { 33: 'Factura', 34: 'Factura exenta', 46: 'Factura de compra', 914: 'Importación (DIN)' };
+    const folios = docs.length === 1 ? `${nombre[Number(docs[0].tipo_doc)] || 'Documento'} N° ${docs[0].folio}` : `Facturas N° ${docs.map(x => x.folio).join(', ')}`;
+    const extra = String(req.body?.descripcion || '').trim().slice(0, 200);
+    const { datos, error: errVal } = await sanearCompra({
+      clasificacion: req.body?.clasificacion || cuadreClasificacionSugerida(docs[0].razon_social),
+      costo_total: total,
+      tiene_factura: true,
+      iva_credito: Math.round(iva),
+      proveedor: String(req.body?.proveedor || '').trim() || docs[0].razon_social || docs[0].rut,
+      fecha: docs[0].fecha_doc,
+      hora: '12:00',
+      metodo_pago: req.body?.metodo_pago || 'Transferencia',
+      banco: req.body?.banco || null,
+      descripcion: `${extra ? extra + ' · ' : ''}${folios} (RCV del SII)`.slice(0, 500),
+      afecta_saldo: req.body?.afecta_saldo === true || req.body?.afecta_saldo === 'true',
+    });
+    if (errVal) return enviarError(res, 400, errVal);
+    const { data: compra, error: e2 } = await db.from('compras').insert([{ ...datos, origen: 'SII' }]).select('id').single();
+    if (e2) throw e2;
+    const quien = cuadreQuien(req);
+    for (const x of docs) await cuadreLigarCompra(x.id, compra.id, quien);
+    res.status(201).json({ ok: true, compra_id: compra.id, total, iva });
+  } catch (e) { return enviarErrorBD(res, e, 'POST /api/finanzas/sii/cuadre/crear-gasto'); }
+});
+
+/* El gasto ligado no tenía la factura marcada: se le marca con el IVA de sus facturas */
+app.post('/api/finanzas/sii/cuadre/:id/marcar-factura', auth(true), async (req, res) => {
+  try {
+    const { data: doc, error } = await db.from('sii_rcv_documentos').select('compra_id').eq('id', req.params.id).maybeSingle();
+    if (error) throw error;
+    if (!doc?.compra_id) return enviarError(res, 404, 'Esa factura no está asociada a un gasto');
+    const [{ data: c, error: eC }, { data: hermanas, error: eH }] = await Promise.all([
+      db.from('compras').select('id, costo_total').eq('id', doc.compra_id).maybeSingle(),
+      db.from('sii_rcv_documentos').select('iva').eq('compra_id', doc.compra_id),
+    ]);
+    if (eC || eH) throw eC || eH;
+    if (!c) return enviarError(res, 404, 'No existe ese gasto');
+    const iva = Math.min(Math.round((hermanas || []).reduce((s, x) => s + num(x.iva), 0)), Math.round(num(c.costo_total)));
+    const { error: eU } = await db.from('compras').update({ tiene_factura: true, iva_credito: iva }).eq('id', c.id);
+    if (eU) throw eU;
+    res.json({ ok: true, iva_credito: iva });
+  } catch (e) { return enviarErrorBD(res, e, 'POST /api/finanzas/sii/cuadre/:id/marcar-factura'); }
+});
+
+app.post('/api/finanzas/sii/cuadre/:id/ignorar', auth(true), async (req, res) => {
+  try {
+    const nota = String(req.body?.nota || '').trim().slice(0, 300);
+    if (!nota) return enviarError(res, 400, 'Escribe por qué no corresponde (ej. boleta anulada, compra personal)');
+    await cuadreMarcar(req.params.id, 'ignorado', nota, cuadreQuien(req));
+    res.json({ ok: true });
+  } catch (e) { return enviarErrorBD(res, e, 'POST /api/finanzas/sii/cuadre/:id/ignorar'); }
+});
+
+/* Deshacer: vuelve a pendiente. No borra el N° de boleta de la venta ni el gasto creado. */
+app.post('/api/finanzas/sii/cuadre/:id/reabrir', auth(true), async (req, res) => {
+  try {
+    const { error } = await db.from('sii_rcv_documentos').update({ cuadre_estado: 'pendiente', cuadre_nota: null, venta_id: null, compra_id: null, cuadrado_en: null, cuadrado_por: null }).eq('id', req.params.id);
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (e) { return enviarErrorBD(res, e, 'POST /api/finanzas/sii/cuadre/:id/reabrir'); }
+});
+
+/* El aviso del encabezado: lo que falta cuadrar de los últimos 3 meses */
+app.get('/api/finanzas/sii/cuadre-aviso', auth(true), async (req, res) => {
+  try {
+    const hoy = fechaHoyChile();
+    const a = Number(hoy.slice(0, 4)), m = Number(hoy.slice(5, 7));
+    const desde = new Date(Date.UTC(a, m - 3, 1)).toISOString().slice(0, 7).replace('-', '');
+    const { data, error } = await db.from('sii_rcv_documentos').select('operacion, tipo_doc, total, periodo, razon_social')
+      .eq('estado', 'REGISTRO').eq('cuadre_estado', 'pendiente').gte('periodo', desde).limit(5000);
+    if (error) throw error;
+    const lista = (data || []).filter(x => x.operacion === 'VENTA' || (CUADRE_TIPOS_COMPRA.includes(Number(x.tipo_doc)) && !cuadreEsComision(x)));
+    const ventas = lista.filter(x => x.operacion === 'VENTA');
+    const compras = lista.filter(x => x.operacion === 'COMPRA');
+    /* Meses con compras en el SII pero sin las boletas de venta cargadas */
+    const { data: conVentas } = await db.from('sii_rcv_documentos').select('periodo').eq('operacion', 'VENTA').gte('periodo', desde).limit(5000);
+    const periodosConVentas = new Set((conVentas || []).map(x => x.periodo));
+    const mesCerrado = new Date(Date.UTC(a, m - 2, 1)).toISOString().slice(0, 7).replace('-', '');
+    res.json({
+      ventas: ventas.length, compras: compras.length,
+      monto_ventas: ventas.reduce((s, x) => s + num(x.total), 0), monto_compras: compras.reduce((s, x) => s + num(x.total), 0),
+      periodos: [...new Set(lista.map(x => x.periodo))].sort(),
+      falta_csv_ventas: periodosConVentas.has(mesCerrado) ? null : mesCerrado,
+    });
+  } catch (e) { return enviarErrorBD(res, e, 'GET /api/finanzas/sii/cuadre-aviso'); }
 });
 
 // Remanente del mes anterior (código 77 del F29), editable a mano

@@ -751,6 +751,16 @@ const API = {
       [desde && `desde=${encodeURIComponent(desde)}`, hasta && `hasta=${encodeURIComponent(hasta)}`].filter(Boolean).join('&')),
     siiSincronizar: () => apiRequest('/finanzas/sii/sincronizar', { method: 'POST', body: {} }),
     siiSubirCsv: (datos) => apiRequest('/finanzas/sii/rcv-csv', { method: 'POST', body: datos }),
+    // v169 (sql/108): Cuadrar con el SII
+    cuadreSii: (periodo) => apiRequest(`/finanzas/sii/cuadre?periodo=${encodeURIComponent(periodo)}`),
+    cuadreSiiAviso: () => apiRequest('/finanzas/sii/cuadre-aviso', { silencioso: true }),
+    cuadreSiiVentasCsv: (datos) => apiRequest('/finanzas/sii/cuadre/ventas-csv', { method: 'POST', body: datos }),
+    cuadreSiiConfirmar: (datos) => apiRequest('/finanzas/sii/cuadre/confirmar', { method: 'POST', body: datos }),
+    cuadreSiiAsociar: (id, datos) => apiRequest(`/finanzas/sii/cuadre/${id}/asociar`, { method: 'POST', body: datos }),
+    cuadreSiiCrearGasto: (datos) => apiRequest('/finanzas/sii/cuadre/crear-gasto', { method: 'POST', body: datos }),
+    cuadreSiiMarcarFactura: (id) => apiRequest(`/finanzas/sii/cuadre/${id}/marcar-factura`, { method: 'POST', body: {} }),
+    cuadreSiiIgnorar: (id, nota) => apiRequest(`/finanzas/sii/cuadre/${id}/ignorar`, { method: 'POST', body: { nota } }),
+    cuadreSiiReabrir: (id) => apiRequest(`/finanzas/sii/cuadre/${id}/reabrir`, { method: 'POST', body: {} }),
     ivaRemanenteGuardar: (periodo, monto) => apiRequest(`/finanzas/iva-remanente/${encodeURIComponent(periodo)}`, { method: 'PUT', body: { monto } }),
     f29Desmarcar: (periodo) => apiRequest(`/finanzas/f29-presentado/${encodeURIComponent(periodo)}`, { method: 'DELETE' }),
 

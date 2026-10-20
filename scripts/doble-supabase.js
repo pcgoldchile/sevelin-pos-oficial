@@ -84,10 +84,14 @@ function crearCliente(base, rpcs, registro) {
         filas = this.filas.map(f => {
           const nueva = copia(f);
           if (this.op === 'upsert') {
-            const clave = (this.opcionesUpsert.onConflict || 'id').split(',')[0].trim();
-            const previa = t.find(x => x[clave] != null && String(x[clave]) === String(nueva[clave]));
+            // La clave puede ser compuesta ('operacion,tipo_doc,rut,folio'): calzan TODAS las columnas
+            const claves = (this.opcionesUpsert.onConflict || 'id').split(',').map(c => c.trim());
+            const previa = t.find(x => claves.every(c => x[c] != null && String(x[c]) === String(nueva[c])));
             if (previa) { Object.assign(previa, nueva); return previa; }
           }
+          // Valores por defecto de la base, si la prueba los declara: base.__defaults = { tabla: { col: valor } }
+          const porDefecto = base.__defaults && base.__defaults[this.nombre];
+          if (porDefecto) for (const [c, v] of Object.entries(porDefecto)) if (nueva[c] === undefined) nueva[c] = copia(v);
           if (nueva.id == null) nueva.id = sigId(this.nombre);
           if (nueva.creado_en === undefined) nueva.creado_en = new Date().toISOString();
           t.push(nueva);
