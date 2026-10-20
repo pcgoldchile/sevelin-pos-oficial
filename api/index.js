@@ -2325,7 +2325,7 @@ const PROMPT_FICHA_PRODUCTO = `Crea la ficha de un producto para la tienda onlin
 
 NO escribir encabezados internos como "🏷️ Título del producto", "Nombre del producto" o similares.
 
-La primera línea debe ser directamente el título comercial del producto, listo para copiar y pegar en el campo "Nombre del producto" de la tienda online. Debe incluir, cuando estén disponibles, marca + modelo + tipo de producto + característica o variante relevante. Claro, profesional, sin palabras innecesarias ni exageraciones. Este mismo título se repite después dentro de la introducción, palabra por palabra.
+La primera línea debe ser directamente el título comercial del producto, listo para copiar y pegar en el campo "Nombre del producto" de la tienda online. ORDEN OBLIGATORIO: primero el tipo de producto, después la marca, después las características o la variante relevantes y al final el código de modelo, si lo hay. Ejemplo: "Monitor Gamer Master-G 24" FHD IPS HDR 180Hz 1ms MGMG2442" (nunca "Master-G MGMG2442 Monitor Gamer…"). Nunca empieces el título con la marca ni con el código de modelo. Si el producto no tiene marca real, va el tipo y las características. Claro, profesional, sin palabras innecesarias ni exageraciones. Este mismo título se repite después dentro de la introducción, palabra por palabra.
 
 ✨ Introducción breve y atractiva, SIEMPRE empezando con el emoji ✨ y en un solo párrafo seguido (sin saltos de línea internos). Incluye el título completo del producto, qué es, su principal beneficio, y para qué tipo de usuario o situación está pensado.
 
