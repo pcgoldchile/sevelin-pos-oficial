@@ -54,12 +54,16 @@ async function buscarCotizadorCelulares() {
   try {
     const r = await API.cotizadorCelulares.buscar({ q, marca, trabajo });
     cotizadorCelularesFilas = r.filas || [];
+    cotizadorCelularesAviso = r.aviso || '';
   } catch (err) {
     cont.innerHTML = `<p class="modal-hint">${escHtml(err.message || 'No se pudo buscar')}</p>`;
     return;
   }
   pintarCotizadorCelulares();
 }
+
+// v170: "No encontré exacto…" o "la lista no trae Redmi" (lo manda el servidor).
+let cotizadorCelularesAviso = '';
 
 function equiposCotizadorCelulares() {
   const grupos = new Map();
@@ -74,14 +78,16 @@ function pintarCotizadorCelulares() {
   const cont = document.getElementById('cotCelResultados');
   if (!cont) return;
   const equipos = equiposCotizadorCelulares();
+  const aviso = cotizadorCelularesAviso ? `<p class="modal-hint" style="color:#b45309;"><b>⚠️ ${escHtml(cotizadorCelularesAviso)}</b></p>` : '';
   if (!equipos.length) {
+    if (aviso) { cont.innerHTML = aviso + '<p class="modal-hint">Si no está, cotízalo con Multiphone.</p>'; return; }
     cont.innerHTML = '<p class="modal-hint">No encontré ese modelo con ese trabajo. Prueba con menos palabras (por ejemplo solo <b>A15</b>) o elige "Todos los trabajos". Si no está, cotízalo con Multiphone.</p>';
     return;
   }
   const admin = esAdmin();
   const lista = cotizadorCelularesFilas[0];
   const fecha = lista?.lista_fecha ? fechaCorta(lista.lista_fecha) : '';
-  cont.innerHTML = `<p class="modal-hint">${equipos.length} equipo${equipos.length === 1 ? '' : 's'} · repuestos de ${escHtml(lista?.proveedor || 'Multiphone')}${fecha ? ` (lista del ${escHtml(fecha)})` : ''}, con IVA. Precio aproximado.</p>`
+  cont.innerHTML = aviso + `<p class="modal-hint">${equipos.length} equipo${equipos.length === 1 ? '' : 's'} · repuestos de ${escHtml(lista?.proveedor || 'Multiphone')}${fecha ? ` (lista del ${escHtml(fecha)})` : ''}, con IVA. Precio aproximado.</p>`
     + equipos.map((g, i) => `
       <div class="cotcel-equipo">
         <div class="cotcel-cabeza">

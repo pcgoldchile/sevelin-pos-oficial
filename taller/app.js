@@ -738,7 +738,7 @@
   /* ---------- Cotizar (v157, sql/102): precio estimado de reparaciones de celulares ----------
      Repuesto de Multiphone + 15% + mano de obra. Arranca en "pantalla y puerto de carga", que es lo
      que hace hoy el taller; iPhone se integra de a poco. Aquí nunca llega el costo, solo el precio. */
-  S.cotizar = { texto: '', trabajo: 'principales', resultados: null, buscando: false };
+  S.cotizar = { texto: '', trabajo: 'principales', resultados: null, buscando: false, aviso: '' };
 
   async function buscarCotizar() {
     const c = S.cotizar;
@@ -748,6 +748,7 @@
     try {
       const r = await pedir('/taller/cotizador?' + new URLSearchParams({ q: c.texto.trim(), trabajo: c.trabajo }));
       c.resultados = r.filas || [];
+      c.aviso = r.aviso || '';
     } catch (err) { aviso(err.message, true); }
     c.buscando = false;
     pintar();
@@ -773,9 +774,12 @@
   function vistaCotizar() {
     const c = S.cotizar;
     const equipos = equiposCotizar();
+    // v170: aviso del servidor ("no encontré exacto: estos se parecen", "la lista no trae Redmi")
+    const avisoBusqueda = c.resultados !== null && c.aviso ? `<div class="vacio"><b>⚠️ ${esc(c.aviso)}</b></div>` : '';
     const resultados = c.resultados === null ? '<p class="paso-ayuda">Escribe el modelo: A05, iPhone 13, G24, Y21s… El precio es aproximado (repuesto de Multiphone + mano de obra).</p>'
+      : !equipos.length && avisoBusqueda ? avisoBusqueda
       : !equipos.length ? '<div class="vacio"><b>No encontré ese modelo</b>Prueba con menos palabras (solo "A15") o toca "Todos los trabajos".</div>'
-        : equipos.map((g, i) => `<div class="tarjeta">
+        : avisoBusqueda + equipos.map((g, i) => `<div class="tarjeta">
             <div class="trabajo-modelo">${esc(g.equipo)}</div>
             ${g.marca === 'iPhone' ? '<div class="marcas"><span class="marca ambar">🍏 iPhone: de a poco</span></div>' : ''}
             ${g.filas.map(f => `<div class="dato"><span>${esc(f.trabajo)}${f.calidad ? `<br><small>${esc(f.calidad)}</small>` : ''}</span><span><b>${plata(f.precio)}</b></span></div>`).join('')}

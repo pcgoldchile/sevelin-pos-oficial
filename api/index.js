@@ -11874,7 +11874,7 @@ function siiParsearResumen(json, periodo, operacion, estado) {
 function siiParsearCsvRcv(texto, periodo, operacion, estado, fuente) {
   const lineas = String(texto || '').replace(/^﻿/, '').split(/\r?\n/).filter(l => l.trim());
   if (lineas.length < 2) return [];
-  const norm = s => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const norm = s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const cab = lineas[0].split(';').map(norm);
   const col = (pred) => cab.findIndex(pred);
   const iTipo = col(h => h === 'tipodoc');
@@ -19768,21 +19768,109 @@ function sanearCotizacionReferencia(body = {}, esAdministrador) {
    ============================================================ */
 const TRABAJOS_PRINCIPALES_REPARACION = ['Cambio de pantalla', 'Cambio de puerto de carga'];
 
+/* v170 (dueño, 20-10-2026: "busco redmi 13 y me gustaría que salga redmi note
+   13, y similares"). La lista se trae entera (son ~2.000 filas) y se guarda 10
+   minutos; la comparación se hace aquí y no en la base para poder:
+     · aceptar sinónimos: "motorola" → "Moto", "apple" → "iPhone", "galaxy" no pesa;
+     · encontrar lo escrito junto o separado: "13promax", "note13", "a 05";
+     · si no calza todo, mostrar los PARECIDOS (los que calzan más palabras,
+       con el número del modelo sí o sí) avisando que no es exacto;
+     · decir claro cuando la marca no está en la lista ("no tengo Redmi"). */
+const SINONIMOS_REPARACION = {
+  motorola: ['moto'], moto: ['moto'], apple: ['iphone'], iphon: ['iphone'], ifone: ['iphone'], aifon: ['iphone'],
+  samsumg: ['samsung'], sansung: ['samsung'], samsun: ['samsung'], samgung: ['samsung'], galaxy: [], celular: [], telefono: []
+};
+// Marcas que la gente escribe y que hoy no vienen en la lista del proveedor.
+const MARCAS_SIN_LISTA_REPARACION = ['xiaomi', 'redmi', 'poco', 'huawei', 'honor', 'oppo', 'realme', 'nokia', 'lg', 'zte', 'tcl',
+  'alcatel', 'infinix', 'tecno', 'pixel', 'google', 'oneplus', 'sony', 'lenovo'];
+let cachePreciosReparacion = { filas: null, hasta: 0 };
+
+function normalizarTextoReparacion(t) {
+  return String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\+/g, ' plus ').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+async function preciosReparacionActivos() {
+  if (cachePreciosReparacion.filas && Date.now() < cachePreciosReparacion.hasta) return cachePreciosReparacion.filas;
+  const filas = await padresTraerTodo(() => db.from('reparaciones_precios')
+    .select('id, marca, equipo, trabajo, calidad, costo_repuesto, mano_obra, precio, proveedor, lista_fecha')
+    .eq('activo', true).order('id'));
+  filas.forEach(f => {
+    const n = normalizarTextoReparacion(`${f.marca || ''} ${f.equipo}`);
+    f._texto = ` ${n} `;
+    f._junto = n.replace(/ /g, '');
+  });
+  cachePreciosReparacion = { filas, hasta: Date.now() + 10 * 60 * 1000 };
+  return filas;
+}
+
+/* Cada palabra escrita se vuelve una lista de formas aceptadas (vacía = no pesa). */
+function palabrasDeBusquedaReparacion(q) {
+  return normalizarTextoReparacion(q).split(' ').filter(Boolean).slice(0, 6)
+    .map(p => ({ p, formas: SINONIMOS_REPARACION[p] || [p], numero: /\d/.test(p) }))
+    .filter(w => w.formas.length);
+}
+
+function calzaPalabraReparacion(fila, w) {
+  return w.formas.some(f => fila._texto.includes(f) || fila._junto.includes(f));
+}
+
 async function buscarPreciosReparacion(consulta, conCosto) {
-  const palabras = String(consulta?.q || '').toLowerCase().replace(/[%_,()*]/g, ' ').split(/\s+/).filter(Boolean).slice(0, 5);
+  const q = String(consulta?.q || '');
+  const palabras = palabrasDeBusquedaReparacion(q);
   const marca = String(consulta?.marca || '').trim();
   const trabajo = String(consulta?.trabajo || 'principales').trim();
   if (!palabras.length && !marca) return { filas: [], total: 0, pide: 'Escribe el modelo (por ejemplo: A05, iPhone 13, G24)' };
-  let pedido = db.from('reparaciones_precios')
-    .select('id, marca, equipo, trabajo, calidad, costo_repuesto, mano_obra, precio, proveedor, lista_fecha')
-    .eq('activo', true);
-  for (const p of palabras) pedido = pedido.ilike('equipo', `%${p}%`);
-  if (marca) pedido = pedido.eq('marca', marca);
-  if (trabajo === 'principales') pedido = pedido.in('trabajo', TRABAJOS_PRINCIPALES_REPARACION);
-  else if (trabajo && trabajo !== 'todos') pedido = pedido.eq('trabajo', trabajo);
-  const { data, error } = await pedido.order('equipo').order('trabajo').order('precio').limit(400);
-  if (error) throw error;
-  const filas = (data || []).map(f => {
+
+  let base = await preciosReparacionActivos();
+  if (marca) base = base.filter(f => f.marca === marca);
+  if (trabajo === 'principales') base = base.filter(f => TRABAJOS_PRINCIPALES_REPARACION.includes(f.trabajo));
+  else if (trabajo && trabajo !== 'todos') base = base.filter(f => f.trabajo === trabajo);
+
+  let elegidas = base.filter(f => palabras.every(w => calzaPalabraReparacion(f, w)));
+  let parecidos = false;
+  let aviso = null;
+
+  if (!elegidas.length && palabras.length) {
+    const marcaFalta = palabras.find(w => MARCAS_SIN_LISTA_REPARACION.includes(w.p) &&
+      !base.some(f => calzaPalabraReparacion(f, w)));
+    if (marcaFalta) {
+      const nombre = marcaFalta.p.charAt(0).toUpperCase() + marcaFalta.p.slice(1);
+      return { filas: [], total: 0, sin_marca: nombre,
+        aviso: `La lista del proveedor no trae ${nombre}: ese hay que cotizarlo aparte.` };
+    }
+    /* Parecidos. Primero manda la marca o la serie: las palabras con letras
+       que existen en la lista tienen que estar todas ("note 13" muestra los
+       otros Note, no cualquier modelo con 13). Las que no existen en ninguna
+       parte (un "mx" mal escrito) no pesan. Entre esas, ganan las que calzan
+       más números del modelo. Si ninguna palabra con letras existe, el número
+       solo no sirve y se dice que no está. */
+    const conLetras = palabras.filter(w => !w.numero);
+    const letrasQueExisten = conLetras.filter(w => base.some(f => calzaPalabraReparacion(f, w)));
+    if (conLetras.length && !letrasQueExisten.length) {
+      return { filas: [], total: 0, parecidos: false,
+        aviso: `No encontré ${conLetras.map(w => `"${w.p}"`).join(', ')} en la lista del proveedor: ese hay que cotizarlo aparte.` };
+    }
+    const conNumero = palabras.filter(w => w.numero);
+    const puntaje = new Map();
+    base.forEach(f => {
+      if (!letrasQueExisten.every(w => calzaPalabraReparacion(f, w))) return;
+      const n = 1 + conNumero.filter(w => calzaPalabraReparacion(f, w)).length;
+      if (letrasQueExisten.length || n > 1) puntaje.set(f, n);
+    });
+    const mejor = Math.max(0, ...puntaje.values());
+    if (mejor > 0) {
+      const candidatas = base.filter(f => puntaje.get(f) === mejor);
+      // Hasta 8 modelos distintos, los de nombre más corto primero
+      const modelos = [...new Set(candidatas.map(f => f.equipo))].sort((a, b) => a.length - b.length || a.localeCompare(b)).slice(0, 8);
+      elegidas = candidatas.filter(f => modelos.includes(f.equipo));
+      parecidos = true;
+      const faltan = palabras.filter(w => !elegidas.some(f => calzaPalabraReparacion(f, w))).map(w => `"${w.p}"`);
+      aviso = `No encontré exacto${faltan.length ? ` (no calza ${faltan.join(', ')})` : ''}: estos son los más parecidos.`;
+    }
+  }
+
+  const filas = elegidas.slice(0, 400).map(f => {
     const fila = { id: f.id, marca: f.marca, equipo: f.equipo, trabajo: f.trabajo, calidad: f.calidad, precio: num(f.precio),
       proveedor: f.proveedor, lista_fecha: f.lista_fecha };
     if (conCosto) { fila.costo_repuesto = num(f.costo_repuesto); fila.mano_obra = num(f.mano_obra); }
@@ -19790,7 +19878,7 @@ async function buscarPreciosReparacion(consulta, conCosto) {
   });
   // El modelo más corto primero: "iPhone 13" antes que "iPhone 13 Pro Max"
   filas.sort((a, b) => a.equipo.length - b.equipo.length || a.equipo.localeCompare(b.equipo) || a.trabajo.localeCompare(b.trabajo) || a.precio - b.precio);
-  return { filas, total: filas.length };
+  return { filas, total: filas.length, parecidos, aviso };
 }
 
 app.get('/api/reparaciones/precios', auth(), async (req, res) => {
