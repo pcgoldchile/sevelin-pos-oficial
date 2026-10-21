@@ -798,6 +798,8 @@ function contenidoRedesPintarTexto() {
   } else {
     texto = p.instagram_texto || (typeof armarTextoInstagram === 'function' ? armarTextoInstagram(p) : '') || '';
   }
+  // v173: el texto guardado lleva el bloque "➕ OPCIONAL" del agregable con el precio de hoy
+  if (enfoque === 'normal' && typeof conAgregableParaRedes === 'function') texto = conAgregableParaRedes(texto, p);
   if (!texto) {
     texto = `${p.nombre}\n${pr.desde ? 'Desde ' : ''}${fmtCLP(pr.precio)}\n\n📲 WhatsApp ${CONTENIDO_REDES_TIENDA.whatsapp}\n📍 ${CONTENIDO_REDES_TIENDA.direccion} (${CONTENIDO_REDES_TIENDA.entrada.toLowerCase()})\n🌐 ${CONTENIDO_REDES_TIENDA.web}\n\n#Arica #AricaChile #Tecnología`;
   }

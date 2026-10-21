@@ -39,6 +39,7 @@ La lista de abajo queda como historia hasta pasarla completa a la tabla. Ver `do
   (`CHANGELOG-V160.md`; tienda `supabase/45`).
 - **v161, Destacados automáticos:** el POS manda cada día a las 07:30 las ventas del mes (`/api/cron/mas-vendidos`) y la
   tienda recalcula con vistas, tendencia, la etiqueta "🔥 Tendencia" y el calor de Arica (`CHANGELOG-V161.md`).
+- **v173, "➕ Agregable"**: un accesorio opcional por producto, con casilla en el cuadro de compra de sevelin.cl, línea en la descripción y bloque "➕ OPCIONAL" en Facebook/Instagram con el precio del día; la ficha pregunta "¿ofrecer el adaptador HDMI a VGA?" en los monitores sin HDMI (sql/110 + tienda supabase/48, `CHANGELOG-V173.md`). v170-v172: cotizador por parecidos, pozo a mano, notas del taller, reel a 60 FPS y texto con enfoque.
 - **v169, Cuadrar con el SII** (Finanzas): cada boleta y factura del RCV contra las ventas y los gastos; propuestas que se confirman con un clic, "Registrar la venta" atrasada fuera de la caja de hoy, "Crear el gasto" de una factura, comisiones de las máquinas aparte y chip "🧾 SII: N por cuadrar" (sql/108, `CHANGELOG-V169.md`).
 - **v168, Plan de contenido**: calendario con fases, aprobación desde el celular, "➕ Pedir" y aviso "📅 Contenido" de cuándo dejar el PC encendido (sql/107, `CHANGELOG-V168.md`).
 - **v167, Puntos Sevelin en la caja**: buscar o inscribir al cliente, sumar y canjear con código por WhatsApp; reglas y topes en el servidor (sql/106 + tienda supabase/47, `CHANGELOG-V167.md`). Lo público sigue apagado hasta la prueba del dueño.

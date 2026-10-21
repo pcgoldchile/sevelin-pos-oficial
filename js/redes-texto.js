@@ -275,7 +275,7 @@ function armarTextoFacebook(p) {
     ? '🛍️ Más servicios y precios en nuestra tienda online www.sevelin.cl'
     : '🛍️ Compra online: Compra de forma rápida y segura directamente en nuestra tienda online www.sevelin.cl');
   bloques.push(hashtagsParaRedes(p, 20).join(', '));
-  return bloques.join('\n\n').slice(0, REDES_TOPE_FACEBOOK);
+  return conAgregableParaRedes(bloques.join('\n\n'), p).slice(0, REDES_TOPE_FACEBOOK);
 }
 
 /* PIE DE FOTO DE INSTAGRAM: más corto, con los hashtags separados por espacios.
@@ -301,7 +301,7 @@ function armarTextoInstagram(p) {
     if (garantia) cierre.push(garantia);
     bloques.push(cierre.join('\n'));
     bloques.push(hashtagsParaRedes(p, 12).join(' '));
-    return bloques.join('\n\n');
+    return conAgregableParaRedes(bloques.join('\n\n'), p);
   };
   for (let cuantas = 6; cuantas >= 0; cuantas--) {
     const texto = armar(cuantas);
@@ -354,6 +354,46 @@ function precioVigenteParaRedes(p, hoy) {
     && (!p?.oferta_desde || dia(p.oferta_desde) <= hoy) && (!p?.oferta_hasta || dia(p.oferta_hasta) >= hoy);
   return { precio: vigente ? oferta : normal, antes: vigente ? normal : null, desde: !!p?.precio_a_consultar,
     hasta: vigente && p?.oferta_hasta ? dia(p.oferta_hasta) : null };
+}
+
+/* "➕ AGREGABLE" (v173, sql/110, dueño 21-10-2026): el accesorio opcional del producto (ej. el
+   adaptador HDMI a VGA de un monitor sin HDMI) va como bloque propio antes de "📌 RETIRO" (Facebook)
+   o del cierre "📍" (Instagram). Se arma con el precio del DÍA y se rehace cada vez: si el texto
+   ya traía un bloque viejo, se reemplaza, así un precio cambiado nunca queda escrito.
+   En el navegador el accesorio se busca en productsList; en Node se pasa p.agregable =
+   { nombre, precio }. Sin stock o archivado, no sale (y un bloque viejo se quita). */
+const REDES_MARCA_AGREGABLE = '➕ OPCIONAL';
+
+function agregableParaRedes(p, hoy) {
+  if (p?.agregable && p.agregable.nombre) return p.agregable;
+  const id = Number(p?.agregable_id);
+  if (!Number.isInteger(id) || id <= 0) return null;
+  const lista = typeof productsList !== 'undefined' && Array.isArray(productsList) ? productsList : [];
+  const a = lista.find(x => Number(x.id) === id);
+  if (!a || a.archivado || (!a.stock_ilimitado && Number(a.stock) <= 0)) return null;
+  const dia = hoy || (typeof todayISO === 'function' ? todayISO() : new Date().toISOString().slice(0, 10));
+  return { nombre: a.nombre, precio: precioVigenteParaRedes(a, dia).precio };
+}
+
+function bloqueAgregableParaRedes(p, hoy) {
+  const a = agregableParaRedes(p, hoy);
+  if (!a || !(Number(a.precio) > 0)) return '';
+  const motivo = String(p?.agregable_motivo || '').replace(/\s+/g, ' ').trim().replace(/\.+$/, '');
+  return `${REDES_MARCA_AGREGABLE}\n🔌 ${a.nombre}: ${pesosParaRedes(a.precio)}${motivo ? `\n${motivo}.` : ''}\nPídelo junto con tu compra.`;
+}
+
+/* Pone (o saca, o actualiza) el bloque en un texto ya escrito. Un texto vacío queda vacío. */
+function conAgregableParaRedes(texto, p, hoy) {
+  const t = String(texto || '').replace(/\r\n/g, '\n');
+  if (!t.trim()) return t;
+  const bloques = t.split('\n\n').filter(b => !b.startsWith(REDES_MARCA_AGREGABLE));
+  const nuevo = bloqueAgregableParaRedes(p, hoy);
+  if (nuevo) {
+    let i = bloques.findIndex(b => b.startsWith('📌 ') || b.startsWith('📍 '));
+    if (i < 0) i = bloques.findIndex(b => b.startsWith('#'));
+    bloques.splice(i < 0 ? bloques.length : i, 0, nuevo);
+  }
+  return bloques.join('\n\n');
 }
 
 function lineaPrecioParaRedes(pr) {

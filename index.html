@@ -3535,6 +3535,28 @@
             </div>
             <div id="prodComplementosSugerencias" class="complementos-sugerencias"></div>
           </div>
+
+          <!-- v173 (sql/110): "➕ Agregable", UN accesorio opcional con casilla en el cuadro de compra de
+               sevelin.cl y bloque "➕ OPCIONAL" en Facebook/Instagram. Se guarda al tocar (js/agregable.js). -->
+          <div class="card card-plegable" data-seccion="agregable">
+            <div class="card-head"><div><h2>➕ Agregable</h2>
+              <p class="subtitle">Un accesorio opcional que el cliente suma con una casilla junto al botón de compra (ej. adaptador HDMI a VGA). <span id="prodAgregableResumen"></span></p>
+            </div></div>
+            <div id="prodAgregablePregunta"></div>
+            <div id="prodAgregableActual" class="complementos-lista"></div>
+            <div class="field" id="prodAgregableMotivoCampo" style="margin-top:10px;" hidden>
+              <label for="prodAgregableMotivo">Para qué sirve (lo lee el cliente, máx. 140 letras)</label>
+              <div style="display:flex; gap:8px; align-items:center;">
+                <input type="text" id="prodAgregableMotivo" maxlength="140" placeholder="Ej: Para conectarlo a un PC o notebook que solo tiene salida HDMI." autocomplete="off" style="flex:1;">
+                <button type="button" class="btn btn-outline btn-sm" id="btnAgregableGuardarMotivo">Guardar frase</button>
+              </div>
+            </div>
+            <div class="field" style="margin-top:10px;">
+              <label for="prodAgregableBuscar" id="prodAgregableBuscarEtiqueta">Elegir accesorio</label>
+              <input type="text" id="prodAgregableBuscar" placeholder="Escribe el nombre o SKU…" autocomplete="off">
+            </div>
+            <div id="prodAgregableSugerencias" class="complementos-sugerencias"></div>
+          </div>
         </div>
       </div>
 
@@ -8632,6 +8654,7 @@
   <script src="js/cotizador-celulares.js"></script>   <!-- v157 (sql/102): Servicio Técnico → Cotizador celulares -->
   <script src="js/bodega.js"></script>   <!-- v156 (sql/101): Productos → "📦 Más stock y bodega"; usa cerrarModal de balance.js -->
   <script src="js/caracteristicas-producto.js"></script>   <!-- v159 (sql/103): después de productos.js y asistente-producto.js; filtros de la tienda en la ficha -->
+  <script src="js/agregable.js"></script>   <!-- v173 (sql/110): después de caracteristicas-producto.js; "➕ Agregable" en la ficha -->
   <script src="js/facebook-rapido.js"></script>
   <script src="js/redes-contenido.js"></script>
   <script src="js/plan-contenido.js"></script>   <!-- v168 (sql/107): plan de contenido y aviso del encabezado -->   <!-- v164 (sql/104): después de productos.js y redes-texto.js (usa sus funciones) -->   <!-- v136 (sql/93): después de productos.js; usa sus funciones de fotos y la lista -->

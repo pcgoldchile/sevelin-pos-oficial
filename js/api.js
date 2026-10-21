@@ -106,6 +106,8 @@ const API = {
     guardarMedidas: (id, medidas) => apiRequest(`/productos/${id}/medidas`, { method: 'PUT', body: medidas }),
     // sql/75: "Complementa tu compra" en la tienda (lista ordenada de ids)
     guardarRelacionados: (id, ids) => apiRequest(`/productos/${id}/relacionados`, { method: 'PUT', body: { ids } }),
+    // sql/110: "➕ Agregable", un accesorio opcional (null = quitarlo)
+    guardarAgregable: (id, agregable_id, motivo) => apiRequest(`/productos/${id}/agregable`, { method: 'PUT', body: { agregable_id, motivo } }),
     eliminar: (id) => apiRequest(`/productos/${id}`, { method: 'DELETE' }),
 
     /* Agotados (sql/55): los que llegaron a stock 0 y esperan que el dueño

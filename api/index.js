@@ -5743,6 +5743,47 @@ app.put('/api/productos/:id/relacionados', auth(true), async (req, res) => {
 });
 
 /* ============================================================
+   "➕ AGREGABLE" (sql/110, pedido del dueño 21-10-2026)
+   ------------------------------------------------------------
+   Un accesorio opcional por producto: en sevelin.cl sale como casilla en el
+   cuadro de compra y en Facebook/Instagram como bloque "➕ OPCIONAL" (ej. el
+   adaptador HDMI a VGA de un monitor sin HDMI). Ruta propia, como los
+   complementos: editar el precio nunca lo pisa.
+   Body: { agregable_id: número | null, motivo: texto }. null = quitarlo.
+   ============================================================ */
+const MAX_MOTIVO_AGREGABLE = 140;
+
+app.put('/api/productos/:id/agregable', auth(true), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return enviarError(res, 400, 'Producto inválido');
+  const crudo = req.body?.agregable_id;
+  const agregableId = crudo === null || crudo === undefined || crudo === '' ? null : Number(crudo);
+  if (agregableId !== null && (!Number.isInteger(agregableId) || agregableId <= 0)) {
+    return enviarError(res, 400, 'El accesorio elegido no es válido');
+  }
+  if (agregableId === id) return enviarError(res, 400, 'Un producto no puede ser su propio agregable');
+  const motivo = agregableId === null ? '' : String(req.body?.motivo ?? '').replace(/\s+/g, ' ').trim();
+  if (motivo.length > MAX_MOTIVO_AGREGABLE) {
+    return enviarError(res, 400, `La frase puede tener hasta ${MAX_MOTIVO_AGREGABLE} letras`);
+  }
+
+  if (agregableId !== null) {
+    const { data: elegido, error: errElegido } = await db.from('productos')
+      .select('id, archivado, es_servicio').eq('id', agregableId).maybeSingle();
+    if (errElegido) return enviarErrorBD(res, errElegido, 'validar agregable');
+    if (!elegido || elegido.archivado) return enviarError(res, 400, 'Ese accesorio no existe o está archivado');
+    if (elegido.es_servicio) return enviarError(res, 400, 'Un servicio no se puede ofrecer como agregable');
+  }
+
+  const { data, error } = await db.from('productos')
+    .update({ agregable_id: agregableId, agregable_motivo: motivo || null })
+    .eq('id', id).select('id, agregable_id, agregable_motivo').maybeSingle();
+  if (error) return enviarErrorBD(res, error, 'guardar agregable');
+  if (!data) return enviarError(res, 404, 'Ese producto no existe');
+  res.json(data);
+});
+
+/* ============================================================
    MERCADERÍA EN CAMINO (aviso del header, sql/59)
    ------------------------------------------------------------
    "Que se vea en notificaciones productos en camino, o que ya llegaron y

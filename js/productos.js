@@ -1656,7 +1656,9 @@ function productoDelFormularioParaRedes() {
     es_pedido_encargo: !!(elProdEsEncargo && elProdEsEncargo.checked),
     categoria_web: categoria.categoria_web || '',
     subcategoria_web: categoria.subcategoria_web || '',
-    descripcion: elProdDescripcion?.value || ''
+    descripcion: elProdDescripcion?.value || '',
+    // v173 (sql/110): el "➕ Agregable" que está en la tarjeta (js/agregable.js)
+    ...(typeof agregableDeLaFicha === 'function' ? agregableDeLaFicha() : {})
   };
 }
 
@@ -1679,6 +1681,10 @@ async function armarTextoRedProducto(red) {
 
 async function copiarTextoRedProducto(red) {
   const caja = red === 'instagram' ? elProdInstagramTexto : elProdFacebookTexto;
+  // v173: antes de copiar, el bloque "➕ OPCIONAL" del agregable queda con el precio de hoy
+  if (caja && caja.value.trim() && typeof conAgregableParaRedes === 'function') {
+    caja.value = conAgregableParaRedes(caja.value, productoDelFormularioParaRedes());
+  }
   const texto = caja?.value || '';
   if (!texto.trim()) { showToast('Todavía no hay texto para copiar', 'err'); return; }
   try {
@@ -2369,6 +2375,8 @@ function abrirModalProducto(producto = null) {
   }
   // v102: "Complementa tu compra" (js/complementos.js)
   if (typeof pintarComplementosProducto === 'function') pintarComplementosProducto(producto);
+  // v173: "➕ Agregable" (js/agregable.js)
+  if (typeof pintarAgregableProducto === 'function') pintarAgregableProducto(producto);
 }
 
 /* (C) El margen que ya usa este producto — o la mediana de su categoría —

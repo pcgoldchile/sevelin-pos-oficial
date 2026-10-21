@@ -113,6 +113,9 @@ function pintarCaracteristicasProducto(opciones = {}) {
 
   const total = grupos.reduce((n, g) => n + (caracteristicasEnEdicion[g.id] || []).filter(v => g.valores.includes(v)).length, 0);
   pintarResumenCaracteristicas(total);
+  // v173: con las entradas de video a la vista (a mano, con IA o al cambiar de categoría), la
+  // tarjeta "➕ Agregable" pregunta si ofrecer el adaptador a un monitor sin HDMI (js/agregable.js)
+  if (typeof agregableRevisarPregunta === 'function') agregableRevisarPregunta();
   // Al abrir: si la categoría tiene filtros y no hay nada marcado, la tarjeta queda abierta para que se vea
   if (opciones.alAbrir && card && total === 0) card.classList.remove('plegada');
 }

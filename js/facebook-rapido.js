@@ -46,7 +46,8 @@ function abrirFacebookRapido(p) {
   const titulo = document.getElementById('fbRapidoNombre');
   if (titulo) titulo.textContent = p.nombre || '';
   poner('fbRapidoDatos', '');
-  poner('fbRapidoTexto', p.facebook_texto || '');
+  // v173: el bloque "➕ OPCIONAL" del agregable se rehace con el precio de hoy (js/redes-texto.js)
+  poner('fbRapidoTexto', typeof conAgregableParaRedes === 'function' ? conAgregableParaRedes(p.facebook_texto || '', p) : (p.facebook_texto || ''));
   poner('fbRapidoLink', p.facebook_url || '');
   pintarFotosFacebookRapido();
   pintarEstadoFacebookRapido();

@@ -181,6 +181,24 @@ app.patch('/api/pendientes/:id', (req, res) => {
   res.json(p);
 });
 
+// v173: "➕ Agregable" (sql/110), en memoria. Misma validación que el servidor real.
+app.put('/api/productos/:id/agregable', (req, res) => {
+  const id = Number(req.params.id);
+  const p = productos.find(x => x.id === id);
+  if (!p) return res.status(404).json({ error: 'Ese producto no existe' });
+  const crudo = req.body?.agregable_id;
+  const agregableId = crudo === null || crudo === undefined || crudo === '' ? null : Number(crudo);
+  if (agregableId === id) return res.status(400).json({ error: 'Un producto no puede ser su propio agregable' });
+  const elegido = agregableId === null ? null : productos.find(x => x.id === agregableId);
+  if (agregableId !== null && (!elegido || elegido.archivado)) return res.status(400).json({ error: 'Ese accesorio no existe o está archivado' });
+  if (elegido?.es_servicio) return res.status(400).json({ error: 'Un servicio no se puede ofrecer como agregable' });
+  const motivo = agregableId === null ? '' : String(req.body?.motivo ?? '').replace(/\s+/g, ' ').trim();
+  if (motivo.length > 140) return res.status(400).json({ error: 'La frase puede tener hasta 140 letras' });
+  p.agregable_id = agregableId;
+  p.agregable_motivo = motivo || null;
+  res.json({ id, agregable_id: p.agregable_id, agregable_motivo: p.agregable_motivo });
+});
+
 // v102: "Complementa tu compra" (sql/75), en memoria. Misma validación que el servidor real.
 app.put('/api/productos/:id/relacionados', (req, res) => {
   const id = Number(req.params.id);
@@ -309,6 +327,14 @@ app.put('/api/textos/preguntas_diagnostico', (req, res) => {
 
 // v103: venta mayorista (sql/76 + supabase/39). Dos productos con precio mayorista, uno
 // desactivado solo por la base (subió el costo), y cuentas en los cuatro estados.
+// v173: un monitor solo VGA (como el #533 real), con su texto de Facebook ya guardado, para ver la
+// pregunta "¿ofrecer el adaptador HDMI a VGA (#104)?" de la tarjeta ➕ Agregable.
+productos.push({ ...productos.find(p => p.id === 157), id: 533, nombre: 'Monitor Samsung SyncMaster 21.5" Full HD 5 ms Negro 2233SN',
+  sku: 'monitor-samsung-syncmaster-2233sn', codigo_barras: null, precio_unitario: 55000, costo_unitario: 30000, stock: 1,
+  condicion: 'reacondicionado', caracteristicas: { entradas: ['VGA'] }, publicado_web: true,
+  descripcion: '<p>✨ El Monitor Samsung SyncMaster 21.5" Full HD es una pantalla reacondicionada.</p><h3>✨ Características principales</h3><ul><li>Pantalla de 21.5 pulgadas</li><li>Resolución de 1920 x 1080 píxeles</li><li>Conexión de video mediante puerto VGA (D-Sub)</li></ul>',
+  facebook_texto: '✨ NUEVO Monitor Samsung SyncMaster 21.5" Full HD Reacondicionado 2233SN\n\n✨ CARACTERÍSTICAS PRINCIPALES\n\n✅ Pantalla de 21.5 pulgadas\n✅ Conexión de video mediante puerto VGA (D-Sub)\n\n📌 RETIRO PRESENCIAL SECTOR 11 SEPTIEMBRE O ENVÍO HOY EN ARICA\n📍 San Rafael 896, Arica.\n\n📲 WhatsApp: +56935750828\n\n#Sevelin, #Monitor',
+  instagram_texto: null });
 // v113 (#54 pieza C): 291 y 98 son de la misma categoría que el 104 y ya tienen complementos.
 Object.assign(productos.find(p => p.id === 291), { relacionados_ids: [126, 98] });
 Object.assign(productos.find(p => p.id === 98), { relacionados_ids: [126, 144] });

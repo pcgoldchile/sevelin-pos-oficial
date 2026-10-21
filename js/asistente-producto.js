@@ -155,6 +155,11 @@ function mostrarPasoAsistente() {
       const local = productsList.find(p => Number(p.id) === Number(editingProductId));
       pintarComplementosProducto(local || { id: editingProductId, relacionados_ids: [] });
     }
+    if (actual.clave === 'web' && typeof pintarAgregableProducto === 'function'
+        && typeof agregableProductoId !== 'undefined' && agregableProductoId !== editingProductId) {
+      const local = productsList.find(p => Number(p.id) === Number(editingProductId));
+      pintarAgregableProducto(local || { id: editingProductId });
+    }
     if (actual.clave === 'bodega' && !asistenteProducto.revisando && typeof cargarUbicacionesProducto === 'function') cargarUbicacionesProducto();
   }
 

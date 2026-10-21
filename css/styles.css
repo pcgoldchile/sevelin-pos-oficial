@@ -4779,6 +4779,9 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
 .complemento-datos strong { color: var(--text-100); font-size: 13px; overflow-wrap: anywhere; }
 .complemento-datos small { color: var(--text-muted); font-size: 12px; }
 .complemento-aviso { color: var(--gold); }
+/* v173: la pregunta "¿ofrecer el adaptador?" de la tarjeta ➕ Agregable */
+.agregable-pregunta { margin-bottom: 10px; padding: 10px 12px; border: 1px dashed var(--primary, #3b82f6); border-radius: 10px; background: var(--surface-soft); font-size: 13px; line-height: 1.45; }
+.agregable-pregunta p { margin: 0; }
 .complemento-acciones { display: flex; gap: 2px; flex-shrink: 0; }
 .complementos-sugerencias { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
 .complemento-sugerencia { text-align: left; padding: 7px 10px; border: 1px dashed var(--border-strong); border-radius: 8px; background: transparent; color: var(--text-100); font-size: 13px; cursor: pointer; }
