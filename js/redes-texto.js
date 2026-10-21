@@ -49,7 +49,9 @@ function seccionDeTituloParaRedes(texto) {
   if (/^(qu[eé] )?no (incluye|cubre|hacemos)/.test(t)) return 'no';
   if (/^(importante|advertencia|ten en cuenta|antes de (comprar|agendar|venir))/.test(t)) return 'importante';
   if (/^(servicios? recomendados?|productos? relacionados?|te puede interesar)/.test(t)) return 'otros';
-  if (/^(caracter[ií]sticas|especificaciones|ventajas|beneficios|qu[eé] incluye|incluye|contenido de la caja|detalles)/.test(t)) return 'caracteristicas';
+  // v171: lo que trae la caja va aparte (antes se mezclaba con las características)
+  if (/^(qu[eé] incluye|incluye|contenido de la caja|en la caja)/.test(t)) return 'incluye';
+  if (/^(caracter[ií]sticas|especificaciones|ventajas|beneficios|detalles)/.test(t)) return 'caracteristicas';
   return '';
 }
 
@@ -63,7 +65,7 @@ function esTituloSueltoParaRedes(texto) {
 /* Separa la Descripción en lo que cada red necesita. Nada se redacta: cada
    línea sale tal como está escrita en la ficha. */
 function partesDeFichaParaRedes(html) {
-  const partes = { intro: '', masTexto: [], caracteristicas: [], noIncluye: [], importante: [] };
+  const partes = { intro: '', masTexto: [], caracteristicas: [], incluye: [], noIncluye: [], importante: [] };
   let seccion = 'inicio';
   for (const linea of lineasDeFichaParaRedes(html)) {
     if (linea.startsWith('###')) {
@@ -78,6 +80,7 @@ function partesDeFichaParaRedes(html) {
       if (seccion === 'otros') continue;
       if (marca[0].includes('❌') || seccion === 'no') partes.noIncluye.push(texto);
       else if (seccion === 'importante') partes.importante.push(texto);
+      else if (seccion === 'incluye') partes.incluye.push(texto);
       else partes.caracteristicas.push(texto);
       continue;
     }
@@ -232,12 +235,13 @@ function acortarParrafoParaRedes(texto, tope) {
 
 /* ¿Hay con qué armar una publicación? Sin introducción ni características no se arma nada. */
 function fichaAlcanzaParaRedes(partes) {
-  return !!(partes && (partes.intro.length >= 40 || partes.caracteristicas.length >= 2));
+  return !!(partes && (partes.intro.length >= 40 || partes.caracteristicas.length + (partes.incluye || []).length >= 2));
 }
 
 /* PUBLICACIÓN DE FACEBOOK: el mismo orden de la plantilla que usa la IA. */
 function armarTextoFacebook(p) {
   const partes = partesDeFichaParaRedes(descripcionParaRedes(p));
+  if (p?.es_servicio && partes.incluye.length) { partes.caracteristicas = partes.caracteristicas.concat(partes.incluye); partes.incluye = []; }
   if (!fichaAlcanzaParaRedes(partes)) return '';
   const servicio = !!p?.es_servicio;
   const bloques = [encabezadoParaRedes(p)];
@@ -250,6 +254,7 @@ function armarTextoFacebook(p) {
   if (partes.caracteristicas.length) {
     bloques.push((servicio ? '✨ QUÉ INCLUYE' : '✨ CARACTERÍSTICAS PRINCIPALES') + '\n\n' + partes.caracteristicas.slice(0, 12).map(c => '✅ ' + c).join('\n'));
   }
+  if (partes.incluye.length) bloques.push('📦 INCLUYE\n\n' + partes.incluye.slice(0, 8).map(c => '✅ ' + c).join('\n'));
   if (partes.noIncluye.length) bloques.push('🚫 NO INCLUYE\n\n' + partes.noIncluye.slice(0, 6).map(c => '❌ ' + c).join('\n'));
 
   // Un producto por encargo no está en la tienda: no se promete envío hoy ni stock
@@ -277,6 +282,7 @@ function armarTextoFacebook(p) {
    Si no cabe en lo que acepta Instagram, se van quitando características. */
 function armarTextoInstagram(p) {
   const partes = partesDeFichaParaRedes(descripcionParaRedes(p));
+  if (p?.es_servicio && partes.incluye.length) { partes.caracteristicas = partes.caracteristicas.concat(partes.incluye); partes.incluye = []; }
   if (!fichaAlcanzaParaRedes(partes)) return '';
   const servicio = !!p?.es_servicio;
   const armar = (cuantas) => {
