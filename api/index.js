@@ -19589,6 +19589,20 @@ app.get('/api/padres/resumen', auth(true), async (req, res) => {
         });
       }
     });
+    /* v170 (sql/109): lo sumado a mano (ej. el papá vendió su iPhone y se
+       quedó con la plata). en_su_mano = ya la tiene: cuenta como recibido. */
+    (await pozoAportesManuales()).forEach(a => {
+      const m = a.fecha.slice(0, 7);
+      juntadoPorMes.set(m, (juntadoPorMes.get(m) || 0) + a.monto);
+      if (a.en_su_mano) enManoPorMes.set(m, (enManoPorMes.get(m) || 0) + a.monto);
+      if (m === mes) {
+        lineasDelMes.push({
+          item_id: null, aporte_id: a.id, venta_id: null, numero_orden: null, fecha: a.fecha, origen: 'MANO',
+          nombre: a.descripcion, cobrado: a.monto, pozo: a.monto, devuelto: 0,
+          nota: a.en_su_mano ? 'Sumado a mano · la plata la tiene él' : 'Sumado a mano · la tiene Sevelin'
+        });
+      }
+    });
     lineasDelMes.sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : (b.item_id || 0) - (a.item_id || 0)));
 
     const entregasTodas = gastos.filter(g => g.clasificacion === CLASIF_PADRES_POZO || g.clasificacion === CLASIF_PADRES_POZO_ANTERIOR)
@@ -19696,6 +19710,55 @@ app.put('/api/padres/acuerdo', auth(true), async (req, res) => {
     res.json(await leerAcuerdoPadres());
   } catch (err) {
     return enviarErrorBD(res, err, 'PUT /api/padres/acuerdo');
+  }
+});
+
+/* v170 (sql/109): lo que se suma al pozo a mano, sin venta ni trabajo.
+   Si falta la tabla (sql/109 sin correr) el pozo sigue como antes. */
+async function pozoAportesManuales() {
+  try {
+    const filas = await padresTraerTodo(() => db.from('pozo_aportes_manuales')
+      .select('id, fecha, monto, descripcion, en_su_mano').is('anulado_en', null).order('id'));
+    return filas.map(f => ({ id: f.id, fecha: String(f.fecha).slice(0, 10), monto: Math.round(num(f.monto)),
+      descripcion: f.descripcion, en_su_mano: f.en_su_mano !== false }));
+  } catch (err) {
+    console.warn('[PADRES] el pozo no pudo leer lo sumado a mano (¿falta sql/109?):', err.message);
+    return [];
+  }
+}
+
+app.post('/api/padres/pozo/aportes', auth(true), async (req, res) => {
+  try {
+    const fecha = String(req.body?.fecha || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || fecha > fechaHoyChile()) return enviarError(res, 400, 'Revisa la fecha: no puede ser futura');
+    const monto = Math.round(num(req.body?.monto));
+    if (!(monto > 0) || monto > 100000000) return enviarError(res, 400, 'Escribe el monto');
+    const descripcion = String(req.body?.descripcion || '').trim().replace(/\s+/g, ' ').slice(0, 200);
+    if (descripcion.length < 3) return enviarError(res, 400, 'Escribe de qué es (por ejemplo: venta de su iPhone 14 Pro Max)');
+    const { data, error } = await db.from('pozo_aportes_manuales')
+      .insert([{ fecha, monto, descripcion, en_su_mano: req.body?.en_su_mano !== false, creado_por: req.usuario?.nombre || req.usuario?.rol || null }])
+      .select('id, fecha, monto, descripcion, en_su_mano').single();
+    if (error) return enviarErrorBD(res, error);
+    res.status(201).json(data);
+  } catch (err) {
+    return enviarErrorBD(res, err, 'POST /api/padres/pozo/aportes');
+  }
+});
+
+/* No se borra: queda anulado con su motivo y el resumen deja de contarlo. */
+app.post('/api/padres/pozo/aportes/:id/anular', auth(true), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return enviarError(res, 400, 'Movimiento inválido');
+    const motivo = String(req.body?.motivo || '').trim().slice(0, 200) || 'Anulado en Finanzas';
+    const { data, error } = await db.from('pozo_aportes_manuales')
+      .update({ anulado_en: new Date().toISOString(), anulado_motivo: motivo })
+      .eq('id', id).is('anulado_en', null).select('id').maybeSingle();
+    if (error) return enviarErrorBD(res, error);
+    if (!data) return enviarError(res, 404, 'Ese movimiento no existe o ya estaba anulado');
+    res.json({ ok: true });
+  } catch (err) {
+    return enviarErrorBD(res, err, 'POST /api/padres/pozo/aportes/:id/anular');
   }
 });
 

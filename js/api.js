@@ -695,7 +695,10 @@ const API = {
     resumen: (mes) => apiRequest('/padres/resumen' + (mes ? `?mes=${encodeURIComponent(mes)}` : '')),
     guardarAcuerdo: (cambios) => apiRequest('/padres/acuerdo', { method: 'PUT', body: cambios }),
     // monto null = la línea deja de ir al pozo
-    corregirPozo: (itemId, monto) => apiRequest(`/padres/pozo/${itemId}`, { method: 'PUT', body: { monto } })
+    corregirPozo: (itemId, monto) => apiRequest(`/padres/pozo/${itemId}`, { method: 'PUT', body: { monto } }),
+    // v170 (sql/109): plata que suma al pozo sin venta ni trabajo
+    sumarPozoAMano: (datos) => apiRequest('/padres/pozo/aportes', { method: 'POST', body: datos }),
+    anularPozoAMano: (id, motivo) => apiRequest(`/padres/pozo/aportes/${id}/anular`, { method: 'POST', body: { motivo } })
   },
 
   /* ---------- Usuarios con RUT y PIN (sql/92, v135). Solo admin ---------- */

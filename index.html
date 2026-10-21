@@ -2104,6 +2104,7 @@
             </div>
             <div class="toolbar-group">
               <input type="month" id="padresPozoMes" aria-label="Mes del pozo">
+              <button class="btn btn-outline" id="btnPozoSumarAMano" title="Plata que suma al pozo sin pasar por la caja ni la app (ej. vendió algo suyo)">➕ Sumar a mano</button>
               <button class="btn btn-primary" id="btnPadresEntregar">💵 Entregar a C. Patricio</button>
             </div>
           </div>
@@ -4454,6 +4455,36 @@
       <div class="modal-foot">
         <button class="btn btn-ghost" id="btnAcuerdoCancelar">Cancelar</button>
         <button class="btn btn-primary" id="btnAcuerdoGuardar">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- sql/109 (v170): sumar al pozo a mano — js/acuerdo-padres.js -->
+  <div id="modalPozoAMano" class="modal-overlay">
+    <div class="modal-box modal-sm">
+      <h2>Sumar al pozo a mano</h2>
+      <p class="modal-hint">Para plata que no pasó por la caja ni por la app del taller. Por ejemplo: C. Patricio vendió algo suyo.</p>
+      <div class="field" style="margin-top:14px;">
+        <label for="pozoAManoDescripcion">¿De qué es?</label>
+        <input type="text" id="pozoAManoDescripcion" maxlength="200" placeholder="Venta de su iPhone 14 Pro Max" autocomplete="off">
+      </div>
+      <div class="grid grid-2">
+        <div class="field">
+          <label for="pozoAManoMonto">Monto</label>
+          <input type="number" id="pozoAManoMonto" min="1" step="1" inputmode="numeric" placeholder="450000">
+        </div>
+        <div class="field">
+          <label for="pozoAManoFecha">Fecha</label>
+          <input type="date" id="pozoAManoFecha">
+        </div>
+      </div>
+      <label class="fila-meta" style="display:flex;gap:8px;align-items:center;margin-top:6px;">
+        <input type="checkbox" id="pozoAManoEnSuMano" checked>
+        La plata ya la tiene él (no hay que entregársela)
+      </label>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnPozoAManoCancelar">Cancelar</button>
+        <button class="btn btn-primary" id="btnPozoAManoGuardar">Sumar al pozo</button>
       </div>
     </div>
   </div>

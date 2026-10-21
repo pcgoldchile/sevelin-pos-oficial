@@ -433,22 +433,27 @@ function pintarPozoPadres(r) {
   // v135: lo que cobró él mismo en la app ya lo tiene en la mano; no se le vuelve a entregar
   const enSuMano = Number(p.en_su_mano) || 0;
   const deLaApp = p.lineas.filter(l => l.origen === 'APP').length;
+  const aMano = p.lineas.filter(l => l.origen === 'MANO').length;
+  const servicios = p.lineas.length - aMano;
   elKpis.innerHTML = [
-    tarjetaPadres('blue', 'Juntado en el mes', fmtCLP(p.juntado), `${p.lineas.length} ${p.lineas.length === 1 ? 'servicio cobrado' : 'servicios cobrados'}` + (deLaApp ? ` (${deLaApp} en la app del taller)` : ' en la caja')),
+    tarjetaPadres('blue', 'Juntado en el mes', fmtCLP(p.juntado), `${servicios} ${servicios === 1 ? 'servicio cobrado' : 'servicios cobrados'}` + (deLaApp ? ` (${deLaApp} en la app del taller)` : ' en la caja') + (aMano ? ` · ${aMano} sumado${aMano === 1 ? '' : 's'} a mano` : '')),
     tarjetaPadres('violet', 'Mínimo a la fecha', fmtCLP(p.minimo_a_la_fecha),
       p.activo ? `día ${p.dias_corridos} de ${p.dias_activos} · mínimo del mes ${fmtCLP(p.minimo_mes)}` : 'sin mínimo este mes'),
-    tarjetaPadres('green', 'Entregado', fmtCLP(p.entregado), `${p.entregas.length} ${p.entregas.length === 1 ? 'entrega' : 'entregas'} en el mes` + (enSuMano > 0 ? ` · además ya cobró él ${fmtCLP(enSuMano)}` : '')),
+    tarjetaPadres('green', 'Entregado', fmtCLP(p.entregado), `${p.entregas.length} ${p.entregas.length === 1 ? 'entrega' : 'entregas'} en el mes` + (enSuMano > 0 ? ` · además ya tiene él ${fmtCLP(enSuMano)}` : '')),
     tarjetaPadres('gold', 'Para entregarle hoy', fmtCLP(p.sugerido_hoy), pieSugerido + (enSuMano > 0 ? ', menos lo que ya cobró él' : ''))
   ].join('');
 
   const filasLineas = p.lineas.map(l => `<tr>
       <td>${fechaCorta(l.fecha)}</td>
-      <td>${l.origen === 'APP' ? `<span class="badge badge-blue" title="Registrado en la app del taller">📱 App #${Number(l.trabajo_id)}</span>` : '#' + escHtml(String(l.numero_orden ?? ''))}</td>
+      <td>${l.origen === 'APP' ? `<span class="badge badge-blue" title="Registrado en la app del taller">📱 App #${Number(l.trabajo_id)}</span>`
+        : l.origen === 'MANO' ? '<span class="badge badge-gold" title="Sumado a mano en Finanzas">✍️ A mano</span>'
+        : '#' + escHtml(String(l.numero_orden ?? ''))}</td>
       <td>${escHtml(l.nombre)}${l.devuelto > 0 ? ` <span class="badge badge-gold">devuelto ${fmtCLP(l.devuelto)}</span>` : ''}</td>
       <td>${fmtCLP(l.cobrado)}</td>
       <td class="strong">${fmtCLP(l.pozo)}</td>
       <td>${escHtml(l.nota || '—')}</td>
-      <td>${l.origen === 'APP' ? '<span class="texto-apagado" title="Se corrige en la app del taller">en la app</span>'
+      <td>${l.origen === 'MANO' ? `<button type="button" class="btn btn-outline btn-sm" data-pozo-anular="${Number(l.aporte_id)}">Anular</button>`
+        : l.origen === 'APP' ? '<span class="texto-apagado" title="Se corrige en la app del taller">en la app</span>'
         : `<button type="button" class="btn btn-outline btn-sm" data-pozo-corregir="${Number(l.item_id)}" data-cobrado="${Number(l.cobrado)}" data-pozo="${Number(l.pozo)}" data-nombre="${escHtml(l.nombre)}">Corregir</button>`}</td>
     </tr>`);
   const filasEntregas = p.entregas.map(e => `<tr>
@@ -476,6 +481,60 @@ function pintarPozoPadres(r) {
 }
 
 /* ---------- Acciones del panel ---------- */
+/* v170 (sql/109): plata que suma al pozo sin pasar por la caja ni la app
+   (ej. 19-10-2026, C. Patricio vendió su iPhone 14 Pro Max y se quedó con la plata). */
+function abrirPozoAMano() {
+  const poner = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  poner('pozoAManoDescripcion', '');
+  poner('pozoAManoMonto', '');
+  poner('pozoAManoFecha', todayISO());
+  const marca = document.getElementById('pozoAManoEnSuMano');
+  if (marca) marca.checked = true;
+  document.getElementById('modalPozoAMano')?.classList.add('show');
+  setTimeout(() => document.getElementById('pozoAManoDescripcion')?.focus(), 80);
+}
+
+async function guardarPozoAMano() {
+  const descripcion = (document.getElementById('pozoAManoDescripcion')?.value || '').trim();
+  const monto = Math.round(Number(document.getElementById('pozoAManoMonto')?.value) || 0);
+  const fecha = document.getElementById('pozoAManoFecha')?.value || '';
+  if (descripcion.length < 3) { showToast('Escribe de qué es', 'err'); return; }
+  if (monto <= 0) { showToast('Escribe el monto', 'err'); return; }
+  if (!fecha || fecha > todayISO()) { showToast('Revisa la fecha: no puede ser futura', 'err'); return; }
+  const btn = document.getElementById('btnPozoAManoGuardar');
+  if (btn) btn.disabled = true;
+  try {
+    await API.padres.sumarPozoAMano({ descripcion, monto, fecha, en_su_mano: !!document.getElementById('pozoAManoEnSuMano')?.checked });
+    cerrarModal('modalPozoAMano');
+    showToast(`${fmtCLP(monto)} sumados al pozo`, 'ok');
+    cargarPanelPadres();
+  } catch (err) {
+    showToast(err.message || 'No se pudo sumar al pozo', 'err');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+/* Anular en dos clics: el primero pide confirmar en el mismo botón. */
+async function anularPozoAMano(boton) {
+  if (boton.dataset.confirmar !== '1') {
+    boton.dataset.confirmar = '1';
+    boton.textContent = '¿Seguro? Anular';
+    setTimeout(() => { if (boton.isConnected) { boton.dataset.confirmar = ''; boton.textContent = 'Anular'; } }, 4000);
+    return;
+  }
+  boton.disabled = true;
+  try {
+    await API.padres.anularPozoAMano(Number(boton.dataset.pozoAnular));
+    showToast('Anulado: ya no suma al pozo', 'ok');
+    cargarPanelPadres();
+  } catch (err) {
+    boton.disabled = false;
+    showToast(err.message || 'No se pudo anular', 'err');
+  }
+}
+
+/* ---------- Pagos y entregas ---------- */
 function registrarPagoPadres() {
   if (!resumenPadres || typeof abrirGastoPrellenado !== 'function') return;
   const m = resumenPadres.mercaderia;
@@ -603,17 +662,22 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('padresPozoMes')?.addEventListener('change', cargarPanelPadres);
   document.getElementById('btnPadresPagar')?.addEventListener('click', registrarPagoPadres);
   document.getElementById('btnPadresEntregar')?.addEventListener('click', registrarEntregaPozo);
+  document.getElementById('btnPozoSumarAMano')?.addEventListener('click', abrirPozoAMano);
+  document.getElementById('btnPozoAManoGuardar')?.addEventListener('click', guardarPozoAMano);
+  document.getElementById('btnPozoAManoCancelar')?.addEventListener('click', () => cerrarModal('modalPozoAMano'));
   document.getElementById('btnPadresAjustes')?.addEventListener('click', abrirAjustesAcuerdo);
   document.getElementById('btnAcuerdoGuardar')?.addEventListener('click', guardarAjustesAcuerdo);
   document.getElementById('btnAcuerdoCancelar')?.addEventListener('click', () => cerrarModal('modalAcuerdoPadres'));
   document.getElementById('btnCorregirPozoGuardar')?.addEventListener('click', guardarCorregirPozo);
   document.getElementById('btnCorregirPozoCancelar')?.addEventListener('click', () => cerrarModal('modalCorregirPozo'));
-  ['modalAcuerdoPadres', 'modalCorregirPozo'].forEach(id => {
+  ['modalAcuerdoPadres', 'modalCorregirPozo', 'modalPozoAMano'].forEach(id => {
     document.getElementById(id)?.addEventListener('click', (e) => { if (e.target.id === id) cerrarModal(id); });
   });
   document.querySelector('[data-panel-finanzas="padres"]')?.addEventListener('click', (e) => {
     const corregir = e.target.closest('[data-pozo-corregir]');
     if (corregir) return abrirCorregirPozo(corregir);
+    const anular = e.target.closest('[data-pozo-anular]');
+    if (anular) return anularPozoAMano(anular);
     if (e.target.closest('#btnPozoPartirHoy')) partirPozoHoy();
   });
 
