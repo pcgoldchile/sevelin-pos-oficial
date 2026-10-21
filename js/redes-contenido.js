@@ -66,10 +66,12 @@ let contenidoRedesRegistroCache = [];
 /* ---------- Datos del producto ---------- */
 
 function contenidoRedesPrecio(p) {
+  // v172: la misma regla que el texto (js/redes-texto.js), que además respeta la oferta pausada como la tienda
+  if (typeof precioVigenteParaRedes === 'function') return precioVigenteParaRedes(p, todayISO());
   const normal = Number(p.precio_web) || Number(p.precio_unitario) || 0;
   const oferta = Number(p.precio_oferta_web) || 0;
   const hoy = todayISO();
-  const vigente = oferta > 0 && oferta < normal && (!p.oferta_desde || String(p.oferta_desde).slice(0, 10) <= hoy) && (!p.oferta_hasta || String(p.oferta_hasta).slice(0, 10) >= hoy);
+  const vigente = oferta > 0 && oferta < normal && !p.oferta_pausada && (!p.oferta_desde || String(p.oferta_desde).slice(0, 10) <= hoy) && (!p.oferta_hasta || String(p.oferta_hasta).slice(0, 10) >= hoy);
   return { precio: vigente ? oferta : normal, antes: vigente ? normal : null, desde: !!p.precio_a_consultar };
 }
 
@@ -724,7 +726,7 @@ async function abrirContenidoRedes(productoOId) {
       Promise.all((p.imagen_urls || []).slice(0, 4).map(u => contenidoRedesCargarFoto(u).catch(() => null))),
       API.redes.registro(30, p.id).then(r => r.piezas || []).catch(() => []),
     ]);
-    contenidoRedesEstado = { producto: p, formato: 'post', animacion: 'impacto', fotos: fotos.filter(Boolean), registro, beneficios: contenidoRedesBeneficios(p), ficha: await contenidoRedesFicha(p), kicker: contenidoRedesKickerDe(p), saltar: 0 };
+    contenidoRedesEstado = { producto: p, formato: 'post', animacion: 'impacto', fotos: fotos.filter(Boolean), registro, beneficios: contenidoRedesBeneficios(p), ficha: await contenidoRedesFicha(p), kicker: contenidoRedesKickerDe(p), saltar: 0, enfoque: 'normal', red: 'instagram' };
     if (!contenidoRedesEstado.fotos.length) throw new Error('No se pudo cargar ninguna foto del producto');
     Object.assign(contenidoRedesEstado, contenidoRedesElegirVariante(contenidoRedesEstado, 0));
     contenidoRedesPintarControles();
@@ -753,6 +755,7 @@ function contenidoRedesPintarControles() {
   const caja = document.getElementById('contenidoRedesAnimacionesCaja');
   if (caja) caja.hidden = e.formato !== 'reel';
   document.getElementById('contenidoRedesAnimaciones').innerHTML = chips(CONTENIDO_REDES_ANIMACIONES, e.animacion, 'animacion');
+  contenidoRedesPintarEnfoques();
   document.getElementById('contenidoRedesGancho').value = e.gancho || '';
   document.getElementById('contenidoRedesKicker').value = e.kicker || '';
   document.getElementById('contenidoRedesFotos').innerHTML = (e.producto.imagen_urls || []).slice(0, e.fotos.length).map((u, i) => `
@@ -779,15 +782,60 @@ function contenidoRedesPintarAviso() {
 
 /* El texto para pegar: el de Instagram que ya está guardado en el producto (v139), o el que
    arma redes-texto.js desde la ficha. Si no hay descripción, solo los datos de contacto. */
+/* v172: "Normal" usa el texto guardado en el producto (el que el dueño pudo corregir); los otros
+   enfoques los arma js/redes-texto.js con los datos del producto. */
 function contenidoRedesPintarTexto() {
   const e = contenidoRedesEstado;
   const p = e.producto;
   const pr = contenidoRedesPrecio(p);
-  let texto = p.instagram_texto || (typeof armarTextoInstagram === 'function' ? armarTextoInstagram(p) : '') || '';
+  const enfoque = e.enfoque || 'normal';
+  const facebook = e.red === 'facebook';
+  let texto = '';
+  if (enfoque !== 'normal' && typeof armarTextoConEnfoqueParaRedes === 'function') {
+    texto = armarTextoConEnfoqueParaRedes(p, enfoque, facebook ? 'facebook' : 'instagram', todayISO());
+  } else if (facebook) {
+    texto = p.facebook_texto || (typeof armarTextoFacebook === 'function' ? armarTextoFacebook(p) : '') || '';
+  } else {
+    texto = p.instagram_texto || (typeof armarTextoInstagram === 'function' ? armarTextoInstagram(p) : '') || '';
+  }
   if (!texto) {
     texto = `${p.nombre}\n${pr.desde ? 'Desde ' : ''}${fmtCLP(pr.precio)}\n\n📲 WhatsApp ${CONTENIDO_REDES_TIENDA.whatsapp}\n📍 ${CONTENIDO_REDES_TIENDA.direccion} (${CONTENIDO_REDES_TIENDA.entrada.toLowerCase()})\n🌐 ${CONTENIDO_REDES_TIENDA.web}\n\n#Arica #AricaChile #Tecnología`;
   }
   document.getElementById('contenidoRedesTexto').value = texto;
+}
+
+/* Botones de enfoque: el que no aplica a este producto queda apagado y dice por qué. */
+function contenidoRedesPintarEnfoques() {
+  const e = contenidoRedesEstado;
+  const caja = document.getElementById('contenidoRedesEnfoques');
+  const cajaRed = document.getElementById('contenidoRedesRedesTexto');
+  if (!e || !caja || typeof ENFOQUES_REDES === 'undefined') return;
+  const disp = enfoquesDisponiblesParaRedes(e.producto, todayISO());
+  caja.innerHTML = ENFOQUES_REDES.map(x => {
+    const d = disp[x.id] || { ok: false, razon: '' };
+    const activo = (e.enfoque || 'normal') === x.id;
+    return `<button type="button" class="entrega-tipo-btn contenido-redes-chip${activo ? ' activo' : ''}" data-enfoque="${x.id}" aria-pressed="${activo}"
+      ${d.ok ? '' : `disabled title="${escHtml(d.razon || 'No aplica a este producto')}"`}><b>${escHtml(x.texto)}</b><small>${escHtml(d.ok ? x.detalle : (d.corta || 'No aplica'))}</small></button>`;
+  }).join('');
+  const redes = [{ id: 'instagram', texto: 'Instagram', detalle: 'Más corto, hashtags' }, { id: 'facebook', texto: 'Facebook', detalle: 'Completo, WhatsApp en emojis' }];
+  const corto = e.enfoque === 'corto';
+  if (cajaRed) cajaRed.innerHTML = redes.map(x => `<button type="button" class="entrega-tipo-btn contenido-redes-chip${(e.red || 'instagram') === x.id ? ' activo' : ''}" data-red-texto="${x.id}"
+      aria-pressed="${(e.red || 'instagram') === x.id}" ${corto ? 'disabled title="El texto corto es el mismo para todas"' : ''}><b>${escHtml(x.texto)}</b><small>${escHtml(x.detalle)}</small></button>`).join('');
+}
+
+/* Cambia el enfoque y, si tiene frase propia, también la frase grande de la imagen. */
+function contenidoRedesCambiarEnfoque(id) {
+  const e = contenidoRedesEstado;
+  if (!e || (e.enfoque || 'normal') === id) return;
+  if (!enfoquesDisponiblesParaRedes(e.producto, todayISO())[id]?.ok) return;
+  if ((e.enfoque || 'normal') === 'normal') e.ganchoAntes = e.gancho;
+  e.enfoque = id;
+  const frase = REDES_GANCHO_ENFOQUE[id];
+  if (frase) e.gancho = frase;
+  else if (e.ganchoAntes) e.gancho = e.ganchoAntes;
+  contenidoRedesPintarControles();
+  contenidoRedesPintarTexto();
+  contenidoRedesRedibujar();
 }
 
 function contenidoRedesRedibujar() {
@@ -817,7 +865,7 @@ function contenidoRedesRedibujar() {
   if (e.formato === 'reel') {
     const nota = document.createElement('p');
     nota.className = 'texto-apagado contenido-redes-nota';
-    nota.textContent = 'Así se mueve el reel (12 segundos, en bucle). Elige la animación a la izquierda. Sin música: se la pones en Instagram al subirlo.';
+    nota.textContent = 'Así se mueve el reel (12 segundos, en bucle). Al descargarlo sale en MP4 a 60 FPS. Elige la animación a la izquierda. Sin música: se la pones en Instagram al subirlo.';
     vista.appendChild(nota);
   }
 }
@@ -1132,18 +1180,55 @@ function contenidoRedesReproducirPrevia(canvas, e) {
   requestAnimationFrame(paso);
 }
 
-/* Graba el reel en tiempo real (12 s) desde un canvas: MP4 donde el navegador lo permite (Chrome
-   reciente), si no WebM. */
+/* v172 (dueño, 21-10-2026: "los FPS del video son muy bajos, 29,09; necesito mínimo 60 para
+   redes"). Antes se grababa en tiempo real con captureStream(30): tope de 30 y, si el computador
+   no alcanzaba a dibujar a tiempo, se perdían cuadros. Ahora se dibuja CUADRO POR CUADRO (el
+   cuadro i es el instante i/60 s) y cada uno se codifica en H.264 con WebCodecs; Mediabunny
+   (js/vendor, MPL 2.0) arma el MP4. Salen 720 cuadros exactos a 60 FPS, sin importar qué tan rápido
+   sea el equipo. Si el navegador no tiene WebCodecs, queda la grabación en tiempo real (ahora a 60). */
+const CONTENIDO_REDES_FPS_REEL = 60;
+const CONTENIDO_REDES_MEDIABUNNY = '/js/vendor/mediabunny-1.61.3.min.js';
+const CONTENIDO_REDES_BITRATE_REEL = 16_000_000;   // 16 Mbps: holgado para 1080×1920 a 60 (Instagram lo recomprime igual)
+
+async function contenidoRedesGrabarReelCuadroACuadro(e, alAvanzar) {
+  if (!window.VideoEncoder || !window.VideoFrame) return null;
+  let mb;
+  try { mb = await import(CONTENIDO_REDES_MEDIABUNNY); } catch (err) { console.warn('[REDES] no cargó Mediabunny:', err); return null; }
+  const W = 1080, H = 1920, FPS = CONTENIDO_REDES_FPS_REEL;
+  const bitrate = CONTENIDO_REDES_BITRATE_REEL;
+  if (!(await mb.canEncodeVideo('avc', { width: W, height: H, bitrate }).catch(() => false))) return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  const salida = new mb.Output({ format: new mb.Mp4OutputFormat({ fastStart: 'in-memory' }), target: new mb.BufferTarget() });
+  const fuente = new mb.CanvasSource(canvas, { codec: 'avc', bitrate, keyFrameInterval: 1 });
+  salida.addVideoTrack(fuente, { frameRate: FPS });
+  await salida.start();
+  const total = Math.round(CONTENIDO_REDES_DURACION_REEL / 1000 * FPS);
+  for (let i = 0; i < total; i++) {
+    contenidoRedesCuadroReel(ctx, W, H, e, (i * 1000) / FPS);
+    await fuente.add(i / FPS, 1 / FPS);
+    if (i % 12 === 0) alAvanzar?.(i / total);
+  }
+  await salida.finalize();
+  alAvanzar?.(1);
+  return { blob: new Blob([salida.target.buffer], { type: 'video/mp4' }), ext: 'mp4', fps: FPS, cuadros: total };
+}
+
+/* Graba el reel (12 s): primero cuadro por cuadro a 60 FPS; si no se puede, en tiempo real desde el
+   canvas (MP4 donde el navegador lo permite, si no WebM). */
 async function contenidoRedesGrabarReel(e, alAvanzar) {
+  const exacto = await contenidoRedesGrabarReelCuadroACuadro(e, alAvanzar);
+  if (exacto) return exacto;
   const W = 1080, H = 1920, DURACION = CONTENIDO_REDES_DURACION_REEL;
   const canvas = document.createElement('canvas');
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext('2d');
-  const tipos = ['video/mp4;codecs=avc1.42E01E', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'];
+  const tipos = ['video/mp4;codecs=avc1.64002A', 'video/mp4;codecs=avc1.42E01E', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'];
   const tipo = tipos.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t));
   if (!tipo) throw new Error('Este navegador no puede grabar video. Usa Chrome del computador.');
-  const flujo = canvas.captureStream(30);
-  const grabador = new MediaRecorder(flujo, { mimeType: tipo, videoBitsPerSecond: 8_000_000 });
+  const flujo = canvas.captureStream(CONTENIDO_REDES_FPS_REEL);
+  const grabador = new MediaRecorder(flujo, { mimeType: tipo, videoBitsPerSecond: CONTENIDO_REDES_BITRATE_REEL });
   const trozos = [];
   grabador.ondataavailable = (ev) => { if (ev.data.size) trozos.push(ev.data); };
   const listo = new Promise(ok => { grabador.onstop = ok; });
@@ -1162,7 +1247,7 @@ async function contenidoRedesGrabarReel(e, alAvanzar) {
   grabador.stop();
   await listo;
   flujo.getTracks().forEach(tr => tr.stop());
-  return { blob: new Blob(trozos, { type: tipo.split(';')[0] }), ext: tipo.startsWith('video/mp4') ? 'mp4' : 'webm' };
+  return { blob: new Blob(trozos, { type: tipo.split(';')[0] }), ext: tipo.startsWith('video/mp4') ? 'mp4' : 'webm', tiempoReal: true };
 }
 
 async function contenidoRedesDescargar() {
@@ -1173,9 +1258,10 @@ async function contenidoRedesDescargar() {
   if (boton) boton.disabled = true;
   try {
     if (e.formato === 'reel') {
-      const { blob, ext } = await contenidoRedesGrabarReel(e, (v) => { if (boton) boton.textContent = `🎬 Grabando… ${Math.round(v * 100)}%`; });
+      const { blob, ext, tiempoReal } = await contenidoRedesGrabarReel(e, (v) => { if (boton) boton.textContent = `🎬 Armando el video… ${Math.round(v * 100)}%`; });
       dispararDescargaBlob(blob, contenidoRedesNombreArchivo(e, '', ext));
       if (ext !== 'mp4') showToast('Este navegador grabó el reel en WebM. Si Instagram no lo acepta, súbelo desde Meta Business Suite en el computador.', 'err');
+      else if (tiempoReal) showToast('Este navegador no permite armar el video cuadro por cuadro: se grabó en tiempo real y puede quedar bajo 60 FPS. Usa Chrome del computador.', 'err');
     } else if (e.formato === 'carrusel') {
       const laminas = contenidoRedesLaminasCarrusel(e);
       const archivos = [];
@@ -1367,6 +1453,16 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('contenidoRedesSubido')?.addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-subido]'); if (b) contenidoRedesResponderSubido(b.dataset.subido);
+  });
+  document.getElementById('contenidoRedesEnfoques')?.addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-enfoque]'); if (b && !b.disabled) contenidoRedesCambiarEnfoque(b.dataset.enfoque);
+  });
+  document.getElementById('contenidoRedesRedesTexto')?.addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-red-texto]');
+    if (!b || b.disabled || !contenidoRedesEstado) return;
+    contenidoRedesEstado.red = b.dataset.redTexto;
+    contenidoRedesPintarEnfoques();
+    contenidoRedesPintarTexto();
   });
   document.getElementById('contenidoRedesFormatos')?.addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-formato]'); if (b) contenidoRedesCambiar('formato', b.dataset.formato);

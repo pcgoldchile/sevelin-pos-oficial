@@ -309,3 +309,184 @@ function armarTextoInstagram(p) {
   }
   return armar(0).slice(0, REDES_TOPE_INSTAGRAM);
 }
+
+/* ==========================================================================
+   v172 — EL MISMO PRODUCTO CON OTRO ENFOQUE (oferta, recién llegado, últimas
+   unidades, liquidación, por llegar, regalo, por mayor, corto)
+   --------------------------------------------------------------------------
+   Dueño, 21-10-2026: "necesito otras formas de publicar el texto de un
+   producto, distinta según contexto o promoción". Sigue la regla de v139:
+   nada se inventa. Cada enfoque solo se ofrece si el DATO existe en el
+   producto (oferta vigente, etiqueta, stock, por llegar, precio por mayor) y
+   lo que agrega son frases de venta ciertas para cualquier producto. Las
+   características siguen saliendo de la Descripción, tal como están.
+   ========================================================================== */
+const ENFOQUES_REDES = [
+  { id: 'normal', texto: 'Normal', detalle: 'El texto de siempre' },
+  { id: 'oferta', texto: '🔥 Oferta', detalle: 'Antes y ahora' },
+  { id: 'nuevo', texto: '🆕 Recién llegado', detalle: 'Novedad en la tienda' },
+  { id: 'ultimas', texto: '⏳ Últimas unidades', detalle: 'Queda poco' },
+  { id: 'liquidacion', texto: '🏷️ Liquidación', detalle: 'Hasta agotar stock' },
+  { id: 'por_llegar', texto: '🚚 Por llegar', detalle: 'Resérvalo antes' },
+  { id: 'regalo', texto: '🎁 Para regalar', detalle: 'Idea de regalo' },
+  { id: 'mayorista', texto: '📦 Por mayor', detalle: 'Precio por cantidad' },
+  { id: 'corto', texto: '💬 Corto', detalle: 'WhatsApp e historias' },
+];
+const REDES_DIAS_RECIEN_LLEGADO = 30;
+const REDES_TOPE_ULTIMAS = 3;
+
+function pesosParaRedes(n) {
+  return typeof fmtCLP === 'function' ? fmtCLP(n) : '$' + Math.round(Number(n) || 0).toLocaleString('es-CL');
+}
+
+function diaMesParaRedes(fechaISO) {
+  const f = String(fechaISO || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(f) ? `${f.slice(8, 10)}-${f.slice(5, 7)}` : '';
+}
+
+/* El precio que se cobra HOY: la oferta de la web si está vigente y no pausada (igual que la
+   tienda), si no el normal. `hoy` = 'AAAA-MM-DD'. Lo usa también js/redes-contenido.js. */
+function precioVigenteParaRedes(p, hoy) {
+  const normal = Number(p?.precio_web) || Number(p?.precio_unitario) || 0;
+  const oferta = Number(p?.precio_oferta_web) || 0;
+  const dia = (v) => String(v || '').slice(0, 10);
+  const vigente = oferta > 0 && oferta < normal && !p?.oferta_pausada
+    && (!p?.oferta_desde || dia(p.oferta_desde) <= hoy) && (!p?.oferta_hasta || dia(p.oferta_hasta) >= hoy);
+  return { precio: vigente ? oferta : normal, antes: vigente ? normal : null, desde: !!p?.precio_a_consultar,
+    hasta: vigente && p?.oferta_hasta ? dia(p.oferta_hasta) : null };
+}
+
+function lineaPrecioParaRedes(pr) {
+  if (!(pr.precio > 0)) return '💬 Precio: consúltanos por WhatsApp.';
+  return `💰 ${pr.desde ? 'Desde ' : ''}${pesosParaRedes(pr.precio)}${pr.antes ? ` (antes ${pesosParaRedes(pr.antes)})` : ''}`;
+}
+
+/* Qué enfoques sirven para este producto y, si no, por qué (para el botón apagado). */
+function enfoquesDisponiblesParaRedes(p, hoy) {
+  const servicio = !!p?.es_servicio;
+  const pr = precioVigenteParaRedes(p, hoy);
+  const etiqueta = String(p?.etiqueta_web || '').toUpperCase();
+  const stock = Number(p?.stock) || 0;
+  const creado = String(p?.created_at || '').slice(0, 10);
+  const dias = creado ? Math.round((Date.parse(hoy) - Date.parse(creado)) / 86400000) : null;
+  const nuevo = etiqueta === 'NOVEDAD' || (dias !== null && dias >= 0 && dias <= REDES_DIAS_RECIEN_LLEGADO);
+  // Una promoción de algo que no se puede llevar hoy engaña: oferta, novedad, liquidación, regalo y por mayor piden stock
+  const hayStock = servicio || !!p?.stock_ilimitado || stock > 0;
+  // razon: el porqué completo (al pasar el mouse) · corta: lo que cabe en el botón
+  const ok = (si, razon, corta) => (si ? { ok: true } : { ok: false, razon, corta: corta || 'No aplica' });
+  const conStock = (si, razon, corta) => (!hayStock ? { ok: false, razon: 'No tiene stock', corta: 'Sin stock' } : ok(si, razon, corta));
+  return {
+    normal: ok(true),
+    oferta: conStock(!!pr.antes, 'No tiene una oferta vigente en la web (Productos → Ofertas)', 'Sin oferta vigente'),
+    nuevo: conStock(!servicio && nuevo, `Se creó hace más de ${REDES_DIAS_RECIEN_LLEGADO} días y no tiene la etiqueta Novedad`, `Más de ${REDES_DIAS_RECIEN_LLEGADO} días`),
+    ultimas: ok(!servicio && !p?.stock_ilimitado && !p?.por_llegar && stock >= 1 && stock <= REDES_TOPE_ULTIMAS,
+      stock < 1 ? 'No tiene stock' : `Tiene ${stock} unidades (este enfoque es para ${REDES_TOPE_ULTIMAS} o menos)`,
+      stock < 1 ? 'Sin stock' : `Tiene ${stock}`),
+    liquidacion: conStock(etiqueta === 'LIQUIDACION', 'No tiene la etiqueta Liquidación', 'Sin etiqueta'),
+    por_llegar: ok(!!p?.por_llegar, 'No está marcado como por llegar', 'No está por llegar'),
+    regalo: conStock(!servicio, 'Es un servicio', 'Es servicio'),
+    mayorista: conStock(!servicio && Number(p?.precio_mayorista) > 0 && Number(p?.mayorista_desde) > 1, 'No tiene precio por mayor', 'Sin precio por mayor'),
+    corto: ok(true),
+  };
+}
+
+/* Lo que va arriba en cada enfoque. Solo datos del producto y frases ciertas. */
+function encabezadoDeEnfoqueParaRedes(p, enfoque, pr, hoy) {
+  const nombre = nombreParaRedes(p);
+  const precio = lineaPrecioParaRedes(pr);
+  switch (enfoque) {
+    case 'oferta': return [
+      `🔥 OFERTA · ${nombre}`,
+      `Antes ${pesosParaRedes(pr.antes)} → ahora ${pesosParaRedes(pr.precio)} (ahorras ${pesosParaRedes(pr.antes - pr.precio)})`
+        + (pr.hasta ? `\n⏰ Válida hasta el ${diaMesParaRedes(pr.hasta)} o hasta agotar stock.` : '\n⏰ Hasta agotar stock.')];
+    case 'nuevo': return [`🆕 RECIÉN LLEGADO A SEVELIN\n${encabezadoParaRedes(p)}`, precio];
+    case 'ultimas': return [`⏳ ¡ÚLTIMAS UNIDADES!\n${encabezadoParaRedes(p)}`, precio,
+      '📲 Escríbenos y te lo dejamos listo para retirar.'];
+    case 'liquidacion': return [`🏷️ LIQUIDACIÓN · ${nombre}`, `${precio}\n📦 Hasta agotar stock.`];
+    case 'por_llegar': {
+      // Una fecha estimada que ya pasó no se publica: "llega pronto"
+      const fecha = String(p?.fecha_llegada_estimada || '').slice(0, 10);
+      const llega = fecha && (!hoy || fecha >= hoy) ? diaMesParaRedes(fecha) : '';
+      return [`🚚 POR LLEGAR · ${nombre}`,
+        `${llega ? `📅 Llega aprox. el ${llega}.` : '📅 Llega pronto.'}\n${precio}`,
+        `📲 Escríbenos para reservarlo${p?.publicado_web ? ' o resérvalo en www.sevelin.cl/por-llegar' : ''}.`];
+    }
+    case 'regalo': return [`🎁 IDEA DE REGALO\n${encabezadoParaRedes(p)}`, precio,
+      '🎀 Te lo dejamos listo para retirar en San Rafael 896 o te lo enviamos en Arica.'];
+    case 'mayorista': return [`📦 PRECIO POR MAYOR · ${nombre}`,
+      `💼 ¿Compras para tu negocio o para revender? Tenemos precio especial desde ${Number(p.mayorista_desde)} unidades.\n📲 Escríbenos y te cotizamos.`,
+      `${precio} por unidad`];
+    default: return [encabezadoParaRedes(p), precio];
+  }
+}
+
+const REDES_HASHTAG_ENFOQUE = {
+  oferta: ['#Oferta', '#Descuento'], nuevo: ['#NuevoIngreso', '#RecienLlegado'], ultimas: ['#UltimasUnidades'],
+  liquidacion: ['#Liquidacion', '#HastaAgotarStock'], por_llegar: ['#PorLlegar', '#Reserva'], regalo: ['#IdeaDeRegalo', '#Regalos'],
+  mayorista: ['#PorMayor', '#Mayorista'],
+};
+
+/* Texto corto: para WhatsApp, estados e historias. */
+function armarTextoCortoParaRedes(p, pr) {
+  const partes = partesDeFichaParaRedes(descripcionParaRedes(p));
+  const puntos = (partes.caracteristicas || []).filter(c => c.length <= 70).slice(0, 3).map(c => '✅ ' + c);
+  return [
+    `✨ ${nombreParaRedes(p)}`,
+    lineaPrecioParaRedes(pr),
+    ...puntos,
+    '',
+    '📍 San Rafael 896, Arica (entrada por Robinson Rojas)',
+    `📲 WhatsApp ${REDES_WHATSAPP}`,
+    '🛍️ www.sevelin.cl',
+  ].join('\n').replace(/\n{3,}/g, '\n\n');
+}
+
+/* El texto con el enfoque y la red elegidos. `red` = 'instagram' | 'facebook'.
+   Toma el texto normal (desde la Descripción), le cambia el encabezado, en un "por llegar"
+   cambia el bloque de retiro (todavía no está en la tienda) y suma los hashtags del enfoque. */
+function armarTextoConEnfoqueParaRedes(p, enfoque, red, hoy) {
+  const pr = precioVigenteParaRedes(p, hoy);
+  if (enfoque === 'corto') return armarTextoCortoParaRedes(p, pr);
+  const instagram = red !== 'facebook';
+  const base = instagram ? armarTextoInstagram(p) : armarTextoFacebook(p);
+  const arriba = encabezadoDeEnfoqueParaRedes(p, enfoque, pr, hoy);
+  const extra = REDES_HASHTAG_ENFOQUE[enfoque] || [];
+
+  if (!base) {
+    // Sin Descripción no hay cuerpo que ordenar: solo el encabezado, el precio y cómo comprar
+    // En Facebook el número va también en emojis: Facebook esconde los números escritos (v136)
+    return [...arriba, '📍 San Rafael 896, Arica. Entrada por Robinson Rojas.',
+      instagram ? `📲 WhatsApp: ${REDES_WHATSAPP}` : `📲 WhatsApp: ${REDES_WHATSAPP}\n${REDES_WHATSAPP_EMOJIS}`, '🛍️ www.sevelin.cl'].join('\n\n');
+  }
+  let bloques = base.split('\n\n');
+  bloques.shift();                                               // el encabezado normal ("✨ NUEVO …")
+  if (enfoque === 'por_llegar') {
+    bloques = bloques.map(b => b.startsWith('📌 RETIRO PRESENCIAL')
+      ? '📌 POR LLEGAR · RETIRO PRESENCIAL SECTOR 11 SEPTIEMBRE O ENVÍO EN ARICA CUANDO LLEGUE\n📍 San Rafael 896, Arica. Entrada por Robinson Rojas: busca los carteles de servicio técnico.'
+      : b);
+  }
+  const ultimo = bloques.length - 1;
+  if (extra.length && ultimo >= 0 && bloques[ultimo].startsWith('#')) {
+    const sep = instagram ? ' ' : ', ';
+    const ya = new Set(bloques[ultimo].split(/[\s,]+/).map(t => t.toLowerCase()));
+    bloques[ultimo] = [...extra.filter(t => !ya.has(t.toLowerCase())), bloques[ultimo]].join(sep);
+  }
+  let texto = [...arriba, ...bloques].join('\n\n');
+  // Instagram acepta hasta 2.200 letras: si el encabezado lo pasa, se quitan características del final
+  const tope = instagram ? REDES_TOPE_INSTAGRAM : REDES_TOPE_FACEBOOK;
+  while (texto.length > tope && /\n✅ [^\n]*/.test(texto)) {
+    const lineas = texto.split('\n');
+    let i = lineas.length - 1;
+    while (i >= 0 && !lineas[i].startsWith('✅ ')) i--;
+    if (i < 0) break;
+    lineas.splice(i, 1);
+    texto = lineas.join('\n');
+  }
+  return texto.slice(0, tope);
+}
+
+/* Frase grande de la imagen que acompaña a cada enfoque (el dueño la puede cambiar). */
+const REDES_GANCHO_ENFOQUE = {
+  oferta: '¡Está en oferta!', nuevo: 'Recién llegado', ultimas: 'Últimas unidades', liquidacion: 'Liquidación',
+  por_llegar: 'Llega pronto', regalo: 'Idea de regalo', mayorista: 'Precio por mayor',
+};
