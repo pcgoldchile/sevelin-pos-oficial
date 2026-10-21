@@ -21,6 +21,21 @@ async function cargarCotizacionesRef() {
   pintarCotizacionesRef();
 }
 
+const SINONIMOS_COTIZACION_REF = {
+  motorola: ['moto'], apple: ['iphone'], iphon: ['iphone'], samsumg: ['samsung'], sansung: ['samsung'],
+  frp: ['frp', 'google'], desbloqueo: ['desbloq'], desvinculacion: ['desbloq', 'desvincul'], galaxy: []
+};
+
+function normalizarCotizacionRef(t) {
+  return String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+// Cada palabra se vuelve la lista de formas que se aceptan (vacía = no pesa)
+function palabrasBusquedaCotizacionRef(q) {
+  return normalizarCotizacionRef(q).split(' ').filter(Boolean)
+    .map(p => SINONIMOS_COTIZACION_REF[p] || [p]).filter(f => f.length);
+}
+
 function pintarCotizacionesRef() {
   const cuerpo = document.getElementById('cotizacionRefBody');
   if (!cuerpo) return;
@@ -29,11 +44,13 @@ function pintarCotizacionesRef() {
   const elThCosto = document.getElementById('cotizacionRefThCosto');
   if (elThCosto) elThCosto.style.display = admin ? '' : 'none';
 
-  // Cada palabra escrita tiene que aparecer en el equipo, el trabajo o la nota
-  const palabras = (document.getElementById('cotizacionRefBuscar')?.value || '').toLowerCase().split(/\s+/).filter(Boolean);
+  // Cada palabra escrita tiene que aparecer en el equipo, el trabajo o la nota (v171: sin
+  // tildes, junto o separado, y "motorola" = "moto", como el cotizador de celulares)
+  const palabras = palabrasBusquedaCotizacionRef(document.getElementById('cotizacionRefBuscar')?.value || '');
   const filas = cotizacionesRefLista.filter(c => {
-    const texto = `${c.equipo} ${c.trabajo} ${c.nota || ''}`.toLowerCase();
-    return palabras.every(p => texto.includes(p));
+    const texto = normalizarCotizacionRef(`${c.equipo} ${c.trabajo} ${c.nota || ''}`);
+    const junto = texto.replace(/ /g, '');
+    return palabras.every(formas => formas.some(f => texto.includes(f) || junto.includes(f)));
   });
 
   if (!filas.length) {
@@ -50,7 +67,7 @@ function pintarCotizacionesRef() {
       <td>${escHtml(c.trabajo)}</td>
       <td class="strong">${fmtCLP(c.precio)}</td>
       ${admin ? `<td>${costo === null ? '—' : `${fmtCLP(costo)}<br><small style="color:var(--text-muted);">quedan ${fmtCLP(Number(c.precio) - costo)}</small>`}</td>` : ''}
-      <td>${escHtml(c.nota || '—')}</td>
+      <td style="white-space:pre-line;max-width:360px;">${escHtml(c.nota || '—')}</td>
       <td>${fechaCorta(tsAChile(c.actualizado_en, false))}</td>
       <td>
         <div class="cell-actions">

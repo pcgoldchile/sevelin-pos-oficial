@@ -980,12 +980,12 @@
     <div class="card-head">
       <div>
         <h2>💬 Cotizaciones aproximadas</h2>
-        <p class="subtitle">Precios de referencia por equipo y trabajo, para responderle al cliente al tiro. El precio final lo confirma quien repara.</p>
+        <p class="subtitle">Precios de referencia por equipo y trabajo, y la nota de cómo se hace en cada modelo (ej. el desbloqueo de cuenta Google). También salen al cotizar en la app del taller. El precio final lo confirma quien repara.</p>
       </div>
       <button class="btn btn-primary" id="btnNuevaCotizacionRef">➕ Agregar precio</button>
     </div>
     <div class="field" style="max-width:420px;">
-      <input type="search" id="cotizacionRefBuscar" placeholder="Buscar equipo o trabajo: A07, pantalla, batería…" autocomplete="off" aria-label="Buscar en las cotizaciones aproximadas">
+      <input type="search" id="cotizacionRefBuscar" placeholder="Buscar: A07, pantalla, desbloqueo google, motorola g24…" autocomplete="off" aria-label="Buscar en las cotizaciones aproximadas">
     </div>
     <div class="table-wrapper" style="margin-top:12px;">
       <table class="data-table">
@@ -4531,7 +4531,7 @@
       </div>
       <div class="field">
         <label for="cotizacionRefNota">Nota <span class="opcional">(opcional)</span></label>
-        <input type="text" id="cotizacionRefNota" maxlength="300" placeholder="Ej: con marco sube $5.000">
+        <textarea id="cotizacionRefNota" maxlength="1500" rows="4" placeholder="Ej: con marco sube $5.000. O cómo se hizo: herramienta, pasos, cuánto demoró…"></textarea>
       </div>
       <div class="modal-foot">
         <button class="btn btn-ghost" id="btnCotizacionRefCancelar">Cancelar</button>

@@ -749,6 +749,7 @@
       const r = await pedir('/taller/cotizador?' + new URLSearchParams({ q: c.texto.trim(), trabajo: c.trabajo }));
       c.resultados = r.filas || [];
       c.aviso = r.aviso || '';
+      c.notas = r.notas || [];
     } catch (err) { aviso(err.message, true); }
     c.buscando = false;
     pintar();
@@ -776,10 +777,16 @@
     const equipos = equiposCotizar();
     // v170: aviso del servidor ("no encontré exacto: estos se parecen", "la lista no trae Redmi")
     const avisoBusqueda = c.resultados !== null && c.aviso ? `<div class="vacio"><b>⚠️ ${esc(c.aviso)}</b></div>` : '';
+    // v171: notas propias del taller para ese modelo (ej. cómo se hace el desbloqueo de cuenta Google)
+    const notasBusqueda = c.resultados !== null && (c.notas || []).length ? (c.notas || []).map(n => `<div class="tarjeta">
+        <div class="trabajo-modelo">📝 ${esc(n.equipo)}</div>
+        <div class="dato"><span>${esc(n.trabajo)}</span><span><b>${n.precio > 0 ? plata(n.precio) : '—'}</b></span></div>
+        ${n.nota ? `<p class="paso-ayuda" style="white-space:pre-line;margin:8px 0 0">${esc(n.nota)}</p>` : ''}
+      </div>`).join('') : '';
     const resultados = c.resultados === null ? '<p class="paso-ayuda">Escribe el modelo: A05, iPhone 13, G24, Y21s… El precio es aproximado (repuesto de Multiphone + mano de obra).</p>'
-      : !equipos.length && avisoBusqueda ? avisoBusqueda
+      : !equipos.length && (avisoBusqueda || notasBusqueda) ? avisoBusqueda + notasBusqueda
       : !equipos.length ? '<div class="vacio"><b>No encontré ese modelo</b>Prueba con menos palabras (solo "A15") o toca "Todos los trabajos".</div>'
-        : avisoBusqueda + equipos.map((g, i) => `<div class="tarjeta">
+        : avisoBusqueda + notasBusqueda + equipos.map((g, i) => `<div class="tarjeta">
             <div class="trabajo-modelo">${esc(g.equipo)}</div>
             ${g.marca === 'iPhone' ? '<div class="marcas"><span class="marca ambar">🍏 iPhone: de a poco</span></div>' : ''}
             ${g.filas.map(f => `<div class="dato"><span>${esc(f.trabajo)}${f.calidad ? `<br><small>${esc(f.calidad)}</small>` : ''}</span><span><b>${plata(f.precio)}</b></span></div>`).join('')}

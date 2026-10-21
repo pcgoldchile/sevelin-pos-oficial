@@ -55,6 +55,7 @@ async function buscarCotizadorCelulares() {
     const r = await API.cotizadorCelulares.buscar({ q, marca, trabajo });
     cotizadorCelularesFilas = r.filas || [];
     cotizadorCelularesAviso = r.aviso || '';
+    cotizadorCelularesNotas = r.notas || [];
   } catch (err) {
     cont.innerHTML = `<p class="modal-hint">${escHtml(err.message || 'No se pudo buscar')}</p>`;
     return;
@@ -64,6 +65,8 @@ async function buscarCotizadorCelulares() {
 
 // v170: "No encontré exacto…" o "la lista no trae Redmi" (lo manda el servidor).
 let cotizadorCelularesAviso = '';
+// v171: notas propias del taller (Cotizaciones aproximadas) que calzan con lo buscado
+let cotizadorCelularesNotas = [];
 
 function equiposCotizadorCelulares() {
   const grupos = new Map();
@@ -79,15 +82,21 @@ function pintarCotizadorCelulares() {
   if (!cont) return;
   const equipos = equiposCotizadorCelulares();
   const aviso = cotizadorCelularesAviso ? `<p class="modal-hint" style="color:#b45309;"><b>⚠️ ${escHtml(cotizadorCelularesAviso)}</b></p>` : '';
+  const notas = cotizadorCelularesNotas.length ? `<div class="cotcel-equipo"><div class="cotcel-cabeza"><b>📝 Tus notas del taller</b></div>
+      <table class="data-table cotcel-tabla"><tbody>${cotizadorCelularesNotas.map(n => `<tr>
+        <td class="strong">${escHtml(n.equipo)}<br><small class="modal-hint" style="margin:0;">${escHtml(n.trabajo)}</small></td>
+        <td style="white-space:pre-line;">${escHtml(n.nota || '—')}</td>
+        <td class="num strong">${n.precio > 0 ? fmtCLP(n.precio) : '—'}</td>
+      </tr>`).join('')}</tbody></table></div>` : '';
   if (!equipos.length) {
-    if (aviso) { cont.innerHTML = aviso + '<p class="modal-hint">Si no está, cotízalo con Multiphone.</p>'; return; }
+    if (aviso || notas) { cont.innerHTML = aviso + notas + (equipos.length ? '' : '<p class="modal-hint">Si no está, cotízalo con Multiphone.</p>'); return; }
     cont.innerHTML = '<p class="modal-hint">No encontré ese modelo con ese trabajo. Prueba con menos palabras (por ejemplo solo <b>A15</b>) o elige "Todos los trabajos". Si no está, cotízalo con Multiphone.</p>';
     return;
   }
   const admin = esAdmin();
   const lista = cotizadorCelularesFilas[0];
   const fecha = lista?.lista_fecha ? fechaCorta(lista.lista_fecha) : '';
-  cont.innerHTML = aviso + `<p class="modal-hint">${equipos.length} equipo${equipos.length === 1 ? '' : 's'} · repuestos de ${escHtml(lista?.proveedor || 'Multiphone')}${fecha ? ` (lista del ${escHtml(fecha)})` : ''}, con IVA. Precio aproximado.</p>`
+  cont.innerHTML = aviso + notas + `<p class="modal-hint">${equipos.length} equipo${equipos.length === 1 ? '' : 's'} · repuestos de ${escHtml(lista?.proveedor || 'Multiphone')}${fecha ? ` (lista del ${escHtml(fecha)})` : ''}, con IVA. Precio aproximado.</p>`
     + equipos.map((g, i) => `
       <div class="cotcel-equipo">
         <div class="cotcel-cabeza">

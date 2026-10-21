@@ -19812,7 +19812,7 @@ function sanearCotizacionReferencia(body = {}, esAdministrador) {
   const precio = Math.round(num(body.precio));
   if (!(precio > 0)) return { error: 'Escribe el precio aproximado' };
 
-  const datos = { equipo, trabajo, precio, nota: String(body.nota || '').trim().slice(0, 300) || null };
+  const datos = { equipo, trabajo, precio, nota: String(body.nota || '').trim().slice(0, 1500) || null };
   if (esAdministrador && body.costo_repuesto !== undefined) {
     const costo = Math.round(num(body.costo_repuesto));
     datos.costo_repuesto = body.costo_repuesto === null || body.costo_repuesto === '' || costo < 0 ? null : costo;
@@ -19878,6 +19878,25 @@ function calzaPalabraReparacion(fila, w) {
   return w.formas.some(f => fila._texto.includes(f) || fila._junto.includes(f));
 }
 
+/* v171: las notas de "Cotizaciones aproximadas" (cotizaciones_referencia)
+   que calzan con lo buscado, para verlas junto al precio (ej. cómo se hace el
+   desbloqueo de cuenta Google en ese modelo). Sin costo del repuesto. */
+async function notasDelTallerParaBusqueda(palabras) {
+  if (!palabras.length) return [];
+  try {
+    const { data, error } = await db.from('cotizaciones_referencia').select('id, equipo, trabajo, precio, nota, actualizado_en').order('equipo').limit(2000);
+    if (error) throw error;
+    return (data || []).filter(c => {
+      const n = normalizarTextoReparacion(`${c.equipo} ${c.trabajo}`);
+      const fila = { _texto: ` ${n} `, _junto: n.replace(/ /g, '') };
+      return palabras.every(w => calzaPalabraReparacion(fila, w));
+    }).slice(0, 20).map(c => ({ id: c.id, equipo: c.equipo, trabajo: c.trabajo, precio: num(c.precio), nota: c.nota || null, actualizado_en: c.actualizado_en }));
+  } catch (err) {
+    console.warn('[COTIZADOR] no se pudieron leer las notas del taller:', err.message);
+    return [];
+  }
+}
+
 async function buscarPreciosReparacion(consulta, conCosto) {
   const q = String(consulta?.q || '');
   const palabras = palabrasDeBusquedaReparacion(q);
@@ -19899,7 +19918,7 @@ async function buscarPreciosReparacion(consulta, conCosto) {
       !base.some(f => calzaPalabraReparacion(f, w)));
     if (marcaFalta) {
       const nombre = marcaFalta.p.charAt(0).toUpperCase() + marcaFalta.p.slice(1);
-      return { filas: [], total: 0, sin_marca: nombre,
+      return { filas: [], total: 0, sin_marca: nombre, notas: await notasDelTallerParaBusqueda(palabras),
         aviso: `La lista del proveedor no trae ${nombre}: ese hay que cotizarlo aparte.` };
     }
     /* Parecidos. Primero manda la marca o la serie: las palabras con letras
@@ -19911,7 +19930,7 @@ async function buscarPreciosReparacion(consulta, conCosto) {
     const conLetras = palabras.filter(w => !w.numero);
     const letrasQueExisten = conLetras.filter(w => base.some(f => calzaPalabraReparacion(f, w)));
     if (conLetras.length && !letrasQueExisten.length) {
-      return { filas: [], total: 0, parecidos: false,
+      return { filas: [], total: 0, parecidos: false, notas: await notasDelTallerParaBusqueda(palabras),
         aviso: `No encontré ${conLetras.map(w => `"${w.p}"`).join(', ')} en la lista del proveedor: ese hay que cotizarlo aparte.` };
     }
     const conNumero = palabras.filter(w => w.numero);
@@ -19941,7 +19960,7 @@ async function buscarPreciosReparacion(consulta, conCosto) {
   });
   // El modelo más corto primero: "iPhone 13" antes que "iPhone 13 Pro Max"
   filas.sort((a, b) => a.equipo.length - b.equipo.length || a.equipo.localeCompare(b.equipo) || a.trabajo.localeCompare(b.trabajo) || a.precio - b.precio);
-  return { filas, total: filas.length, parecidos, aviso };
+  return { filas, total: filas.length, parecidos, aviso, notas: await notasDelTallerParaBusqueda(palabras) };
 }
 
 app.get('/api/reparaciones/precios', auth(), async (req, res) => {
