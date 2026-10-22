@@ -2959,11 +2959,13 @@ app.get('/api/productos/costos-referencia', auth(true), async (req, res) => {
    · No se evalúan: servicios, ítems escritos a mano (sin producto), líneas
      a precio mayorista (tienen su piso de 20%, sql/76) ni productos sin
      costo cargado.
-   · Para el ADMIN es un aviso: la caja pide confirmar y cobra igual.
-   · Para el TRABAJADOR es un freno (dueño, 03-10-2026: "necesita mi
-     clave"): POST /api/ventas rechaza la venta si hay una línea bajo el
-     mínimo y no trae una autorización, que se obtiene con el PIN de admin en
-     POST /api/pos/autorizar-margen y vale 15 minutos para ESE carrito.
+   · Bajo el 15% es un AVISO para todos: la caja pide confirmar y cobra igual.
+     (v112-v173 el trabajador necesitaba la clave del dueño; el dueño la quitó
+     el 22-10-2026: "que no pida pin". /api/pos/autorizar-margen queda sin uso.)
+   · BAJO EL COSTO es un FRENO para todos, también el admin (v174, dueño
+     22-10-2026: "nunca se puedan vender bajo el precio costo"): POST
+     /api/ventas rechaza la venta. Esto sí mira servicios con costo e ítems
+     escritos a mano (con el costo que se anotó).
    ============================================================ */
 const MARGEN_MINIMO_CAJA = 0.15;
 
@@ -2973,13 +2975,26 @@ const MARGEN_MINIMO_CAJA = 0.15;
 async function evaluarMargenLineas(itemsCrudos, descuentoTipo, descuentoValor, conDetalle) {
   const lineas = (Array.isArray(itemsCrudos) ? itemsCrudos : []).slice(0, 200).map(it => ({
     producto_id: Number(it?.producto_id) || null,
+    repuesto_id: Number(it?.repuesto_id) || null,
     cantidad: Math.max(1, Math.round(num(it?.cantidad) || 1)),
     precio: Math.max(0, num(it?.precio_unitario)),
+    // Ítem escrito a mano: su costo es el que se anotó al agregarlo
+    costoEscrito: Math.max(0, num(it?.costo_unitario)),
     mayorista: it?.precio_tipo === 'MAYORISTA'
   }));
 
+  /* v174 (dueño, 22-10-2026): "los precios de venta pueden ser modificables, a excepción
+     de que nunca se puedan vender bajo el precio costo". Ese freno vale para TODOS (también
+     el admin) y para cualquier línea con costo: del catálogo (el mayor costo conocido) o
+     escrito a mano. Se mira el precio real, ya con el descuento del carrito repartido. */
   const ids = [...new Set(lineas.map(l => l.producto_id).filter(Boolean))];
-  if (!ids.length) return lineas.map(() => ({ bajo: false }));
+  if (!ids.length) {
+    const subtotalManual = lineas.reduce((a, l) => a + l.precio * l.cantidad, 0);
+    const tipoManual = ['MONTO', 'PORCENTAJE'].includes(descuentoTipo) ? descuentoTipo : null;
+    const descManual = tipoManual ? calcularDescuentoMonto(lineas.map(l => ({ subtotal: l.precio * l.cantidad })), tipoManual, descuentoValor) : 0;
+    const factorManual = subtotalManual > 0 ? (subtotalManual - descManual) / subtotalManual : 1;
+    return lineas.map(l => ({ bajo: false, bajo_costo: !l.repuesto_id && l.costoEscrito > 0 && l.precio * factorManual < l.costoEscrito - 0.5 }));
+  }
 
   const [productosR, costosR] = await Promise.all([
     db.from('productos')
@@ -3000,23 +3015,31 @@ async function evaluarMargenLineas(itemsCrudos, descuentoTipo, descuentoValor, c
   const factor = subtotal > 0 ? (subtotal - descuento) / subtotal : 1;
 
   return lineas.map(l => {
+    const precioReal = l.precio * factor;
     const p = l.producto_id ? productos.get(l.producto_id) : null;
-    if (!p || p.es_servicio || p.stock_ilimitado || p.categoria_web === 'Servicios Técnicos') return { bajo: false };
+    if (!p) {
+      // Escrito a mano (o un repuesto de una OT, que tiene su propio cobro): solo el freno del costo
+      return { bajo: false, bajo_costo: !l.producto_id && !l.repuesto_id && l.costoEscrito > 0 && precioReal < l.costoEscrito - 0.5 };
+    }
+    const costo = costos.get(l.producto_id) || 0;
+    // Medio peso de holgura: el descuento repartido deja decimales
+    const bajoCosto = costo > 0 && precioReal < costo - 0.5;
+    if (p.es_servicio || p.stock_ilimitado || p.categoria_web === 'Servicios Técnicos') return { bajo: false, bajo_costo: bajoCosto };
     // Con dos escalones (sql/81), el precio que vale es el de la cantidad que se lleva.
     const enEscalon2 = num(p.precio_mayorista_2) > 0 && l.cantidad >= num(p.mayorista_desde_2);
     const precioEscalon = enEscalon2 ? num(p.precio_mayorista_2) : num(p.precio_mayorista);
     const esMayoristaReal = l.mayorista && num(p.precio_mayorista) > 0
       && l.precio >= precioEscalon && l.cantidad >= num(p.mayorista_desde);
-    if (esMayoristaReal) return { bajo: false };
-    const costo = costos.get(l.producto_id) || 0;
-    const precioReal = l.precio * factor;
-    if (!(costo > 0) || !(precioReal > 0)) return { bajo: false };
+    if (esMayoristaReal) return { bajo: false, bajo_costo: bajoCosto };
+    if (!(costo > 0)) return { bajo: false, bajo_costo: false };
+    if (!(precioReal > 0)) return { bajo: true, bajo_costo: bajoCosto };
 
     const margen = (precioReal - costo) / precioReal;
     const bajo = margen < MARGEN_MINIMO_CAJA - 1e-9;
-    if (!conDetalle) return { bajo };
+    if (!conDetalle) return { bajo, bajo_costo: bajoCosto };
     return {
       bajo,
+      bajo_costo: bajoCosto,
       margen_pct: Math.round(margen * 1000) / 10,
       // Lo que tiene que quedar por unidad después del descuento para llegar al mínimo
       precio_minimo: Math.ceil(costo / (1 - MARGEN_MINIMO_CAJA)),
@@ -3033,8 +3056,9 @@ app.post('/api/pos/margen-carrito', auth(), async (req, res) => {
     res.json({
       minimo_pct: Math.round(MARGEN_MINIMO_CAJA * 100),
       bajo_minimo: evaluadas.filter(l => l.bajo).length,
-      // La caja del trabajador pide la clave del dueño antes de cobrar bajo el mínimo.
-      requiere_clave: !esAdmin,
+      // v174: bajo el costo no se cobra (para nadie); bajo el mínimo es solo un aviso, sin clave
+      bajo_costo: evaluadas.filter(l => l.bajo_costo).length,
+      requiere_clave: false,
       lineas: evaluadas
     });
   } catch (e) {
@@ -3073,21 +3097,21 @@ app.post('/api/pos/autorizar-margen', auth(), async (req, res) => {
    Si no se pudo calcular el margen (la base no respondió), la venta pasa: el
    freno no puede dejar la caja trabada. */
 async function rechazoPorMargen(req) {
-  if (req.usuario?.rol === 'admin') return null;
+  /* v174 (dueño, 22-10-2026): "que no pida pin… los precios de venta pueden ser
+     modificables, a excepción que nunca se puedan vender bajo el precio costo".
+     Ya no se pide la clave del dueño por cobrar bajo el 15% (queda como aviso en la
+     caja). Lo que sí se rechaza, para TODOS, es una línea bajo su costo. */
   let evaluadas;
   try {
     evaluadas = await evaluarMargenLineas(req.body?.items, req.body?.descuento_tipo, req.body?.descuento_valor, false);
   } catch (e) {
-    console.error('[POS] No se pudo evaluar el margen antes de la venta; se deja pasar:', e.message);
+    console.error('[POS] No se pudo evaluar el costo antes de la venta; se deja pasar:', e.message);
     return null;
   }
-  if (!evaluadas.some(l => l.bajo)) return null;
-  try {
-    const permiso = jwt.verify(String(req.body?.autorizacion_margen || ''), JWT_SECRET || 'dev-secret-cambiar', { clockTolerance: 120 });
-    const huella = huellaMargenCarrito(req.body?.items, req.body?.descuento_tipo, req.body?.descuento_valor);
-    if (permiso?.tipo === 'margen' && permiso.huella === huella) return null;
-  } catch (_) { /* sin permiso, vencido o de otro carrito */ }
-  return 'Hay productos bajo el precio mínimo: para cobrarlos así se necesita la clave del dueño';
+  const items = Array.isArray(req.body?.items) ? req.body.items : [];
+  const bajoCosto = evaluadas.map((l, i) => (l.bajo_costo ? String(items[i]?.nombre || 'un producto').slice(0, 60) : null)).filter(Boolean);
+  if (!bajoCosto.length) return null;
+  return `No se puede vender bajo el costo: ${bajoCosto.join(', ')}. Sube el precio o achica el descuento.`;
 }
 
 /* ============================================================
@@ -6984,7 +7008,7 @@ function ajusteRedondeoValido(valor, descuentoMonto = 0) {
     throw new Error('Una venta no puede llevar descuento y redondeo hacia arriba a la vez. Vuelve a escribir el total.');
   }
   if (ajuste > AJUSTE_REDONDEO_MAXIMO) {
-    throw new Error(`El total no puede pasar en más de $${AJUSTE_REDONDEO_MAXIMO.toLocaleString('es-CL')} la suma de los productos. Para cobrar más, cambia el precio del producto o agrega el servicio.`);
+    throw new Error(`El total no puede pasar en más de $${AJUSTE_REDONDEO_MAXIMO.toLocaleString('es-CL')} la suma de los productos. Para cobrar más, toca el precio ✏️ del producto en el carrito o agrega el servicio.`);
   }
   return ajuste;
 }
@@ -7630,9 +7654,9 @@ app.post('/api/ventas', auth(), async (req, res) => {
 
     const items = await normalizarItems(req.body?.items, req.usuario.rol);
 
-    // v112: el trabajador no cobra bajo el precio mínimo sin la clave del dueño.
-    const sinPermisoMargen = await rechazoPorMargen(req);
-    if (sinPermisoMargen) return enviarError(res, 403, sinPermisoMargen, { requiere_clave_margen: true });
+    // v174: nadie cobra bajo el costo (antes, v112: el trabajador necesitaba la clave bajo el 15%).
+    const bajoElCosto = await rechazoPorMargen(req);
+    if (bajoElCosto) return enviarError(res, 400, bajoElCosto, { bajo_costo: true });
 
     // Descuento sobre el total (no por ítem) — ver calcularDescuentoMonto().
     // Sin tipo válido, es como si no hubiera descuento (venta de siempre).

@@ -171,6 +171,7 @@ function setupPosEventListeners() {
     if (b.dataset.quitar !== undefined) { cart.splice(Number(b.dataset.quitar), 1); renderCart(); }
     else if (b.dataset.cantMas !== undefined) cambiarCantidadCarrito(Number(b.dataset.cantMas), +1);
     else if (b.dataset.cantMenos !== undefined) cambiarCantidadCarrito(Number(b.dataset.cantMenos), -1);
+    else if (b.dataset.precioEditar !== undefined) editarPrecioLineaCarrito(Number(b.dataset.precioEditar));
     else if (b.dataset.mayoristaAplicar !== undefined) alternarMayoristaLinea(Number(b.dataset.mayoristaAplicar), true);
     else if (b.dataset.mayoristaQuitar !== undefined) alternarMayoristaLinea(Number(b.dataset.mayoristaQuitar), false);
     else if (b.dataset.encargoFaltante !== undefined) {
@@ -677,6 +678,38 @@ function ajustarEscalonMayorista(linea) {
   linea.subtotal = precio * linea.cantidad;
 }
 
+/* v174 (dueño, 22-10-2026): "si le cobro 15 mil o 20 mil a un cliente no me deja cobrar a ese
+   precio… los precios de venta pueden ser modificables, a excepción que nunca se puedan vender
+   bajo el precio costo, y que no pida pin". Cambia el precio SOLO de esta venta (la ficha no se
+   toca), hacia arriba o hacia abajo. El freno del costo lo pone el servidor para todos; acá se
+   adelanta cuando la caja conoce el costo (admin, o un ítem escrito a mano). */
+async function editarPrecioLineaCarrito(idx) {
+  const linea = cart[idx];
+  if (!linea) return;
+  const respuesta = await ventanaPreguntar(
+    `${linea.nombre}\n\nEscribe el precio por unidad para esta venta. La ficha del producto no cambia.`,
+    { titulo: 'Cambiar el precio', valor: String(Math.round(linea.precio_unitario)), numerico: true, maximo: 9, textoSi: 'Usar este precio' }
+  );
+  if (respuesta === null || respuesta === undefined) { enfocarBuscador(); return; }
+  const nuevo = Math.round(Number(String(respuesta).replace(/[^\d]/g, '')));
+  if (!Number.isFinite(nuevo) || String(respuesta).replace(/[^\d]/g, '') === '') { showToast('Escribe el precio en pesos, sin puntos ni signos', 'err'); return; }
+  if (cart[idx] !== linea) return;   // el carrito cambió mientras estaba la ventana abierta
+
+  const costo = linea.producto_id ? (esAdmin() ? costoLineaCarrito(linea) : 0) : Number(linea.costo_unitario) || 0;
+  if (costo > 0 && nuevo < costo) {
+    await ventanaAviso(`Nunca se vende bajo el costo. ${esAdmin() || !linea.producto_id ? `Este producto cuesta ${fmtCLP(costo)}.` : ''}`, { titulo: 'Precio bajo el costo' });
+    return;
+  }
+  if (!linea.precio_editado) linea.precio_lista = linea.precio_unitario;
+  linea.precio_editado = true;
+  // Un precio escrito a mano deja de ser el mayorista: vale el que se escribió
+  if (linea.precio_tipo === 'MAYORISTA') linea.precio_tipo = 'NORMAL';
+  linea.precio_unitario = nuevo;
+  linea.subtotal = nuevo * linea.cantidad;
+  renderCart();
+  enfocarBuscador();
+}
+
 function alternarMayoristaLinea(idx, aplicar) {
   const linea = cart[idx];
   if (!linea) return;
@@ -1108,7 +1141,7 @@ function aplicarTotalACobrar(valor) {
     totalManualInvalido = true;
     if (elPosTotalManualAviso) {
       elPosTotalManualAviso.textContent = total > subtotal
-        ? `Los productos suman ${fmtCLP(subtotal)}: hacia arriba se redondea hasta ${fmtCLP(AJUSTE_REDONDEO_MAXIMO)}. Para cobrar más, cambia el precio del producto o agrega el servicio.`
+        ? `Los productos suman ${fmtCLP(subtotal)}: hacia arriba se redondea hasta ${fmtCLP(AJUSTE_REDONDEO_MAXIMO)}. Para cobrar más, toca el precio ✏️ del producto en el carrito o agrega el servicio.`
         : 'Escribe el total en pesos, sin puntos ni signos.';
     }
     pintarTotalACobrar(totalesCarrito());
@@ -1254,7 +1287,10 @@ function renderCart() {
   } else {
     elCartTableBody.innerHTML = cart.map((item, idx) => {
       const detalle = [
-        `${fmtCLP(item.precio_unitario)} c/u`,
+        // v174: el precio de la línea se cambia acá, sin clave (nunca bajo el costo: lo frena el servidor)
+        `<button type="button" class="cart-precio-btn" data-precio-editar="${idx}" title="Cambiar el precio de esta venta">${fmtCLP(item.precio_unitario)} c/u ✏️</button>` +
+          (item.precio_editado && Number(item.precio_lista) > 0 && Number(item.precio_lista) !== item.precio_unitario
+            ? ` <span class="cart-precio-lista">(lista ${fmtCLP(item.precio_lista)})</span>` : ''),
         item.serial_number ? `S/N ${escHtml(item.serial_number)}` : (item.requiere_sn ? 'sin S/N' : ''),
         item.es_servicio ? 'Servicio' : '',
         // sql/90: lo que dice la ficha, o lo marcado a mano / elegido antes de cobrar
@@ -1352,7 +1388,23 @@ function lineasBajoMargen() {
     .filter(x => x.linea?.bajo && x.item);
 }
 
+/* v174: líneas bajo su costo — las que el servidor no deja cobrar (para nadie). Las del
+   catálogo las dice el servidor; las escritas a mano se ven acá con el costo anotado. */
+function lineasBajoCosto() {
+  const t = totalesCarrito();
+  const factor = t.subtotal > 0 ? (t.subtotal - t.descuento) / t.subtotal : 1;
+  const alDia = margenCarrito.firma === firmaMargenCarrito();
+  return cart
+    .map((item, i) => ({ item, i }))
+    .filter(({ item, i }) => item.producto_id
+      ? alDia && !!margenCarrito.lineas[i]?.bajo_costo
+      : !item.repuesto_id && Number(item.costo_unitario) > 0 && item.precio_unitario * factor < Number(item.costo_unitario) - 0.5);
+}
+
 function chipMargenLinea(idx) {
+  if (lineasBajoCosto().some(x => x.i === idx)) {
+    return ' · <span class="cart-margen-bajo">⛔ Bajo el costo: no se puede cobrar así</span>';
+  }
   if (margenCarrito.firma !== firmaMargenCarrito()) return '';
   const l = margenCarrito.lineas[idx];
   if (!l?.bajo) return '';
@@ -1369,6 +1421,12 @@ function textoMargenLinea(l) {
 function pintarAvisoMargen() {
   const el = document.getElementById('posAvisoMargen');
   if (!el) return;
+  const bajoCosto = lineasBajoCosto().length;
+  if (bajoCosto) {
+    el.style.display = '';
+    el.textContent = `⛔ ${bajoCosto === 1 ? '1 producto queda' : `${bajoCosto} productos quedan`} bajo el costo: sube el precio o achica el descuento para poder cobrar`;
+    return;
+  }
   const bajas = lineasBajoMargen().length;
   el.style.display = bajas ? '' : 'none';
   if (!bajas) { el.textContent = ''; return; }
@@ -1418,6 +1476,12 @@ async function revisarMargenCarrito() {
 async function confirmarMargenAntesDeCobrar() {
   clearTimeout(margenTemporizador);
   await Promise.race([revisarMargenCarrito(), new Promise(r => setTimeout(r, 2500))]);
+  // v174: bajo el costo no se cobra (el servidor igual lo rechazaría)
+  const bajoCosto = lineasBajoCosto();
+  if (bajoCosto.length) {
+    await ventanaAviso(`Nunca se vende bajo el costo. Revisa: ${bajoCosto.map(x => x.item.nombre).join(', ')}.\n\nToca el precio ✏️ para subirlo o achica el descuento.`, { titulo: '⛔ Precio bajo el costo' });
+    return false;
+  }
   const bajas = lineasBajoMargen();
   if (!bajas.length) return true;
   return pedirConfirmacionMargen(bajas);
@@ -1429,13 +1493,6 @@ function pedirConfirmacionMargen(bajas) {
   return new Promise((resolve) => {
     document.getElementById('modalMargenBajo')?.remove();
     const admin = esAdmin();
-    // Lo que se autoriza es exactamente este carrito: si cambia, el permiso deja de servir.
-    const d = obtenerDescuentoActual();
-    const carritoAutorizado = {
-      items: cart.map(i => ({ producto_id: i.producto_id, cantidad: i.cantidad, precio_unitario: i.precio_unitario })),
-      descuento_tipo: d.tipo,
-      descuento_valor: d.valor
-    };
     const filas = bajas.map(({ linea, item }) => {
       const detalle = linea.margen_pct !== undefined
         ? `${fmtCLP(linea.precio_real)} c/u${linea.precio_real !== item.precio_unitario ? ' tras el descuento' : ''} · ${textoMargenLinea(linea)} · mínimo ${fmtCLP(linea.precio_minimo)}`
@@ -1452,56 +1509,24 @@ function pedirConfirmacionMargen(bajas) {
           ? `Con estos precios, ${bajas.length === 1 ? 'esta línea deja' : 'estas líneas dejan'} menos de ${margenCarrito.minimo}% de margen:`
           : (bajas.length ? `${bajas.length === 1 ? 'Este producto queda' : 'Estos productos quedan'} bajo el precio mínimo:` : 'En esta venta hay productos bajo el precio mínimo.')}</p>
         <ul class="margen-bajo-lista">${filas}</ul>
-        ${admin
-          ? '<p class="modal-hint">Si es una rebaja acordada, puedes cobrar igual. Si no, vuelve y corrige el precio o el descuento.</p>'
-          : `<p class="modal-hint">Para cobrar bajo el precio mínimo se necesita la clave del dueño. Si no, vuelve y corrige el precio o el descuento.</p>
-        <div class="field">
-          <label for="margenBajoClave">🔑 Clave del dueño</label>
-          <input type="password" id="margenBajoClave" inputmode="numeric" autocomplete="off" placeholder="••••">
-        </div>
-        <p class="modal-hint" data-margen-error role="alert" style="display:none; color:var(--red);"></p>`}
+        <p class="modal-hint">Si es una rebaja acordada, puedes cobrar igual. Si no, vuelve y corrige el precio o el descuento.</p>
         <div class="modal-foot">
           <button type="button" class="btn btn-ghost" data-cerrar-modal>Volver y corregir</button>
-          <button type="button" class="btn btn-primary" data-margen-cobrar>${admin ? 'Cobrar igual' : 'Autorizar y cobrar'}</button>
+          <button type="button" class="btn btn-primary" data-margen-cobrar>Cobrar igual</button>
         </div>
       </div>`;
     document.body.appendChild(cont);
 
     const cerrar = (seguir) => { cont.remove(); resolve(seguir); };
-    const campoClave = cont.querySelector('#margenBajoClave');
-    const elError = cont.querySelector('[data-margen-error]');
-    const btnCobrar = cont.querySelector('[data-margen-cobrar]');
-    const mostrarError = (texto) => { if (elError) { elError.textContent = texto; elError.style.display = texto ? '' : 'none'; } };
 
-    // Trabajador: el servidor comprueba la clave y entrega el permiso para este carrito.
-    const autorizarConClave = async () => {
-      const pin = campoClave.value.trim();
-      if (!pin) { mostrarError('Escribe la clave del dueño.'); campoClave.focus(); return; }
-      btnCobrar.disabled = true;
-      mostrarError('');
-      try {
-        const r = await API.ventas.autorizarMargen({ pin, ...carritoAutorizado });
-        if (!r?.autorizacion) throw new Error('No se pudo obtener el permiso. Intenta de nuevo.');
-        autorizacionMargen = r.autorizacion;
-        cerrar(true);
-      } catch (err) {
-        mostrarError(err.message || 'No se pudo comprobar la clave');
-        campoClave.value = '';
-        campoClave.focus();
-      } finally {
-        btnCobrar.disabled = false;
-      }
-    };
-
+    // v174: ya no se pide la clave del dueño (dueño, 22-10-2026: "que no pida pin"); es solo un aviso.
     // Esc lo resuelve atajos.js pulsando el botón data-cerrar-modal
     cont.addEventListener('click', (e) => {
       if (e.target === cont || e.target.closest('[data-cerrar-modal]')) cerrar(false);
-      else if (e.target.closest('[data-margen-cobrar]')) { if (admin) cerrar(true); else autorizarConClave(); }
+      else if (e.target.closest('[data-margen-cobrar]')) cerrar(true);
     });
-    campoClave?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); autorizarConClave(); } });
     // El foco parte en "Volver": un Enter apurado no confirma la rebaja sin leer.
-    // Con el trabajador parte en la clave, que es lo único que se puede hacer para seguir.
-    setTimeout(() => (campoClave || cont.querySelector('[data-cerrar-modal]'))?.focus(), 50);
+    setTimeout(() => cont.querySelector('[data-cerrar-modal]')?.focus(), 50);
   });
 }
 
@@ -1625,18 +1650,9 @@ async function confirmarVenta(metodoPago, datosPago = {}) {
   });
 
   let venta;
-  try {
-    venta = await registrar();
-  } catch (err) {
-    /* El servidor frenó la venta porque hay precios bajo el mínimo y no venía
-       el permiso (el aviso de fondo no alcanzó a llegar antes de cobrar): se
-       pide la clave acá y se reintenta una vez. */
-    if (!err?.requiere_clave_margen) throw err;
-    await revisarMargenCarrito();
-    const conPermiso = await pedirConfirmacionMargen(lineasBajoMargen());
-    if (!conPermiso) throw new Error('No se cobró: falta la clave del dueño o corregir el precio');
-    venta = await registrar();
-  }
+  /* v174: si el servidor la rechaza por un precio bajo el costo (el aviso de fondo no
+     alcanzó a llegar), el error dice qué producto es y la venta no queda registrada. */
+  venta = await registrar();
 
   ultimaVentaRegistrada = venta;
   // v169: js/cuadre-sii.js le anota el N° de boleta si era una venta atrasada (antes de la ventana de éxito)
