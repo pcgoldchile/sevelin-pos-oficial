@@ -290,6 +290,7 @@ const elBtnImportActualizar = document.getElementById('btnImportActualizar');
 const elBtnCancelarModoImportacion = document.getElementById('btnCancelarModoImportacion');
 const elBtnEliminarTodosProductos = document.getElementById('btnEliminarTodosProductos');
 const elOrdenProductos = document.getElementById('ordenProductos');
+const elTipoProductos = document.getElementById('tipoProductos');
 const elInputImportarProductos = document.getElementById('inputImportarProductos');
 const elBtnImportarProductos = document.getElementById('btnImportarProductos');
 const elBtnExportarProductosExcel = document.getElementById('btnExportarProductosExcel');
@@ -393,6 +394,7 @@ function setupProductosEventListeners() {
   if (elBtnEliminarTodosProductos) elBtnEliminarTodosProductos.addEventListener('click', eliminarTodosLosProductos);
 
   if (elOrdenProductos) elOrdenProductos.addEventListener('change', handleBuscarProductoTabla);
+  if (elTipoProductos) elTipoProductos.addEventListener('change', handleBuscarProductoTabla);
 
   if (elCheckTodosProductos) elCheckTodosProductos.addEventListener('change', () => {
     if (elCheckTodosProductos.checked) productosVisibles.forEach(p => productosSeleccionados.add(String(p.id)));
@@ -629,6 +631,21 @@ function margenPorcentaje(precio, costo) {
 
 function margenMenorDe(p) {
   return margenPorcentaje(p.precio_unitario, costoParaMargen(p));
+}
+
+/* Lo que deja UNA unidad en pesos (precio − mayor costo conocido). null si
+   no hay costo: "no se sabe", no "deja todo". */
+function utilidadUnitariaDe(p) {
+  const pr = Number(p.precio_unitario) || 0, c = costoParaMargen(p);
+  return pr > 0 && c > 0 ? pr - c : null;
+}
+
+/* Filtro "Solo productos / Solo servicios" de la lista de Productos. */
+function cumpleTipoProducto(p) {
+  const tipo = elTipoProductos ? elTipoProductos.value : '';
+  if (tipo === 'servicios') return !!p.es_servicio;
+  if (tipo === 'productos') return !p.es_servicio;
+  return true;
 }
 
 function tonoMargen(pct) {
@@ -1106,9 +1123,11 @@ function handleBuscarProductoTabla() {
   if (modo === 'borradores') { renderProductosBorradores(q); return; }
 
   let resultado = productsList.filter(p =>
-    (p.nombre || '').toLowerCase().includes(q) ||
-    (p.sku || '').toLowerCase().includes(q) ||
-    (p.codigo_barras || '').toLowerCase().includes(q)
+    cumpleTipoProducto(p) && (
+      (p.nombre || '').toLowerCase().includes(q) ||
+      (p.sku || '').toLowerCase().includes(q) ||
+      (p.codigo_barras || '').toLowerCase().includes(q)
+    )
   );
 
   switch (modo) {
@@ -1131,6 +1150,16 @@ function handleBuscarProductoTabla() {
     case 'margen_asc':
       resultado = resultado.filter(p => margenMenorDe(p) !== null)
         .sort((a, b) => margenMenorDe(a) - margenMenorDe(b));
+      break;
+    // Los que más margen % dejan primero; los sin costo quedan fuera
+    case 'margen_desc':
+      resultado = resultado.filter(p => margenMenorDe(p) !== null)
+        .sort((a, b) => margenMenorDe(b) - margenMenorDe(a));
+      break;
+    // Los que más plata dejan por unidad primero
+    case 'utilidad_desc':
+      resultado = resultado.filter(p => utilidadUnitariaDe(p) !== null)
+        .sort((a, b) => utilidadUnitariaDe(b) - utilidadUnitariaDe(a));
       break;
     case 'margen_bajo':
       resultado = resultado.filter(p => { const m = margenMenorDe(p); return m !== null && m < 25; })
@@ -4211,9 +4240,11 @@ function obtenerFilasProductosParaExportar() {
   const q = (elBuscarProductoTabla?.value || '').trim().toLowerCase();
   const modo = elOrdenProductos ? elOrdenProductos.value : '';
   let base = productsList.filter(p =>
-    (p.nombre || '').toLowerCase().includes(q) ||
-    (p.sku || '').toLowerCase().includes(q) ||
-    (p.codigo_barras || '').toLowerCase().includes(q)
+    cumpleTipoProducto(p) && (
+      (p.nombre || '').toLowerCase().includes(q) ||
+      (p.sku || '').toLowerCase().includes(q) ||
+      (p.codigo_barras || '').toLowerCase().includes(q)
+    )
   );
   if (modo === 'precio_desc') base = base.slice().sort((a, b) => (b.precio_unitario || 0) - (a.precio_unitario || 0));
   else if (modo === 'precio_asc') base = base.slice().sort((a, b) => (a.precio_unitario || 0) - (b.precio_unitario || 0));
