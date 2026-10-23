@@ -2562,6 +2562,8 @@
             <button class="btn btn-primary" id="btnNuevoProducto">➕ Nuevo Producto</button>
             <!-- v125: varios productos de una compra, pegando lo que respondió una IA (js/carga-masiva.js) -->
             <button class="btn btn-outline" id="btnCargaMasiva" title="Cargar varios productos de una compra pegando una lista">📋 Carga masiva (pegar)</button>
+            <!-- v178: una foto = un producto (fundas, por ejemplo), sin repetir lo que se repite (js/carga-rapida-fotos.js) -->
+            <button class="btn btn-outline" id="btnCargaRapidaFotos" title="Elige varias fotos y crea un producto por cada una, una foto a la vez">📸 Carga rápida de fotos</button>
             <!-- v132: la misma ventana que en Finanzas → Gastos (js/informe-compras.js) -->
             <button class="btn btn-outline" id="btnInformeComprasProductos" title="Cuánto compras según el marketplace, el vendedor y la marca">🛒 Compras por origen</button>
             <!-- v153 (sql/99): fotos del almacenamiento que no usa ningún producto -->
@@ -7720,6 +7722,68 @@
     </div>
   </div>
 
+  <!-- CARGA RÁPIDA DE FOTOS (v178, js/carga-rapida-fotos.js): una foto = un producto -->
+  <div id="modalCargaRapidaFotos" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <h2>📸 Carga rápida de fotos</h2>
+      <p class="modal-hint">Para cuando cada foto es un producto distinto (fundas, por ejemplo): elige todas las
+        fotos de una vez y después las vas creando una por una, sin volver a escribir lo que se repite.</p>
+
+      <div id="crfPasoConfig">
+        <div class="field">
+          <label for="crfArchivos">Fotos (puedes elegir varias a la vez)</label>
+          <input type="file" id="crfArchivos" accept="image/*" multiple>
+        </div>
+        <div class="field">
+          <label for="crfCategoriaWeb">Categoría</label>
+          <select id="crfCategoriaWeb"></select>
+        </div>
+        <div class="modal-foot">
+          <button class="btn btn-ghost" id="btnCrfCerrar" type="button">Cancelar</button>
+          <button class="btn btn-primary" id="btnCrfEmpezar" type="button">Empezar →</button>
+        </div>
+      </div>
+
+      <div id="crfPasoFoto" style="display:none;">
+        <p class="subtitle" id="crfContador"></p>
+        <div class="crf-foto-form">
+          <img id="crfFotoPreview" alt="Foto del producto">
+          <div class="crf-campos">
+            <div class="field">
+              <label for="crfModelo">Modelo de celular</label>
+              <input type="text" id="crfModelo" placeholder="Ej: iPhone 15 Pro Max">
+            </div>
+            <div class="field">
+              <label for="crfTipo">Tipo</label>
+              <select id="crfTipo"></select>
+            </div>
+            <div class="field">
+              <label for="crfColor">Color (opcional)</label>
+              <input type="text" id="crfColor" placeholder="Ej: Azul">
+            </div>
+            <div class="field">
+              <label for="crfPrecio">Precio de venta</label>
+              <input type="number" id="crfPrecio" min="0" step="100" inputmode="numeric" placeholder="0">
+            </div>
+            <div class="field">
+              <label for="crfCosto">Costo</label>
+              <input type="number" id="crfCosto" min="0" step="100" inputmode="numeric" placeholder="0">
+            </div>
+            <div class="field">
+              <label for="crfStock">Stock</label>
+              <input type="number" id="crfStock" min="0" step="1" inputmode="numeric">
+            </div>
+            <p class="modal-hint">Nombre: <strong id="crfNombrePreview">—</strong></p>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn btn-ghost" id="btnCrfSaltar" type="button">⏭️ Saltar esta foto</button>
+          <button class="btn btn-primary" id="btnCrfGuardarSeguir" type="button">💾 Guardar y seguir</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- CARGA MASIVA POR COPIAR Y PEGAR (v125, js/carga-masiva.js) -->
   <div id="modalCargaMasiva" class="modal-overlay">
     <!-- v130 (dueño, 07-10-2026): más ancho y en dos columnas, para no tener que bajar ni achicar el zoom. -->
@@ -8676,6 +8740,8 @@
   <script src="js/bodega.js"></script>   <!-- v156 (sql/101): Productos → "📦 Más stock y bodega"; usa cerrarModal de balance.js -->
   <script src="js/caracteristicas-producto.js"></script>   <!-- v159 (sql/103): después de productos.js y asistente-producto.js; filtros de la tienda en la ficha -->
   <script src="js/agregable.js"></script>   <!-- v173 (sql/110): después de caracteristicas-producto.js; "➕ Agregable" en la ficha -->
+  <script src="js/carga-rapida-fotos.js"></script>   <!-- v178: después de productos.js y caracteristicas-producto.js; una foto = un producto -->
+
   <script src="js/facebook-rapido.js"></script>
   <script src="js/redes-contenido.js"></script>
   <script src="js/plan-contenido.js"></script>   <!-- v168 (sql/107): plan de contenido y aviso del encabezado -->   <!-- v164 (sql/104): después de productos.js y redes-texto.js (usa sus funciones) -->   <!-- v136 (sql/93): después de productos.js; usa sus funciones de fotos y la lista -->

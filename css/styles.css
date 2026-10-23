@@ -4782,6 +4782,16 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
 /* v173: la pregunta "¿ofrecer el adaptador?" de la tarjeta ➕ Agregable */
 .agregable-pregunta { margin-bottom: 10px; padding: 10px 12px; border: 1px dashed var(--primary, #3b82f6); border-radius: 10px; background: var(--surface-soft); font-size: 13px; line-height: 1.45; }
 .agregable-pregunta p { margin: 0; }
+/* v178: Productos → "📸 Carga rápida de fotos" — foto a la izquierda, campos a la derecha */
+.crf-foto-form { display: flex; gap: 18px; align-items: flex-start; margin-top: 10px; }
+#crfFotoPreview { width: 220px; height: 220px; object-fit: contain; background: #fff; border: 1px solid var(--border); border-radius: 10px; flex-shrink: 0; }
+.crf-campos { flex: 1; min-width: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+.crf-campos .modal-hint { grid-column: 1 / -1; margin-top: 4px; }
+@media (max-width: 640px) {
+  .crf-foto-form { flex-direction: column; align-items: center; }
+  #crfFotoPreview { width: 180px; height: 180px; }
+  .crf-campos { grid-template-columns: 1fr; width: 100%; }
+}
 .complemento-acciones { display: flex; gap: 2px; flex-shrink: 0; }
 .complementos-sugerencias { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
 .complemento-sugerencia { text-align: left; padding: 7px 10px; border: 1px dashed var(--border-strong); border-radius: 8px; background: transparent; color: var(--text-100); font-size: 13px; cursor: pointer; }

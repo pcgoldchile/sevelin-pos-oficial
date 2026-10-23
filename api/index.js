@@ -1207,6 +1207,16 @@ const CARACTERISTICAS_TIENDA = [
     { id: 'procesador', nombre: 'Procesador', multiple: false, valores: ['Intel Core i3', 'Intel Core i5', 'Intel Core i7', 'AMD Ryzen'] },
     { id: 'ram', nombre: 'Memoria RAM', multiple: false, valores: ['4 GB', '8 GB', '16 GB o más'] },
     { id: 'disco', nombre: 'Disco', multiple: true, valores: ['SSD', 'Disco duro (HDD)'] }
+  ] },
+  // v178 (dueño, 23-10-2026): fundas de celular para que se puedan filtrar por modelo en la tienda.
+  { categoria: 'Accesorios Móviles', subcategoria: 'Fundas', grupos: [
+    { id: 'modelo_celular', nombre: 'Modelo', multiple: false, valores: [
+      'iPhone 11', 'iPhone 12', 'iPhone 13', 'iPhone 13 Pro Max', 'iPhone 14', 'iPhone 14 Pro Max',
+      'iPhone 15', 'iPhone 15 Pro Max', 'iPhone 16', 'iPhone 16 Pro Max',
+      'Samsung Galaxy A15', 'Samsung Galaxy A25 5G', 'Samsung Galaxy A35', 'Samsung Galaxy S23', 'Samsung Galaxy S24',
+      'Xiaomi Redmi 13C', 'Xiaomi Redmi 14C 4G', 'Xiaomi Redmi Note 12'
+    ], pista: 'El modelo de celular al que le queda, tal como lo escribiría el cliente al buscar. Un valor que no esté en la lista igual se guarda y se muestra.' },
+    { id: 'tipo_funda', nombre: 'Tipo', multiple: false, valores: ['Transparente', 'Antigolpe con Anillo', 'Tipo Billetera (Librito)', 'Silicona', 'Rígida', 'MagSafe'] }
   ] }
 ];
 
