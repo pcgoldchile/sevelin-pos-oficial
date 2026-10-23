@@ -11,6 +11,48 @@ let usuariosLista = [];
 
 const PAPEL_TALLER_TEXTO = { DUENO: 'Dueño de Sevelin', PAPA: 'C. Patricio (el del pozo)' };
 
+/* v177: permisos de la app del taller. Espejo de PERMISOS_TALLER en api/index.js (el servidor
+   es el que manda): `trabajador` = con qué parte un trabajador si nadie lo cambió. */
+const PERMISOS_TALLER_POS = [
+  { clave: 'trabajos', texto: 'Registrar y editar trabajos', trabajador: true },
+  { clave: 'cobrar', texto: 'Cobrar trabajos', trabajador: true },
+  { clave: 'cotizar', texto: 'Cotizar reparaciones', trabajador: true },
+  { clave: 'bodega', texto: 'Bodega (ubicar y escanear)', trabajador: true },
+  { clave: 'cuentas', texto: 'Ver las cuentas y los pagos', trabajador: false },
+  { clave: 'caja', texto: '💳 Caja del celular (punto de venta)', trabajador: false }
+];
+let permisosTallerEnForm = {};   // lo marcado en el formulario (para un trabajador)
+
+function permisosTallerPorDefecto() {
+  return Object.fromEntries(PERMISOS_TALLER_POS.map(p => [p.clave, p.trabajador]));
+}
+
+function pintarPermisosFormUsuario() {
+  const grilla = document.getElementById('usuarioPermisosGrilla');
+  const nota = document.getElementById('usuarioPermisosNota');
+  if (!grilla) return;
+  const admin = document.getElementById('usuarioRol')?.value === 'admin';
+  grilla.innerHTML = PERMISOS_TALLER_POS.map(p => {
+    const marcado = admin ? true : permisosTallerEnForm[p.clave] !== undefined ? permisosTallerEnForm[p.clave] : p.trabajador;
+    return `<label class="check-item usuario-permiso${admin ? ' bloqueado' : ''}">
+      <input type="checkbox" data-permiso-taller="${p.clave}" ${marcado ? 'checked' : ''} ${admin ? 'disabled' : ''}>
+      <span>${escHtml(p.texto)}</span>
+    </label>`;
+  }).join('');
+  if (nota) nota.textContent = admin
+    ? 'Un administrador puede todo en la app del taller, también la caja. Anular un trabajo es solo de administradores.'
+    : 'Marca lo que esta persona puede hacer. La caja del celular parte apagada: enciéndela solo si quieres que cobre desde el teléfono.';
+}
+
+/* "Todo" para un admin; "4 de 6" para un trabajador, con el detalle al pasar el mouse. */
+function resumenPermisosTaller(u) {
+  if (u.rol === 'admin') return '<span class="badge badge-green">Todo</span>';
+  const p = u.permisos_taller || permisosTallerPorDefecto();
+  const si = PERMISOS_TALLER_POS.filter(x => p[x.clave]);
+  const titulo = PERMISOS_TALLER_POS.map(x => `${p[x.clave] ? '✓' : '✗'} ${x.texto}`).join('\n');
+  return `<span class="badge badge-blue" title="${escHtml(titulo)}">${si.length} de ${PERMISOS_TALLER_POS.length}${p.caja ? ' · caja' : ''}</span>`;
+}
+
 function formatoRutUsuario(valor) {
   const limpio = String(valor || '').replace(/[^0-9kK]/g, '').toUpperCase().slice(0, 9);
   if (limpio.length < 2) return limpio;
@@ -47,6 +89,7 @@ function pintarUsuarios() {
       <td>${u.rol === 'admin' ? '<span class="badge badge-gold">Administrador</span>' : '<span class="badge badge-blue">Trabajador</span>'}</td>
       <td>${escHtml(PAPEL_TALLER_TEXTO[u.papel_taller] || '—')}</td>
       <td>${estado}</td>
+      <td>${resumenPermisosTaller(u)}</td>
       <td class="usuarios-acciones">
         <button type="button" class="btn btn-outline btn-sm" data-usuario-editar="${Number(u.id)}">Editar</button>
         ${u.bloqueado ? `<button type="button" class="btn btn-outline btn-sm" data-usuario-desbloquear="${Number(u.id)}">Desbloquear</button>` : ''}
@@ -56,8 +99,8 @@ function pintarUsuarios() {
   });
   el.innerHTML = `<div class="table-wrapper">
       <table class="data-table">
-        <thead><tr><th>Nombre</th><th>RUT</th><th>Tipo</th><th>En el taller</th><th>Estado</th><th></th></tr></thead>
-        <tbody>${filas.length ? filas.join('') : '<tr class="empty-row"><td colspan="6">Todavía no hay usuarios. Crea el primero aquí abajo.</td></tr>'}</tbody>
+        <thead><tr><th>Nombre</th><th>RUT</th><th>Tipo</th><th>En el taller</th><th>Estado</th><th>App del taller</th><th></th></tr></thead>
+        <tbody>${filas.length ? filas.join('') : '<tr class="empty-row"><td colspan="7">Todavía no hay usuarios. Crea el primero aquí abajo.</td></tr>'}</tbody>
       </table>
     </div>`;
 
@@ -78,6 +121,8 @@ function limpiarFormUsuario() {
   poner('usuarioRol', 'trabajador');
   poner('usuarioPapel', '');
   poner('usuarioPin', '');
+  permisosTallerEnForm = permisosTallerPorDefecto();   // v177
+  pintarPermisosFormUsuario();
   const titulo = document.getElementById('usuarioFormTitulo');
   if (titulo) titulo.textContent = 'Nuevo usuario';
   const etiquetaPin = document.getElementById('usuarioPinEtiqueta');
@@ -96,6 +141,8 @@ function editarUsuario(id) {
   poner('usuarioRol', u.rol);
   poner('usuarioPapel', u.papel_taller || '');
   poner('usuarioPin', '');
+  permisosTallerEnForm = { ...permisosTallerPorDefecto(), ...(u.rol === 'admin' ? {} : (u.permisos_taller || {})) };   // v177
+  pintarPermisosFormUsuario();
   const titulo = document.getElementById('usuarioFormTitulo');
   if (titulo) titulo.textContent = `Editar a ${u.nombre}`;
   const etiquetaPin = document.getElementById('usuarioPinEtiqueta');
@@ -109,6 +156,11 @@ async function guardarUsuario() {
   const leer = (id) => (document.getElementById(id)?.value || '').trim();
   const id = leer('usuarioId');
   const datos = { nombre: leer('usuarioNombre'), rut: leer('usuarioRut'), rol: leer('usuarioRol'), papel_taller: leer('usuarioPapel') || null };
+  // v177: casillas de la app del taller (un administrador puede todo: no se mandan)
+  if (datos.rol !== 'admin') {
+    datos.permisos_taller = {};
+    document.querySelectorAll('#usuarioPermisosGrilla [data-permiso-taller]').forEach(c => { datos.permisos_taller[c.dataset.permisoTaller] = c.checked; });
+  }
   const pin = leer('usuarioPin');
   if (!datos.nombre || !datos.rut) return showToast('Escribe el nombre y el RUT', 'error');
   if (!id && !pin) return showToast('Ponle un PIN de 4 a 8 números', 'error');
@@ -164,6 +216,12 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnUsuarioLimpiar')?.addEventListener('click', limpiarFormUsuario);
   document.getElementById('btnUsuarioGuardar')?.addEventListener('click', guardarUsuario);
   document.getElementById('usuarioRut')?.addEventListener('input', (e) => { e.target.value = formatoRutUsuario(e.target.value); });
+  // v177: cambiar el tipo (admin/trabajador) cambia las casillas de la app del taller
+  document.getElementById('usuarioRol')?.addEventListener('change', pintarPermisosFormUsuario);
+  document.getElementById('usuarioPermisosGrilla')?.addEventListener('change', (e) => {
+    const c = e.target.closest('[data-permiso-taller]');
+    if (c) permisosTallerEnForm[c.dataset.permisoTaller] = c.checked;
+  });
   document.getElementById('usuarioPin')?.addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 8); });
   document.getElementById('usuariosLista')?.addEventListener('click', (e) => {
     const boton = e.target.closest('button');

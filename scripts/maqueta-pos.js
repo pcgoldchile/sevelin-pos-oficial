@@ -1477,6 +1477,9 @@ function guardarUsuarioMaqueta(u, b, res) {
   if (b.pin !== undefined && !/^\d{4,8}$/.test(String(b.pin))) return res.status(400).json({ error: 'El PIN son entre 4 y 8 números' });
   if (b.papel_taller) usuariosMaqueta.forEach(x => { if (x !== u && x.papel_taller === b.papel_taller) x.papel_taller = null; });
   ['nombre', 'rol', 'papel_taller', 'activo'].forEach(c => { if (b[c] !== undefined) u[c] = b[c]; });
+  // v177: permisos de la app del taller (admin = todo; lo resuelve permisosTallerDe en el servidor real)
+  if (b.permisos_taller) u.permisos_taller = { ...b.permisos_taller };
+  if (u.rol === 'admin') u.permisos_taller = { trabajos: true, cobrar: true, cotizar: true, bodega: true, cuentas: true, caja: true };
   if (b.pin || b.desbloquear) u.bloqueado = false;
   if (b.pin) u.tiene_pin = true;
   return res.json(u);

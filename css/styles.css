@@ -5292,6 +5292,12 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
 /* ===== v167: Puntos Sevelin en el cobro (js/puntos-caja.js) ===== */
 .pago-puntos { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
 
+/* v177 (js/usuarios.js): qué puede hacer cada usuario en la app del taller */
+.usuario-permisos { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; }
+.usuario-permisos-titulo { margin: 0 0 8px; font-weight: 700; }
+.usuario-permisos-grilla { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px 14px; }
+.usuario-permiso.bloqueado { opacity: .65; }
+
 /* v176 (js/equipo-venta.js): "¿Para qué equipo?" al agregar un servicio o producto por equipo */
 .equipo-venta { max-width: 520px; }
 .equipo-venta .etiqueta-pos { margin: 12px 0 6px; display: block; }

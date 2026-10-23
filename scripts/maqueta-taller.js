@@ -13,7 +13,7 @@ const express = require('express');
 const POS = path.join(__dirname, '..');
 const doble = require('./doble-supabase.js');
 
-const { bases } = doble.instalar(POS);
+const { bases, rpc } = doble.instalar(POS);
 Object.assign(process.env, {
   NODE_ENV: 'development', JWT_SECRET: 'secreto-de-la-maqueta', ADMIN_PIN: 'maqueta-admin', WORKER_PIN: 'maqueta-trabajador',
   SYNC_SECRET: 'maqueta', CORS_ORIGINS: '*'
@@ -28,15 +28,33 @@ bases.pos.acuerdo_padres = [{ id: 1, tope_mercaderia: 3000000, cuota_semanal: 10
 
 // Bodega (v140): unos productos de verdad del catálogo y los lugares A1..I5, como en producción.
 const prod = (id, nombre, codigo_barras, categoria_web, subcategoria_web, stock, extra = {}) =>
-  ({ id, nombre, sku: null, codigo_barras, categoria_web, subcategoria_web, stock, stock_ilimitado: false, imagen_urls: [], archivado: false, es_servicio: false, ...extra });
+  ({ id, nombre, sku: null, codigo_barras, categoria_web, subcategoria_web, stock, stock_ilimitado: false, imagen_urls: [], archivado: false, es_servicio: false,
+    es_borrador: false, precio_unitario: 9990, costo_unitario: 4000, pide_equipo: false, requiere_sn: false, va_al_pozo: false, propietario: 'MIO', meses_garantia: 6, ...extra });
 bases.pos.productos = [
-  prod(177, 'Cable USB-C a USB-C 2 metros Carga Rápida', '7801234567890', 'Cables y Adaptadores', 'Cables USB y de Carga', 24),
-  prod(342, 'Cargador de Pared USB Carga Rápida 33W Power Delivery', '6941234500017', 'Cargadores', null, 0),
-  prod(173, 'Tarjeta de Memoria Kingston 128 GB', null, 'Almacenamiento', 'Tarjetas de Memoria', 9),
-  prod(161, 'Memoria RAM Hiksemi 8 GB DDR4', null, 'Componentes PC', 'Memorias RAM', 4),
-  prod(305, 'Chequeo de Salud de Disco Duro o SSD (por unidad)', null, 'Servicios Técnicos', 'Formateo y Respaldo de Datos', 0, { es_servicio: true, stock_ilimitado: true }),
+  prod(177, 'Cable USB-C a USB-C 2 metros Carga Rápida', '7801234567890', 'Cables y Adaptadores', 'Cables USB y de Carga', 24, { precio_unitario: 4990, costo_unitario: 1900 }),
+  prod(342, 'Cargador de Pared USB Carga Rápida 33W Power Delivery', '6941234500017', 'Cargadores', null, 0, { precio_unitario: 12990, costo_unitario: 6500 }),
+  prod(173, 'Tarjeta de Memoria Kingston 128 GB', null, 'Almacenamiento', 'Tarjetas de Memoria', 9, { precio_unitario: 11990, costo_unitario: 7200 }),
+  prod(161, 'Memoria RAM Hiksemi 8 GB DDR4', null, 'Componentes PC', 'Memorias RAM', 4, { precio_unitario: 19990, costo_unitario: 13500 }),
+  prod(305, 'Chequeo de Salud de Disco Duro o SSD (por unidad)', null, 'Servicios Técnicos', 'Formateo y Respaldo de Datos', 0, { es_servicio: true, stock_ilimitado: true, precio_unitario: 10000, costo_unitario: 0 }),
+  // v177: la caja del celular — un servicio "por equipo" (sql/111) y uno que hace C. Patricio (va al pozo)
+  prod(275, 'Cambio de Pantalla para Celulares (Todas las Marcas)', null, 'Servicios Técnicos', 'Celulares', 0, { es_servicio: true, stock_ilimitado: true, precio_unitario: 25000, costo_unitario: 0, pide_equipo: true }),
+  prod(274, 'Cambio de Puerto de Carga USB-C / Micro USB', null, 'Servicios Técnicos', 'Celulares', 0, { es_servicio: true, stock_ilimitado: true, precio_unitario: 18000, costo_unitario: 0, pide_equipo: true, va_al_pozo: true }),
   prod(900, 'Producto archivado de prueba', '1111111111111', 'Audio', null, 1, { archivado: true })
 ];
+// v177: lo que el registro de venta (POST /api/ventas) le pide a la base. En producción son funciones de Postgres.
+rpc.costos_referencia_productos = (_a, base) => ({ data: base.productos.map(p => ({ producto_id: p.id, costo_referencia: Number(p.costo_unitario) || 0 })), error: null });
+rpc.descontar_stock_venta = rpc.descontar_stock_venta_idem = (args, base) => {
+  const hechos = [];
+  for (const it of args.p_items || []) {
+    const p = base.productos.find(x => x.id === Number(it.producto_id));
+    if (!p || p.stock_ilimitado || p.usa_lotes) continue;
+    if (p.stock < it.cantidad) return { data: null, error: { message: `Sin stock suficiente de ${p.nombre}` } };
+    p.stock -= it.cantidad;
+    hechos.push({ producto_id: p.id });
+  }
+  return { data: hechos, error: null };
+};
+rpc.limpiar_descuentos_huerfanos = () => ({ data: null, error: null });
 bases.pos.ubicaciones = 'ABCDEFGHI'.split('').flatMap((letra, i) => [1, 2, 3, 4, 5].map(n =>
   ({ id: i * 5 + n, nombre: letra + n, tipo: 'estante', descripcion: null, foto_url: null, activo: true, creado_en: new Date().toISOString() })));
 bases.pos.producto_ubicaciones = [];

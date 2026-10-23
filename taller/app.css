@@ -209,3 +209,55 @@ button { cursor: pointer; }
 .foto-borrador { display: flex; align-items: center; gap: 12px; background: var(--tarjeta); border: 1px solid var(--linea); border-radius: 12px; padding: 10px; }
 .foto-borrador img { width: 84px; height: 84px; object-fit: cover; border-radius: 10px; }
 .foto-borrador span { color: var(--gris); font-size: 14px; flex: 1; }
+
+/* ---------- v177: Caja en el celular (permiso "caja") ---------- */
+.pestanas.muchas { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.caja-buscar { display: flex; gap: 8px; margin-bottom: 10px; }
+.caja-buscar .campo { flex: 1; }
+.caja-escanear { flex: 0 0 56px; border: 1.5px solid var(--linea); background: var(--tarjeta); border-radius: 12px; font-size: 24px; }
+.caja-resultados { display: flex; flex-direction: column; gap: 8px; }
+.caja-prod { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: var(--tarjeta); border: 1px solid var(--linea); border-radius: var(--radio); padding: 10px 12px; }
+.caja-prod:active { background: var(--azul-suave); }
+.caja-prod.agotado { opacity: .55; }
+.caja-prod img, .caja-prod-sinfoto { width: 54px; height: 54px; flex: none; border-radius: 10px; border: 1px solid var(--linea); background: #fff; object-fit: contain; display: grid; place-items: center; font-size: 24px; }
+.caja-prod-texto { flex: 1; min-width: 0; }
+.caja-prod-texto b { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 15px; line-height: 1.3; }
+.caja-prod-texto small { color: var(--gris); font-size: 13px; }
+.caja-prod-precio { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; font-weight: 800; white-space: nowrap; }
+.caja-prod-precio i { width: 30px; height: 30px; border-radius: 50%; background: var(--azul); color: #fff; display: grid; place-items: center; font-style: normal; font-weight: 700; }
+.caja-ver { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.caja-ver span { font-weight: 600; opacity: .9; }
+.caja-linea { padding: 12px; }
+.caja-linea-cabeza { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.caja-linea-cabeza b { font-size: 15.5px; line-height: 1.3; }
+.caja-quitar { flex: none; width: 34px; height: 34px; border: 0; border-radius: 10px; background: var(--rojo-suave); color: var(--rojo); font-weight: 800; }
+.caja-linea-fila { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.caja-cantidad { display: flex; align-items: center; border: 1.5px solid var(--linea); border-radius: 12px; overflow: hidden; background: var(--tarjeta); }
+.caja-cantidad button { width: 42px; height: 42px; border: 0; background: transparent; font-size: 20px; font-weight: 700; }
+.caja-cantidad button:disabled { opacity: .3; }
+.caja-cantidad b { min-width: 28px; text-align: center; }
+.caja-precio { flex: 1; min-width: 0; border: 1.5px dashed var(--linea); background: transparent; border-radius: 12px; padding: 8px 10px; text-align: left; font-weight: 600; }
+.caja-precio small { display: block; color: var(--gris); font-weight: 500; font-size: 12px; text-decoration: line-through; }
+.caja-subtotal { white-space: nowrap; }
+.caja-total { display: flex; justify-content: space-between; align-items: baseline; padding: 10px 4px; font-size: 18px; }
+.caja-total b { font-size: 28px; }
+.caja-grilla { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.caja-grilla .op { min-height: 54px; }
+.caja-grilla.dos .op.grande { min-height: 96px; font-size: 16px; }
+.caja-vuelto { margin-top: 14px; text-align: center; font-size: 17px; color: var(--gris); }
+.caja-vuelto b { display: block; font-size: 32px; color: var(--verde); }
+.caja-vuelto .mal { color: var(--rojo); font-weight: 700; }
+.caja-vuelto.grande b { font-size: 42px; }
+.caja-resumen { margin-top: 14px; }
+.caja-resumen div { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--linea); }
+.caja-resumen div:last-child { border-bottom: 0; }
+.caja-resumen span { color: var(--gris); }
+.caja-listo { text-align: center; }
+.caja-listo-icono { font-size: 64px; margin: 26px 0 6px; }
+.ventana-equipo { max-height: calc(100vh - 24px); overflow: auto; }
+.ventana-equipo p { margin-bottom: 8px; }
+.caja-marcas { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-bottom: 8px; }
+.caja-marcas .op { min-height: 44px; padding: 8px 6px; font-size: 14.5px; }
+.caja-montos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 2px; }
+.caja-montos label { font-size: 13.5px; color: var(--gris); font-weight: 600; }
+.caja-montos .campo { margin: 4px 0 0; }

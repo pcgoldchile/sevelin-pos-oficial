@@ -149,7 +149,7 @@ function equipoVentaVentana(producto) {
         : 'Elige la marca y escribe el modelo.';
     }
     function error(texto) { elError.textContent = texto; elError.hidden = !texto; }
-    function cerrar(valor) { cont.remove(); resolve(valor); }
+    function cerrarVentanaEquipo(valor) { cont.remove(); resolve(valor); }
 
     function confirmar() {
       const m = marca || elOtra.value.trim();
@@ -157,12 +157,12 @@ function equipoVentaVentana(producto) {
       if (!m) { error('Elige la marca (o "Otra" y escríbela).'); return; }
       if (!(precio > 0)) { error('Escribe el precio a cobrar.'); elPrecio.focus(); return; }
       if (costo > 0 && precio < costo) { error(`Nunca se vende bajo el costo: el costo es ${fmtCLP(costo)}.`); elPrecio.focus(); return; }
-      cerrar({ marca: m.slice(0, 40), modelo: elModelo.value.trim().slice(0, 60), precio, costo });
+      cerrarVentanaEquipo({ marca: m.slice(0, 40), modelo: elModelo.value.trim().slice(0, 60), precio, costo });
     }
 
     // Esc lo resuelve atajos.js pulsando el botón data-cerrar-modal
     cont.addEventListener('click', (e) => {
-      if (e.target === cont || e.target.closest('[data-cerrar-modal]')) { cerrar(null); return; }
+      if (e.target === cont || e.target.closest('[data-cerrar-modal]')) { cerrarVentanaEquipo(null); return; }
       const b = e.target.closest('[data-marca]');
       if (b) {
         marca = b.dataset.marca; elOtra.hidden = true; elOtra.value = ''; error(''); pintar();

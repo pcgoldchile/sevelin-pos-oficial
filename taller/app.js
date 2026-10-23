@@ -29,7 +29,8 @@
     yo: null, admin: false, personas: [], duenoId: null, papaId: null, catalogo: [], modelos: [], hoy: '',
     trabajos: [], cargandoLista: false, cuentas: null, mesCuentas: null,
     borrador: null, paso: 0, editando: null, errorPaso: '', guardando: false,
-    detalle: null, cobro: null
+    detalle: null, cobro: null,
+    permisos: { trabajos: true, cobrar: true, cotizar: true, bodega: true, cuentas: false, caja: false }
   };
 
   const $app = document.getElementById('app');
@@ -75,7 +76,8 @@
     try {
       res = await fetch('/api' + ruta, {
         method: metodo,
-        headers: { 'Content-Type': 'application/json', ...(S.token ? { Authorization: 'Bearer ' + S.token } : {}) },
+        // v177: 'X-Sevelin-App' le dice al servidor que la venta viene del celular (pide el permiso "caja")
+        headers: { 'Content-Type': 'application/json', 'X-Sevelin-App': 'taller', ...(S.token ? { Authorization: 'Bearer ' + S.token } : {}) },
         body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo)
       });
     } catch (_) {
@@ -211,13 +213,18 @@
     if (!d.yo) { cerrarSesion('Entra con tu RUT y tu PIN: así queda anotado quién registró cada trabajo.'); return; }
     Object.assign(S, {
       yo: d.yo, admin: !!d.admin, personas: d.personas || [], duenoId: d.dueno_id, papaId: d.papa_id,
+      // v177: lo que puede hacer (lo decide el administrador en el POS → Usuarios)
+      permisos: d.permisos || { trabajos: true, cobrar: true, cotizar: true, bodega: true, cuentas: !!d.admin, caja: !!d.admin },
       catalogo: d.catalogo || [], modelos: d.modelos || [], hoy: d.hoy, mesCuentas: String(d.hoy).slice(0, 7), vista: 'inicio', errorLogin: ''
     });
+    // Quien no puede ver la pestaña en que quedó, parte en la primera que sí puede
+    if (!pestanasVisibles().some(t => t.id === S.pestana)) S.pestana = pestanasVisibles()[0]?.id || 'pendientes';
     pintar();
     cargarLista();
   }
 
   async function cargarLista() {
+    if (S.pestana === 'caja') return cajaPreparar();
     if (S.pestana === 'bodega') return cargarLugares();
     if (S.pestana === 'cuentas') return cargarCuentas();
     if (S.pestana === 'cotizar') { pintar(); return; }
@@ -418,7 +425,8 @@
         ? `Falta decir en el POS quién es ${!S.duenoId ? 'el dueño de Sevelin' : 'C. Patricio'}: botón Usuarios, casilla "En las cuentas del taller". Sin eso no se pueden sacar las cuentas.`
         : 'Todavía no se puede registrar: falta que el administrador diga en el POS quién es el dueño de Sevelin.'}</div>` : '';
     let contenido;
-    if (S.pestana === 'bodega') contenido = vistaBodega();
+    if (S.pestana === 'caja') contenido = vistaCaja();
+    else if (S.pestana === 'bodega') contenido = vistaBodega();
     else if (S.pestana === 'cotizar') contenido = vistaCotizar();
     else if (S.pestana === 'cuentas') contenido = vistaCuentas();
     else if (S.cargandoLista && !S.trabajos.length) contenido = '<p class="cargando">Cargando…</p>';
@@ -430,14 +438,10 @@
 
     return barra('Taller Sevelin', { derecha: `<span class="barra-quien">${esc(S.yo.nombre)}</span><button type="button" class="barra-btn" data-a="salir">Salir</button>` }) +
       `<main class="cuerpo">
-        ${S.pestana === 'bodega' || S.pestana === 'cotizar' ? '' : `<button type="button" class="btn-principal" data-a="nuevo">＋ Nuevo trabajo</button>
+        ${S.pestana === 'bodega' || S.pestana === 'cotizar' || S.pestana === 'caja' || !S.permisos.trabajos ? '' : `<button type="button" class="btn-principal" data-a="nuevo">＋ Nuevo trabajo</button>
         ${faltaPapel}`}
-        <div class="pestanas" role="tablist">
-          <button type="button" role="tab" class="${S.pestana === 'pendientes' ? 'on' : ''}" data-a="pestana" data-v="pendientes">Pendientes</button>
-          <button type="button" role="tab" class="${S.pestana === 'cobrados' ? 'on' : ''}" data-a="pestana" data-v="cobrados">Cobrados</button>
-          <button type="button" role="tab" class="${S.pestana === 'cotizar' ? 'on' : ''}" data-a="pestana" data-v="cotizar">Cotizar</button>
-          <button type="button" role="tab" class="${S.pestana === 'bodega' ? 'on' : ''}" data-a="pestana" data-v="bodega">Bodega</button>
-          ${S.admin ? `<button type="button" role="tab" class="${S.pestana === 'cuentas' ? 'on' : ''}" data-a="pestana" data-v="cuentas">Cuentas</button>` : ''}
+        <div class="pestanas${pestanasVisibles().length > 4 ? ' muchas' : ''}" role="tablist">
+          ${pestanasVisibles().map(t => `<button type="button" role="tab" class="${S.pestana === t.id ? 'on' : ''}" data-a="pestana" data-v="${t.id}">${t.texto}</button>`).join('')}
         </div>
         ${contenido}
         <div class="zona-instalar" id="zonaInstalar">${zonaInstalar(false)}</div>
@@ -625,14 +629,14 @@
         </div>
         <div class="cuenta gris">El detalle de la plata lo ve quien participó en el trabajo y el administrador.</div>
       </main>
-      ${t.estado === 'PENDIENTE' ? '<div class="pie-fijo"><div class="dentro"><button type="button" class="btn-principal" data-a="cobrar">Entregar y cobrar</button></div></div>' : ''}`;
+      ${t.estado === 'PENDIENTE' && S.permisos.cobrar ? '<div class="pie-fijo"><div class="dentro"><button type="button" class="btn-principal" data-a="cobrar">Entregar y cobrar</button></div></div>' : ''}`;
     }
     const quien = (id) => (id ? esc(nombre(id)) : 'Sin anotar');
     const medio = (MEDIOS.find(m => m.id === t.cobrado_medio) || {}).nombre || '';
     const acciones = { CREADO: 'Lo registró', EDITADO: 'Lo corrigió', COBRADO: 'Lo cobró', ANULADO: 'Lo anuló' };
     const botones = [];
-    if (t.puede_editar && t.estado !== 'ANULADO') botones.push('<button type="button" class="btn-secundario" data-a="corregir">Corregir</button>');
-    if (t.estado === 'PENDIENTE') botones.push('<button type="button" class="btn-principal" data-a="cobrar">Entregar y cobrar</button>');
+    if (t.puede_editar && t.estado !== 'ANULADO' && S.permisos.trabajos) botones.push('<button type="button" class="btn-secundario" data-a="corregir">Corregir</button>');
+    if (t.estado === 'PENDIENTE' && S.permisos.cobrar) botones.push('<button type="button" class="btn-principal" data-a="cobrar">Entregar y cobrar</button>');
     return barra(`Trabajo #${t.id}`, { atras: true }) + `<main class="cuerpo">
       <div class="tarjeta">
         <div class="dato"><span>Equipo</span><span>${eq.icono} ${esc(t.equipo_modelo)}</span></div>
@@ -1069,7 +1073,8 @@
             apagarCamara();
             if (navigator.vibrate) navigator.vibrate(80);
             S.vista = 'inicio';
-            await buscarBodega({ codigo: leido.rawValue.trim(), escaneado: true });
+            if (S.escanerPara === 'caja') { S.escanerPara = null; S.pestana = 'caja'; pintar(); await buscarCaja({ codigo: leido.rawValue.trim() }); }   // v177
+            else await buscarBodega({ codigo: leido.rawValue.trim(), escaneado: true });
           }
         } catch (_) { /* cuadro sin código: se sigue mirando */ }
         ocupado = false;
@@ -1210,6 +1215,9 @@
     else if (S.vista === 'asistente') $app.innerHTML = vistaAsistente();
     else if (S.vista === 'detalle') $app.innerHTML = vistaDetalle();
     else if (S.vista === 'cobrar') $app.innerHTML = vistaCobrar();
+    else if (S.vista === 'cajacarrito') $app.innerHTML = vistaCajaCarrito();   // v177
+    else if (S.vista === 'cajacobro') $app.innerHTML = vistaCajaCobro();
+    else if (S.vista === 'cajalisto') $app.innerHTML = vistaCajaListo();
     else if (S.vista === 'sinred') {
       $app.innerHTML = `<div class="vacio" style="padding-top:90px"><b>No se pudo abrir el taller</b>${esc(S.errorLogin)}
         <p><button type="button" class="btn-principal" data-a="reintentar">Reintentar</button></p></div>`;
@@ -1237,6 +1245,13 @@
       if (tocado && !(await ventana({ titulo: '¿Salir sin guardar?', texto: 'Se pierde lo que llevas anotado de este trabajo.', si: 'Salir', no: 'Seguir anotando', peligro: true }))) return;
       const vuelveA = S.editando;
       Object.assign(S, { borrador: null, editando: null, errorPaso: '', vista: vuelveA ? 'detalle' : 'inicio' });
+    } else if (S.vista === 'cajacobro') {
+      // v177: en el cobro, "atrás" vuelve un paso; desde el primero, al carrito
+      const b = S.caja.cobro;
+      if (b && b.paso > 0) b.paso -= 1; else Object.assign(S, { vista: 'cajacarrito' });
+      S.errorPaso = '';
+    } else if (S.vista === 'cajacarrito' || S.vista === 'cajalisto') {
+      Object.assign(S, { vista: 'inicio', pestana: 'caja', errorPaso: '' });
     } else if (S.vista === 'cobrar') {
       Object.assign(S, { vista: 'detalle', cobro: null, errorPaso: '' });
     } else {
@@ -1622,6 +1637,413 @@
       const $pin = document.getElementById('pin');
       if ($pin) $pin.focus();
     }
+  });
+
+  /* =====================================================================
+     CAJA EN EL CELULAR (v177, dueño 22-10-2026)
+     ---------------------------------------------------------------------
+     "Que desde la app del taller también pueda usarla de punto de venta,
+     pero solamente para los admin… prioriza que la interfaz y el diseño sea
+     bueno y facilitador… que no haya que deslizar las cosas."
+     Pestaña "Caja" (permiso "caja"): buscar o escanear → carrito → cobrar de
+     a una pregunta por pantalla (¿de dónde vino? → ¿cómo paga? → ¿con cuánto?
+     → ¿boleta?) → listo. La venta se registra con la MISMA ruta del POS
+     (POST /api/ventas): stock, costo, "nunca bajo el costo", pozo y boleta
+     funcionan igual. Los Puntos Sevelin se suman desde el POS por ahora.
+     ===================================================================== */
+  const ORIGENES_CAJA = [
+    { id: 'TIENDA', texto: 'Pasó por la tienda' }, { id: 'MARKETPLACE', texto: 'Marketplace' }, { id: 'WHATSAPP', texto: 'WhatsApp' },
+    { id: 'INSTAGRAM', texto: 'Instagram' }, { id: 'WEB', texto: 'sevelin.cl' }, { id: 'GOOGLE', texto: 'Google / Maps' },
+    { id: 'RECOMENDACION', texto: 'Recomendación' }, { id: 'VUELVE', texto: 'Cliente que vuelve' }, { id: 'NO_SE', texto: 'No sé' }
+  ];
+  const MEDIOS_CAJA = [
+    { id: 'Efectivo', icono: '💵', texto: 'Efectivo' },
+    { id: 'Tarjeta Débito', icono: '💳', texto: 'Débito', tarjeta: true },
+    { id: 'Tarjeta Crédito', icono: '🏦', texto: 'Crédito', tarjeta: true },
+    { id: 'Transferencia', icono: '📲', texto: 'Transferencia' }
+  ];
+  const MAQUINAS_CAJA = [{ id: 'TUU', texto: 'TUU' }, { id: 'BANCHILE', texto: 'Banco de Chile' }, { id: 'LINK_TUU', texto: 'Link de pago' }];
+  const CLAVE_MAQUINA = 'taller_maquina';
+  const MARCAS_CAJA = {
+    celular: ['Samsung', 'Xiaomi', 'Motorola', 'iPhone', 'Huawei', 'Oppo', 'Vivo', 'Honor', 'Realme', 'Nokia', 'ZTE'],
+    computador: ['HP', 'Lenovo', 'Asus', 'Acer', 'Dell', 'Samsung', 'MacBook', 'MSI', 'Huawei', 'Toshiba'],
+    consola: ['PlayStation', 'Xbox', 'Nintendo']
+  };
+  /* v177: las pestañas que ve cada uno, según sus permisos (Caja primero para quien puede cobrar). */
+  function pestanasVisibles() {
+    const p = S.permisos || {};
+    return [
+      p.caja && { id: 'caja', texto: '💳 Caja' },
+      { id: 'pendientes', texto: 'Pendientes' },
+      { id: 'cobrados', texto: 'Cobrados' },
+      p.cotizar && { id: 'cotizar', texto: 'Cotizar' },
+      p.bodega && { id: 'bodega', texto: 'Bodega' },
+      p.cuentas && { id: 'cuentas', texto: 'Cuentas' }
+    ].filter(Boolean);
+  }
+  const cajaNueva = () => ({ preparada: false, cajaId: null, verCostos: false, texto: '', buscando: false, resultados: null, carrito: [], cobro: null, guardando: false, ultima: null, frecuentes: null });
+  S.caja = cajaNueva();
+
+  const totalCaja = () => S.caja.carrito.reduce((a, l) => a + l.precio * l.cantidad, 0);
+  const unidadesCaja = () => S.caja.carrito.reduce((a, l) => a + l.cantidad, 0);
+
+  async function cajaPreparar() {
+    const c = S.caja;
+    if (!c.preparada) {
+      try {
+        const d = await pedir('/taller/caja/inicio');
+        Object.assign(c, { preparada: true, cajaId: d.caja_id || null, verCostos: !!d.ver_costos });
+      } catch (err) { aviso(err.message, true); }
+    }
+    pintar();
+  }
+
+  async function buscarCaja({ texto = '', codigo = '' }) {
+    const c = S.caja;
+    const q = (codigo || texto).trim();
+    if (q.length < 2) { aviso('Escribe al menos 2 letras o el código', true); return; }
+    Object.assign(c, { buscando: true, texto: codigo ? c.texto : texto });
+    pintar();
+    try {
+      const { productos } = await pedir('/taller/caja/buscar?' + new URLSearchParams({ q }));
+      c.resultados = productos || [];
+      // Escaneado y con un solo resultado exacto: va directo al carrito
+      if (codigo && c.resultados.length === 1) { c.buscando = false; await agregarCaja(c.resultados[0]); return; }
+      if (codigo && !c.resultados.length) aviso('Ese código no está en el catálogo', true);
+    } catch (err) { aviso(err.message, true); }
+    c.buscando = false;
+    pintar();
+  }
+
+  function familiaEquipo(p) {
+    const t = `${p.nombre || ''} ${p.categoria || ''}`.toLowerCase();
+    if (/ps3|ps4|ps5|playstation|consola|mando|dualshock|xbox|nintendo/.test(t)) return 'consola';
+    if (/notebook|laptop|computador|\bpc\b|torre|escritorio|monitor|bios|tarjeta de video/.test(t)) return 'computador';
+    return 'celular';
+  }
+
+  async function frecuentesCaja() {
+    if (S.caja.frecuentes) return S.caja.frecuentes;
+    try { S.caja.frecuentes = (await pedir('/ventas/equipos-frecuentes')).marcas || []; }
+    catch (_) { S.caja.frecuentes = []; }
+    return S.caja.frecuentes;
+  }
+
+  /* "¿Para qué equipo?" (servicios y productos "por equipo", sql/111): marca, modelo, precio y costo de esta venta. */
+  async function ventanaEquipoCaja(p) {
+    const frecuentes = await frecuentesCaja();
+    const base = MARCAS_CAJA[familiaEquipo(p)];
+    const vistas = new Set();
+    const marcas = [...frecuentes.map(f => f.marca).filter(m => base.some(b => b.toLowerCase() === m.toLowerCase())), ...base]
+      .filter(m => { const k = m.toLowerCase(); if (vistas.has(k)) return false; vistas.add(k); return true; }).slice(0, 12);
+    return new Promise(resolver => {
+      let marca = '';
+      $capa.innerHTML = `<div class="ventana ventana-equipo" role="dialog" aria-modal="true">
+        <h2>¿Para qué equipo?</h2><p>${esc(p.nombre)}</p>
+        <div class="caja-marcas">${marcas.map(m => `<button type="button" class="op" data-eq-marca="${esc(m)}">${esc(m)}</button>`).join('')}
+          <button type="button" class="op punteada" data-eq-otra>✏️ Otra</button></div>
+        <input class="campo" id="eqMarcaOtra" maxlength="40" placeholder="Escribe la marca" autocomplete="off" hidden>
+        <input class="campo" id="eqModelo" maxlength="60" placeholder="Modelo (ej: A15, Redmi Note 13)" autocomplete="off" list="eqModelos" style="margin-top:10px">
+        <datalist id="eqModelos"></datalist>
+        <div class="caja-montos">
+          <label>Precio<div class="campo-plata"><span>$</span><input class="campo" id="eqPrecio" inputmode="numeric" autocomplete="off" value="${conPuntos(p.precio)}"></div></label>
+          <label>Costo <small>(repuesto)</small><div class="campo-plata"><span>$</span><input class="campo" id="eqCosto" inputmode="numeric" autocomplete="off" placeholder="0" value="${S.caja.verCostos && p.costo ? conPuntos(p.costo) : ''}"></div></label>
+        </div>
+        <div class="error-paso" id="eqError" hidden></div>
+        <div class="botones"><button type="button" class="btn-secundario" data-v="no">Cancelar</button><button type="button" class="btn-principal" data-v="si">Agregar</button></div></div>`;
+      $capa.hidden = false;
+      const $ = (id) => document.getElementById(id);
+      const pintarMarca = () => {
+        $capa.querySelectorAll('[data-eq-marca]').forEach(b => b.classList.toggle('on', b.dataset.eqMarca === marca));
+        const f = frecuentes.find(x => x.marca.toLowerCase() === marca.toLowerCase());
+        $('eqModelos').innerHTML = (f ? f.modelos : []).map(m => `<option value="${esc(m)}"></option>`).join('');
+      };
+      ['eqPrecio', 'eqCosto'].forEach(id => $(id).addEventListener('input', (e) => { e.target.value = conPuntos(e.target.value); }));
+      const alTocar = (e) => {
+        const b = e.target.closest('[data-eq-marca]');
+        if (b) { marca = b.dataset.eqMarca; $('eqMarcaOtra').hidden = true; pintarMarca(); setTimeout(() => $('eqModelo').focus(), 20); return; }
+        if (e.target.closest('[data-eq-otra]')) { marca = ''; pintarMarca(); $('eqMarcaOtra').hidden = false; $('eqMarcaOtra').focus(); }
+      };
+      $capa.addEventListener('click', alTocar);
+      cerrarVentana = (acepto) => {
+        if (acepto) {
+          const m = (marca || $('eqMarcaOtra').value).trim();
+          const precio = aNumero($('eqPrecio').value) || 0;
+          const costo = aNumero($('eqCosto').value) || 0;
+          const mal = !m ? 'Elige la marca (o "Otra" y escríbela).' : !(precio > 0) ? 'Escribe el precio.'
+            : costo > 0 && precio < costo ? `Nunca se vende bajo el costo (${plata(costo)}).` : '';
+          if (mal) { $('eqError').textContent = mal; $('eqError').hidden = false; return; }
+          var datos = { marca: m.slice(0, 40), modelo: $('eqModelo').value.trim().slice(0, 60), precio, costo };
+        }
+        $capa.removeEventListener('click', alTocar);
+        cerrarVentana = null;
+        $capa.hidden = true;
+        $capa.innerHTML = '';
+        resolver(acepto ? datos : null);
+      };
+    });
+  }
+
+  async function agregarCaja(p) {
+    const c = S.caja;
+    const enCarrito = c.carrito.filter(l => l.id === p.id).reduce((a, l) => a + l.cantidad, 0);
+    if (!p.es_servicio && p.stock !== null && enCarrito >= p.stock) {
+      aviso(p.stock > 0 ? `Solo quedan ${p.stock} en stock` : 'Sin stock: no se puede vender', true);
+      pintar();
+      return;
+    }
+    let linea = { clave: Date.now() + Math.random(), id: p.id, sku: p.sku, nombreBase: p.nombre, foto: p.foto, precio: p.precio, precioLista: p.precio,
+      costo: p.costo || 0, cantidad: 1, es_servicio: !!p.es_servicio, va_al_pozo: !!p.va_al_pozo, pozo: null, serie: null, marca: null, modelo: null };
+    if (p.pide_equipo) {
+      const eq = await ventanaEquipoCaja(p);
+      if (!eq) { pintar(); return; }
+      Object.assign(linea, { marca: eq.marca, modelo: eq.modelo, precio: eq.precio, costo: eq.costo });
+    } else if (p.requiere_sn) {
+      const serie = await ventana({ titulo: 'Número de serie', texto: p.nombre, campo: { ejemplo: 'Opcional: déjalo vacío si no lo tienes', tope: 60 }, si: 'Agregar' });
+      if (serie === null) { pintar(); return; }
+      linea.serie = serie || null;
+    } else {
+      // El mismo producto, sin serie ni equipo, suma a su línea
+      const igual = c.carrito.find(l => l.id === p.id && !l.serie && !l.marca && l.precio === p.precio);
+      if (igual) { igual.cantidad += 1; if (navigator.vibrate) navigator.vibrate(30); aviso(`${p.nombre} ×${igual.cantidad}`); pintar(); return; }
+    }
+    c.carrito.push(linea);
+    if (navigator.vibrate) navigator.vibrate(30);
+    aviso(`Agregado: ${p.nombre}`);
+    pintar();
+  }
+
+  const nombreLinea = (l) => l.marca ? `${l.nombreBase} · ${[l.marca, l.modelo].filter(Boolean).join(' ')}` : l.nombreBase;
+
+  function tarjetaResultadoCaja(p) {
+    const sinStock = !p.es_servicio && p.stock !== null && p.stock <= 0;
+    return `<button type="button" class="caja-prod${sinStock ? ' agotado' : ''}" data-a="cajaagregar" data-v="${Number(p.id)}">
+      ${p.foto ? `<img src="${esc(p.foto)}" alt="" loading="lazy">` : `<span class="caja-prod-sinfoto" aria-hidden="true">${p.es_servicio ? '🔧' : '📦'}</span>`}
+      <span class="caja-prod-texto"><b>${esc(p.nombre)}</b>
+        <small>${p.es_servicio ? 'Servicio' : sinStock ? 'Sin stock' : p.stock === null ? 'Disponible' : `${p.stock} en stock`}${p.pide_equipo ? ' · pide marca y modelo' : ''}</small></span>
+      <span class="caja-prod-precio">${plata(p.precio)}<i>＋</i></span></button>`;
+  }
+
+  function vistaCaja() {
+    const c = S.caja;
+    if (!c.preparada) return '<p class="cargando">Abriendo la caja…</p>';
+    const resultados = c.buscando ? '<p class="cargando">Buscando…</p>'
+      : c.resultados === null ? `<div class="vacio"><b>¿Qué vas a vender?</b>Escribe el nombre o escanea el código con 📷.</div>`
+        : c.resultados.length ? c.resultados.map(tarjetaResultadoCaja).join('')
+          : '<div class="vacio"><b>No encontré nada</b>Prueba con otra palabra o con el código.</div>';
+    return `<form class="caja-buscar" data-form="buscarcaja">
+        <input class="campo" id="textoCaja" type="search" enterkeyhint="search" autocomplete="off" placeholder="Buscar producto o servicio" value="${esc(c.texto)}">
+        <button type="button" class="caja-escanear" data-a="cajaescanear" aria-label="Escanear con la cámara">📷</button>
+      </form>
+      ${c.cajaId ? '' : '<div class="nota-suave">No hay una caja abierta en el POS: la venta igual se registra, pero no entra al arqueo de hoy. Ábrela en el POS cuando puedas.</div>'}
+      <div class="caja-resultados">${resultados}</div>
+      ${c.carrito.length ? `<div class="pie-fijo"><div class="dentro"><button type="button" class="btn-principal caja-ver" data-a="cajacarrito">
+        🛒 ${unidadesCaja()} ${unidadesCaja() === 1 ? 'producto' : 'productos'} · ${plata(totalCaja())}<span>Ver y cobrar ›</span></button></div></div>` : ''}`;
+  }
+
+  function vistaCajaCarrito() {
+    const c = S.caja;
+    const lineas = c.carrito.map((l, i) => `<div class="tarjeta caja-linea">
+        <div class="caja-linea-cabeza"><b>${esc(nombreLinea(l))}</b>
+          <button type="button" class="caja-quitar" data-a="cajaquitar" data-v="${i}" aria-label="Quitar">✕</button></div>
+        ${l.serie ? `<div class="trabajo-linea">S/N ${esc(l.serie)}</div>` : ''}
+        <div class="caja-linea-fila">
+          <div class="caja-cantidad">
+            <button type="button" data-a="cajacant" data-v="${i}" data-d="-1" ${l.cantidad <= 1 ? 'disabled' : ''} aria-label="Una menos">−</button>
+            <b>${l.cantidad}</b>
+            <button type="button" data-a="cajacant" data-v="${i}" data-d="1" ${l.serie || l.marca ? 'disabled' : ''} aria-label="Una más">＋</button>
+          </div>
+          <button type="button" class="caja-precio" data-a="cajaprecio" data-v="${i}">${plata(l.precio)} c/u ✏️${l.precio !== l.precioLista ? `<small>lista ${plata(l.precioLista)}</small>` : ''}</button>
+          <b class="caja-subtotal">${plata(l.precio * l.cantidad)}</b>
+        </div>
+        ${l.va_al_pozo ? `<p class="pregunta" style="margin:10px 0 6px">¿Va al pozo de ${esc(nombrePapa())}?</p>
+        <div class="fila">${[['', 'No'], ['TODO', 'Todo'], ['MENOS_REPUESTO', 'Menos el repuesto']].map(([v, t]) =>
+          `<button type="button" class="op ancha${(l.pozo || '') === v ? ' on' : ''}" data-a="cajapozo" data-v="${i}" data-m="${v}">${t}</button>`).join('')}</div>` : ''}
+      </div>`).join('');
+    return barra('Venta', { atras: true }) + `<main class="cuerpo">
+        ${lineas || '<div class="vacio"><b>El carrito está vacío</b>Vuelve y agrega productos.</div>'}
+        <div class="caja-total"><span>Total</span><b>${plata(totalCaja())}</b></div>
+      </main>
+      <div class="pie-fijo"><div class="dentro">
+        <button type="button" class="btn-secundario" data-a="volver">＋ Agregar</button>
+        <button type="button" class="btn-principal" data-a="cajacobrar" ${c.carrito.length ? '' : 'disabled'}>Cobrar ${plata(totalCaja())}</button>
+      </div></div>`;
+  }
+
+  /* El cobro, de a una pregunta por pantalla. El efectivo agrega "¿con cuánto paga?". */
+  const pasosCobroCaja = (b) => ['origen', 'medio', ...(b.medio === 'Efectivo' ? ['efectivo'] : []), 'documento'];
+
+  function vistaCajaCobro() {
+    const c = S.caja, b = c.cobro, pasos = pasosCobroCaja(b), paso = pasos[b.paso] || 'documento';
+    const total = totalCaja();
+    const medio = MEDIOS_CAJA.find(m => m.id === b.medio);
+    let cuerpo = '';
+    if (paso === 'origen') {
+      cuerpo = `<h1 class="paso-titulo">¿De dónde vino el cliente?</h1><p class="paso-ayuda">Toca una: pasa sola a la siguiente.</p>
+        <div class="caja-grilla">${ORIGENES_CAJA.map(o => `<button type="button" class="op${b.origen === o.id ? ' on' : ''}" data-a="cajaorigen" data-v="${o.id}">${o.texto}</button>`).join('')}</div>`;
+    } else if (paso === 'medio') {
+      cuerpo = `<h1 class="paso-titulo">¿Cómo paga?</h1>
+        <div class="caja-grilla dos">${MEDIOS_CAJA.map(m => `<button type="button" class="op grande${b.medio === m.id ? ' on' : ''}" data-a="cajamedio" data-v="${m.id}"><span aria-hidden="true">${m.icono}</span>${m.texto}</button>`).join('')}</div>
+        ${medio?.tarjeta ? `<p class="pregunta">¿Por qué máquina?</p><div class="fila">${MAQUINAS_CAJA.map(m => `<button type="button" class="op ancha${b.maquina === m.id ? ' on' : ''}" data-a="cajamaquina" data-v="${m.id}">${m.texto}</button>`).join('')}</div>` : ''}`;
+    } else if (paso === 'efectivo') {
+      const recibido = aNumero(b.recibido) || 0;
+      const sugeridos = [...new Set([total, Math.ceil(total / 1000) * 1000, Math.ceil(total / 5000) * 5000, Math.ceil(total / 10000) * 10000, Math.ceil(total / 20000) * 20000])].filter(v => v >= total).slice(0, 4);
+      cuerpo = `<h1 class="paso-titulo">¿Con cuánto paga?</h1><p class="paso-ayuda">Total ${plata(total)}</p>
+        <div class="campo-plata"><span>$</span><input class="campo" id="cajaRecibido" inputmode="numeric" autocomplete="off" placeholder="${conPuntos(total)}" value="${esc(b.recibido)}"></div>
+        <div class="caja-grilla dos" style="margin-top:10px">${sugeridos.map(v => `<button type="button" class="op" data-a="cajarecibido" data-v="${v}">${v === total ? 'Justo ' : ''}${plata(v)}</button>`).join('')}</div>
+        <div class="caja-vuelto" id="cajaVuelto">${recibido > total ? `Vuelto <b>${plata(recibido - total)}</b>` : recibido && recibido < total ? `<span class="mal">Faltan ${plata(total - recibido)}</span>` : 'Vuelto <b>$0</b>'}</div>`;
+    } else {
+      cuerpo = `<h1 class="paso-titulo">¿Boleta?</h1>
+        <div class="caja-grilla dos">
+          <button type="button" class="op grande${b.dte === 'BOLETA' ? ' on' : ''}" data-a="cajadte" data-v="BOLETA"><span aria-hidden="true">🧾</span>Con boleta</button>
+          <button type="button" class="op grande${b.dte === 'SIN DTE' ? ' on' : ''}" data-a="cajadte" data-v="SIN DTE"><span aria-hidden="true">📄</span>Sin boleta</button>
+        </div>
+        <div class="tarjeta caja-resumen">
+          <div><span>Total</span><b>${plata(total)}</b></div>
+          <div><span>Pago</span><b>${esc(medio ? medio.texto : '—')}${medio?.tarjeta ? ` · ${esc(MAQUINAS_CAJA.find(m => m.id === b.maquina)?.texto || '')}` : ''}</b></div>
+          ${b.medio === 'Efectivo' && aNumero(b.recibido) > total ? `<div><span>Vuelto</span><b>${plata(aNumero(b.recibido) - total)}</b></div>` : ''}
+          <div><span>Vino por</span><b>${esc(ORIGENES_CAJA.find(o => o.id === b.origen)?.texto || 'Sin anotar')}</b></div>
+        </div>`;
+    }
+    const ultimo = paso === 'documento';
+    const puedeSeguir = paso === 'origen' || (paso === 'medio' && b.medio) || paso === 'efectivo' || (ultimo && b.dte);
+    return barra(`Cobrar ${plata(total)}`, { atras: true }) + `<main class="cuerpo">
+        <div class="pasos">${pasos.map((_, i) => `<i class="${i <= b.paso ? 'hecho' : ''}"></i>`).join('')}</div>
+        ${cuerpo}
+        ${S.errorPaso ? `<div class="error-paso">${esc(S.errorPaso)}</div>` : ''}
+      </main>
+      <div class="pie-fijo"><div class="dentro">
+        <button type="button" class="btn-secundario" data-a="volver">‹ Atrás</button>
+        ${ultimo
+          ? `<button type="button" class="btn-principal" data-a="cajaregistrar" ${!b.dte || c.guardando ? 'disabled' : ''}>${c.guardando ? 'Registrando…' : `Registrar ${plata(total)}`}</button>`
+          : `<button type="button" class="btn-principal" data-a="cajasiguiente" ${puedeSeguir ? '' : 'disabled'}>${paso === 'origen' && !b.origen ? 'Saltar ›' : 'Siguiente ›'}</button>`}
+      </div></div>`;
+  }
+
+  function vistaCajaListo() {
+    const v = S.caja.ultima || {};
+    return barra('Venta registrada') + `<main class="cuerpo caja-listo">
+        <div class="caja-listo-icono" aria-hidden="true">✅</div>
+        <h1 class="paso-titulo">¡Venta registrada!</h1>
+        <p class="paso-ayuda">Orden #${esc(String(v.numero || '').padStart(5, '0'))} · ${plata(v.total)} · ${esc(v.medio || '')}</p>
+        ${v.vuelto > 0 ? `<div class="caja-vuelto grande">Vuelto a entregar <b>${plata(v.vuelto)}</b></div>` : ''}
+        ${v.dte === 'BOLETA' ? '<div class="nota-suave">Recuerda emitir la boleta y anotar su número en el POS (Historial → la venta).</div>' : ''}
+      </main>
+      <div class="pie-fijo"><div class="dentro"><button type="button" class="btn-principal" data-a="cajanueva">＋ Nueva venta</button></div></div>`;
+  }
+
+  async function registrarVentaCaja() {
+    const c = S.caja, b = c.cobro;
+    if (c.guardando) return;
+    const total = totalCaja();
+    if (b.medio === 'Efectivo' && aNumero(b.recibido) && aNumero(b.recibido) < total) { S.errorPaso = `Faltan ${plata(total - aNumero(b.recibido))}`; pintar(); return; }
+    c.guardando = true; S.errorPaso = '';
+    pintar();
+    try {
+      const venta = await pedir('/ventas', {
+        metodo: 'POST',
+        cuerpo: {
+          clave_idempotencia: b.clave,
+          // La fecha de Chile: sin ella el servidor usaría la de UTC (después de las 21:00 sería mañana)
+          fecha: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(new Date()),
+          tipo_dte: b.dte,
+          origen_cliente: b.origen || null,
+          metodo_pago: b.medio,
+          maquina_tarjeta: MEDIOS_CAJA.find(m => m.id === b.medio)?.tarjeta ? b.maquina : null,
+          caja_id: c.cajaId,
+          items: c.carrito.map(l => ({
+            producto_id: l.id, sku: l.sku || null, nombre: nombreLinea(l), cantidad: l.cantidad,
+            precio_unitario: l.precio, costo_unitario: l.costo || 0, es_servicio: l.es_servicio,
+            serial_number: l.serie || null, equipo_marca: l.marca || null, equipo_modelo: l.modelo || null,
+            propietario: 'MIO',
+            ...(l.va_al_pozo && l.pozo ? { pozo: l.pozo === 'TODO' ? { modo: 'TODO' } : { modo: 'MENOS_REPUESTO', repuesto: l.costo || 0 } } : {})
+          }))
+        }
+      });
+      const recibido = aNumero(b.recibido) || 0;
+      c.ultima = { numero: venta.numero_orden, total: Number(venta.total) || total, medio: MEDIOS_CAJA.find(m => m.id === b.medio)?.texto, dte: b.dte,
+        vuelto: b.medio === 'Efectivo' && recibido > total ? recibido - total : 0 };
+      Object.assign(c, { carrito: [], cobro: null, guardando: false, resultados: null, texto: '' });
+      if (navigator.vibrate) navigator.vibrate([40, 60, 40]);
+      S.vista = 'cajalisto';
+    } catch (err) {
+      c.guardando = false;
+      S.errorPaso = err.message;
+    }
+    pintar();
+    arriba();
+  }
+
+  Object.assign(ACCIONES, {
+    cajaescanear: () => { S.escanerPara = 'caja'; abrirEscaner(); return false; },
+    cajaagregar: async (v) => { const p = (S.caja.resultados || []).find(x => mismo(x.id, v)); if (p) await agregarCaja(p); return false; },
+    cajacarrito: () => { S.vista = 'cajacarrito'; pintar(); arriba(); return false; },
+    cajaquitar: (v) => { S.caja.carrito.splice(Number(v), 1); if (!S.caja.carrito.length) S.vista = 'inicio'; },
+    cajacant: (v, d) => {
+      const l = S.caja.carrito[Number(v)];
+      if (!l) return false;
+      const nueva = l.cantidad + Number(d.d);
+      if (nueva < 1) return false;
+      const p = (S.caja.resultados || []).find(x => mismo(x.id, l.id));
+      if (Number(d.d) > 0 && p && !p.es_servicio && p.stock !== null && S.caja.carrito.filter(x => x.id === l.id).reduce((a, x) => a + x.cantidad, 0) >= p.stock) {
+        aviso(`Solo quedan ${p.stock} en stock`, true); return false;
+      }
+      l.cantidad = nueva;
+    },
+    cajaprecio: async (v) => {
+      const l = S.caja.carrito[Number(v)];
+      if (!l) return false;
+      const texto = await ventana({ titulo: 'Precio de esta venta', texto: `${nombreLinea(l)}. La ficha del producto no cambia.`, campo: { valor: conPuntos(l.precio), plata: true, tope: 12 }, si: 'Usar este precio' });
+      if (texto === null) { pintar(); return false; }
+      const nuevo = aNumero(texto);
+      if (!(nuevo > 0)) { aviso('Escribe el precio en pesos', true); pintar(); return false; }
+      if (l.costo > 0 && nuevo < l.costo && S.caja.verCostos) { aviso(`Nunca se vende bajo el costo (${plata(l.costo)})`, true); pintar(); return false; }
+      l.precio = nuevo;
+    },
+    cajapozo: (v, d) => { const l = S.caja.carrito[Number(v)]; if (l) l.pozo = d.m || null; },
+    cajacobrar: () => {
+      if (!S.caja.carrito.length) return false;
+      S.caja.cobro = { paso: 0, origen: '', medio: '', maquina: leer(CLAVE_MAQUINA) || 'TUU', recibido: '', dte: '',
+        clave: (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}` };
+      S.vista = 'cajacobro'; S.errorPaso = ''; pintar(); arriba(); return false;
+    },
+    cajaorigen: (v) => {
+      const b = S.caja.cobro;
+      b.origen = b.origen === v ? '' : v;
+      pintar();
+      if (b.origen) setTimeout(() => { if (S.vista === 'cajacobro' && pasosCobroCaja(b)[b.paso] === 'origen') { b.paso += 1; pintar(); } }, 180);
+      return false;
+    },
+    cajamedio: (v) => {
+      const b = S.caja.cobro;
+      b.medio = v;
+      if (v === 'Efectivo') b.recibido = '';
+      // Sin máquina que elegir, pasa sola a la siguiente
+      if (!MEDIOS_CAJA.find(m => m.id === v)?.tarjeta) { pintar(); setTimeout(() => { if (S.vista === 'cajacobro') { b.paso += 1; pintar(); } }, 180); return false; }
+    },
+    cajamaquina: (v) => { S.caja.cobro.maquina = v; guardar(CLAVE_MAQUINA, v); },
+    cajarecibido: (v) => { S.caja.cobro.recibido = conPuntos(v); },
+    cajadte: (v) => { S.caja.cobro.dte = v; },
+    cajasiguiente: () => { const b = S.caja.cobro; b.paso = Math.min(b.paso + 1, pasosCobroCaja(b).length - 1); S.errorPaso = ''; pintar(); arriba(); return false; },
+    cajaregistrar: async () => { await registrarVentaCaja(); return false; },
+    cajanueva: () => { S.vista = 'inicio'; S.pestana = 'caja'; pintar(); arriba(); setTimeout(() => document.getElementById('textoCaja')?.focus(), 60); return false; }
+  });
+
+  // Lo escrito en "¿con cuánto paga?" muestra el vuelto sin repintar (para no perder el teclado)
+  $app.addEventListener('input', (e) => {
+    if (e.target.id !== 'cajaRecibido' || !S.caja.cobro) return;
+    e.target.value = conPuntos(e.target.value);
+    S.caja.cobro.recibido = e.target.value;
+    const total = totalCaja(), recibido = aNumero(e.target.value) || 0;
+    const $v = document.getElementById('cajaVuelto');
+    if ($v) $v.innerHTML = recibido > total ? `Vuelto <b>${plata(recibido - total)}</b>` : recibido && recibido < total ? `<span class="mal">Faltan ${plata(total - recibido)}</span>` : 'Vuelto <b>$0</b>';
+  });
+  $app.addEventListener('submit', async (e) => {
+    if (e.target.dataset.form !== 'buscarcaja') return;
+    e.preventDefault();
+    const texto = document.getElementById('textoCaja').value.trim();
+    S.caja.texto = texto;
+    await buscarCaja(/^\d{6,}$/.test(texto) ? { codigo: texto } : { texto });
   });
 
   /* ---------- Arranque ---------- */

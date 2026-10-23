@@ -194,7 +194,7 @@ app.use(cors({
     return cb(new Error('Origen no permitido por CORS'));
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Sevelin-App'],
   maxAge: 86400
 }));
 
@@ -7697,6 +7697,18 @@ app.post('/api/ventas', auth(), async (req, res) => {
         }
         ventaExistente = previa;   // quedó la cabecera sin detalle: se completa abajo
       }
+    }
+
+    /* v177: una venta desde la caja del celular (la app del taller avisa con esta cabecera)
+       necesita una persona activa con el permiso "caja". Las del POS siguen igual. */
+    if (String(req.headers['x-sevelin-app'] || '') === 'taller') {
+      const uid = Number(req.usuario?.uid);
+      const { data: quien, error: errQuien } = uid
+        ? await db.from('usuarios').select('id, rol, activo, permisos').eq('id', uid).maybeSingle()
+        : { data: null, error: null };
+      if (errQuien) throw new Error(errQuien.message);
+      if (!quien || quien.activo === false) return enviarError(res, 401, 'Entra a la app con tu RUT y tu PIN para cobrar');
+      if (!permisosTallerDe(quien).caja) return enviarError(res, 403, 'No tienes permiso para cobrar en la caja del celular. Pídeselo a un administrador en el POS → Usuarios.');
     }
 
     const items = await normalizarItems(req.body?.items, req.usuario.rol);
@@ -20152,7 +20164,7 @@ app.delete('/api/cotizaciones-ref/:id', auth(true), async (req, res) => {
    ============================================================ */
 const PIN_USUARIO_RE = /^\d{4,8}$/;
 const BLOQUEO_USUARIO_MS = 15 * 60 * 1000;
-const COLUMNAS_USUARIO = 'id, nombre, rut, rol, papel_taller, activo, pin_hash, intentos_fallidos, bloqueado_hasta, ultimo_ingreso_en';
+const COLUMNAS_USUARIO = 'id, nombre, rut, rol, papel_taller, activo, permisos, pin_hash, intentos_fallidos, bloqueado_hasta, ultimo_ingreso_en';
 
 function hashPinUsuario(pin) {
   const sal = crypto.randomBytes(16);
@@ -20180,7 +20192,9 @@ function usuarioPublico(u) {
     id: u.id, nombre: u.nombre, rut: u.rut, rol: u.rol, papel_taller: u.papel_taller || null,
     activo: u.activo !== false, tiene_pin: !!u.pin_hash,
     bloqueado: !!u.bloqueado_hasta && Date.parse(u.bloqueado_hasta) > Date.now(),
-    ultimo_ingreso_en: u.ultimo_ingreso_en || null
+    ultimo_ingreso_en: u.ultimo_ingreso_en || null,
+    // v177: lo que puede hacer en la app del taller (ya resuelto: admin = todo)
+    permisos_taller: permisosTallerDe(u)
   };
 }
 
@@ -20254,6 +20268,12 @@ function leerDatosDeUsuario(body, esNuevo) {
     cambios.papel_taller = papel;
   }
   if (body?.activo !== undefined) cambios.activo = body.activo === true;
+  // v177: casillas de la app del taller (solo claves conocidas, sí/no)
+  if (body?.permisos_taller !== undefined) {
+    const taller = permisosTallerDesdeBody(body.permisos_taller);
+    if (!taller) return { error: 'Los permisos del taller no son válidos' };
+    cambios.permisos = { taller };
+  }
   const pin = body?.pin === undefined || body?.pin === null ? '' : String(body.pin).trim();
   if (esNuevo || pin) {
     if (!PIN_USUARIO_RE.test(pin)) return { error: 'El PIN son entre 4 y 8 números' };
@@ -20359,7 +20379,7 @@ function authTaller(soloAdmin = false) {
       req.persona = null;
       const uid = Number(req.usuario?.uid);
       if (uid) {
-        const { data, error } = await db.from('usuarios').select('id, nombre, rol, papel_taller, activo').eq('id', uid).maybeSingle();
+        const { data, error } = await db.from('usuarios').select('id, nombre, rol, papel_taller, activo, permisos').eq('id', uid).maybeSingle();
         if (error) return enviarErrorBD(res, error, 'authTaller');
         if (!data || data.activo === false) return enviarError(res, 401, 'Tu usuario ya no está activo');
         req.persona = data;
@@ -20373,6 +20393,63 @@ function authTaller(soloAdmin = false) {
   });
 }
 const SIN_PERSONA_TALLER = 'Entra a la app con tu RUT y tu PIN para registrar: así queda anotado quién fue';
+
+/* ============================================================
+   PERMISOS DE LA APP DEL TALLER (v177, pendiente #98; dueño 22-10-2026)
+   ------------------------------------------------------------
+   "Que dejes las opciones para activarme desde el POS un módulo de Taller
+   para permitir qué se puede y qué no pueden hacer los usuarios registrados."
+   Viven en usuarios.permisos.taller (sql/92 dejó la columna lista). Un
+   ADMINISTRADOR puede todo, siempre. Un TRABAJADOR parte con lo que ya hacía
+   antes de esto (todo menos cuentas y caja) y el admin enciende o apaga cada
+   casilla en el POS → Usuarios. Lo que no viene marcado usa el valor de
+   partida. Anular un trabajo sigue siendo solo de administrador.
+   ============================================================ */
+const PERMISOS_TALLER = {
+  trabajos: { texto: 'registrar y editar trabajos', trabajador: true },
+  cobrar: { texto: 'cobrar trabajos', trabajador: true },
+  cotizar: { texto: 'cotizar', trabajador: true },
+  bodega: { texto: 'usar la bodega', trabajador: true },
+  cuentas: { texto: 'ver las cuentas y los pagos', trabajador: false },
+  caja: { texto: 'cobrar en la caja del celular', trabajador: false }
+};
+
+function permisosTallerDe(persona) {
+  const admin = persona?.rol === 'admin';
+  const marcados = persona?.permisos && typeof persona.permisos === 'object' ? (persona.permisos.taller || {}) : {};
+  const salida = {};
+  for (const [clave, def] of Object.entries(PERMISOS_TALLER)) {
+    salida[clave] = admin ? true : (typeof marcados[clave] === 'boolean' ? marcados[clave] : def.trabajador);
+  }
+  return salida;
+}
+
+/* Va después de authTaller(). Sin persona (entró con el PIN general del POS) se mantiene
+   lo de antes: puede mirar; cuentas y caja solo si es sesión de administrador. */
+function exigirPermisoTaller(clave) {
+  return (req, res, next) => {
+    if (!req.persona) {
+      if ((clave === 'cuentas' || clave === 'caja') && !req.esAdminTaller) {
+        return enviarError(res, 403, 'Esta acción es solo para el administrador');
+      }
+      return next();
+    }
+    if (!permisosTallerDe(req.persona)[clave]) {
+      return enviarError(res, 403, `No tienes permiso para ${PERMISOS_TALLER[clave]?.texto || 'esto'}. Pídeselo a un administrador en el POS → Usuarios.`);
+    }
+    next();
+  };
+}
+
+/* Los permisos que llegan del POS (PUT /api/usuarios/:id): solo claves conocidas y sí/no. */
+function permisosTallerDesdeBody(valor) {
+  if (!valor || typeof valor !== 'object') return null;
+  const limpio = {};
+  for (const clave of Object.keys(PERMISOS_TALLER)) {
+    if (typeof valor[clave] === 'boolean') limpio[clave] = valor[clave];
+  }
+  return limpio;
+}
 
 async function contextoTaller() {
   const { data, error } = await db.from('usuarios').select('id, nombre, rol, papel_taller, activo').order('id');
@@ -20602,6 +20679,8 @@ app.get('/api/taller/inicio', authTaller(), async (req, res) => {
       hoy: fechaHoyChile(),
       yo: req.persona ? { id: req.persona.id, nombre: req.persona.nombre, papel_taller: req.persona.papel_taller || null } : null,
       admin: req.esAdminTaller,
+      // v177: qué puede hacer quien entró (sin persona = PIN general: lo de siempre)
+      permisos: req.persona ? permisosTallerDe(req.persona) : { trabajos: false, cobrar: false, cotizar: true, bodega: true, cuentas: req.esAdminTaller, caja: req.esAdminTaller },
       personas: ctx.personas.map(p => ({ id: p.id, nombre: p.nombre, papel_taller: p.papel_taller || null, activo: p.activo !== false })),
       dueno_id: ctx.dueno?.id || null,
       papa_id: ctx.papa?.id || null,
@@ -20614,7 +20693,7 @@ app.get('/api/taller/inicio', authTaller(), async (req, res) => {
 });
 
 /* Agrega un repuesto, una calidad de pantalla o un lugar a las listas. */
-app.post('/api/taller/catalogo', authTaller(), async (req, res) => {
+app.post('/api/taller/catalogo', authTaller(), exigirPermisoTaller('trabajos'), async (req, res) => {
   try {
     if (!req.persona) return enviarError(res, 403, SIN_PERSONA_TALLER);
     const tipo = req.body?.tipo;
@@ -20694,7 +20773,7 @@ app.get('/api/taller/trabajos/:id', authTaller(), async (req, res) => {
   }
 });
 
-app.post('/api/taller/trabajos', authTaller(), async (req, res) => {
+app.post('/api/taller/trabajos', authTaller(), exigirPermisoTaller('trabajos'), async (req, res) => {
   try {
     if (!req.persona) return enviarError(res, 403, SIN_PERSONA_TALLER);
     const ctx = await contextoTaller();
@@ -20731,7 +20810,7 @@ app.post('/api/taller/trabajos', authTaller(), async (req, res) => {
 
 /* Corrige un trabajo. Pendiente: el admin o quien participa. Ya cobrado:
    solo el admin (cambia cuentas que ya se sacaron). */
-app.put('/api/taller/trabajos/:id', authTaller(), async (req, res) => {
+app.put('/api/taller/trabajos/:id', authTaller(), exigirPermisoTaller('trabajos'), async (req, res) => {
   try {
     if (!req.persona) return enviarError(res, 403, SIN_PERSONA_TALLER);
     const id = Number(req.params.id);
@@ -20785,7 +20864,7 @@ app.put('/api/taller/trabajos/:id', authTaller(), async (req, res) => {
 
 /* Entregar y cobrar. El `.eq('estado', 'PENDIENTE')` es el candado: si dos
    teléfonos cobran el mismo trabajo a la vez, solo uno lo consigue. */
-app.post('/api/taller/trabajos/:id/cobrar', authTaller(), async (req, res) => {
+app.post('/api/taller/trabajos/:id/cobrar', authTaller(), exigirPermisoTaller('cobrar'), async (req, res) => {
   try {
     if (!req.persona) return enviarError(res, 403, SIN_PERSONA_TALLER);
     const id = Number(req.params.id);
@@ -20833,7 +20912,7 @@ app.post('/api/taller/trabajos/:id/anular', authTaller(true), async (req, res) =
 /* Las cuentas entre personas. Solo admin.
    `saldos` es de siempre (todos los trabajos cobrados, menos lo ya
    devuelto); el resto es del mes pedido, por fecha de cobro. */
-app.get('/api/taller/cuentas', authTaller(true), async (req, res) => {
+app.get('/api/taller/cuentas', authTaller(), exigirPermisoTaller('cuentas'), async (req, res) => {
   try {
     const hoy = fechaHoyChile();
     const mes = /^\d{4}-(0[1-9]|1[0-2])$/.test(String(req.query?.mes || '')) ? String(req.query.mes) : hoy.slice(0, 7);
@@ -20913,7 +20992,7 @@ app.get('/api/taller/cuentas', authTaller(true), async (req, res) => {
 });
 
 /* Anota que alguien le devolvió plata a otro. */
-app.post('/api/taller/pagos', authTaller(true), async (req, res) => {
+app.post('/api/taller/pagos', authTaller(), exigirPermisoTaller('cuentas'), async (req, res) => {
   try {
     const ctx = await contextoTaller();
     const de = Number(req.body?.de_usuario), a = Number(req.body?.a_usuario);
@@ -20932,7 +21011,7 @@ app.post('/api/taller/pagos', authTaller(true), async (req, res) => {
   }
 });
 
-app.delete('/api/taller/pagos/:id', authTaller(true), async (req, res) => {
+app.delete('/api/taller/pagos/:id', authTaller(), exigirPermisoTaller('cuentas'), async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return enviarError(res, 400, 'Devolución inválida');
@@ -20991,8 +21070,66 @@ async function productosParaBodega(productos) {
   return productos.map(p => productoParaBodega(p, lugares[p.id]));
 }
 
+/* ============================================================
+   CAJA EN EL CELULAR (v177, dueño 22-10-2026)
+   ------------------------------------------------------------
+   "Que desde la app del taller también pueda usarla de punto de venta, pero
+   solamente para los admin." Permiso "caja" (encendido para administradores,
+   apagado para trabajadores hasta que el admin lo active en el POS).
+   La venta se registra con la MISMA ruta del POS (POST /api/ventas): stock,
+   PEPS, costo, "nunca bajo el costo", pozo y boleta son los mismos. Aquí solo
+   hay dos lecturas livianas para el teléfono.
+   ============================================================ */
+const COLUMNAS_CAJA_TALLER = 'id, nombre, sku, codigo_barras, precio_unitario, stock, stock_ilimitado, es_servicio, categoria_web, ' +
+  'subcategoria_web, imagen_urls, pide_equipo, requiere_sn, va_al_pozo, propietario, costo_unitario';
+
+app.get('/api/taller/caja/inicio', authTaller(), exigirPermisoTaller('caja'), async (req, res) => {
+  try {
+    const { data, error } = await db.from('cajas_diarias').select('id').eq('estado', 'abierta')
+      .order('fecha_apertura', { ascending: false }).limit(1);
+    if (error) return enviarErrorBD(res, error, 'GET /api/taller/caja/inicio');
+    res.json({ caja_id: data?.[0]?.id || null, hoy: fechaHoyChile(), ver_costos: req.esAdminTaller });
+  } catch (err) {
+    return enviarErrorBD(res, err, 'GET /api/taller/caja/inicio');
+  }
+});
+
+app.get('/api/taller/caja/buscar', authTaller(), exigirPermisoTaller('caja'), async (req, res) => {
+  try {
+    // Letras, números y lo que usan los códigos; nada que rompa el filtro de PostgREST
+    const q = String(req.query.q || '').replace(/[^\p{L}\p{N} .\-/]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+    if (q.length < 2) return res.json({ productos: [] });
+    const base = () => db.from('productos').select(COLUMNAS_CAJA_TALLER).eq('archivado', false).eq('es_borrador', false);
+    // 1) Código de barras o SKU exacto (la pistola o la cámara)
+    const exacto = await base().or(`codigo_barras.eq.${q},sku.eq.${q}`).limit(5);
+    if (exacto.error) return enviarErrorBD(res, exacto.error, 'caja/buscar');
+    // 2) Todas las palabras en el nombre
+    let porNombre = base();
+    for (const palabra of q.split(' ').slice(0, 5)) porNombre = porNombre.ilike('nombre', `%${palabra}%`);
+    const nombre = await porNombre.limit(30);
+    if (nombre.error) return enviarErrorBD(res, nombre.error, 'caja/buscar');
+    const vistos = new Set();
+    const lista = [...(exacto.data || []), ...(nombre.data || [])].filter(p => !vistos.has(p.id) && vistos.add(p.id));
+    // Lo que se puede vender hoy, primero
+    const disponible = (p) => p.stock_ilimitado || p.es_servicio || num(p.stock) > 0;
+    lista.sort((a, b) => Number(disponible(b)) - Number(disponible(a)) || String(a.nombre).localeCompare(String(b.nombre), 'es'));
+    res.json({
+      productos: lista.slice(0, 20).map(p => ({
+        id: p.id, nombre: p.nombre, sku: p.sku || null, precio: num(p.precio_unitario),
+        stock: p.stock_ilimitado ? null : num(p.stock), es_servicio: !!p.es_servicio || p.categoria_web === 'Servicios Técnicos',
+        categoria: p.categoria_web || null, foto: (p.imagen_urls || [])[0] || null,
+        pide_equipo: !!p.pide_equipo, requiere_sn: !!p.requiere_sn, va_al_pozo: !!p.va_al_pozo,
+        // El costo solo lo ve un administrador (para avisar "bajo el costo" antes de cobrar)
+        ...(req.esAdminTaller ? { costo: num(p.costo_unitario) } : {})
+      }))
+    });
+  } catch (err) {
+    return enviarErrorBD(res, err, 'GET /api/taller/caja/buscar');
+  }
+});
+
 /* Cotizador de reparaciones en la app del taller (v157): el mismo buscador del POS, solo con el precio. */
-app.get('/api/taller/cotizador', authTaller(), async (req, res) => {
+app.get('/api/taller/cotizador', authTaller(), exigirPermisoTaller('cotizar'), async (req, res) => {
   try {
     res.json(await buscarPreciosReparacion(req.query, false));
   } catch (err) {
@@ -21000,7 +21137,7 @@ app.get('/api/taller/cotizador', authTaller(), async (req, res) => {
   }
 });
 
-app.get('/api/taller/bodega/lugares', authTaller(), async (req, res) => {
+app.get('/api/taller/bodega/lugares', authTaller(), exigirPermisoTaller('bodega'), async (req, res) => {
   try {
     const [{ data: lugares, error }, { data: filas, error: errF }] = await Promise.all([
       db.from('ubicaciones').select('id, nombre, tipo').eq('activo', true).limit(500),
@@ -21019,7 +21156,7 @@ app.get('/api/taller/bodega/lugares', authTaller(), async (req, res) => {
 
 /* Busca por código (lo que lee la cámara: código de barras o SKU exacto) o
    por nombre (todas las palabras escritas, en cualquier orden). */
-app.get('/api/taller/bodega/buscar', authTaller(), async (req, res) => {
+app.get('/api/taller/bodega/buscar', authTaller(), exigirPermisoTaller('bodega'), async (req, res) => {
   try {
     const codigo = String(req.query.codigo || '').trim().slice(0, 64);
     const texto = String(req.query.q || '').trim().slice(0, 80);
@@ -21049,7 +21186,7 @@ app.get('/api/taller/bodega/buscar', authTaller(), async (req, res) => {
   }
 });
 
-app.get('/api/taller/bodega/lugares/:id', authTaller(), async (req, res) => {
+app.get('/api/taller/bodega/lugares/:id', authTaller(), exigirPermisoTaller('bodega'), async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return enviarError(res, 400, 'Lugar inválido');
@@ -21071,7 +21208,7 @@ app.get('/api/taller/bodega/lugares/:id', authTaller(), async (req, res) => {
 });
 
 /* Crea un lugar (o devuelve el que ya existe con ese nombre: "b3" y "B3" son el mismo). */
-app.post('/api/taller/bodega/lugares', authTaller(), async (req, res) => {
+app.post('/api/taller/bodega/lugares', authTaller(), exigirPermisoTaller('bodega'), async (req, res) => {
   try {
     if (!req.persona) return enviarError(res, 403, SIN_PERSONA_TALLER);
     const { datos, error: errVal } = sanearUbicacion({ nombre: String(req.body?.nombre || '').toUpperCase(), tipo: req.body?.tipo });
@@ -21089,7 +21226,7 @@ app.post('/api/taller/bodega/lugares', authTaller(), async (req, res) => {
 
 /* Guarda el producto en un lugar. El primero que se le pone queda como
    principal ("dónde se busca primero"), igual que en el POS. */
-app.post('/api/taller/bodega/productos/:id/lugares', authTaller(), async (req, res) => {
+app.post('/api/taller/bodega/productos/:id/lugares', authTaller(), exigirPermisoTaller('bodega'), async (req, res) => {
   try {
     if (!req.persona) return enviarError(res, 403, SIN_PERSONA_TALLER);
     const productoId = Number(req.params.id);
@@ -21117,7 +21254,7 @@ app.post('/api/taller/bodega/productos/:id/lugares', authTaller(), async (req, r
 });
 
 /* Saca el producto de un lugar. Si era el principal, el que quede pasa a serlo. */
-app.delete('/api/taller/bodega/productos/:id/lugares/:lugarId', authTaller(), async (req, res) => {
+app.delete('/api/taller/bodega/productos/:id/lugares/:lugarId', authTaller(), exigirPermisoTaller('bodega'), async (req, res) => {
   try {
     if (!req.persona) return enviarError(res, 403, SIN_PERSONA_TALLER);
     const productoId = Number(req.params.id);
@@ -21141,7 +21278,7 @@ app.delete('/api/taller/bodega/productos/:id/lugares/:lugarId', authTaller(), as
 /* Asocia el código que leyó la cámara a un producto que no tenía. Nunca pisa
    un código ya puesto ni repite el de otro producto: eso lo decide el dueño
    en la ficha del POS. */
-app.put('/api/taller/bodega/productos/:id/codigo', authTaller(), async (req, res) => {
+app.put('/api/taller/bodega/productos/:id/codigo', authTaller(), exigirPermisoTaller('bodega'), async (req, res) => {
   try {
     if (!req.persona) return enviarError(res, 403, SIN_PERSONA_TALLER);
     const productoId = Number(req.params.id);
@@ -21174,7 +21311,7 @@ app.put('/api/taller/bodega/productos/:id/codigo', authTaller(), async (req, res
    Productos → Ver: Borradores. La foto se sube igual que en la ficha
    (subirFotoProducto) y se borra del bucket al quitarla o al eliminar el
    producto (borrarFotosSinUso). */
-app.post('/api/taller/bodega/borradores', authTaller(), async (req, res) => {
+app.post('/api/taller/bodega/borradores', authTaller(), exigirPermisoTaller('bodega'), async (req, res) => {
   try {
     if (!req.persona) return enviarError(res, 403, SIN_PERSONA_TALLER);
     const codigo = String(req.body?.codigo || '').trim();
