@@ -471,9 +471,21 @@ function actualizarUtilidadPreview() {
 // Carrito de venta
 // ============================================================
 function agregarItemAlCarrito() {
-  const nombre = (elItemNombre?.value || '').trim();
+  /* v176 (sql/111): un servicio o producto "por equipo" primero pregunta marca, modelo,
+     precio y costo (js/equipo-venta.js), y vuelve acá con eso listo. */
+  if (productoSeleccionado?.pide_equipo && typeof equipoVentaPedirYAgregar === 'function' && !equipoVentaListo) {
+    equipoVentaPedirYAgregar(productoSeleccionado);
+    return;
+  }
+  const equipo = typeof equipoVentaListo !== 'undefined' ? equipoVentaListo : null;
+  if (equipo) equipoVentaListo = null;
+
+  const nombreBase = (elItemNombre?.value || '').trim();
+  // "Cambio de Pantalla · Samsung A15": así lo ven el ticket, el historial y las garantías
+  const nombre = equipo && nombreBase ? `${nombreBase} · ${[equipo.marca, equipo.modelo].filter(Boolean).join(' ')}` : nombreBase;
   const cantidad = Number(elItemCantidad?.value) || 0;
-  const costo = esAdmin() ? (Number(elItemCosto?.value) || 0) : 0;
+  // El costo de una venta "por equipo" lo escribe quien cobra (cambia mucho de un modelo a otro)
+  const costo = equipo ? (Number(equipo.costo) || 0) : (esAdmin() ? (Number(elItemCosto?.value) || 0) : 0);
   const precio = Number(elItemPrecio?.value) || 0;
   const tieneSN = !!(elCheckSN && elCheckSN.checked);
   const numeroSerie = tieneSN ? (elItemSN?.value || '').trim() : '';
@@ -498,7 +510,8 @@ function agregarItemAlCarrito() {
   const esPrecioMayorista = (!!precioMayorista && precio === precioMayorista) || (!!precioMayorista2 && precio === precioMayorista2);
   // El mismo producto sin S/N y al mismo precio suma a su línea en vez de repetirla
   // (una línea ya pasada a mayorista también recibe las unidades a precio normal).
-  const igual = producto && !numeroSerie && cart.find(i =>
+  // Una línea "por equipo" va siempre aparte: cada una es de un modelo y precio propios
+  const igual = producto && !numeroSerie && !equipo && cart.find(i =>
     i.producto_id === producto.id && !i.serial_number &&
     (i.precio_unitario === precio || (i.precio_tipo === 'MAYORISTA' && i.precio_normal === precio)) &&
     i.costo_unitario === costo && i.es_servicio === esServicio &&
@@ -535,6 +548,9 @@ function agregarItemAlCarrito() {
       va_al_pozo: !!producto?.va_al_pozo,
       // Lo marcado en la casilla "De mis padres": vale en lo escrito a mano y en un producto de los dos
       propietario: dePadres ? 'PADRES' : 'MIO',
+      // sql/111 (v176): marca y modelo del equipo del cliente
+      equipo_marca: equipo?.marca || null,
+      equipo_modelo: equipo?.modelo || null,
       // Solo para el carrito (fotos y el "+" que pide S/N); normalizarItems() los descarta
       requiere_sn: !!producto?.requiere_sn,
       imagen_urls: producto ? (producto.imagen_urls || []).filter(Boolean) : []

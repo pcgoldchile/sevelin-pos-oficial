@@ -298,6 +298,8 @@ const API = {
        trabajador). Es un aviso de fondo: si la sesión venció, no saca al
        usuario a mitad de una venta por esto. */
     margenCarrito: (datos) => apiRequest('/pos/margen-carrito', { method: 'POST', body: datos, silencioso: true }),
+    // sql/111 (v176): marcas y modelos más vendidos, para la ventana "¿Para qué equipo?"
+    equiposFrecuentes: () => apiRequest('/ventas/equipos-frecuentes', { silencioso: true }),
     // v112: el dueño escribe su clave en la caja del trabajador para cobrar bajo el precio mínimo.
     autorizarMargen: (datos) => apiRequest('/pos/autorizar-margen', { method: 'POST', body: datos, silencioso: true }),
     // sql/79 (v108): N° de boleta o factura (opcional) y máquina de tarjetas.

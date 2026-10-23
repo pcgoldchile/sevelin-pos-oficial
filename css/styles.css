@@ -5292,6 +5292,21 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
 /* ===== v167: Puntos Sevelin en el cobro (js/puntos-caja.js) ===== */
 .pago-puntos { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
 
+/* v176 (js/equipo-venta.js): "¿Para qué equipo?" al agregar un servicio o producto por equipo */
+.equipo-venta { max-width: 520px; }
+.equipo-venta .etiqueta-pos { margin: 12px 0 6px; display: block; }
+.equipo-venta-marcas { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; }
+.equipo-venta-marca { min-height: 42px; padding: 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-soft); color: var(--text-100); font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+.equipo-venta-marca:hover { border-color: var(--primary, #3b82f6); }
+.equipo-venta-marca.activo { border-color: var(--primary, #3b82f6); background: var(--primary, #3b82f6); color: #fff; }
+.equipo-venta-marca.otra { font-weight: 500; color: var(--text-muted); }
+.equipo-venta-otra { margin-top: 8px; }
+.equipo-venta-montos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.equipo-venta-montos small { font-weight: 400; opacity: .7; }
+.equipo-venta-resumen { margin: 12px 0 0; font-size: 13px; color: var(--text-muted); }
+.equipo-venta-error { margin: 6px 0 0; font-size: 13px; color: var(--red, #ef4444); font-weight: 600; }
+@media (max-width: 480px) { .equipo-venta-montos { grid-template-columns: 1fr; } }
+
 /* v175 (js/pago-pasos.js): el cobro de una venta nueva va de a un paso por pantalla, sin bajar con la rueda */
 .pago-pasos { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-soft); }
 .pago-pasos[hidden] { display: none; }

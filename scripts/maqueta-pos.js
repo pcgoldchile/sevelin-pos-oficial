@@ -181,6 +181,14 @@ app.patch('/api/pendientes/:id', (req, res) => {
   res.json(p);
 });
 
+// v176 (sql/111): marcas y modelos más vendidos, para "¿Para qué equipo?" (datos de ejemplo)
+app.get('/api/ventas/equipos-frecuentes', (_req, res) => res.json({ marcas: [
+  { marca: 'Samsung', veces: 14, modelos: ['A15', 'A05s', 'A24', 'A54'] },
+  { marca: 'Xiaomi', veces: 9, modelos: ['Redmi Note 13', 'Redmi 13C', 'Redmi Note 12'] },
+  { marca: 'Motorola', veces: 6, modelos: ['G24', 'E13', 'G54'] },
+  { marca: 'iPhone', veces: 4, modelos: ['11', '12', '13 Pro Max'] }
+] }));
+
 // v173: "➕ Agregable" (sql/110), en memoria. Misma validación que el servidor real.
 app.put('/api/productos/:id/agregable', (req, res) => {
   const id = Number(req.params.id);
@@ -327,6 +335,9 @@ app.put('/api/textos/preguntas_diagnostico', (req, res) => {
 
 // v103: venta mayorista (sql/76 + supabase/39). Dos productos con precio mayorista, uno
 // desactivado solo por la base (subió el costo), y cuentas en los cuatro estados.
+// v176 (sql/111): un servicio "por equipo", como el Cambio de Pantalla #275 real
+productos.push({ ...productos.find(p => p.id === 900), id: 275, nombre: 'Cambio de Pantalla para Celulares (Todas las Marcas)',
+  sku: 'cambio-de-pantalla-para-celulares', precio_unitario: 25000, costo_unitario: 0, pide_equipo: true, es_servicio: true, stock_ilimitado: true });
 // v173: un monitor solo VGA (como el #533 real), con su texto de Facebook ya guardado, para ver la
 // pregunta "¿ofrecer el adaptador HDMI a VGA (#104)?" de la tarjeta ➕ Agregable.
 productos.push({ ...productos.find(p => p.id === 157), id: 533, nombre: 'Monitor Samsung SyncMaster 21.5" Full HD 5 ms Negro 2233SN',

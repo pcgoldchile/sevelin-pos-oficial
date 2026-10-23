@@ -1016,6 +1016,7 @@ const CAMPOS_PRODUCTO = [
   'requiere_sn', 'descripcion',
   'stock_minimo', 'alerta_stock', 'es_repuesto', 'stock_ilimitado', 'usa_lotes',
   'es_servicio',   // sql/52: servicio aunque no esté en la tienda
+  'pide_equipo',   // sql/111: al venderlo, la caja pregunta marca y modelo
   // Controles de la tienda web (e-commerce Fase 0). imagen_urls NO va acá:
   // se administra aparte con POST /api/productos/:id/imagen (append/quitar
   // una foto a la vez), no reemplazando el arreglo completo en cada guardado.
@@ -6618,12 +6619,58 @@ async function normalizarItems(items, rolSolicitante) {
       meses_garantia: garantia?.meses_garantia ?? 6,
       // Acuerdo con los padres (sql/90): foto de quién era la unidad vendida.
       propietario: propietarioDeLinea(it.producto_id ? propietarioCatalogo[it.producto_id] : null, it.propietario),
+      // sql/111 (v176): marca y modelo del equipo del cliente, en un servicio o producto "por equipo"
+      equipo_marca: textoDeEquipo(it.equipo_marca, 40),
+      equipo_modelo: textoDeEquipo(it.equipo_modelo, 60),
       // Lo que eligió la caja sobre el pozo; se convierte en pesos después de
       // totalizar (aplicarPozo) y nunca llega a la base con este nombre.
       _pozo: it.pozo && typeof it.pozo === 'object' ? it.pozo : null
     };
   });
 }
+
+/* Marca o modelo escrito en la caja: una línea, sin espacios de más, con tope. Vacío = null. */
+function textoDeEquipo(valor, tope) {
+  const t = String(valor ?? '').replace(/\s+/g, ' ').trim().slice(0, tope);
+  return t || null;
+}
+
+/* ============================================================
+   SERVICIOS "POR EQUIPO" (sql/111, v176)
+   ------------------------------------------------------------
+   Las marcas y modelos más vendidos (últimas 3.000 líneas), para que la caja los
+   sugiera al agregar un servicio como "Cambio de Pantalla" o "Desbloqueo
+   FRP": la marca como botón y el modelo al escribir. Sin costos ni precios.
+   ============================================================ */
+app.get('/api/ventas/equipos-frecuentes', auth(), async (req, res) => {
+  try {
+    // venta_items no tiene fecha propia: se toman las últimas 3.000 líneas que llevan equipo
+    const { data, error } = await db.from('venta_items')
+      .select('equipo_marca, equipo_modelo')
+      .not('equipo_marca', 'is', null)
+      .order('id', { ascending: false })
+      .limit(3000);
+    if (error) return enviarErrorBD(res, error, 'equipos-frecuentes');
+    const porMarca = new Map();
+    for (const f of data || []) {
+      const marca = String(f.equipo_marca || '').trim();
+      if (!marca) continue;
+      const m = porMarca.get(marca) || { marca, veces: 0, modelos: new Map() };
+      m.veces += 1;
+      const modelo = String(f.equipo_modelo || '').trim();
+      if (modelo) m.modelos.set(modelo, (m.modelos.get(modelo) || 0) + 1);
+      porMarca.set(marca, m);
+    }
+    const marcas = [...porMarca.values()].sort((a, b) => b.veces - a.veces).slice(0, 30).map(m => ({
+      marca: m.marca,
+      veces: m.veces,
+      modelos: [...m.modelos.entries()].sort((a, b) => b[1] - a[1]).slice(0, 40).map(([modelo]) => modelo)
+    }));
+    res.json({ marcas });
+  } catch (e) {
+    return enviarErrorBD(res, e, 'equipos-frecuentes');
+  }
+});
 
 /* ============================================================
    ACUERDO CON LOS PADRES (sql/90, v133)

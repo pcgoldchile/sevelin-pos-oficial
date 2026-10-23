@@ -2181,6 +2181,7 @@ function abrirModalProducto(producto = null) {
     if (elProdSinAlertaStock) elProdSinAlertaStock.checked = producto.alerta_stock === false;
     if (elProdStockIlimitado) elProdStockIlimitado.checked = !!producto.stock_ilimitado;
     if (elProdEsServicio) elProdEsServicio.checked = !!producto.es_servicio;
+    { const elEq = document.getElementById('prodPideEquipo'); if (elEq) elEq.checked = !!producto.pide_equipo; }   // sql/111
     if (elProdPropietario) elProdPropietario.value = ['PADRES', 'AMBOS'].includes(producto.propietario) ? producto.propietario : 'MIO';
     if (elProdVaAlPozo) elProdVaAlPozo.checked = !!producto.va_al_pozo;
     pintarVaAlPozoProducto();
@@ -2278,6 +2279,7 @@ function abrirModalProducto(producto = null) {
     if (elProdUsaLotes) elProdUsaLotes.checked = true;
     if (elProdStockIlimitado) elProdStockIlimitado.checked = false;
     if (elProdEsServicio) elProdEsServicio.checked = false;
+    { const elEq = document.getElementById('prodPideEquipo'); if (elEq) elEq.checked = false; }   // sql/111
     if (elProdPropietario) elProdPropietario.value = 'MIO';
     if (elProdVaAlPozo) elProdVaAlPozo.checked = false;
     pintarVaAlPozoProducto();
@@ -2518,6 +2520,7 @@ function construirPayloadProducto() {
     alerta_stock: !(elProdSinAlertaStock && elProdSinAlertaStock.checked),
     stock_ilimitado: !!(elProdStockIlimitado && elProdStockIlimitado.checked),
     es_servicio: !!(elProdEsServicio && elProdEsServicio.checked),
+    pide_equipo: !!document.getElementById('prodPideEquipo')?.checked,   // sql/111: la caja pregunta marca y modelo
     // sql/90: de quién es la mercadería; y el pozo del papá solo aplica a un servicio
     propietario: elProdPropietario?.value || 'MIO',
     costo_provisorio: productoEsDePadres() && !!elProdCostoProvisorio?.checked,   // sql/94
