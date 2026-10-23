@@ -5892,6 +5892,12 @@
         <span>Total a pagar</span>
         <strong id="pagoTotal">$0</strong>
       </div>
+      <!-- v175 (js/pago-pasos.js): en una venta nueva el cobro va de a un paso por pantalla, sin bajar con la rueda -->
+      <div class="pago-pasos" id="pagoPasosBarra" hidden>
+        <button type="button" class="pago-pasos-atras" id="btnPagoPasoAtras" aria-label="Paso anterior" title="Paso anterior">←</button>
+        <div class="pago-pasos-texto"><small id="pagoPasoNumero">Paso 1 de 3</small><strong id="pagoPasoTitulo"></strong></div>
+        <div class="pago-pasos-puntos" id="pagoPasosPuntos" aria-hidden="true"></div>
+      </div>
 
       <!-- sql/96 (v163): ¿de dónde vino el cliente?, a la vista en el cobro y de un toque. Antes
            estaba solo como lista en el carrito y en 0 de 26 ventas (15 al 19-10-2026) quedó anotado.
@@ -6016,6 +6022,7 @@
 
       <div class="modal-foot">
         <button class="btn btn-ghost" id="btnCancelarPago">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="btnPagoPasoSiguiente" hidden>Siguiente →</button>
         <button class="btn btn-green" id="btnConfirmarPago">Confirmar Venta</button>
       </div>
     </div>
@@ -8640,6 +8647,7 @@
   <script src="js/pos-layout.js"></script>   <!-- después de pos.js: solo toca la maquetación -->
   <script src="js/caja.js"></script>   <!-- apertura/arqueo de caja en el POS (punto 4) -->
   <script src="js/atajos.js"></script>
+  <script src="js/pago-pasos.js"></script>   <!-- v175: el cobro por pasos (después de pago.js, puntos-caja.js y atajos.js) -->
   <script src="js/balance.js"></script>
   <script src="js/finanzas-ajustes.js"></script>   <!-- ajustes de saldo + checklist (req 3 y 4) -->
   <script src="js/utilidades.js"></script>   <!-- después de balance.js: reutiliza cerrarModal y el panel de Finanzas -->

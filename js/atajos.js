@@ -312,6 +312,9 @@ function navegarModalPago(e) {
   const dte = document.getElementById('modalDte');
   if (dte && dte.classList.contains('show')) return false;
 
+  // v175: en los pasos "¿de dónde vino?" y "Puntos" las flechas y Enter no eligen medio de pago (js/pago-pasos.js)
+  if (modal.dataset.paso && modal.dataset.paso !== 'pago') return false;
+
   const botones = Array.from(modal.querySelectorAll('.pago-metodo-btn'));
   if (!botones.length) return false;
 

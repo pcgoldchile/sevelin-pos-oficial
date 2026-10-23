@@ -5291,6 +5291,43 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
 
 /* ===== v167: Puntos Sevelin en el cobro (js/puntos-caja.js) ===== */
 .pago-puntos { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
+
+/* v175 (js/pago-pasos.js): el cobro de una venta nueva va de a un paso por pantalla, sin bajar con la rueda */
+.pago-pasos { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-soft); }
+.pago-pasos[hidden] { display: none; }
+.pago-pasos-atras { width: 36px; height: 36px; flex: 0 0 auto; border-radius: 50%; border: 1px solid var(--border); background: transparent; color: var(--text-100); font-size: 17px; cursor: pointer; }
+.pago-pasos-atras:hover:not(:disabled) { border-color: var(--primary, #3b82f6); }
+.pago-pasos-atras:disabled { opacity: .3; cursor: default; }
+.pago-pasos-texto { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.pago-pasos-texto small { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; opacity: .65; }
+.pago-pasos-texto strong { font-size: 15.5px; line-height: 1.25; }
+.pago-pasos-puntos { display: flex; align-items: center; gap: 5px; }
+.pago-pasos-puntos span { width: 8px; height: 8px; border-radius: 50%; background: var(--border-strong, #555); transition: width .2s; }
+.pago-pasos-puntos span.hecho { background: var(--primary, #3b82f6); opacity: .5; }
+.pago-pasos-puntos span.actual { width: 22px; border-radius: 4px; background: var(--primary, #3b82f6); }
+/* Cada paso muestra solo lo suyo */
+.pago-por-pasos[data-paso="vino"] :is(#pagoPuntosBox, #pagoMaquinaBox, #pagoMetodos, #pagoMixtoBox, #pagoEfectivoBox) { display: none !important; }
+.pago-por-pasos[data-paso="puntos"] :is(#pagoVinoBox, #pagoMaquinaBox, #pagoMetodos, #pagoMixtoBox, #pagoEfectivoBox) { display: none !important; }
+.pago-por-pasos[data-paso="pago"] :is(#pagoVinoBox, #pagoPuntosBox) { display: none !important; }
+.pago-por-pasos :is(.pago-vino, .pago-puntos) > .pago-maquina-titulo { display: none; }
+/* La barra de pasos ya dice qué hacer; entrega y origen del pago van solo en el último paso */
+.pago-por-pasos #pagoSubtitulo { display: none; }
+/* "Tipo de entrega" y "Origen del pago" dentro de esta ventana no los lee ningún código (la entrega se elige en su
+   propia ventana, #modalEntrega, al final del cobro): solo ocupaban espacio y obligaban a bajar con la rueda. */
+#modalPago :is(#pagoEntregaBox, #pagoOrigenBox) { display: none !important; }
+.pago-por-pasos .pago-total { padding-block: 10px; }
+.pago-por-pasos .pago-puntos { border: 0; padding: 0; }
+/* Paso 1: botones grandes, fáciles de tocar */
+.pago-por-pasos .pago-vino-botones { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.pago-por-pasos .pago-vino-btn { min-height: 48px; padding: 10px; font-size: 14px; }
+/* Paso 3: los medios de pago en dos columnas */
+/* (la lista vertical de siempre lleva !important; atajos.js calcula las columnas, así que ← → ↑ ↓ siguen sirviendo) */
+.pago-por-pasos[data-paso="pago"] .pago-metodos-lista { display: grid !important; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pago-por-pasos[data-paso="pago"] .pago-metodos-lista { margin-top: 10px; }
+.pago-por-pasos[data-paso="pago"] .pago-metodos-lista .metodo-pago { padding: 8px 12px; gap: 10px; }
+.pago-por-pasos :is(.pago-maquina, .pago-vino, .pago-puntos) { margin-top: 10px; }
+.pago-por-pasos #pagoTitulo { margin-bottom: 4px; }
+@media (max-width: 480px) { .pago-por-pasos .pago-vino-botones { grid-template-columns: 1fr 1fr; } }
 .pago-puntos-buscar { display: flex; gap: 6px; }
 .pago-puntos-buscar input { flex: 1; }
 .puntos-caja-cuenta { display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; }
