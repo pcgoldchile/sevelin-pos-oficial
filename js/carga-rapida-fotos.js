@@ -23,6 +23,7 @@ let crfCola = [];   // [File, File, ...], en el orden en que se van a crear
 let crfIndice = 0;
 let crfCreados = 0;
 let crfCategoriaId = null;
+let crfPropietario = 'MIO';   // 'MIO' | 'PADRES' — sql/94: mercadería de los padres nunca es una compra
 // Lo que se recuerda de una foto a la siguiente (no el color, que es propio de cada una).
 let crfUltimo = { modelo: '', precio: 0, costo: 0, stock: 1 };
 
@@ -48,9 +49,11 @@ function abrirCargaRapidaFotos() {
   crfIndice = 0;
   crfCreados = 0;
   crfUltimo = { modelo: '', precio: 0, costo: 0, stock: 1 };
+  crfPropietario = 'MIO';
   if (elCrfArchivos) elCrfArchivos.value = '';
   if (elCrfPasoConfig) elCrfPasoConfig.style.display = '';
   if (elCrfPasoFoto) elCrfPasoFoto.style.display = 'none';
+  pintarCrfPropietario();
   poblarCategoriaCrf();
   if (typeof cargarEsquemaCaracteristicas === 'function') cargarEsquemaCaracteristicas();
   elCrfModal.classList.add('show');
@@ -76,6 +79,14 @@ async function poblarCategoriaCrf() {
     console.error('No se pudieron cargar las categorías:', err.message || err);
     showToast('No se pudieron cargar las categorías', 'err');
   }
+}
+
+function pintarCrfPropietario() {
+  document.querySelectorAll('#crfPropietario [data-crf-propietario]').forEach(b => {
+    const activo = b.dataset.crfPropietario === crfPropietario;
+    b.classList.toggle('activo', activo);
+    b.setAttribute('aria-checked', activo ? 'true' : 'false');
+  });
 }
 
 function crfCategoriaYSubcategoria() {
@@ -163,18 +174,26 @@ async function crfGuardarYSeguir() {
   if (modeloVal) caracteristicas.modelo_celular = [modeloVal];
   if (elCrfTipo?.value) caracteristicas.tipo_funda = [elCrfTipo.value];
 
+  const esDePadres = crfPropietario === 'PADRES';
+  const precio = Number(elCrfPrecio?.value) || 0;
+  const costo = Number(elCrfCosto?.value) || 0;
+  const stock = Number(elCrfStock?.value) || 0;
+
   const payload = {
     nombre,
     categoria_web: categoriaWeb,
     categoria_id: Number(crfCategoriaId),
     subcategoria_web: subcategoriaWeb,
-    precio_unitario: Number(elCrfPrecio?.value) || 0,
-    costo_unitario: Number(elCrfCosto?.value) || 0,
-    stock: Number(elCrfStock?.value) || 0,
+    precio_unitario: precio,
+    // sql/94: lo de los padres nunca nace con costo/stock puestos en el producto — entran
+    // por la "compra" sin compra de abajo, que es la que deja el registro correcto.
+    costo_unitario: esDePadres ? 0 : costo,
+    stock: esDePadres ? 0 : stock,
     publicado_web: true,
     condicion: 'nuevo',
     meses_garantia: 6,
     usa_lotes: true,
+    propietario: esDePadres ? 'PADRES' : 'MIO',
     caracteristicas
   };
 
@@ -187,13 +206,23 @@ async function crfGuardarYSeguir() {
     const creado = await API.productos.crear(payload);
     if (creado?.id) await API.productos.subirImagen(creado.id, dataUrlWebp);
 
+    // sql/94 (v138): "me la entregaron mis padres" — sube el stock sin dejar compra
+    // ni gasto, con costo_provisorio = true (el costo es "al ojo" hasta que se confirme).
+    if (esDePadres && creado?.id && stock > 0) {
+      await API.productos.crearCompra(creado.id, {
+        fecha_compra: typeof todayISO === 'function' ? todayISO() : new Date().toISOString().slice(0, 10),
+        cantidad: stock,
+        costo_unitario: costo,
+        de_padres: true,
+        propietario: 'PADRES',
+        costo_provisorio: true,
+        sumar_stock: true,
+        activar_lotes: true
+      });
+    }
+
     crfCreados++;
-    crfUltimo = {
-      modelo: modeloVal,
-      precio: payload.precio_unitario,
-      costo: payload.costo_unitario,
-      stock: payload.stock
-    };
+    crfUltimo = { modelo: modeloVal, precio, costo, stock };
     showToast(`Creado: ${nombre}`, 'ok');
     crfIndice++;
     crfMostrarFotoActual();
@@ -216,6 +245,12 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnCargaRapidaFotos')?.addEventListener('click', abrirCargaRapidaFotos);
   document.getElementById('btnCrfCerrar')?.addEventListener('click', () => cerrarModal('modalCargaRapidaFotos'));
   document.getElementById('btnCrfEmpezar')?.addEventListener('click', crfEmpezar);
+  document.getElementById('crfPropietario')?.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-crf-propietario]');
+    if (!b) return;
+    crfPropietario = b.dataset.crfPropietario;
+    pintarCrfPropietario();
+  });
   document.getElementById('btnCrfSaltar')?.addEventListener('click', crfSaltar);
   document.getElementById('btnCrfGuardarSeguir')?.addEventListener('click', crfGuardarYSeguir);
   elCrfModelo?.addEventListener('input', crfActualizarNombrePreview);

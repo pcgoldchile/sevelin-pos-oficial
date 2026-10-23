@@ -7738,6 +7738,17 @@
           <label for="crfCategoriaWeb">Categoría</label>
           <select id="crfCategoriaWeb"></select>
         </div>
+        <div class="field">
+          <p class="compra-llegada-titulo">¿De quién es esta mercadería?</p>
+          <div class="compra-llegada-opciones" id="crfPropietario" role="radiogroup" aria-label="¿De quién es esta mercadería?">
+            <button type="button" class="compra-llegada-opcion activo" data-crf-propietario="MIO" role="radio" aria-checked="true">
+              <strong>🧍 Mía</strong><small>Compra normal: queda pendiente de confirmar, como cualquier producto nuevo con stock.</small>
+            </button>
+            <button type="button" class="compra-llegada-opcion" data-crf-propietario="PADRES" role="radio" aria-checked="false">
+              <strong>🤝 De mis padres</strong><small>Entra al stock a costo, sin compra ni gasto. La ganancia es tuya.</small>
+            </button>
+          </div>
+        </div>
         <div class="modal-foot">
           <button class="btn btn-ghost" id="btnCrfCerrar" type="button">Cancelar</button>
           <button class="btn btn-primary" id="btnCrfEmpezar" type="button">Empezar →</button>
