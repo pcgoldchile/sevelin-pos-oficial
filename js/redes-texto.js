@@ -379,7 +379,7 @@ function bloqueAgregableParaRedes(p, hoy) {
   const a = agregableParaRedes(p, hoy);
   if (!a || !(Number(a.precio) > 0)) return '';
   const motivo = String(p?.agregable_motivo || '').replace(/\s+/g, ' ').trim().replace(/\.+$/, '');
-  return `${REDES_MARCA_AGREGABLE}\n🔌 ${a.nombre}: ${pesosParaRedes(a.precio)}${motivo ? `\n${motivo}.` : ''}\nPídelo junto con tu compra.`;
+  return `${REDES_MARCA_AGREGABLE}\n👉 ${a.nombre}: ${pesosParaRedes(a.precio)}${motivo ? `\n${motivo}.` : ''}\nPídelo junto con tu compra.`;
 }
 
 /* Pone (o saca, o actualiza) el bloque en un texto ya escrito. Un texto vacío queda vacío. */

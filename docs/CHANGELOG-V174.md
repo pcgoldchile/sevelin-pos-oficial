@@ -47,3 +47,12 @@ formateo").
 - Maqueta del POS: subir un servicio de $25.000 a $35.000, bajar el adaptador a $3.000 (pasa) y a $2.000 (frenado: "cuesta
   $2.201"); sin errores en consola.
 - Fichas: los 7 textos sin "$10.000 como tope"; Instagram bajo 2.200 letras; los 4 nuevos sincronizados en la tienda.
+
+## 3. Instalación de Windows como agregable (mismo día)
+
+- Nuevo servicio **#539 "Instalación de Windows desde Cero (Adicional a Mantenimiento o Traspaso)"**, $15.000, publicado
+  (hace falta para que salga como casilla). Es el **agregable** de #178, #88 y #89: en sevelin.cl aparece "➕ Agrégale
+  (opcional)" junto al botón de compra, y en el texto de Facebook el bloque "➕ OPCIONAL" (en el Instagram de #89 no cabía:
+  queda sin el bloque). SQL en `docs/instalacion-windows-agregable-2026-10-22.sql`.
+- Un servicio ya puede ser agregable (antes el servidor lo rechazaba). La línea de la descripción dice "Agrega [nombre]",
+  sin "el", y el bloque de redes usa 👉 en vez de 🔌.

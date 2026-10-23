@@ -188,7 +188,7 @@ function pintarBusquedaAgregable() {
   if (texto.length < 2 || !agregableProductoId) { cont.innerHTML = ''; return; }
   const palabras = texto.split(/\s+/);
   const candidatos = (typeof productsList !== 'undefined' ? productsList : [])
-    .filter(p => !p.archivado && !p.es_servicio && Number(p.id) !== Number(agregableProductoId) && Number(p.id) !== Number(agregableIdActual))
+    .filter(p => !p.archivado && Number(p.id) !== Number(agregableProductoId) && Number(p.id) !== Number(agregableIdActual))
     .filter(p => palabras.every(w => `${p.nombre || ''} ${p.sku || ''}`.toLowerCase().includes(w)))
     .sort((a, b) => (Number(agregableTieneStock(b)) - Number(agregableTieneStock(a)))
       || (Number(!!b.publicado_web) - Number(!!a.publicado_web)) || String(a.nombre).localeCompare(String(b.nombre)))

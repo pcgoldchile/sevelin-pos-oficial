@@ -191,7 +191,7 @@ app.put('/api/productos/:id/agregable', (req, res) => {
   if (agregableId === id) return res.status(400).json({ error: 'Un producto no puede ser su propio agregable' });
   const elegido = agregableId === null ? null : productos.find(x => x.id === agregableId);
   if (agregableId !== null && (!elegido || elegido.archivado)) return res.status(400).json({ error: 'Ese accesorio no existe o está archivado' });
-  if (elegido?.es_servicio) return res.status(400).json({ error: 'Un servicio no se puede ofrecer como agregable' });
+  // 22-10-2026: un servicio sí puede ser agregable
   const motivo = agregableId === null ? '' : String(req.body?.motivo ?? '').replace(/\s+/g, ' ').trim();
   if (motivo.length > 140) return res.status(400).json({ error: 'La frase puede tener hasta 140 letras' });
   p.agregable_id = agregableId;

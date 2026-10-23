@@ -5796,7 +5796,7 @@ app.put('/api/productos/:id/agregable', auth(true), async (req, res) => {
       .select('id, archivado, es_servicio').eq('id', agregableId).maybeSingle();
     if (errElegido) return enviarErrorBD(res, errElegido, 'validar agregable');
     if (!elegido || elegido.archivado) return enviarError(res, 400, 'Ese accesorio no existe o está archivado');
-    if (elegido.es_servicio) return enviarError(res, 400, 'Un servicio no se puede ofrecer como agregable');
+    // 22-10-2026: un servicio sí puede ser agregable (ej. Instalación de Windows en un traspaso o mantenimiento)
   }
 
   const { data, error } = await db.from('productos')
