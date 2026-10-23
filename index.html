@@ -7867,6 +7867,8 @@
           <div class="field"><label for="cmReferencia">N° de pedido o boleta (opcional)</label><input type="text" id="cmReferencia" maxlength="80" placeholder="Ej: 2000012345"></div>
         </div>
         <div id="cmTabla" style="margin-top:12px; overflow-x:auto;"></div>
+        <!-- v179: selector de archivos compartido por todas las filas; "Agregar foto" (js/carga-masiva.js) decide a cuál -->
+        <input type="file" id="cmFotoInput" accept="image/*" multiple hidden>
         <p class="modal-hint">El precio de venta puede quedar para después. Si un producto se suma a uno que ya existe, su precio no cambia.</p>
       </div>
 

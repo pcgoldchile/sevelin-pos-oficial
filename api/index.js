@@ -4428,7 +4428,10 @@ app.post('/api/productos/carga-masiva', auth(true), async (req, res) => {
     }
     // v131: la marca que leyó la IA. Solo se usa al CREAR; la de un producto que ya existe no se toca.
     const marca = String(f.marca || '').replace(/^\?+$/, '').trim().slice(0, 80) || null;
-    items.push({ nombre, productoId, precio, costo, datos, marca });
+    // v179 (dueño, 23-10-2026): fotos opcionales por fila, subidas por subirFotoProducto() más abajo.
+    const imagenes = Array.isArray(f.imagenes)
+      ? f.imagenes.filter(x => typeof x === 'string' && x.startsWith('data:image/')).slice(0, 6) : [];
+    items.push({ nombre, productoId, precio, costo, datos, marca, imagenes });
   }
 
   try {
@@ -4479,6 +4482,16 @@ app.post('/api/productos/carga-masiva', auth(true), async (req, res) => {
           producto = { ...producto, archivado: false };
           desarchivado = true;
         }
+        /* v179 (dueño, 23-10-2026): "todos los productos que creo deben tener PEPS por
+           defecto" — uno nuevo (no encargo) ya nace con usa_lotes=true más arriba; esto
+           cubre al que YA EXISTÍA y todavía no lo tenía (mismo criterio que activar_lotes
+           en PUT /productos/:id/compras). Un encargo no lleva stock propio: no aplica. */
+        if (estado !== 'encargo' && !producto.usa_lotes && !producto.stock_ilimitado) {
+          await crearCapaInicialSiFalta(producto);
+          const { error: errLotes } = await db.from('productos').update({ usa_lotes: true }).eq('id', producto.id);
+          if (errLotes) throw errLotes;
+          producto = { ...producto, usa_lotes: true };
+        }
         let compra = null;
         if (estado === 'padres') {
           const listo = await prepararProductoDePadres(producto);
@@ -4489,10 +4502,29 @@ app.post('/api/productos/carga-masiva', auth(true), async (req, res) => {
             sinCompra: estado === 'padres', enCamino: estado === 'por_llegar', fechaLlegada: eta, usuario
           });
         }
+        /* v179: fotos de la fila — solo para un producto NUEVO de esta carga (lo que
+           ya existía mantiene sus fotos de siempre, se administran desde su ficha). Una
+           foto que falla no tumba la fila: ya quedó la compra registrada, que importa más. */
+        let fotosSubidas = 0;
+        if (creado) {
+          for (const b64 of it.imagenes) {
+            try { await subirFotoProducto(producto.id, b64); fotosSubidas++; }
+            catch (errFoto) { console.error('[CARGA MASIVA] no se pudo subir una foto:', errFoto.message); }
+          }
+        }
+        /* v179: "lo que pongo por llegar debe subirse a la página web" — pero nunca sin
+           foto (se vería "un hueco" en sevelin.cl, igual que en la ficha normal). Solo
+           para un producto NUEVO de esta carga: uno que ya existía conserva su estado. */
+        let publicado = !!producto.publicado_web;
+        if (creado && fotosSubidas > 0 && !publicado) {
+          const { error: errPub } = await db.from('productos').update({ publicado_web: true }).eq('id', producto.id);
+          if (!errPub) publicado = true;
+        }
         resultados.push({
           ok: true, producto_id: producto.id, nombre: producto.nombre, creado, desarchivado,
           cantidad: it.datos ? it.datos.cantidad : 0, costo_unitario: it.costo,
-          stock_nuevo: compra ? compra.stock_nuevo : num(producto.stock)
+          stock_nuevo: compra ? compra.stock_nuevo : num(producto.stock),
+          fotos_subidas: fotosSubidas, publicado_web: publicado, usa_lotes: !!producto.usa_lotes
         });
       } catch (errFila) {
         console.error('[CARGA MASIVA] fila fallida:', it.nombre, errFila.message);
@@ -4508,6 +4540,9 @@ app.post('/api/productos/carga-masiva', auth(true), async (req, res) => {
       sumados: buenos.filter(r => !r.creado).length,
       fallidos: resultados.length - buenos.length,
       total_compra: buenos.reduce((a, r) => a + r.cantidad * r.costo_unitario, 0),
+      // v179: para el aviso final — cuántos quedaron con foto y publicados de una
+      publicados: buenos.filter(r => r.creado && r.publicado_web).length,
+      sin_foto: buenos.filter(r => r.creado && !r.fotos_subidas).length,
       proveedor,
       resultados
     });

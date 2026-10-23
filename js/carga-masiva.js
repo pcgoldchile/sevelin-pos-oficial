@@ -103,26 +103,80 @@ document.addEventListener('DOMContentLoaded', () => {
     if (campo === 'incluir') fila.incluir = el.checked;
     else if (campo === 'nombre') fila.nombre = el.value;
     else if (campo === 'marca') fila.marca = el.value;
-    else if (campo === 'destino') fila.destino = el.value;
     else fila[campo] = el.value === '' ? '' : Number(el.value);
     pintarResumenCargaMasiva();
   };
   tabla?.addEventListener('input', anotar);
   tabla?.addEventListener('change', anotar);
-  /* v130: buscador por fila. Solo se rehacen las opciones de ESA fila, para
-     no perder el foco de lo que se está escribiendo. */
-  tabla?.addEventListener('input', (e) => {
-    const el = e.target.closest('[data-cm-buscar]');
+
+  /* v179: combo "¿Ya existe?" — abrir al enfocar, filtrar mientras se escribe
+     (sin repintar la tabla entera, para no perder el foco) y elegir con un clic. */
+  tabla?.addEventListener('focusin', (e) => {
+    const el = e.target.closest('[data-cm-combo-input]');
     if (!el) return;
-    const i = Number(el.dataset.cmBuscar);
+    const i = Number(el.dataset.cmComboInput);
+    const fila = cargaMasiva.filas[i];
+    if (!fila) return;
+    fila.comboAbierto = true;
+    fila.busqueda = '';
+    fila.buscados = [];
+    el.value = '';
+    actualizarComboCargaMasiva(i, { mantenerTexto: true });
+  });
+  tabla?.addEventListener('input', (e) => {
+    const el = e.target.closest('[data-cm-combo-input]');
+    if (!el) return;
+    const i = Number(el.dataset.cmComboInput);
     const fila = cargaMasiva.filas[i];
     if (!fila) return;
     fila.busqueda = el.value;
     fila.buscados = buscarEnCatalogoCargaMasiva(el.value);
-    const sel = tabla.querySelector(`select[data-cm-fila="${i}"][data-cm-campo="destino"]`);
-    if (sel) sel.innerHTML = opcionesDestinoCargaMasiva(fila);
-    const nota = tabla.querySelector(`[data-cm-nota="${i}"]`);
-    if (nota) nota.textContent = notaBusquedaCargaMasiva(fila);
+    actualizarComboCargaMasiva(i, { mantenerTexto: true });
+  });
+  // La lista de opciones cuelga de <body> (ver posicionarComboLista): el clic se
+  // escucha en document, no en la tabla.
+  document.addEventListener('click', (e) => {
+    const op = e.target.closest('[data-cm-opcion]');
+    if (!op) return;
+    const [i, valor] = op.dataset.cmOpcion.split(':');
+    const fila = cargaMasiva.filas[Number(i)];
+    if (!fila) return;
+    fila.destino = valor;
+    fila.comboAbierto = false;
+    // Fotos que se habían quedado armando un producto nuevo no sirven si al final se suma a uno que ya existe.
+    if (valor !== 'nuevo') fila.fotos = [];
+    pintarCargaMasiva();
+  });
+  // Clic afuera del campo Y de su lista: cierra. Scrollear la tabla o el modal
+  // también, para que la lista nunca quede pegada en un lugar que ya no es el suyo.
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('[data-cm-combo]') || e.target.closest('.cm-combo-lista')) return;
+    cerrarCombosCargaMasiva();
+  });
+  tabla?.addEventListener('scroll', cerrarCombosCargaMasiva);
+  document.querySelector('#modalCargaMasiva .modal-box')?.addEventListener('scroll', cerrarCombosCargaMasiva);
+
+  /* v179: fotos del producto nuevo — botón "📷+" por fila, un solo selector de
+     archivos compartido (el mismo que ya usa la ficha para comprimir a webp). */
+  tabla?.addEventListener('click', (e) => {
+    const btnAgregar = e.target.closest('[data-cm-foto-agregar]');
+    if (btnAgregar) {
+      cmFotoFilaObjetivo = Number(btnAgregar.dataset.cmFotoAgregar);
+      document.getElementById('cmFotoInput')?.click();
+      return;
+    }
+    const btnQuitar = e.target.closest('[data-cm-foto-quitar]');
+    if (btnQuitar) {
+      const [i, k] = btnQuitar.dataset.cmFotoQuitar.split(':').map(Number);
+      const fila = cargaMasiva.filas[i];
+      if (fila?.fotos) { fila.fotos.splice(k, 1); pintarCargaMasiva(); }
+    }
+  });
+  document.getElementById('cmFotoInput')?.addEventListener('change', (e) => {
+    const archivos = [...(e.target.files || [])].filter(f => f.type.startsWith('image/'));
+    e.target.value = '';
+    if (cmFotoFilaObjetivo === null || !archivos.length) return;
+    agregarFotosCargaMasiva(cmFotoFilaObjetivo, archivos);
   });
 });
 
@@ -136,7 +190,10 @@ function catalogoDeCargaMasiva() {
     .filter(p => !p.es_servicio && !p.stock_ilimitado && !p.es_borrador);
 }
 
-const resumenProductoCargaMasiva = (p) => ({ id: p.id, nombre: p.nombre, stock: Number(p.stock) || 0, archivado: !!p.archivado });
+const resumenProductoCargaMasiva = (p) => ({
+  id: p.id, nombre: p.nombre, stock: Number(p.stock) || 0, archivado: !!p.archivado,
+  usa_lotes: !!p.usa_lotes, foto: (Array.isArray(p.imagen_urls) && p.imagen_urls[0]) || null
+});
 
 /* Búsqueda a mano: todas las palabras escritas tienen que estar en el nombre,
    el SKU, el código de barras o el número del producto. */
@@ -149,26 +206,162 @@ function buscarEnCatalogoCargaMasiva(texto) {
     .slice(0, 12).map(resumenProductoCargaMasiva);
 }
 
-function notaBusquedaCargaMasiva(f) {
-  if (String(f.busqueda || '').trim().length < 2) return '';
-  const n = (f.buscados || []).length;
-  return n ? `${n} encontrado(s): elígelo en la lista de arriba` : 'No hay ninguno con ese nombre';
+/* v179: el <select> + buscador por separado se reemplazó por un solo combo
+   (escribe y aparece la lista, con foto) — "buscarlos por un pop up según lo
+   que escriba, y que salga la foto del producto" (dueño, 23-10-2026). */
+
+/* El producto ya elegido para esta fila (null si es nuevo o no hay nada elegido). */
+function productoElegidoCargaMasiva(f) {
+  if (!f.destino || f.destino === 'nuevo') return null;
+  const p = catalogoDeCargaMasiva().find(p => String(p.id) === String(f.destino));
+  return p ? resumenProductoCargaMasiva(p) : null;
 }
 
-/* Las opciones de "¿ya existe?": producto nuevo, los parecidos que propone el
-   POS, lo que el dueño buscó a mano y el que ya tenga elegido. */
-function opcionesDestinoCargaMasiva(f) {
+/* Candidatos a mostrar en la lista desplegable: los parecidos que propone el
+   POS primero, después lo que el dueño va escribiendo. */
+function candidatosComboCargaMasiva(f) {
   const candidatos = [];
   const agregar = (p) => { if (p && !candidatos.some(c => String(c.id) === String(p.id))) candidatos.push(p); };
   (f.parecidos || []).forEach(agregar);
   (f.buscados || []).forEach(agregar);
-  if (f.destino && f.destino !== 'nuevo' && !candidatos.some(c => String(c.id) === String(f.destino))) {
-    const elegido = catalogoDeCargaMasiva().find(p => String(p.id) === String(f.destino));
-    if (elegido) agregar(resumenProductoCargaMasiva(elegido));
+  return candidatos;
+}
+
+function filaComboCargaMasiva(p, i) {
+  return `<div class="cm-combo-opcion" data-cm-opcion="${i}:${p.id}">
+    ${p.foto ? `<img src="${escHtml(p.foto)}" class="cm-combo-foto" alt="">` : '<span class="cm-combo-sinfoto">🧩</span>'}
+    <span class="cm-combo-opcion-texto">${escHtml(acortar(p.nombre, 56))}
+      <small>Stock ${p.stock}${p.archivado ? ' · archivado: se desarchiva' : ''}${p.usa_lotes ? '' : ' · sin PEPS: se activa al cargar'}</small>
+    </span>
+  </div>`;
+}
+
+/* El contenido de la lista desplegable de una fila (se redibuja solo, sin
+   tocar el resto de la tabla — ver actualizarComboCargaMasiva). */
+function listaComboCargaMasiva(f, i) {
+  const candidatos = candidatosComboCargaMasiva(f);
+  const aviso = (f.parecidos || []).length && !f.destino
+    ? '<div class="cm-combo-aviso">⚠️ Se parece a uno que ya tienes: elige abajo</div>' : '';
+  const nuevo = `<div class="cm-combo-opcion cm-combo-opcion-nuevo" data-cm-opcion="${i}:nuevo">
+    <span class="cm-combo-sinfoto">🆕</span><span>Es un producto nuevo</span></div>`;
+  const vacio = String(f.busqueda || '').trim().length >= 2 && !candidatos.length
+    ? '<div class="cm-combo-vacio">No hay ninguno con ese nombre</div>' : '';
+  return aviso + nuevo + candidatos.map((p, k) => filaComboCargaMasiva(p, i)).join('') + vacio;
+}
+
+/* Celda "¿Ya existe?": el combo + abajo, si hay uno elegido, su foto y el
+   estado del PEPS (informativo: se activa solo al cargar, sin preguntar). */
+function celdaComboCargaMasiva(f, i) {
+  const elegido = productoElegidoCargaMasiva(f);
+  const textoInput = f.comboAbierto ? (f.busqueda ?? '')
+    : (f.destino === 'nuevo' ? '🆕 Producto nuevo' : (elegido ? elegido.nombre : ''));
+  return `
+    <div class="cm-combo" data-cm-combo="${i}">
+      <input type="text" class="cm-combo-input${f.destino ? '' : ' cm-falta'}" data-cm-combo-input="${i}"
+        value="${escHtml(textoInput)}" placeholder="🔎 Nuevo o buscar en tu catálogo…" autocomplete="off">
+    </div>
+    ${elegido ? `
+      <div class="cm-elegido">
+        ${elegido.foto ? `<img src="${escHtml(elegido.foto)}" class="cm-elegido-foto" alt="">` : '<span class="cm-combo-sinfoto">🧩</span>'}
+        <small>Stock ${elegido.stock} · ${elegido.usa_lotes ? '✅ PEPS activo' : '⚡ sin PEPS: se activa al cargar'}</small>
+      </div>` : ''}`;
+}
+
+/* La lista desplegable NO vive dentro de la celda: #cmTabla tiene scroll
+   propio (overflow-x) y, por regla de CSS, eso recorta también el eje
+   vertical — una lista "absolute" adentro quedaba invisible, tapada por ese
+   recorte. Se cuelga de <body> con position:fixed, calculada sobre dónde
+   está el campo en pantalla, así nunca la corta ningún contenedor. */
+function posicionarComboLista(input, lista) {
+  const r = input.getBoundingClientRect();
+  lista.style.left = `${r.left}px`;
+  lista.style.top = `${r.bottom + 4}px`;
+  lista.style.width = `${r.width}px`;
+}
+
+/* Redibuja SOLO el combo de una fila (abrir/cerrar la lista, o filtrarla
+   mientras se escribe) sin repintar la tabla entera — así no se pierde el
+   foco a mitad de tipear, igual que el buscador que reemplaza. */
+function actualizarComboCargaMasiva(i, opciones = {}) {
+  const fila = cargaMasiva.filas[i];
+  const input = document.querySelector(`[data-cm-combo-input="${i}"]`);
+  if (!fila || !input) return;
+  let lista = document.querySelector(`.cm-combo-lista[data-cm-combo-lista="${i}"]`);
+  if (fila.comboAbierto) {
+    if (!lista) {
+      lista = document.createElement('div');
+      lista.className = 'cm-combo-lista';
+      lista.dataset.cmComboLista = String(i);
+      document.body.appendChild(lista);
+    }
+    lista.innerHTML = listaComboCargaMasiva(fila, i);
+    posicionarComboLista(input, lista);
+  } else if (lista) {
+    lista.remove();
   }
-  return `${(f.parecidos || []).length && !f.destino ? '<option value="">⚠️ Se parece a uno que ya tienes: elige</option>' : ''}
-    <option value="nuevo" ${f.destino === 'nuevo' ? 'selected' : ''}>🆕 Es un producto nuevo</option>
-    ${candidatos.map(p => `<option value="${p.id}" ${String(f.destino) === String(p.id) ? 'selected' : ''}>➕ Sumar a: ${escHtml(acortar(p.nombre, 58))} (stock ${p.stock}${p.archivado ? ' · archivado: se desarchiva' : ''})</option>`).join('')}`;
+  if (!opciones.mantenerTexto) {
+    const elegido = productoElegidoCargaMasiva(fila);
+    input.value = fila.destino === 'nuevo' ? '🆕 Producto nuevo' : (elegido ? elegido.nombre : '');
+  }
+}
+
+/* Quita cualquier lista colgada de <body> y, si hace falta, cierra los
+   combos abiertos (clic afuera, o scroll — scrollear dejaría la lista
+   pegada en un lugar que ya no es el del campo). */
+function cerrarCombosCargaMasiva() {
+  document.querySelectorAll('.cm-combo-lista[data-cm-combo-lista]').forEach(el => el.remove());
+  const habiaAbierto = cargaMasiva.filas.some(f => f.comboAbierto);
+  if (!habiaAbierto) return;
+  cargaMasiva.filas.forEach(f => { f.comboAbierto = false; });
+  pintarCargaMasiva();
+}
+
+/* Después de cada repintado completo de la tabla: las listas abiertas
+   quedaron sin su elemento en <body> (se borró junto con el resto del
+   innerHTML viejo), así que se vuelven a colgar. */
+function sincronizarCombosAbiertosCargaMasiva() {
+  document.querySelectorAll('.cm-combo-lista[data-cm-combo-lista]').forEach(el => el.remove());
+  cargaMasiva.filas.forEach((f, i) => {
+    if (!f.comboAbierto) return;
+    const input = document.querySelector(`[data-cm-combo-input="${i}"]`);
+    if (!input) return;
+    const lista = document.createElement('div');
+    lista.className = 'cm-combo-lista';
+    lista.dataset.cmComboLista = String(i);
+    lista.innerHTML = listaComboCargaMasiva(f, i);
+    document.body.appendChild(lista);
+    posicionarComboLista(input, lista);
+  });
+}
+
+/* Celda "Foto": solo para una fila que va a crear un producto nuevo (lo que
+   ya existe administra sus fotos desde su ficha, no desde acá). */
+function celdaFotoCargaMasiva(f, i) {
+  if (f.destino && f.destino !== 'nuevo') return '<span class="cm-foto-na" title="Este producto ya existe: la foto se administra en su ficha">—</span>';
+  const chips = (f.fotos || []).map((foto, k) => `
+    <div class="cm-foto-chip"><img src="${foto}" alt=""><button type="button" class="cm-foto-quitar" data-cm-foto-quitar="${i}:${k}" title="Quitar esta foto">✕</button></div>`).join('');
+  return `<div class="cm-fotos-fila" data-cm-fotos="${i}">${chips}<button type="button" class="cm-foto-agregar" data-cm-foto-agregar="${i}" title="Agregar una foto">📷+</button></div>`;
+}
+
+/* Fila que está esperando el resultado del selector de archivos del sistema. */
+let cmFotoFilaObjetivo = null;
+
+async function agregarFotosCargaMasiva(i, archivos) {
+  const fila = cargaMasiva.filas[i];
+  if (!fila) return;
+  fila.fotos = fila.fotos || [];
+  for (const archivo of archivos) {
+    if (fila.fotos.length >= 6) { showToast('Hasta 6 fotos por producto nuevo', 'err'); break; }
+    try {
+      const bitmap = await cargarBitmapDeArchivo(archivo);
+      const dataUrlWebp = await dibujarYComprimirFoto(bitmap);
+      fila.fotos.push(dataUrlWebp);
+    } catch (err) {
+      console.error('No se pudo procesar una foto:', err.message || err);
+      showToast('No se pudo procesar una de las fotos', 'err');
+    }
+  }
+  pintarCargaMasiva();
 }
 
 function abrirCargaMasiva() {
@@ -295,7 +488,10 @@ async function revisarTextoCargaMasiva() {
     return;
   }
   // Sin parecidos parte como "nuevo" (se puede cambiar buscando); con parecidos hay que elegir.
-  filas.forEach(f => { f.parecidos = parecidosDeCargaMasiva(f.nombre); f.buscados = []; f.busqueda = ''; f.destino = f.parecidos.length ? '' : 'nuevo'; });
+  filas.forEach(f => {
+    f.parecidos = parecidosDeCargaMasiva(f.nombre); f.buscados = []; f.busqueda = ''; f.destino = f.parecidos.length ? '' : 'nuevo';
+    f.comboAbierto = false; f.fotos = [];   // v179: combo con foto + fotos del producto nuevo
+  });
   cargaMasiva.filas = filas;
   const elProv = document.getElementById('cmProveedor');
   if (elProv && proveedor && !elProv.value) elProv.value = proveedor;
@@ -346,12 +542,13 @@ function pintarCargaMasiva() {
   tabla.innerHTML = `
     <table class="data-table tabla-carga-masiva">
       <thead><tr>
-        <th></th><th>Producto</th><th>Marca</th><th>Cantidad</th><th>Costo c/u</th><th>Precio de venta</th><th>¿Ya existe en tu catálogo?</th>
+        <th></th><th>Foto</th><th>Producto</th><th>Marca</th><th>Cantidad</th><th>Costo c/u</th><th>Precio de venta</th><th>¿Ya existe en tu catálogo?</th>
       </tr></thead>
       <tbody>
         ${cargaMasiva.filas.map((f, i) => `
           <tr>
             <td><input type="checkbox" data-cm-fila="${i}" data-cm-campo="incluir" ${f.incluir ? 'checked' : ''} title="Cargar esta fila"></td>
+            <td class="cm-celda-foto">${celdaFotoCargaMasiva(f, i)}</td>
             <td><input type="text" class="cm-nombre" data-cm-fila="${i}" data-cm-campo="nombre" value="${escHtml(f.nombre)}" maxlength="200">
               ${f.enlace ? `<small class="fila-meta">${escHtml(acortar(f.enlace, 48))}</small>` : ''}</td>
             <td><input type="text" class="cm-marca" data-cm-fila="${i}" data-cm-campo="marca" value="${escHtml(f.marca || '')}" maxlength="80" placeholder="Sin marca" title="Solo se usa si el producto es nuevo"></td>
@@ -360,13 +557,12 @@ function pintarCargaMasiva() {
             <td><input type="number" class="cm-num" data-cm-fila="${i}" data-cm-campo="precio" value="${escHtml(f.precio)}" min="0" step="1" placeholder="Después"></td>
             <td class="cm-celda-destino">${encargo
               ? '<span class="cm-nuevo">🆕 Producto nuevo</span>'
-              : `<select data-cm-fila="${i}" data-cm-campo="destino" class="cm-destino${f.destino ? '' : ' cm-falta'}">${opcionesDestinoCargaMasiva(f)}</select>
-                 <input type="search" class="cm-buscar" data-cm-buscar="${i}" value="${escHtml(f.busqueda || '')}" placeholder="🔎 ¿No aparece? Búscalo en tu catálogo…" autocomplete="off">
-                 <small class="cm-buscar-nota" data-cm-nota="${i}">${escHtml(notaBusquedaCargaMasiva(f))}</small>`}</td>
+              : celdaComboCargaMasiva(f, i)}</td>
           </tr>`).join('')}
       </tbody>
     </table>`;
   pintarResumenCargaMasiva();
+  sincronizarCombosAbiertosCargaMasiva();
 }
 
 /* Qué falta para poder cargar, y cuánta plata es. Devuelve el mensaje de lo que falta o ''. */
@@ -376,7 +572,6 @@ function pintarResumenCargaMasiva() {
   const filas = cargaMasiva.filas.filter(f => f.incluir);
   const encargo = cargaMasiva.estado === 'encargo';
   const padres = cargaMasiva.estado === 'padres';
-  document.querySelectorAll('#cmTabla select[data-cm-campo="destino"]').forEach(s => s.classList.toggle('cm-falta', !s.value));
 
   let falta = '';
   if (!cargaMasiva.filas.length) falta = '';
@@ -427,7 +622,8 @@ async function enviarCargaMasiva() {
       precio_venta: Number(f.precio) || 0,
       marca: String(f.marca || '').trim(),
       enlace: f.enlace || '',
-      producto_id: (!encargo || padres) && f.destino && f.destino !== 'nuevo' ? Number(f.destino) : null
+      producto_id: (!encargo || padres) && f.destino && f.destino !== 'nuevo' ? Number(f.destino) : null,
+      imagenes: f.fotos || []   // v179: solo cuenta si la fila termina creando un producto nuevo
     }))
   };
 
@@ -451,7 +647,9 @@ async function enviarCargaMasiva() {
           ${r.estado === 'padres' ? ` El stock ya quedó sumado, <strong>sin compra ni gasto</strong>: son ${fmtCLP(r.total_compra)} a costo, que se suman a la cuenta de Finanzas → Mis padres. Los nuevos quedaron marcados "De mis padres", con el costo por confirmar.` : ''}
           ${(r.resultados || []).some(x => x.desarchivado) ? `<br>📦 Volvieron del archivo: ${(r.resultados || []).filter(x => x.desarchivado).map(x => escHtml(x.nombre)).join(', ')}. Siguen sin publicar.` : ''}
           ${malos.length ? `<br>⚠️ No se pudieron cargar: ${malos.map(m => `${escHtml(m.nombre)} (${escHtml(m.error)})`).join('; ')}` : ''}
-          <br>Les falta foto, descripción, categoría${filas.some(f => !(Number(f.precio) > 0)) ? ', precio de venta' : ''} y publicarlos: quedaron en <strong>📋 Por completar</strong> (arriba) y en la lista de Productos.
+          ${num(r.publicados) ? `<br>🌐 ${num(r.publicados)} con foto quedaron <strong>publicados en sevelin.cl</strong> de inmediato.` : ''}
+          ${num(r.sin_foto) ? `<br>📷 ${num(r.sin_foto)} nuevo(s) quedaron <strong>sin foto</strong>: no se publican solos (se vería un hueco). Agrégales foto y descripción — quedaron en <strong>📋 Por completar</strong> (arriba) y en la lista de Productos.` : ''}
+          <br>⚡ Todos quedaron con PEPS/FIFO activado para calcular bien el costo.
           ${num(r.total_compra) > 0 && quiereGasto ? `<br><span class="compra-aviso-gasto" style="margin-top:8px;">💸 Esta compra son <strong>${fmtCLP(r.total_compra)}</strong>. Falta guardar el gasto en Finanzas.
             <button type="button" class="btn btn-primary btn-sm" id="btnCmGasto">Abrir el gasto</button></span>` : ''}
           ${num(r.total_compra) > 0 && !quiereGasto && !padres ? '<br>🚫 No se anotó ningún gasto por esta compra, como pediste.' : ''}
