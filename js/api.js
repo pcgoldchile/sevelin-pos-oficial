@@ -75,6 +75,13 @@ const API = {
     buscar: ({ q, marca, trabajo }) => apiRequest(`/reparaciones/precios?${new URLSearchParams({ q: q || '', marca: marca || '', trabajo: trabajo || 'principales' })}`),
   },
 
+  // Registro de marketplaces: qué producto está en qué canal y cuánto queda (sql/112, v181)
+  marketplaces: {
+    listar: () => apiRequest('/marketplaces'),
+    crear: (datos) => apiRequest('/marketplaces', { method: 'POST', body: datos }),
+    actualizar: (id, datos) => apiRequest(`/marketplaces/${id}`, { method: 'PUT', body: datos }),
+  },
+
   // Más stock y bodega: dónde guardar cada producto (sql/101, v156)
   bodega: {
     stock: () => apiRequest('/bodega/stock'),

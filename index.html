@@ -2566,6 +2566,7 @@
             <button class="btn btn-outline" id="btnCargaRapidaFotos" title="Elige varias fotos y crea un producto por cada una, una foto a la vez">📸 Carga rápida de fotos</button>
             <!-- v132: la misma ventana que en Finanzas → Gastos (js/informe-compras.js) -->
             <button class="btn btn-outline" id="btnInformeComprasProductos" title="Cuánto compras según el marketplace, el vendedor y la marca">🛒 Compras por origen</button>
+            <button class="btn btn-outline admin-only" id="btnMarketplaces" title="Qué productos tienes publicados en Mercado Libre, Facebook y otros, y cuánto te queda después de comisión y envío">🏪 Marketplaces</button>
             <!-- v153 (sql/99): fotos del almacenamiento que no usa ningún producto -->
             <!-- v156 (sql/101): productos con más stock, dónde están y dónde propone guardarlos Claude (js/bodega.js) -->
             <button class="btn btn-outline admin-only" id="btnBodegaStock" title="Los productos con más stock, dónde están guardados y una propuesta de dónde guardarlos">📦 Más stock y bodega</button>
@@ -7955,6 +7956,60 @@
     </div>
   </div>
 
+  <!-- v181 (sql/112): registro de marketplaces — js/marketplaces.js -->
+  <div id="modalMarketplaces" class="modal-overlay">
+    <div class="modal-box" style="max-width:1100px;">
+      <h2>🏪 Marketplaces</h2>
+      <p class="modal-hint">Qué tienes publicado en cada canal y cuánto te queda después de la comisión y el envío. Facebook se marca con su botón en cada producto y aparece aquí solo.</p>
+      <div id="mkResumen" class="mk-resumen"></div>
+      <div class="toolbar-group" style="margin:10px 0;">
+        <select id="mkFiltroCanal" class="input-sm" aria-label="Filtrar por canal">
+          <option value="">Todos los canales</option>
+          <option value="MERCADOLIBRE">Mercado Libre</option>
+          <option value="FACEBOOK">Facebook Marketplace</option>
+          <option value="OTRO">Otros</option>
+        </select>
+        <button class="btn btn-primary btn-sm" id="btnMkNueva" type="button">➕ Registrar publicación</button>
+      </div>
+      <div class="table-wrap"><table class="data-table">
+        <thead><tr><th>Producto</th><th>Canal</th><th>Estado</th><th>Precio canal</th><th>Comisión</th><th>Envío</th><th>Te queda</th><th>Stock canal / POS</th><th></th></tr></thead>
+        <tbody id="mkTabla"></tbody>
+      </table></div>
+
+      <div id="mkForm" class="mk-form" hidden>
+        <h3 class="antes-seccion" id="mkFormTitulo">Registrar publicación</h3>
+        <div class="mk-grid">
+          <div class="field"><label for="mkProducto">Producto (nombre o #id)</label>
+            <input id="mkProducto" list="mkProductosLista" placeholder="Ej: #132 o Monitor HP" autocomplete="off"><datalist id="mkProductosLista"></datalist></div>
+          <div class="field"><label for="mkCanal">Canal</label>
+            <select id="mkCanal"><option value="MERCADOLIBRE">Mercado Libre</option><option value="RIPLEY">Ripley</option><option value="FALABELLA">Falabella</option><option value="PARIS">Paris</option><option value="TIKTOK">TikTok</option><option value="OTRO">Otro</option></select></div>
+          <div class="field"><label for="mkEstado">Estado</label>
+            <select id="mkEstado"><option value="publicado">Publicado</option><option value="borrador">Borrador</option><option value="en_revision">En revisión</option><option value="pausado">Pausado</option><option value="agotado">Agotado</option></select></div>
+          <div class="field"><label for="mkCodigo">Código en el canal (ej. MLC…)</label><input id="mkCodigo" maxlength="60"></div>
+          <div class="field mk-ancho"><label for="mkUrl">Link de la publicación</label><input id="mkUrl" maxlength="500" placeholder="https://…"></div>
+          <div class="field"><label for="mkPrecio">Precio publicado</label><input id="mkPrecio" type="number" min="0" step="10"></div>
+          <div class="field"><label for="mkComision">Comisión que cobra ($)</label><input id="mkComision" type="number" min="0" step="1"></div>
+          <div class="field"><label for="mkEnvio">Envío que pagas ($)</label><input id="mkEnvio" type="number" min="0" step="1"></div>
+          <div class="field"><label for="mkStock">Stock publicado</label><input id="mkStock" type="number" min="0" step="1"></div>
+          <div class="field mk-ancho"><label for="mkNotas">Notas</label><input id="mkNotas" maxlength="500"></div>
+        </div>
+        <div class="mk-calc">
+          <strong>🛡️ Precio que te protege de la comisión</strong>
+          <span>Quiero ganar $<input id="mkCalcUtilidad" type="number" min="0" step="500" value="10000" class="input-sm" style="width:110px;"></span>
+          <span>comisión <input id="mkCalcPct" type="number" min="0" max="40" step="0.5" value="11" class="input-sm" style="width:70px;">%</span>
+          <span id="mkCalcResultado">—</span>
+          <button class="btn btn-ghost btn-sm" id="btnMkUsarPrecio" type="button">Usar este precio</button>
+        </div>
+        <p class="modal-hint" id="mkVistaPrevia"></p>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" id="btnMkCancelar" type="button">Cancelar</button>
+          <button class="btn btn-primary" id="btnMkGuardar" type="button">Guardar</button>
+        </div>
+      </div>
+      <div class="modal-actions"><button class="btn btn-ghost" id="btnMkCerrar" type="button">Cerrar</button></div>
+    </div>
+  </div>
+
   <div id="modalFacebookRapido" class="modal-overlay">
     <div class="modal-box" style="max-width:760px;">
       <h2>📘 Publicar en Facebook</h2>
@@ -8763,6 +8818,8 @@
   <script src="js/carga-rapida-fotos.js"></script>   <!-- v178: después de productos.js y caracteristicas-producto.js; una foto = un producto -->
 
   <script src="js/facebook-rapido.js"></script>
+  <script src="js/marketplaces.js"></script>   <!-- v181 (sql/112): después de productos.js; usa productsList -->
+
   <script src="js/redes-contenido.js"></script>
   <script src="js/plan-contenido.js"></script>   <!-- v168 (sql/107): plan de contenido y aviso del encabezado -->   <!-- v164 (sql/104): después de productos.js y redes-texto.js (usa sus funciones) -->   <!-- v136 (sql/93): después de productos.js; usa sus funciones de fotos y la lista -->
   <script src="js/usuarios.js"></script>   <!-- v135 (sql/92): usuarios con RUT y PIN; usa ventanaConfirmar de ventanas.js -->

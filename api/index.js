@@ -2770,6 +2770,127 @@ app.put('/api/productos/:id/facebook', auth(true), async (req, res) => {
   }
 });
 
+/* REGISTRO DE MARKETPLACES (sql/112, v181 · dueño 24-10-2026)
+   ------------------------------------------------------------
+   "Lleva un registro de cuáles productos llevo subidos" y "protégeme de las
+   comisiones". Cada fila guarda lo que cobra ESE canal (comisión y envío que
+   paga el vendedor), así el panel muestra cuánto queda de verdad. Facebook
+   Marketplace sigue en productos.facebook_url (v136) y se suma a la lista. */
+const CANALES_MARKETPLACE = ['MERCADOLIBRE', 'FACEBOOK', 'INSTAGRAM', 'TIKTOK', 'RIPLEY', 'FALABELLA', 'PARIS', 'OTRO'];
+const ESTADOS_PUBLICACION = ['borrador', 'en_revision', 'publicado', 'pausado', 'agotado', 'eliminado'];
+
+function sanearPublicacion(body, parcial) {
+  const b = body || {};
+  const fuera = {};
+  if (!parcial || b.producto_id !== undefined) {
+    const id = Number(b.producto_id);
+    if (!Number.isInteger(id) || id <= 0) return { error: 'Elige el producto' };
+    fuera.producto_id = id;
+  }
+  if (!parcial || b.canal !== undefined) {
+    const canal = String(b.canal || '').trim().toUpperCase();
+    if (!CANALES_MARKETPLACE.includes(canal)) return { error: 'Canal inválido' };
+    fuera.canal = canal;
+  }
+  if (b.estado !== undefined) {
+    const estado = String(b.estado || '').trim();
+    if (!ESTADOS_PUBLICACION.includes(estado)) return { error: 'Estado inválido' };
+    fuera.estado = estado;
+  }
+  if (b.url !== undefined) {
+    const url = String(b.url || '').trim();
+    if (url) {
+      let u = null;
+      try { u = new URL(url); } catch (_) { u = null; }
+      if (!u || u.protocol !== 'https:' || url.length > 500) return { error: 'El link debe empezar con https://' };
+    }
+    fuera.url = url || null;
+  }
+  if (b.externo_id !== undefined) fuera.externo_id = String(b.externo_id || '').trim().slice(0, 60) || null;
+  if (b.notas !== undefined) fuera.notas = String(b.notas || '').trim().slice(0, 500) || null;
+  for (const campo of ['precio_canal', 'comision', 'envio']) {
+    if (b[campo] === undefined) continue;
+    if (b[campo] === null || String(b[campo]).trim() === '') { fuera[campo] = null; continue; }
+    const v = Math.round(num(b[campo]));
+    if (!Number.isFinite(v) || v < 0 || v > 100000000) return { error: `Monto inválido en ${campo}` };
+    fuera[campo] = v;
+  }
+  if (b.stock_canal !== undefined) {
+    if (b.stock_canal === null || String(b.stock_canal).trim() === '') fuera.stock_canal = null;
+    else {
+      const s = Math.round(num(b.stock_canal));
+      if (!Number.isFinite(s) || s < 0 || s > 100000) return { error: 'Stock inválido' };
+      fuera.stock_canal = s;
+    }
+  }
+  return { datos: fuera };
+}
+
+app.get('/api/marketplaces', auth(true), async (req, res) => {
+  const [pubs, fb] = await Promise.all([
+    db.from('publicaciones_canal').select('*').neq('estado', 'eliminado').order('actualizado_en', { ascending: false }).limit(2000),
+    db.from('productos').select('id, facebook_url, facebook_publicado_en, precio_unitario').not('facebook_url', 'is', null).limit(2000)
+  ]);
+  if (pubs.error) return enviarErrorBD(res, pubs.error, 'GET /api/marketplaces');
+  if (fb.error) return enviarErrorBD(res, fb.error, 'GET /api/marketplaces');
+  const ids = [...new Set([...(pubs.data || []).map(p => p.producto_id), ...(fb.data || []).map(p => p.id)])];
+  let productos = [];
+  if (ids.length) {
+    const r = await db.from('productos').select('id, nombre, precio_unitario, costo_unitario, stock, archivado').in('id', ids);
+    if (r.error) return enviarErrorBD(res, r.error, 'GET /api/marketplaces');
+    productos = r.data || [];
+  }
+  const porId = new Map(productos.map(p => [p.id, p]));
+  const conUtilidad = fila => {
+    const p = porId.get(fila.producto_id) || {};
+    const precio = fila.precio_canal ?? p.precio_unitario ?? null;
+    const costo = p.costo_unitario ?? null;
+    const utilidad = precio === null || costo === null ? null
+      : Math.round(num(precio) - num(fila.comision) - num(fila.envio) - num(costo));
+    return { ...fila, producto_nombre: p.nombre || '(producto borrado)', producto_precio: p.precio_unitario ?? null,
+      producto_costo: costo, producto_stock: p.stock ?? null, producto_archivado: !!p.archivado, utilidad };
+  };
+  const filas = (pubs.data || []).map(conUtilidad);
+  for (const p of fb.data || []) {
+    filas.push(conUtilidad({ id: null, producto_id: p.id, canal: 'FACEBOOK', estado: 'publicado', url: p.facebook_url,
+      externo_id: null, precio_canal: null, comision: 0, envio: 0, stock_canal: null, notas: 'Marcado con el botón de Facebook',
+      creado_en: p.facebook_publicado_en, actualizado_en: p.facebook_publicado_en, solo_lectura: true }));
+  }
+  res.json(filas);
+});
+
+app.post('/api/marketplaces', auth(true), async (req, res) => {
+  const { datos, error } = sanearPublicacion(req.body, false);
+  if (error) return enviarError(res, 400, error);
+  if (datos.canal === 'FACEBOOK') return enviarError(res, 400, 'Facebook Marketplace se marca con el botón de Facebook de cada producto');
+  const { data: prod } = await db.from('productos').select('id').eq('id', datos.producto_id).maybeSingle();
+  if (!prod) return enviarError(res, 404, 'Ese producto no existe');
+  const { data, error: e } = await db.from('publicaciones_canal').insert([{ estado: 'publicado', ...datos }]).select().single();
+  if (e) {
+    if (e.code === '23505') return enviarError(res, 409, 'Esa publicación (mismo canal y código) ya está registrada');
+    return enviarErrorBD(res, e, 'POST /api/marketplaces');
+  }
+  res.json(data);
+});
+
+app.put('/api/marketplaces/:id', auth(true), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return enviarError(res, 400, 'Publicación inválida');
+  const { datos, error } = sanearPublicacion(req.body, true);
+  if (error) return enviarError(res, 400, error);
+  delete datos.producto_id;
+  if (datos.canal === 'FACEBOOK') return enviarError(res, 400, 'Facebook Marketplace se marca con el botón de Facebook de cada producto');
+  if (!Object.keys(datos).length) return enviarError(res, 400, 'No hay nada que guardar');
+  const { data, error: e } = await db.from('publicaciones_canal')
+    .update({ ...datos, actualizado_en: new Date().toISOString() }).eq('id', id).select();
+  if (e) {
+    if (e.code === '23505') return enviarError(res, 409, 'Esa publicación (mismo canal y código) ya está registrada');
+    return enviarErrorBD(res, e, 'PUT /api/marketplaces/:id');
+  }
+  if (!data?.length) return enviarError(res, 404, 'Esa publicación no existe');
+  res.json(data[0]);
+});
+
 /* Importación masiva (CSV / Excel de Tiendanube)
    ------------------------------------------------------------
    Exige reconfirmar el PIN de administrador: es una operación que puede

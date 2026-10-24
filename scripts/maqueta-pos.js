@@ -50,6 +50,25 @@ const ordenes = [
     cliente_rut: null, cliente_telefono: '+56900000000', dispositivo_categoria: 'Notebook', dispositivo_modelo: 'Lenovo IdeaPad 3',
     falla_reportada: 'No enciende', token_retiro: 'a'.repeat(32), acepta_responsabilidad: true },
 ];
+// v181: registro de marketplaces (en memoria, mismo cálculo de utilidad que el servidor)
+const publicacionesMaqueta = [];
+const conUtilidadMaqueta = f => {
+  const p = productos.find(x => x.id === f.producto_id) || {};
+  return { ...f, producto_nombre: p.nombre || '(producto)', producto_precio: p.precio_unitario ?? null, producto_costo: p.costo_unitario ?? null,
+    producto_stock: p.stock ?? null, producto_archivado: !!p.archivado,
+    utilidad: Math.round(Number(f.precio_canal ?? p.precio_unitario ?? 0) - Number(f.comision || 0) - Number(f.envio || 0) - Number(p.costo_unitario || 0)) };
+};
+app.get('/api/marketplaces', (_req, res) => res.json(publicacionesMaqueta.filter(f => f.estado !== 'eliminado').map(conUtilidadMaqueta)));
+app.post('/api/marketplaces', (req, res) => {
+  const f = { id: publicacionesMaqueta.length + 1, estado: 'publicado', ...req.body, producto_id: Number(req.body.producto_id) };
+  for (const c of ['precio_canal', 'comision', 'envio', 'stock_canal']) f[c] = f[c] === '' || f[c] == null ? null : Number(f[c]);
+  publicacionesMaqueta.push(f); res.json(f);
+});
+app.put('/api/marketplaces/:id', (req, res) => {
+  const f = publicacionesMaqueta.find(x => x.id === Number(req.params.id));
+  if (!f) return res.status(404).json({ error: 'Esa publicación no existe' });
+  Object.assign(f, req.body); res.json(f);
+});
 app.get('/api/ot', (_req, res) => res.json(ordenes));
 // Una fase obligatoria sin tachar, para ver el aviso y el motivo de "entregar igual" (sql/66).
 app.get('/api/ot/:id/fases', (_req, res) => res.json({
