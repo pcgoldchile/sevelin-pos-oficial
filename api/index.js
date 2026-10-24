@@ -6463,6 +6463,14 @@ app.post('/api/productos/eliminar-lote', auth(true), exigirPinAdmin, async (req,
   const ids = (Array.isArray(req.body?.ids) ? req.body.ids : []).map(Number).filter(Boolean);
   if (ids.length === 0) return enviarError(res, 400, 'No hay productos seleccionados');
 
+  const h = await productosConHistorial(ids);
+  if (h.error) return enviarErrorBD(res, h.error);
+  if (h.bloqueados.length) {
+    const { data: nom } = await db.from('productos').select('nombre').in('id', h.bloqueados.slice(0, 3));
+    const lista = (nom || []).map(p => `"${p.nombre}"`).join(', ');
+    return enviarError(res, 409, `No se borró nada: ${h.bloqueados.length} de los seleccionados tienen ventas u órdenes en su historial (${lista}${h.bloqueados.length > 3 ? ', …' : ''}). Archívalos en vez de borrarlos, o quítalos de la selección.`, { codigo: 'PRODUCTO_CON_HISTORIAL', ids: h.bloqueados });
+  }
+
   const { data: fotos } = await db.from('productos').select('imagen_urls').in('id', ids);
   const { error } = await db.from('productos').delete().in('id', ids);
   if (error) return enviarErrorBD(res, error);
@@ -6479,7 +6487,38 @@ app.delete('/api/productos/todos', auth(true), exigirPinAdmin, async (req, res) 
   res.json({ ok: true, alcance: 'todos' });
 });
 
+/* Productos con historial que la base no deja borrar (venta_items,
+   ot_repuestos y activos_uso_interno apuntan a productos SIN cascada).
+   Antes el intento caía en la restricción de llave foránea y el dueño veía
+   "Error interno al consultar la base de datos" (23-10-2026, HP ProDesk
+   con 2 ventas). Se mira antes para decir la verdad: archivarlo. */
+async function productosConHistorial(ids) {
+  const [vi, ot, ac, ac2] = await Promise.all([
+    db.from('venta_items').select('producto_id').in('producto_id', ids),
+    db.from('ot_repuestos').select('producto_id').in('producto_id', ids),
+    db.from('activos_uso_interno').select('producto_id').in('producto_id', ids),
+    db.from('activos_uso_interno').select('producto_destino_id').in('producto_destino_id', ids)
+  ]);
+  const err = vi.error || ot.error || ac.error || ac2.error;
+  if (err) return { error: err };
+  const bloqueados = new Set([
+    ...(vi.data || []).map(r => r.producto_id),
+    ...(ot.data || []).map(r => r.producto_id),
+    ...(ac.data || []).map(r => r.producto_id),
+    ...(ac2.data || []).map(r => r.producto_destino_id)
+  ]);
+  return { bloqueados: [...bloqueados] };
+}
+
 app.delete('/api/productos/:id', auth(true), async (req, res) => {
+  const idProd = Number(req.params.id);
+  if (Number.isFinite(idProd) && idProd > 0) {
+    const h = await productosConHistorial([idProd]);
+    if (h.error) return enviarErrorBD(res, h.error);
+    if (h.bloqueados.length) {
+      return enviarError(res, 409, 'Este producto tiene ventas u órdenes en su historial y no se puede borrar sin romperlo. Archívalo: deja de aparecer en el POS y la tienda, pero conserva el historial.', { codigo: 'PRODUCTO_CON_HISTORIAL' });
+    }
+  }
   const { data: antes } = await db.from('productos').select('imagen_urls').eq('id', req.params.id).maybeSingle();
   const { error } = await db.from('productos').delete().eq('id', req.params.id);
   if (error) return enviarErrorBD(res, error);

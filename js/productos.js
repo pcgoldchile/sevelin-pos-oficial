@@ -3839,8 +3839,23 @@ async function eliminarProducto(id) {
   } catch (err) {
     console.error('Error al eliminar producto:', err.message || err);
     // Causa más común: el producto tiene ventas reales (venta_items) —
-    // no se puede borrar sin romper ese historial. La solución es
-    // archivarlo, no forzar el borrado.
+    // no se puede borrar sin romper ese historial. El servidor lo avisa con
+    // 409 PRODUCTO_CON_HISTORIAL: se ofrece archivarlo ahí mismo.
+    if (err.codigo === 'PRODUCTO_CON_HISTORIAL') {
+      const p = productsList.find(x => String(x.id) === String(id));
+      if (p && await ventanaConfirmar(`"${p.nombre}"\n\nTiene ventas u órdenes en su historial, por eso no se puede borrar.\n\nArchivado deja de aparecer en el POS y la tienda web, pero conserva el historial.`, { titulo: 'No se puede borrar: ¿lo archivo?', textoSi: 'Sí, archivar' })) {
+        try {
+          await API.productos.actualizar(id, { nombre: p.nombre, archivado: true });
+          showToast('Producto archivado', 'ok');
+          productosArchivadosCache = null;
+          productosBorradoresCache = null;
+          cargarProductos(true);
+        } catch (e2) {
+          showToast(e2.message || 'No se pudo archivar el producto', 'err');
+        }
+      }
+      return;
+    }
     showToast(err.message || 'No se pudo eliminar — si tiene ventas, archívalo en vez de borrarlo', 'err');
   }
 }
