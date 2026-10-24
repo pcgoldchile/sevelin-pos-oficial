@@ -1,5 +1,9 @@
 # DISEÑO — Sistema de contenido orgánico automatizado
 
+> **24-10-2026:** el sistema se construyó después (v164-v172: Redes sociales en el POS y robot de
+> contenido; ver `contenido/ROBOT-CONTENIDO.md`). El ritmo vigente propuesto y la publicación en Instagram
+> y Facebook con un clic están en **`PLAN-ACCION-2026-10-24.md` §5 y §7 (F6)**.
+
 > **Esto es un diseño, no código.** Nada de lo que está acá está construido. Se escribió el
 > 10-09-2026 en Opus, a pedido del dueño, para resolver las dudas técnicas que quedaron abiertas en
 > `PLAN-CRECIMIENTO-2026.md` (sección "Pendiente para la próxima sesión") **antes** de comprometer

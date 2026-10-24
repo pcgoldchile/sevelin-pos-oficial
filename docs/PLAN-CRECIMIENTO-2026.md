@@ -7,6 +7,23 @@
 > **Fecha de creación:** 07-09-2026 · **Base:** POS v50 + tienda v38 · **Autor:** sesión de Claude Code.
 > **Estado de partida verificado**, no asumido: ver "Verificaciones hechas al escribir este plan".
 
+> ## 🧭 Actualización 24-10-2026 — el plan de acción nuevo manda
+>
+> **Para tráfico, canales (Marketplace, Mercado Libre y otros), contenido, publicidad y clientes nuevos, el
+> documento vigente es `PLAN-ACCION-2026-10-24.md`.** Este plan queda para la historia y para el detalle
+> del crédito (§1.7), que sigue valiendo.
+>
+> Remedición contra producción del 24-10:
+> - Los gastos fijos son **$1.349.635 al mes** (antes $1.109.873: arriendo de San Rafael $600.000, máquina
+>   Banchile y Claude). El equilibrio queda en **$3,9 M al mes con margen 35%**.
+> - La venta registrada bajó: agosto $4,9 M, septiembre $3,0 M y octubre $1,47 M al día 24. Desde
+>   septiembre **hay pérdida contra los gastos fijos**.
+> - **El servicio técnico ya llegó al 17% de las ventas y al 40% de la utilidad** en octubre: la meta de
+>   §1.8 se cumple en porcentaje.
+> - **Stock: $8,6 M al costo en 271 productos, y 195 nunca vendidos ($4,6 M).** La tesis del 09-09 se
+>   confirma: el freno es la rotación, no las ganas de comprar más.
+> - Ventas con boleta en el SII: 70% en agosto, 53% en septiembre y 27% en octubre.
+
 > ## 🎬 Pendiente para la próxima sesión (en Opus) — contenido orgánico automatizado
 >
 > El dueño pidió diseñar (no construir todavía) un sistema que:

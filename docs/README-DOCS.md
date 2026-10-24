@@ -25,6 +25,7 @@ Si necesitas más profundidad que el snapshot, sigue con `README.md`.
 | **`AUDITORIA-SEGURIDAD-SEVELIN-POS.md`** | Auditoría de seguridad y su estado. | Al tocar auth, permisos o datos sensibles. |
 | **`CHANGELOG-VNN.md`** | Qué cambió en cada versión, con detalle técnico. | Para saber cómo/por qué se hizo algo. |
 | **`README-ECOMMERCE-SEVELIN.md`** | Documento maestro del e-commerce (sevelin.cl): arquitectura completa, decisiones ya tomadas, plan de fases. Cubre TAMBIÉN el proyecto separado `sevelin-tienda`. | Antes de tocar cualquier fase del e-commerce (0-6). |
+| **`PLAN-ACCION-2026-10-24.md`** | **Plan de acción y ruta de crecimiento vigente**: cifras del 24-10, canales (Marketplace, Mercado Libre y otros), contenido, publicidad, clientes nuevos y lo que se construye en el POS. Reemplaza las partes de tráfico de `PLAN-CRECIMIENTO-2026.md`. | Antes de proponer cualquier cosa de ventas, redes o publicidad. |
 | **`README-BUCKET-IMAGENES.md`** | Pasos para crear el bucket `productos-imagenes` en Supabase (fotos de producto). | Al configurar o revisar el pipeline de imágenes del e-commerce. |
 | **`archivo/`** | Documentos históricos (READMEs viejos, changelogs de fases cerradas). | Rara vez; solo para arqueología. |
 

@@ -5,6 +5,11 @@
 > productos, servicios, educativo y noticias, sin bombardear; él revisa y aprueba desde el celular; las imágenes las
 > busca y arma el robot, y después se borran.
 >
+> **24-10-2026 — propuesta de cambio, todavía sin aprobar:** `PLAN-ACCION-2026-10-24.md` §5.2 propone otro
+> ritmo: 1 reel de servicio técnico grabado por el dueño, 2 productos ganadores, y piezas de confianza y
+> educativas cada 2 semanas. Hasta que el dueño diga que sí, el robot sigue la tabla de §1. La corrida del
+> 21-10 duró 6 segundos y no dejó nada en `contenido_plan`: está por diagnosticar.
+>
 > **Regla de oro: calidad antes que cantidad.** Si una pieza no está buena, no se sube a aprobar: se deja en "idea"
 > con la razón.
 

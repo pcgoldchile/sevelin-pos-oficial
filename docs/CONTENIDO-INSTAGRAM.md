@@ -1,5 +1,9 @@
 # Contenido para @sevelin.cl — arranque
 
+> **24-10-2026:** el ritmo, los formatos y lo que hay que sumar a Instagram, a la Página de Facebook y a
+> Google están en **`PLAN-ACCION-2026-10-24.md` §5**. Este archivo queda como historia: la biografía y las
+> reglas de foto y precio siguen sirviendo, pero los productos y precios de abajo son del 11-09.
+
 > Escrito el 11-09-2026. Los productos y precios salieron del POS ese día; **verifica stock y precio
 > antes de publicar**, porque cambian.
 >
