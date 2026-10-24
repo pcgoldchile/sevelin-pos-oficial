@@ -114,9 +114,8 @@ seguro, bien embalados y despachados a tiempo. Los límites para empezar son 3,5
 y 15,5% de envíos con demora.
 
 ### 4.1 Las 6 protecciones
-1. **Precio propio para Mercado Libre**, nunca el mismo del local. El POS lo calcula así:
-   `precio ML = (costo + utilidad que quieres) ÷ (1 − comisión × 1,19)`. El 1,19 es el IVA que se cobra sobre la
-   comisión.
+1. **Precio propio para Mercado Libre**, nunca el mismo del local. Se calcula con la comisión **y el envío**
+   (ver §4.1b, medido en un borrador real).
 2. **Publicación Clásica, no Premium.** La Premium cobra unos **4 puntos más** para dar cuotas sin interés, y no
    está probado que te posicione mejor ([Malka](https://syncprofit.malkadigital.com/blog/publicacion-clasica-vs-premium-mercadolibre), [Melium10](https://melium10.com/herramientas/calculadora-comisiones-mercadolibre/chile/bebes)).
 3. **Nada de menos de $19.990**: pagan un cargo fijo además de la comisión. Si quieres vender cables o cargadores
@@ -130,15 +129,38 @@ y 15,5% de envíos con demora.
    lo ganas con buen servicio: después te encuentra en Google.
 6. **Boleta en cada venta**, que Mercado Libre exige. Así esas ventas además cuadran solas con el SII.
 
-### 4.2 A cuánto publicar los primeros (con 14% de comisión; se confirma en el borrador)
+### 4.1b Lo que cobra de verdad (medido el 24-10-2026 en un borrador, sin publicar)
 
-| Producto | Costo | En el local | Utilidad que mantienes | **Precio en ML** |
-|---|---:|---:|---:|---:|
-| Monitor HP 21,5" V214a | $30.000 | $49.990 | $15.000 | **$53.990** |
-| Power bank Master-G 30.000 mAh | $17.484 | $29.990 | $10.000 | **$32.990** |
-| PC HP 280 G2 i5 (antes corregir su ficha) | $80.000 | $99.990 | $15.000 | **$113.990** |
-| Monitor gamer Master-G 24" 180 Hz | $77.324 | $99.990 | $15.000 | **$110.990** |
-| Monitor Samsung S30GD 22" | $59.842 | $74.990 | $10.000 | **$83.990** (comparar con la competencia: puede quedar caro) |
+Monitor HP V214a, categoría Monitores, publicación Clásica, despacho desde San Rafael 896:
+
+| | A $53.990 | **A $57.990** |
+|---|---:|---:|
+| Cargo por venta, Clásica (**11% con IVA**, incluye 6 cuotas sin interés) | −$5.939 | −$6.379 |
+| Envío gratis **obligatorio**: cuesta $11.600 y Mercado Libre cubre hoy el 50% | −$5.800 | −$5.800 |
+| **Te depositan** | $42.251 | **$45.811** |
+| Utilidad (costo $30.000) | $12.251 | **$15.811** |
+
+- **La comisión es menor de lo que estimé:** 11% con IVA en la Clásica y 13% en la Premium. La Premium da
+  12 cuotas en vez de 6 y cuesta $1.080 más por venta.
+- **El envío pesa más que la comisión.** Lo paga el vendedor y depende del peso: este monitor pesa 4,46 kg. Hoy
+  Mercado Libre cubre la mitad "por tu reputación". Si ese descuento cambia, el envío sube a $11.600 y la utilidad
+  baja a unos $10.000. Por eso **el precio se calcula con el envío incluido**:
+  `precio ML = (costo + utilidad que quieres + envío) ÷ (1 − comisión)`, con la comisión que muestra el borrador
+  (ya trae el IVA).
+- El dinero llega **2 días después de que el comprador recibe** el paquete.
+
+### 4.2 A cuánto publicar los primeros (estimado con 11% de comisión; el envío se ve en el borrador de cada uno)
+
+| Producto | Costo | En el local | Envío supuesto | Utilidad que mantienes | **Precio en ML** |
+|---|---:|---:|---:|---:|---:|
+| Monitor HP V214a (**es de 20,7"**, no 21,5") | $30.000 | $49.990 | $5.800 (medido) | $15.811 | **$57.990**, borrador listo |
+| Power bank Master-G 30.000 mAh | $17.484 | $29.990 | ~$3.000 (por ver) | $10.000 | **$34.990** |
+| PC HP 280 G2 i5 (antes corregir su ficha) | $80.000 | $99.990 | ~$5.800 (por ver) | $15.000 | **$113.990** |
+| Monitor gamer Master-G 24" 180 Hz | $77.324 | $99.990 | ~$5.800 (por ver) | $15.000 | **$110.990** |
+| Monitor Samsung S30GD 22" | $59.842 | $74.990 | ~$5.800 (por ver) | $10.000 | **$84.990** (comparar con la competencia: puede quedar caro) |
+
+**Competencia del V214a (24-10):** un HP 20,7" reacondicionado a $59.990 (más de 50 vendidos) y un HP 21,5"
+reacondicionado "Excelente" a $99.990. A $57.990, el tuyo queda bajo los dos.
 
 **Antes de publicar cada uno**, Claude busca en Mercado Libre el mismo modelo, y si queda muy sobre la
 competencia, no se publica.
