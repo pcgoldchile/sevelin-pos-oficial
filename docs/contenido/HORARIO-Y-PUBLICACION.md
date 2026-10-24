@@ -180,3 +180,22 @@ Siguen como dice `PLAN-ACCION-2026-10-24.md` §3.3:
 | Armar textos, guiones, subtítulos y voz; el robot del miércoles | Programar la semana en Business Suite o Metricool | Crear las cuentas de TikTok y Metricool; agregar tu Facebook al Centro de cuentas (pide tu clave) |
 | Calcular el precio de Mercado Libre y buscar la competencia | Crear las publicaciones de Mercado Libre (primero en borrador para ver el costo real) | Pagar planes o anuncios |
 | Revisar estadísticas y proponer horarios nuevos a las 4 semanas | Cambiar la portada, la biografía y los datos de la Página | Grabar el reel de servicio técnico y las historias |
+
+---
+
+## 6. Probado el 24-10-2026: una publicación en las tres redes
+
+Claude publicó la imagen "¿Dónde estamos?" con el mismo texto:
+- **Facebook + Instagram, de una vez:** Business Suite → Crear publicación. "Publicar en" ya trae marcadas la
+  Página y @sevelin.cl. Quedó como **"Publicación cruzada"** (24-10, 14:30).
+- **TikTok:** tiktok.com/tiktokstudio/upload → pestaña **Fotos** (también acepta imágenes, no solo video) →
+  título, descripción → Publicar. Cuenta @sevelin.cl.
+
+**Cómo quedó Business Suite (revisado):** la Página, @sevelin.cl, la cuenta publicitaria "Sevelin Cuenta
+publicitaria" y el WhatsApp +56 9 3575 0828 están en el mismo portafolio. Instagram está conectado a la Página y a la
+cuenta publicitaria. Por eso, desde el celular, la app de Instagram sí ofrece "Compartir en Facebook": usa esa
+conexión, no el Centro de cuentas.
+
+**Metricool (todo en un solo lugar, TikTok incluido):** falta crear la cuenta (la crea Carlos, idealmente con
+"Continuar con Google" y sevelin.contacto@gmail.com). Después Claude conecta la Página, Instagram y TikTok; cada
+conexión pide aprobar permisos en la ventana de Meta o TikTok. El plan gratis da 20 publicaciones al mes.
