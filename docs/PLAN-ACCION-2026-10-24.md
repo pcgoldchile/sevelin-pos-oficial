@@ -281,6 +281,10 @@ con varios PC que fallan.
 
 ## 5. Contenido en redes (reemplaza el ritmo de `ROBOT-CONTENIDO.md` §1 cuando lo apruebes)
 
+> **Cómo conectar Instagram con Facebook, con qué publicar, el horario semanal y los precios para Mercado
+> Libre:** `contenido/HORARIO-Y-PUBLICACION.md` (24-10). La portada nueva de Facebook está en
+> `marca/portada-facebook-2026-10-24.png`.
+
 ### 5.1 Qué falla hoy
 - El robot del miércoles corrió el 21-10 durante 6 segundos y no dejó nada. Hay que diagnosticarlo (§8,
   semana 1).

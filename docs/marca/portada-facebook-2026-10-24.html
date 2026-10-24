@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Portada de Facebook · Sevelin</title>
+<!--
+  Portada de la Página de Facebook (24-10-2026). 1640 x 720 px.
+  Facebook la muestra a 820 x 312 en computador (recorta arriba y abajo) y a 640 x 360 en celular
+  (recorta los lados). Todo lo importante va en la zona que se ve en los dos: x 200-1440, y 60-660.
+  Sin logos de otras marcas (Lenovo, HP, MSI...): son marcas registradas de terceros.
+  Se exporta con Chrome sin ventana:
+  chrome --headless=new --screenshot=portada.png --window-size=1640,720 --hide-scrollbars <este archivo>
+-->
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1640px; height: 720px; overflow: hidden; }
+  body {
+    font-family: 'Bahnschrift', 'Segoe UI', Arial, sans-serif;
+    color: #fff;
+    background:
+      radial-gradient(ellipse 55% 75% at 30% 40%, rgba(0, 140, 255, .30), transparent 70%),
+      radial-gradient(ellipse 40% 70% at 82% 50%, rgba(0, 200, 255, .18), transparent 70%),
+      linear-gradient(180deg, #071637 0%, #040d26 60%, #030a1e 100%);
+    position: relative;
+  }
+  .rayas { position: absolute; inset: 0;
+    background: repeating-linear-gradient(115deg, transparent 0 46px, rgba(70, 180, 255, .035) 46px 48px); }
+  .cian { color: #3ff3ff; }
+
+  .contenido { position: absolute; left: 220px; top: 92px; width: 790px; }
+
+  .marca { display: flex; align-items: center; gap: 26px; }
+  .marca svg { width: 150px; height: 150px; filter: drop-shadow(0 0 16px rgba(63, 243, 255, .55)); }
+  .marca h1 { font-family: 'Arial Black', 'Segoe UI Black', sans-serif; font-size: 128px; line-height: 1;
+    letter-spacing: 6px; text-shadow: 0 0 22px rgba(63, 243, 255, .45), 0 5px 0 rgba(0, 0, 0, .35); }
+
+  .lema { margin-top: 26px; font-size: 46px; font-weight: 700; line-height: 1.15; }
+  .lema .cian { text-shadow: 0 0 18px rgba(63, 243, 255, .55); }
+
+  .chips { margin-top: 30px; display: flex; flex-wrap: wrap; gap: 14px; }
+  .chip { display: flex; align-items: center; gap: 10px; padding: 11px 20px; border-radius: 12px;
+    font-size: 27px; font-weight: 700; background: rgba(11, 42, 99, .75);
+    border: 2px solid rgba(63, 243, 255, .55); box-shadow: 0 0 14px rgba(63, 243, 255, .18) inset; }
+  .chip svg { width: 28px; height: 28px; flex: none; }
+
+  .datos { margin-top: 34px; display: flex; flex-direction: column; gap: 10px; font-size: 29px; font-weight: 700; }
+  .dato { display: flex; align-items: center; gap: 14px; }
+  .dato svg { width: 34px; height: 34px; flex: none; }
+  .dato .suave { color: #b8d6ff; font-weight: 400; }
+
+  .foto { position: absolute; left: 1040px; top: 70px; width: 400px; height: 580px; border-radius: 22px;
+    overflow: hidden; border: 3px solid #3ff3ff;
+    box-shadow: 0 0 34px rgba(63, 243, 255, .45), 0 18px 40px rgba(0, 0, 0, .45); }
+  .foto img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 40%; display: block; }
+  .foto .pie { position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 0 16px; text-align: center;
+    font-size: 26px; font-weight: 700;
+    background: linear-gradient(180deg, transparent, rgba(3, 10, 30, .92) 45%); }
+</style>
+</head>
+<body>
+<div class="rayas"></div>
+
+<div class="contenido">
+  <div class="marca">
+    <svg viewBox="200 140 852 960" aria-hidden="true">
+      <defs>
+        <linearGradient id="azul" gradientUnits="userSpaceOnUse" x1="276.5" y1="415.3" x2="952.1" y2="866.0"><stop offset="0" stop-color="#73FCFD"/><stop offset="0.174" stop-color="#06E7FD"/><stop offset="0.36" stop-color="#019FFD"/><stop offset="0.547" stop-color="#007DFD"/><stop offset="0.733" stop-color="#0055FD"/><stop offset="1" stop-color="#0058FD"/></linearGradient>
+        <linearGradient id="filo" gradientUnits="userSpaceOnUse" x1="276.5" y1="415.3" x2="952.1" y2="866.0"><stop offset="0" stop-color="#F4FFFF"/><stop offset="0.45" stop-color="#B4F3FF"/><stop offset="1" stop-color="#6FA6FF"/></linearGradient>
+        <filter id="brillo" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="22"/></filter>
+      </defs>
+      <path d="M276.5 529.3 L276.5 415.3 L626.0 213.5 L975.5 415.4 L975.5 601.8 M975.5 735.9 L975.5 830.1 L638.1 1024.9 L276.5 816.2 L276.5 622.0" fill="none" stroke="url(#azul)" stroke-width="30" opacity="0.9" filter="url(#brillo)"/>
+      <path d="M626.0 213.5 L975.5 415.4 L975.5 601.8 L620.7 397.0 L504.6 464.0 L975.5 735.9 L975.5 830.1 L638.1 1024.9 L276.5 816.2 L276.5 622.0 L664.5 846.0 L744.8 799.6 L276.5 529.3 L276.5 415.3 Z" fill="url(#azul)"/>
+      <path d="M276.5 529.3 L276.5 415.3 L626.0 213.5 L975.5 415.4 L975.5 601.8" fill="none" stroke="url(#filo)" stroke-width="5"/>
+      <path d="M975.5 735.9 L975.5 830.1 L638.1 1024.9 L276.5 816.2 L276.5 622.0" fill="none" stroke="url(#filo)" stroke-width="5"/>
+    </svg>
+    <h1>SEVELIN</h1>
+  </div>
+
+  <p class="lema"><span class="cian">Servicio técnico</span> y tecnología en Arica</p>
+
+  <div class="chips">
+    <div class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="#3ff3ff" stroke-width="2"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M1.5 20h21"/></svg>Computadores y notebooks</div>
+    <div class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="#3ff3ff" stroke-width="2"><rect x="6.5" y="2" width="11" height="20" rx="2"/><path d="M11 18.5h2"/></svg>Celulares</div>
+    <div class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="#3ff3ff" stroke-width="2"><path d="M12 2l8 3v6c0 5-3.4 9.3-8 11-4.6-1.7-8-6-8-11V5z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg>Garantía 6 meses</div>
+    <div class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="#3ff3ff" stroke-width="2"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>Lo tienes hoy</div>
+  </div>
+
+  <div class="datos">
+    <div class="dato"><svg viewBox="0 0 24 30"><path d="M12 1C6.2 1 1.5 5.6 1.5 11.4 1.5 19 12 29 12 29s10.5-10 10.5-17.6C22.5 5.6 17.8 1 12 1z" fill="#0b2a63" stroke="#3ff3ff" stroke-width="2"/><circle cx="12" cy="11.5" r="4.2" fill="none" stroke="#fff" stroke-width="2.4"/></svg>San Rafael 896 <span class="suave">· entrada por Av. Robinson Rojas</span></div>
+    <div class="dato"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#25d366"/><path d="M7.2 17.3l.7-2.5a5.4 5.4 0 1 1 2 1.9zm2.6-8.6c-.3.6-.3 1.6.6 2.8 1 1.3 2.1 2 3.1 2.3.8.2 1.4 0 1.7-.5l.2-.6-1.4-.8-.6.6c-.6-.2-1.6-.9-2-1.8l.5-.6-.6-1.5c-.5-.1-1.2 0-1.5.1z" fill="#fff"/></svg>+56 9 3575 0828 <span class="suave">· 10:00–13:00 y 14:00–21:00</span></div>
+  </div>
+</div>
+
+<div class="foto">
+  <img src="donde-estamos-puerta.jpg" alt="Local de Sevelin en San Rafael 896">
+  <div class="pie">Visítanos: <span class="cian">te esperamos</span></div>
+</div>
+</body>
+</html>
