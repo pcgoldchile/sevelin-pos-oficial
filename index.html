@@ -296,6 +296,10 @@
       <button id="btnMayoristasAviso" class="btn-notificaciones btn-facturas admin-only" title="Venta mayorista" hidden>
         <span class="chip-punto" aria-hidden="true"></span><span id="textoMayoristasAviso">Mayoristas</span>
       </button>
+      <!-- 27-10-2026: metas del mes y lo que toca hoy — js/metas.js -->
+      <button id="btnMetas" class="btn-notificaciones btn-facturas btn-metas admin-only" title="Metas del mes y lo que toca hoy" hidden>
+        <span class="chip-punto" aria-hidden="true"></span><span>🎯 Metas</span>
+      </button>
       <!-- v101 (sql/72): pendientes del dueño y de Claude. Visible siempre para admin (aunque no
            haya nada), para poder anotar uno nuevo; rojo si alguno pasó su fecha límite. -->
       <button id="btnPendientes" class="btn-notificaciones btn-facturas btn-pendientes admin-only" title="Pendientes del dueño y de Claude" hidden>
@@ -8030,6 +8034,31 @@
     </div>
   </div>
 
+  <!-- 27-10-2026: Metas de hoy — js/metas.js -->
+  <div id="modalMetas" class="modal-overlay">
+    <div class="modal-box metas-modal" style="max-width:900px;">
+      <h2>🎯 Metas de hoy</h2>
+      <p class="modal-hint" id="metasEtapa"></p>
+      <div id="metasContenido"></div>
+      <div id="metasEditar" class="metas-editar" hidden>
+        <h3 class="antes-seccion">Cambiar las metas</h3>
+        <div class="grid grid-2">
+          <div class="field"><label for="metaEtapa">Etapa</label><input type="text" id="metaEtapa" maxlength="120"></div>
+          <div class="field"><label for="metaVenta">Venta del mes ($)</label><input type="number" id="metaVenta" min="100000" step="10000"></div>
+          <div class="field"><label for="metaMargen">Margen mínimo (%)</label><input type="number" id="metaMargen" min="1" max="95"></div>
+          <div class="field"><label for="metaServicios">Servicios técnicos al mes</label><input type="number" id="metaServicios" min="0"></div>
+          <div class="field"><label for="metaTicket">Ticket promedio ($)</label><input type="number" id="metaTicket" min="1000" step="500"></div>
+          <div class="field"><label for="metaOrigen">Ventas con origen anotado (%)</label><input type="number" id="metaOrigen" min="0" max="100"></div>
+        </div>
+        <button class="btn btn-primary btn-sm" id="btnMetasGuardar" type="button">💾 Guardar metas</button>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnMetasEditar" type="button">✏️ Cambiar metas</button>
+        <button class="btn btn-primary" id="btnMetasCerrar" type="button">¡A trabajar!</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 27-10-2026: Tipos de margen — js/margenes-finanzas.js -->
   <div id="modalMargenes" class="modal-overlay">
     <div class="modal-box" style="max-width:980px;">
@@ -8861,6 +8890,7 @@
 
   <script src="js/facebook-rapido.js"></script>
   <script src="js/orden-productos.js"></script>
+  <script src="js/metas.js"></script>   <!-- 27-10-2026: después de pendientes.js; usa abrirPendientes -->
   <script src="js/marketplaces.js"></script>   <!-- v181 (sql/112): después de productos.js; usa productsList -->
 
   <script src="js/redes-contenido.js"></script>

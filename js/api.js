@@ -75,6 +75,11 @@ const API = {
     buscar: ({ q, marca, trabajo }) => apiRequest(`/reparaciones/precios?${new URLSearchParams({ q: q || '', marca: marca || '', trabajo: trabajo || 'principales' })}`),
   },
 
+  // Metas del día (27-10-2026): cómo va el mes contra la meta y qué toca hoy
+  metas: {
+    hoy: () => apiRequest('/metas/hoy', { silencioso: true }),
+    guardar: (datos) => apiRequest('/metas', { method: 'PUT', body: datos })
+  },
   // Registro de marketplaces: qué producto está en qué canal y cuánto queda (sql/112, v181)
   marketplaces: {
     listar: () => apiRequest('/marketplaces'),

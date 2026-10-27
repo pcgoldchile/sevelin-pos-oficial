@@ -13,10 +13,71 @@
 //   · Activo fijo y devolución de préstamos o capital no son gasto del mes.
 //   · Los pagos al SII ("Impuestos") son IVA de meses anteriores: no se restan otra
 //     vez. El impuesto a la renta (anual) no está incluido.
-//   · El POS no separa capital e intereses de las cuotas de crédito: se resta la
-//     cuota completa como gasto financiero.
+//   · Créditos: solo el costo financiero (interés, comisión, seguros) baja el margen;
+//     del BancoEstado, solo la mitad del negocio (ver CUOTAS_BCI y BANCOESTADO).
 //   · No hay depreciación registrada: el EBITDA queda igual al operativo.
 // ==========================================
+
+/* CRÉDITOS (27-10-2026, documentos del dueño). Montos y tasas solamente: nada personal.
+   BCI: el calendario del comprobante, con capital, interés y comisión FOGAPE de cada cuota.
+   BancoEstado: no hay tabla digital (el contrato está en papel). Se estima con el contrato:
+   cuotas 1 y 2 solo intereses; desde la 3, cuota sin seguros $244.964 al 1,58% mensual
+   más $48.620 de seguros. De este crédito al negocio le toca la MITAD: los otros $5.000.000
+   son el préstamo al papá, que lo devuelve con el descuento del arriendo. */
+const CUOTAS_BCI = [
+  ['2026-08-20', 115390, 62914, 1400], ['2026-09-21', 134057, 44247, 985], ['2026-10-20', 142088, 36216, 806],
+  ['2026-11-20', 143989, 34315, 764], ['2026-12-21', 148446, 29858, 664], ['2027-01-20', 153857, 24447, 544],
+  ['2027-02-22', 156482, 21822, 486], ['2027-03-22', 164164, 14140, 315], ['2027-04-20', 168413, 9891, 220],
+  ['2027-05-20', 173114, 5186, 115]
+];
+const BANCOESTADO = { primera: '2026-09-10', cuotas: 70, tasa: 0.0158, cuotaSinSeguros: 244964, seguros: 48620, parteNegocio: 0.5 };
+
+function diasEntre(a, b) { return Math.abs((new Date(a + 'T12:00:00') - new Date(b + 'T12:00:00')) / 86400000); }
+
+/* Cuota N (1…70) del BancoEstado según la fecha de pago. Vence el 10: pagada
+   después del 25 se toma como la del mes siguiente (adelantada). */
+function numeroCuotaBancoEstado(fechaPago) {
+  const [a, m] = BANCOESTADO.primera.split('-').map(Number);
+  const [pa, pm, pd] = String(fechaPago).slice(0, 10).split('-').map(Number);
+  let n = (pa - a) * 12 + (pm - m) + 1;
+  if (pd >= 25) n += 1;
+  return Math.min(Math.max(n, 1), BANCOESTADO.cuotas);
+}
+
+/* Interés estimado de la cuota N del BancoEstado (sin seguros), por sistema francés.
+   null en las cuotas 1 y 2: son solo intereses, toda la cuota es costo financiero. */
+function interesBancoEstado(n) {
+  if (n <= 2) return null;
+  const { tasa, cuotaSinSeguros, cuotas } = BANCOESTADO;
+  let saldo = cuotaSinSeguros * (1 - Math.pow(1 + tasa, -(cuotas - 2))) / tasa;
+  let interes = 0;
+  for (let k = 3; k <= n; k++) { interes = saldo * tasa; saldo -= (cuotaSinSeguros - interes); }
+  return Math.round(interes);
+}
+
+/* Qué parte de una cuota pagada es costo financiero DEL NEGOCIO, cuál es capital
+   del negocio y cuál le toca a otra persona. */
+function desglosarCuotaCredito(g) {
+  const monto = Number(g.costo_total) || 0;
+  const nombre = String(g.credito || '');
+  const fecha = String(g.fecha || '').slice(0, 10);
+  if (/bci/i.test(nombre)) {
+    const c = CUOTAS_BCI.slice().sort((x, y) => diasEntre(x[0], fecha) - diasEntre(y[0], fecha))[0];
+    const financiero = Math.min(monto, c[2] + c[3]);
+    return { financiero, capital: monto - financiero, otro: 0, estimado: false, detalle: `BCI, cuota con vencimiento ${fechaCorta(c[0])}` };
+  }
+  if (/banco ?estado/i.test(nombre)) {
+    const n = numeroCuotaBancoEstado(fecha);
+    const interes = interesBancoEstado(n);
+    const financieroTotal = interes === null ? monto : Math.min(monto, interes + BANCOESTADO.seguros);
+    const parte = BANCOESTADO.parteNegocio;
+    const financiero = Math.round(financieroTotal * parte);
+    const capital = Math.round((monto - financieroTotal) * parte);
+    return { financiero, capital, otro: monto - financiero - capital, estimado: true, detalle: `BancoEstado, cuota ${n} de 70` };
+  }
+  // Otro crédito sin datos: la cuota completa
+  return { financiero: monto, capital: 0, otro: 0, estimado: true, detalle: nombre || 'Crédito' };
+}
 
 function partidasDeMargenes(inf) {
   const gastos = inf?.detalleGastos || [];
@@ -30,7 +91,11 @@ function partidasDeMargenes(inf) {
   const despachos = Number(inf?.despachosCobrados) || 0;
   const variablesGasto = suma(g => operativo(g) && g.tipo !== 'FIJO');
   const fijos = suma(g => operativo(g) && g.tipo === 'FIJO');
-  const cuotas = suma(g => !!g.es_cuota_credito);
+  const cuotasPagadas = suma(g => !!g.es_cuota_credito);
+  const desglose = gastos.filter(g => g.es_cuota_credito).map(g => ({ ...desglosarCuotaCredito(g), monto: Number(g.costo_total) || 0 }));
+  const cuotas = desglose.reduce((a, d) => a + d.financiero, 0);          // intereses, comisión y seguros del negocio
+  const capitalPropio = desglose.reduce((a, d) => a + d.capital, 0);
+  const parteOtro = desglose.reduce((a, d) => a + d.otro, 0);
   const iva = Number(inf?.iva?.ivaAPagar) || 0;
   const depreciacion = 0;
 
@@ -44,6 +109,7 @@ function partidasDeMargenes(inf) {
 
   return {
     ventas, costoVendido, comisiones, despachos, variablesGasto, variables, fijos, cuotas, iva, depreciacion,
+    cuotasPagadas, capitalPropio, parteOtro, desglose,
     bruto, contribucion, operativo: operativoRes, ebitda, ebt, neto,
     fueraInventario: suma(g => g.grupo === 'INVENTARIO'),
     fueraInversion: suma(g => g.grupo === 'INVERSION'),
@@ -92,7 +158,7 @@ function abrirMargenesFinanzas() {
     : '';
 
   const pctContrib = pctMargen(p.contribucion, p.ventas);
-  const equilibrio = pctContrib > 0 ? Math.ceil((p.fijos + p.cuotas) / (pctContrib / 100)) : null;
+  const equilibrio = pctContrib > 0 ? Math.ceil((p.fijos + p.cuotas + p.capitalPropio) / (pctContrib / 100)) : null;
 
   caja.innerHTML = p.ventas <= 0
     ? '<p class="modal-hint">No hay ventas pagadas en este período: sin ventas no hay margen que calcular.</p>'
@@ -110,20 +176,23 @@ function abrirMargenesFinanzas() {
         que: 'La caja que genera el negocio antes de intereses, impuestos y depreciación.',
         formula: 'Operativo + depreciación ($0: el POS no la registra, así que queda igual al operativo)' })}
       ${tarjetaMargen({ titulo: 'Margen antes de impuestos', sigla: 'EBT', monto: p.ebt, ventas: p.ventas, verde: 8, rojo: 0,
-        que: 'Lo que queda después de pagar las deudas (BancoEstado, BCI).',
-        formula: `EBITDA − cuotas de crédito ${fmtCLP(p.cuotas)} (cuota completa: capital + intereses)` })}
+        que: 'Lo que queda después del costo de las deudas: intereses, comisión FOGAPE y seguros. El capital no es gasto.',
+        formula: `EBITDA − intereses y comisiones ${fmtCLP(p.cuotas)}${p.desglose.some(d => d.estimado) ? ' (BancoEstado estimado)' : ''}` })}
       ${tarjetaMargen({ titulo: 'Margen neto', sigla: '', monto: p.neto, ventas: p.ventas, verde: 5, rojo: 0,
         que: 'Lo que de verdad queda para ti al final del período.',
         formula: `Antes de impuestos − IVA a pagar del período ${fmtCLP(p.iva)}` })}
     </div>
-    ${equilibrio ? `<div class="mg-equilibrio">🎯 Con este margen de contribución (${pctContrib.toLocaleString('es-CL', { maximumFractionDigits: 1 })}%), para cubrir los gastos fijos y las cuotas (${fmtCLP(p.fijos + p.cuotas)}) necesitas vender <strong>${fmtCLP(equilibrio)}</strong> en el período.${p.ventas >= equilibrio ? ' ✅ Ya lo pasaste.' : ` Te faltan ${fmtCLP(equilibrio - p.ventas)}.`}</div>` : ''}
+    ${p.desglose.length ? `<div class="mg-cuotas"><strong>💳 Cuotas pagadas en el período: ${fmtCLP(p.cuotasPagadas)}</strong>
+      <ul>${p.desglose.map(d => `<li>${escHtml(d.detalle)}: ${fmtCLP(d.monto)} → costo tuyo ${fmtCLP(d.financiero)} · capital tuyo ${fmtCLP(d.capital)}${d.otro ? ` · mitad de tu papá ${fmtCLP(d.otro)} (la devuelve con el descuento del arriendo)` : ''}${d.estimado ? ' <span class="texto-apagado">(estimado)</span>' : ''}</li>`).join('')}</ul>
+      <small>El capital no baja el margen, pero sí sale de la caja: para el flujo de plata cuenta la cuota completa.</small></div>` : ''}
+    ${equilibrio ? `<div class="mg-equilibrio">🎯 Con este margen de contribución (${pctContrib.toLocaleString('es-CL', { maximumFractionDigits: 1 })}%), para cubrir los gastos fijos y tus cuotas (${fmtCLP(p.fijos + p.cuotas + p.capitalPropio)}) necesitas vender <strong>${fmtCLP(equilibrio)}</strong> en el período.${p.ventas >= equilibrio ? ' ✅ Ya lo pasaste.' : ` Te faltan ${fmtCLP(equilibrio - p.ventas)}.`}</div>` : ''}
     <details class="mg-notas">
       <summary>Qué quedó fuera y por qué</summary>
       <ul>
         <li><strong>Compras de mercadería</strong> (${fmtCLP(p.fueraInventario)}): no son gasto del mes; su costo cuenta cuando se vende (costo de lo vendido).</li>
         <li><strong>Activo fijo y devolución de préstamos o capital</strong> (${fmtCLP(p.fueraInversion)}): son inversión o devolver plata, no gasto.</li>
         <li><strong>Pagos al SII</strong> (${fmtCLP(p.fueraImpuestos)}): son el F29 de meses anteriores. Ya se descuenta el IVA de este período, así que no se restan otra vez.</li>
-        <li>Las <strong>cuotas de crédito</strong> se restan completas porque el POS no separa capital e intereses. Con la tabla de pagos del banco se puede restar solo el interés.</li>
+        <li><strong>Créditos:</strong> del BCI se resta el interés y la comisión exactos de su calendario. Del BancoEstado se resta solo <strong>tu mitad</strong>: la otra es el préstamo a tu papá. Su interés es un cálculo con el contrato (1,58% mensual más $48.620 de seguros), porque la tabla está en papel.</li>
         <li>El <strong>impuesto a la renta</strong> (anual, régimen Pro Pyme) no está incluido.</li>
         <li>Las ventas van con IVA, igual que en Utilidades. Solo cuentan las ventas pagadas.</li>
       </ul>

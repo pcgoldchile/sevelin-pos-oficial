@@ -5518,3 +5518,37 @@ a.marca-fb:hover { text-decoration: underline; }
 .mg-notas { margin-top: 12px; font-size: 13px; }
 .mg-notas summary { cursor: pointer; font-weight: 700; }
 .mg-notas li { margin: 4px 0; }
+
+.mg-cuotas { margin-top: 14px; padding: 12px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border); font-size: 13px; }
+.mg-cuotas ul { margin: 6px 0; padding-left: 18px; }
+
+/* 27-10-2026: Metas de hoy (js/metas.js) */
+.metas-principal { padding: 16px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface-soft); }
+.metas-principal-top { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.metas-label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); }
+.metas-grande { font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.15; }
+.metas-grande small { font-size: 14px; font-weight: 600; color: var(--text-muted); }
+.metas-pordia { text-align: right; display: flex; flex-direction: column; }
+.metas-pordia b { font-size: 22px; color: var(--gold); font-variant-numeric: tabular-nums; }
+.metas-pordia.ok b { color: var(--green); }
+.metas-pordia small { color: var(--text-muted); }
+.metas-barra { height: 12px; border-radius: var(--radius-pill); background: var(--border); overflow: hidden; margin: 12px 0 8px; }
+.metas-barra span { display: block; height: 100%; background: linear-gradient(90deg, var(--gold), var(--green)); border-radius: inherit; }
+.metas-ritmo { margin: 0; font-size: 13px; }
+.metas-ritmo.falta strong { color: var(--gold); }
+.metas-inds { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-top: 12px; }
+.metas-ind { padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border); border-top: 3px solid var(--border-strong); display: flex; flex-direction: column; gap: 2px; }
+.metas-ind.ok { border-top-color: var(--green); }
+.metas-ind.falta { border-top-color: var(--gold); }
+.metas-ind-tit { font-size: 12px; color: var(--text-muted); }
+.metas-ind b { font-size: 18px; font-variant-numeric: tabular-nums; }
+.metas-ind small { font-size: 11px; color: var(--text-muted); }
+.metas-columnas { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-top: 12px; }
+.metas-bloque { padding: 12px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border); min-width: 0; }
+.metas-bloque h3 { margin: 0 0 8px; font-size: 14px; }
+.metas-bloque ul { margin: 0 0 8px; padding-left: 18px; font-size: 13px; }
+.metas-bloque li { margin: 4px 0; }
+.metas-bloque li.alta { color: var(--red); font-weight: 700; }
+.metas-reglas { margin-top: 12px; background: var(--tint-gold); }
+.metas-editar { margin-top: 12px; }
+@media (max-width: 560px) { .metas-pordia { text-align: left; } }

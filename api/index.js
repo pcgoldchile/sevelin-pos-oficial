@@ -5269,6 +5269,15 @@ app.put('/api/ingresos/:id/corregir', auth(true), exigirPinAdmin, async (req, re
     if (ing.compra_id && (cambiaCosto || delta)) {
       avisos.push(`Esta compra tiene un gasto en Finanzas → Gastos (#${ing.compra_id}). El gasto no se cambia solo: revísalo si cambió lo que pagaste.`);
     }
+    /* 27-10-2026 (dueño): si se equivocó de fecha, el gasto de Finanzas vinculado se mueve
+       con la compra, al mediodía de Chile, para que caiga en el mes correcto. */
+    if (ing.compra_id && cambios.fecha_compra) {
+      const { error: errG } = await db.from('compras')
+        .update({ fecha: `${cambios.fecha_compra}T12:00:00-04:00` }).eq('id', ing.compra_id);
+      avisos.push(errG
+        ? `No se pudo mover el gasto #${ing.compra_id} de Finanzas a la nueva fecha: cámbialo a mano.`
+        : `El gasto de Finanzas (#${ing.compra_id}) también quedó con fecha ${cambios.fecha_compra.split('-').reverse().join('-')}.`);
+    }
     res.json({ ingreso: listo, stock_nuevo: producto && delta && !producto.stock_ilimitado ? num(producto.stock) + delta : null, avisos });
   } catch (error) {
     return enviarErrorBD(res, error, 'PUT /api/ingresos/:id/corregir');
@@ -11029,6 +11038,7 @@ app.get('/api/finanzas/utilidades', auth(true), async (req, res) => {
     const { data: fijosRaw } = await db.from('gastos_fijos').select('id, nombre');
     const fijosDeDeuda = new Set((fijosRaw || [])
       .filter(f => /cr[eé]dito|pr[eé]stamo/i.test(f.nombre || '')).map(f => Number(f.id)));
+    const nombreFijo = Object.fromEntries((fijosRaw || []).map(f => [Number(f.id), f.nombre || '']));
 
     // --- Ventas ---
     const ingresos = ventas.reduce((a, v) => a + num(v.total), 0);
@@ -11165,7 +11175,8 @@ app.get('/api/finanzas/utilidades', auth(true), async (req, res) => {
         tiene_factura: !!g.tiene_factura,
         iva_credito: num(g.iva_credito),
         // 27-10-2026: para "Tipos de margen" — la cuota de un crédito no es gasto operativo
-        es_cuota_credito: !!(g.gasto_fijo_id && fijosDeDeuda.has(Number(g.gasto_fijo_id)))
+        es_cuota_credito: !!(g.gasto_fijo_id && fijosDeDeuda.has(Number(g.gasto_fijo_id))),
+        credito: g.gasto_fijo_id && fijosDeDeuda.has(Number(g.gasto_fijo_id)) ? (nombreFijo[Number(g.gasto_fijo_id)] || '') : ''
       }))
     });
   } catch (e) {
@@ -13618,6 +13629,108 @@ function camposPendiente(body, parcial) {
   }
   return { datos };
 }
+
+/* ============================================================
+   METAS DEL DÍA (27-10-2026, dueño: "empiezo el día con la memoria reseteada")
+   ------------------------------------------------------------
+   Al iniciar sesión el POS muestra cómo va el mes contra la meta de la etapa
+   del plan (docs/PLAN-ACCION-2026-10-24.md §2) y qué toca hoy. Las metas se
+   guardan en textos_editables('metas'), sin migración; las edita el dueño.
+   ============================================================ */
+const METAS_POR_DEFECTO = {
+  etapa: 'Etapa 1 · Dejar de perder (noviembre y diciembre 2026)',
+  venta_mes: 4500000,
+  margen_min: 33,
+  servicios_mes: 30,
+  ticket: 28000,
+  origen_pct: 90
+};
+
+function sanearMetas(b) {
+  const entero = (v, min, max) => { const n = Math.round(Number(v)); return Number.isFinite(n) && n >= min && n <= max ? n : null; };
+  const m = {
+    etapa: String(b?.etapa ?? METAS_POR_DEFECTO.etapa).trim().slice(0, 120) || METAS_POR_DEFECTO.etapa,
+    venta_mes: entero(b?.venta_mes, 100000, 500000000),
+    margen_min: entero(b?.margen_min, 1, 95),
+    servicios_mes: entero(b?.servicios_mes, 0, 5000),
+    ticket: entero(b?.ticket, 1000, 10000000),
+    origen_pct: entero(b?.origen_pct, 0, 100)
+  };
+  for (const k of Object.keys(m)) if (m[k] === null) return { error: `Revisa el valor de "${k}"` };
+  return { metas: m };
+}
+
+async function leerMetas() {
+  const { data } = await db.from('textos_editables').select('contenido').eq('clave', 'metas').maybeSingle();
+  return { ...METAS_POR_DEFECTO, ...(data?.contenido || {}) };
+}
+
+app.get('/api/metas/hoy', auth(true), async (req, res) => {
+  try {
+    const hoy = fechaHoyChile();
+    const [a, m, d] = hoy.split('-').map(Number);
+    const desde = `${hoy.slice(0, 7)}-01`;
+    const diasMes = new Date(Date.UTC(a, m, 0)).getUTCDate();
+    const metas = await leerMetas();
+
+    const { data: ventasRaw, error: errV } = await consultarConReintento(() => db.from('ventas')
+      .select('id, total, costo_total, origen_cliente, cliente_telefono, tipo_dte')
+      .gte('fecha', desde).lte('fecha', hoy).eq('estado', 'PAGADA'));
+    if (errV) throw errV;
+    const ventas = ventasRaw || [];
+    const ids = ventas.map(v => v.id);
+    let servicios = 0;
+    for (let i = 0; i < ids.length; i += 300) {
+      const { data: items, error: errI } = await db.from('venta_items')
+        .select('venta_id, cantidad, es_servicio').in('venta_id', ids.slice(i, i + 300)).eq('es_servicio', true);
+      if (errI) throw errI;
+      servicios += (items || []).reduce((acc, it) => acc + (num(it.cantidad) || 1), 0);
+    }
+
+    const total = ventas.reduce((acc, v) => acc + num(v.total), 0);
+    const costo = ventas.reduce((acc, v) => acc + num(v.costo_total), 0);
+    const conOrigen = ventas.filter(v => String(v.origen_cliente || '').trim()).length;
+    const conBoleta = ventas.filter(v => v.tipo_dte === 'BOLETA' || v.tipo_dte === 'FACTURA').length;
+    const diasQuedan = diasMes - d + 1;   // hoy cuenta
+
+    const { data: pend } = await db.from('pendientes')
+      .select('id, titulo, prioridad, fecha_limite, revisar_el, estado')
+      .in('estado', ['pendiente', 'postergado']).eq('responsable', 'dueno')
+      .order('fecha_limite', { ascending: true, nullsFirst: false }).limit(60);
+    const pesoPrioridad = { alta: 0, normal: 1, baja: 2 };
+    const tuyos = (pend || [])
+      .filter(p => p.estado === 'pendiente' || (p.revisar_el && p.revisar_el <= hoy))
+      .sort((x, y) => (pesoPrioridad[x.prioridad] ?? 1) - (pesoPrioridad[y.prioridad] ?? 1)
+        || String(x.fecha_limite || '9999').localeCompare(String(y.fecha_limite || '9999')));
+
+    res.json({
+      hoy, dia: d, dias_mes: diasMes, dias_quedan: diasQuedan, metas,
+      mes: {
+        venta: total, costo, cantidad: ventas.length, servicios,
+        margen: total > 0 ? ((total - costo) / total) * 100 : null,
+        ticket: ventas.length ? total / ventas.length : null,
+        origen_pct: ventas.length ? (conOrigen / ventas.length) * 100 : null,
+        boleta_pct: ventas.length ? (conBoleta / ventas.length) * 100 : null,
+        proyeccion: d > 0 ? (total / d) * diasMes : 0,
+        falta: Math.max(0, metas.venta_mes - total),
+        por_dia: diasQuedan > 0 ? Math.max(0, metas.venta_mes - total) / diasQuedan : 0
+      },
+      pendientes: tuyos.slice(0, 6),
+      pendientes_total: tuyos.length
+    });
+  } catch (error) {
+    return enviarErrorBD(res, error, 'GET /api/metas/hoy');
+  }
+});
+
+app.put('/api/metas', auth(true), async (req, res) => {
+  const { metas, error } = sanearMetas(req.body);
+  if (error) return enviarError(res, 400, error);
+  const { error: errG } = await db.from('textos_editables')
+    .upsert([{ clave: 'metas', contenido: metas, actualizado_en: new Date().toISOString() }], { onConflict: 'clave' });
+  if (errG) return enviarErrorBD(res, errG, 'PUT /api/metas');
+  res.json({ metas });
+});
 
 app.get('/api/pendientes', auth(true), async (req, res) => {
   const [abiertos, cerrados] = await Promise.all([
