@@ -1593,6 +1593,9 @@
             <input type="date" id="utilDesde" class="filtro-fecha">
             <input type="date" id="utilHasta" class="filtro-fecha">
             <button class="btn btn-outline btn-sm" id="btnUtilRangoPersonalizado">Aplicar</button>
+            <span class="filtro-sep"></span>
+            <!-- 27-10-2026: js/margenes-finanzas.js, con el mismo período -->
+            <button class="btn btn-primary btn-sm" id="btnMargenesFinanzas" title="Margen bruto, de contribución, operativo, EBITDA, antes de impuestos y neto del período elegido">📐 Tipos de margen</button>
           </div>
 
           <!-- Casillas: cada una descuenta una capa. No recargan nada,
@@ -2597,7 +2600,10 @@
             <option value="productos">Solo productos</option>
             <option value="servicios">Solo servicios</option>
           </select>
-          <select id="ordenProductos" title="Ordenar / Filtrar">
+          <!-- 27-10-2026: el orden se elige en una ventana (js/orden-productos.js). El select queda
+               oculto porque guarda el valor que leen la lista, la exportación y config.js. -->
+          <button type="button" class="btn btn-outline orden-prod-boton" id="btnOrdenProductos" title="Ordenar y filtrar la lista">↕️ <span id="ordenProductosEtiqueta">Más recientes primero</span></button>
+          <select id="ordenProductos" title="Ordenar / Filtrar" hidden>
             <option value="">Orden: Más recientes primero</option>
             <option value="nombre_asc">Orden: Nombre A-Z</option>
             <option value="precio_desc">Precio: Mayor a Menor</option>
@@ -2613,6 +2619,20 @@
             <option value="bajo_stock">Ver: Bajo Stock</option>
             <option value="con_sn">Ver: CON S/N</option>
             <option value="sin_sn">Ver: SIN S/N</option>
+            <option value="no_web">Ver: No publicados en la web</option>
+            <option value="si_web">Ver: Publicados en la web</option>
+            <option value="no_facebook">Ver: No publicados en Facebook</option>
+            <option value="si_facebook">Ver: Publicados en Facebook</option>
+            <option value="sin_fotos">Ver: Sin fotos</option>
+            <option value="sin_descripcion">Ver: Sin descripción</option>
+            <option value="margen_poco" class="admin-only">Ver: Margen poco (bajo 15%)</option>
+            <option value="margen_medio" class="admin-only">Ver: Margen medio (15% a 25%)</option>
+            <option value="margen_mucho" class="admin-only">Ver: Margen mucho (desde 25%)</option>
+            <option value="con_stock">Ver: Con stock</option>
+            <option value="agotados_lista">Ver: Agotados</option>
+            <option value="por_llegar_lista">Ver: Por llegar</option>
+            <option value="en_oferta">Ver: En oferta</option>
+            <option value="stock_desc">Stock: Mayor a Menor</option>
             <option value="archivados">Ver: Archivados</option>
             <option value="borradores">Ver: Borradores</option>
           </select>
@@ -2878,8 +2898,8 @@
               <!-- v139 (sql/95): textos para redes, guardados en el producto. Se arman SOLO con lo que
                    ya dice la Descripción (js/redes-texto.js): sin descripción no se genera nada. -->
               <details class="compra-mas" id="prodRedes" style="margin-top:10px;">
-                <summary>📣 Textos para Facebook e Instagram (se guardan con el producto)</summary>
-                <p class="subtitle" style="margin-top:8px;">Se arman con lo que ya dice la <strong>Descripción</strong> de arriba, sin IA y sin inventar nada: si no hay descripción, no se genera. Puedes corregirlos. Quedan guardados al apretar <strong>Guardar Producto</strong>.</p>
+                <summary>📣 Textos para Facebook e Instagram (se arman al momento, no se guardan)</summary>
+                <p class="subtitle" style="margin-top:8px;">Se arman con lo que ya dice la <strong>Descripción</strong> de arriba, sin IA y sin inventar nada: si no hay descripción, no se genera. Puedes corregirlos y copiarlos. Ya no se guardan con el producto: cada vez se arman de nuevo con la descripción y el precio de hoy.</p>
                 <div class="field" style="margin-top:8px;">
                   <label for="prodFacebookTexto">Texto para Facebook</label>
                   <textarea id="prodFacebookTexto" rows="8" maxlength="8000" spellcheck="true" placeholder="Aprieta «Armar desde la descripción» o pega aquí tu texto."></textarea>
@@ -8010,10 +8030,36 @@
     </div>
   </div>
 
+  <!-- 27-10-2026: Tipos de margen — js/margenes-finanzas.js -->
+  <div id="modalMargenes" class="modal-overlay">
+    <div class="modal-box" style="max-width:980px;">
+      <h2>📐 Tipos de margen</h2>
+      <p class="modal-hint" id="margenesPeriodo"></p>
+      <div id="margenesContenido"></div>
+      <div class="modal-foot">
+        <button class="btn btn-primary" id="btnMargenesCerrar" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 27-10-2026: Orden y filtros de Productos (js/orden-productos.js) -->
+  <div id="modalOrdenProductos" class="modal-overlay">
+    <div class="modal-box orden-prod-modal" style="max-width:820px;">
+      <h2>↕️ Orden y filtros</h2>
+      <p class="modal-hint">Elige cómo ver la lista. El número es cuántos productos caen ahí, con el buscador y el tipo que tengas puestos.</p>
+      <div id="ordenProductosGrupos"></div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="btnOrdenProductosQuitar" type="button">Quitar filtro</button>
+        <button class="btn btn-primary" id="btnOrdenProductosCerrar" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modalFacebookRapido" class="modal-overlay">
     <div class="modal-box" style="max-width:760px;">
-      <h2>📘 Publicar en Facebook</h2>
+      <h2>📘 Publicar en Facebook e Instagram</h2>
       <p class="modal-hint" id="fbRapidoNombre">—</p>
+      <div id="fbRapidoPrecio" class="fb-rapido-precio"></div>
       <div id="fbRapidoEstado" class="fb-rapido-estado"></div>
 
       <h3 class="antes-seccion">1. Fotos</h3>
@@ -8021,22 +8067,17 @@
       <button class="btn btn-outline btn-sm" id="btnFbRapidoFotos" type="button" title="Las deja sueltas en tu carpeta de fotos, con la de ubicación si el interruptor está encendido. Con Mayús eliges otra carpeta.">⬇️ Descargar las fotos</button>
 
       <h3 class="antes-seccion">2. Texto</h3>
-      <div class="field">
-        <label for="fbRapidoDatos">Tu descripción del producto (escríbela tú: la IA solo la ordena, no inventa)</label>
-        <textarea id="fbRapidoDatos" rows="4" maxlength="6000" placeholder="Ej: Audífonos bluetooth Blik SOUL250, negros, 20 horas de batería, estuche de carga, nuevos y sellados…"></textarea>
-      </div>
-      <div class="toolbar-group">
-        <button class="btn btn-primary btn-sm" id="btnFbRapidoArmar" type="button" title="Sin IA: ordena lo que ya dice la descripción de la ficha. Si no hay descripción, no arma nada.">🧩 Armar desde la ficha (sin IA)</button>
-        <button class="btn btn-outline btn-sm" id="btnFbRapidoOrdenar" type="button">✨ Ordenar con IA</button>
-        <button class="btn btn-ghost btn-sm" id="btnFbRapidoUsarFicha" type="button" title="Copia aquí la descripción que ya tiene la ficha, para que la revises antes de ordenar">Traer la descripción de la ficha</button>
+      <p class="modal-hint">Se arma al momento con la <strong>descripción de la ficha</strong> y el precio de hoy, sin IA, y queda copiado. No se guarda: cada vez sale actualizado.</p>
+      <div class="fb-rapido-redes">
+        <button class="btn fb-rapido-red fb-rapido-red-fb" id="btnFbRapidoFacebook" type="button">📘 FACEBOOK</button>
+        <button class="btn fb-rapido-red fb-rapido-red-ig" id="btnFbRapidoInstagram" type="button">📸 INSTAGRAM</button>
       </div>
       <div class="field" style="margin-top:12px;">
-        <label for="fbRapidoTexto">Texto para Facebook (queda guardado en el producto; lo puedes corregir)</label>
-        <textarea id="fbRapidoTexto" rows="9" maxlength="8000" placeholder="Aquí aparece el texto listo para copiar y pegar."></textarea>
+        <label for="fbRapidoTexto" id="fbRapidoTextoEtiqueta">Texto listo para pegar (lo puedes corregir antes de copiar)</label>
+        <textarea id="fbRapidoTexto" rows="9" maxlength="8000" placeholder="Aprieta FACEBOOK o INSTAGRAM."></textarea>
       </div>
       <div class="toolbar-group">
-        <button class="btn btn-green btn-sm" id="btnFbRapidoCopiar" type="button">📋 Copiar texto</button>
-        <button class="btn btn-outline btn-sm" id="btnFbRapidoGuardar" type="button">💾 Guardar texto</button>
+        <button class="btn btn-green btn-sm" id="btnFbRapidoCopiar" type="button">📋 Copiar de nuevo</button>
       </div>
 
       <h3 class="antes-seccion">3. ¿Ya lo publicaste?</h3>
@@ -8802,7 +8843,8 @@
   <script src="js/pago-pasos.js"></script>   <!-- v175: el cobro por pasos (después de pago.js, puntos-caja.js y atajos.js) -->
   <script src="js/balance.js"></script>
   <script src="js/finanzas-ajustes.js"></script>   <!-- ajustes de saldo + checklist (req 3 y 4) -->
-  <script src="js/utilidades.js"></script>   <!-- después de balance.js: reutiliza cerrarModal y el panel de Finanzas -->
+  <script src="js/utilidades.js"></script>
+  <script src="js/margenes-finanzas.js"></script>   <!-- 27-10-2026: usa utilInforme de utilidades.js -->   <!-- después de balance.js: reutiliza cerrarModal y el panel de Finanzas -->
   <script src="js/finanzas-devoluciones.js"></script>   <!-- después de balance.js: usa calcularRango y el panel de Finanzas -->
   <script src="js/devoluciones-seguimiento.js"></script>   <!-- después de finanzas-devoluciones.js: su modal se abre desde ese panel -->
   <script src="js/inteligencia.js"></script>   <!-- después de balance.js: reutiliza calcularRango y el panel de Finanzas -->
@@ -8818,6 +8860,7 @@
   <script src="js/carga-rapida-fotos.js"></script>   <!-- v178: después de productos.js y caracteristicas-producto.js; una foto = un producto -->
 
   <script src="js/facebook-rapido.js"></script>
+  <script src="js/orden-productos.js"></script>
   <script src="js/marketplaces.js"></script>   <!-- v181 (sql/112): después de productos.js; usa productsList -->
 
   <script src="js/redes-contenido.js"></script>

@@ -21,8 +21,12 @@ function botonFacebookDeFila(p) {
   return `<button class="btn btn-icon ${publicado ? 'btn-icon-fb-listo' : 'btn-icon-view'}" data-facebook="${p.id}"
     title="${publicado ? 'Ya publicado en Facebook: ver fotos, texto y link' : 'Facebook: bajar fotos, texto y marcar publicado'}">${ICO_FACEBOOK_PROD}</button>`;
 }
+/* 27-10-2026: la marca lleva a la publicación (pedido del dueño). */
 function marcaFacebookDeFila(p) {
-  return p.facebook_url ? ' · <span class="marca-fb" title="Publicado en Facebook">✓ Facebook</span>' : '';
+  if (!p.facebook_url) return '';
+  return linkFacebookValido(p.facebook_url)
+    ? ` · <a class="marca-fb" href="${escHtml(p.facebook_url)}" target="_blank" rel="noopener noreferrer" title="Abrir la publicación en Facebook" onclick="event.stopPropagation()">✓ Facebook ↗</a>`
+    : ' · <span class="marca-fb" title="Publicado en Facebook">✓ Facebook</span>';
 }
 
 function linkFacebookValido(texto) {
@@ -45,10 +49,10 @@ function abrirFacebookRapido(p) {
   const poner = (id, valor) => { const el = document.getElementById(id); if (el) el.value = valor; };
   const titulo = document.getElementById('fbRapidoNombre');
   if (titulo) titulo.textContent = p.nombre || '';
-  poner('fbRapidoDatos', '');
-  // v173: el bloque "➕ OPCIONAL" del agregable se rehace con el precio de hoy (js/redes-texto.js)
-  poner('fbRapidoTexto', typeof conAgregableParaRedes === 'function' ? conAgregableParaRedes(p.facebook_texto || '', p) : (p.facebook_texto || ''));
+  // 27-10-2026: el texto ya no se guarda; se arma con FACEBOOK o INSTAGRAM
+  poner('fbRapidoTexto', '');
   poner('fbRapidoLink', p.facebook_url || '');
+  pintarPrecioFacebookRapido();
   pintarFotosFacebookRapido();
   pintarEstadoFacebookRapido();
   document.getElementById('modalFacebookRapido')?.classList.add('show');
@@ -148,47 +152,38 @@ async function descargarFotosDeMarcadosParaFacebook(evento) {
   showToast(`${listos} carpeta(s) lista(s) en "${carpeta.name}"` + (fallidos.length ? ` · fallaron: ${fallidos.map(n => acortar(n, 24)).join(', ')}` : ''), fallidos.length ? 'err' : 'ok');
 }
 
-/* v139: sin IA. Ordena lo que ya dice la descripción de la ficha (js/redes-texto.js).
-   Si el producto no tiene descripción, no arma nada. De paso deja guardado el
-   pie de foto de Instagram si el producto todavía no tenía uno. */
-async function armarTextoFacebookRapido() {
+/* Precio de hoy (con la oferta vigente si hay) y margen, para tenerlo a la vista al publicar. */
+function pintarPrecioFacebookRapido() {
+  const el = document.getElementById('fbRapidoPrecio');
   const p = productoFacebookRapido;
-  if (!p || typeof armarTextoFacebook !== 'function') return;
-  const texto = armarTextoFacebook(p);
-  if (!texto) { showToast('Este producto no tiene descripción en la ficha: sin descripción no se arma nada', 'err'); return; }
-  const caja = document.getElementById('fbRapidoTexto');
-  const actual = (caja?.value || '').trim();
-  if (actual && actual !== texto && !(await ventanaConfirmar('¿Reemplazar el texto que ya está escrito?', { textoSi: 'Sí, reemplazarlo' }))) return;
-  if (caja) caja.value = texto;
-  const instagram = !p.instagram_texto ? armarTextoInstagram(p) : '';
-  await guardarFacebookRapido({ texto, ...(instagram ? { instagram } : {}) }, 'Texto armado desde la ficha y guardado en el producto');
+  if (!el || !p) return;
+  const pr = typeof precioVigenteParaRedes === 'function'
+    ? precioVigenteParaRedes(p, todayISO())
+    : { precio: Number(p.precio_unitario) || 0, antes: null };
+  if (!(pr.precio > 0)) { el.innerHTML = '<span class="texto-apagado">Sin precio cargado</span>'; return; }
+  const costo = Number(p.costo_unitario) || 0;
+  const margen = costo > 0 ? Math.round((pr.precio - costo) / pr.precio * 100) : null;
+  el.innerHTML = `<span class="fb-rapido-precio-monto">${fmtCLP(pr.precio)}</span>`
+    + (pr.antes ? ` <s class="texto-apagado">${fmtCLP(pr.antes)}</s> <span class="badge badge-gold">Oferta</span>` : '')
+    + (pr.desde ? ' <span class="texto-apagado">(desde)</span>' : '')
+    + (margen !== null ? ` <span class="texto-apagado">· margen ${margen}% · stock ${Number(p.stock) || 0}</span>` : '');
 }
 
-/* La IA solo ORDENA lo que el dueño escribió: sin texto suyo, no hay nada que ordenar. */
-async function ordenarTextoFacebookRapido() {
+/* 27-10-2026 (dueño): sin IA y sin guardar. FACEBOOK o INSTAGRAM arma el texto con
+   la descripción de la ficha y el precio de hoy (js/redes-texto.js) y lo deja copiado. */
+async function armarTextoRedRapido(red) {
   const p = productoFacebookRapido;
-  if (!p) return;
-  const datos = (document.getElementById('fbRapidoDatos')?.value || '').trim();
-  if (datos.length < 15) {
-    showToast('Escribe primero tu descripción del producto: la IA solo la ordena, no la inventa', 'err');
-    document.getElementById('fbRapidoDatos')?.focus();
-    return;
-  }
-  const boton = document.getElementById('btnFbRapidoOrdenar');
-  if (boton) { boton.disabled = true; boton.textContent = '✨ Ordenando…'; }
-  try {
-    const r = await API.productos.generarTexto({
-      destino: 'facebook', nombre: p.nombre || '', marca: p.marca || '', condicion: p.condicion || '',
-      es_servicio: !!p.es_servicio, categoria: p.categoria_web || '', datos, descripcion_html: ''
-    });
-    const caja = document.getElementById('fbRapidoTexto');
-    if (caja) caja.value = r.texto || '';
-    await guardarFacebookRapido({ texto: r.texto || '' }, 'Texto listo y guardado en el producto');
-  } catch (err) {
-    showToast(err.message || 'No se pudo ordenar el texto', 'err');
-  } finally {
-    if (boton) { boton.disabled = false; boton.textContent = '✨ Ordenar con IA'; }
-  }
+  if (!p || typeof armarTextoFacebook !== 'function') return;
+  const instagram = red === 'instagram';
+  const texto = instagram ? armarTextoInstagram(p) : armarTextoFacebook(p);
+  if (!texto) { showToast('Este producto no tiene descripción en la ficha: sin descripción no se arma nada', 'err'); return; }
+  const caja = document.getElementById('fbRapidoTexto');
+  if (caja) caja.value = texto;
+  const etiqueta = document.getElementById('fbRapidoTextoEtiqueta');
+  if (etiqueta) etiqueta.textContent = `Texto para ${instagram ? 'Instagram' : 'Facebook'} (lo puedes corregir antes de copiar)`;
+  document.getElementById('btnFbRapidoFacebook')?.classList.toggle('activo', !instagram);
+  document.getElementById('btnFbRapidoInstagram')?.classList.toggle('activo', instagram);
+  await copiarTextoFacebookRapido(instagram ? 'Instagram' : 'Facebook');
 }
 
 async function guardarFacebookRapido(cambios, mensaje) {
@@ -207,12 +202,12 @@ async function guardarFacebookRapido(cambios, mensaje) {
   }
 }
 
-async function copiarTextoFacebookRapido() {
+async function copiarTextoFacebookRapido(red) {
   const texto = document.getElementById('fbRapidoTexto')?.value || '';
-  if (!texto.trim()) { showToast('Todavía no hay texto para copiar', 'err'); return; }
+  if (!texto.trim()) { showToast('Aprieta FACEBOOK o INSTAGRAM para armar el texto', 'err'); return; }
   try {
     await navigator.clipboard.writeText(texto);
-    showToast('Texto copiado: pégalo en Facebook', 'ok');
+    showToast(`Texto copiado: pégalo en ${typeof red === 'string' ? red : 'la publicación'}`, 'ok');
   } catch (_) {
     document.getElementById('fbRapidoTexto')?.select();
     showToast('Selecciona el texto y cópialo con Ctrl+C', 'err');
@@ -230,7 +225,7 @@ async function marcarPublicadoFacebookRapido() {
 }
 
 async function quitarPublicadoFacebookRapido() {
-  if (!(await ventanaConfirmar('¿Quitar la marca de publicado en Facebook?\n\nEl producto vuelve a "Sin publicar" y se borra el link guardado. El texto se conserva.', { textoSi: 'Sí, quitarla', peligro: true }))) return;
+  if (!(await ventanaConfirmar('¿Quitar la marca de publicado en Facebook?\n\nEl producto vuelve a "Sin publicar" y se borra el link guardado.', { textoSi: 'Sí, quitarla', peligro: true }))) return;
   if (await guardarFacebookRapido({ url: '' }, 'Marca quitada')) {
     const caja = document.getElementById('fbRapidoLink');
     if (caja) caja.value = '';
@@ -241,17 +236,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const al = (id, fn) => document.getElementById(id)?.addEventListener('click', fn);
   al('btnFbRapidoCerrar', cerrarFacebookRapido);
   al('btnFbRapidoFotos', descargarFotosFacebookRapido);
-  al('btnFbRapidoArmar', armarTextoFacebookRapido);
-  al('btnFbRapidoOrdenar', ordenarTextoFacebookRapido);
-  al('btnFbRapidoCopiar', copiarTextoFacebookRapido);
-  al('btnFbRapidoGuardar', () => guardarFacebookRapido({ texto: document.getElementById('fbRapidoTexto')?.value || '' }, 'Texto guardado'));
+  al('btnFbRapidoFacebook', () => armarTextoRedRapido('facebook'));
+  al('btnFbRapidoInstagram', () => armarTextoRedRapido('instagram'));
+  al('btnFbRapidoCopiar', () => copiarTextoFacebookRapido());
   al('btnFbRapidoPublicado', marcarPublicadoFacebookRapido);
   al('btnFbRapidoQuitar', quitarPublicadoFacebookRapido);
   al('btnFotosMarcadosFacebook', descargarFotosDeMarcadosParaFacebook);
-  al('btnFbRapidoUsarFicha', () => {
-    const caja = document.getElementById('fbRapidoDatos');
-    const texto = descripcionPlanaDeProducto(productoFacebookRapido);
-    if (!texto) { showToast('Este producto no tiene descripción en la ficha', 'err'); return; }
-    if (caja) { caja.value = texto; caja.focus(); }
-  });
 });

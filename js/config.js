@@ -543,6 +543,7 @@ function activarVista(viewId, subtab) {
   if (viewId === 'view-productos') {
     const elOrden = document.getElementById('ordenProductos');
     if (elOrden) elOrden.value = (subtab === 'archivados' || subtab === 'borradores') ? subtab : '';
+    if (typeof pintarEtiquetaOrdenProductos === 'function') pintarEtiquetaOrdenProductos();
     if (typeof cargarProductos === 'function') cargarProductos();
   }
 

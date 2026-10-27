@@ -5469,3 +5469,52 @@ body.theme-light .pos-col-der .data-table thead th { background: #fafafa; }
 .mk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
 .mk-grid .mk-ancho { grid-column: span 2; }
 .mk-calc { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; padding: 10px; border-radius: 10px; background: rgba(34, 197, 94, .08); border: 1px solid rgba(34, 197, 94, .3); }
+
+/* 27-10-2026: ventana de Facebook/Instagram — precio y los dos botones de red */
+a.marca-fb { text-decoration: none; }
+a.marca-fb:hover { text-decoration: underline; }
+.fb-rapido-precio { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin: 2px 0 6px; font-size: 13px; }
+.fb-rapido-precio-monto { font-size: 22px; font-weight: 800; color: var(--green); }
+.fb-rapido-redes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.fb-rapido-red { justify-content: center; min-height: 48px; font-size: 15px; font-weight: 800; letter-spacing: .04em; color: #fff; border: 2px solid transparent; }
+.fb-rapido-red-fb { background: #1877f2; }
+.fb-rapido-red-ig { background: linear-gradient(45deg, #f09433, #dc2743 50%, #bc1888); }
+.fb-rapido-red:hover { filter: brightness(1.08); }
+.fb-rapido-red.activo { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(var(--gold-rgb), .25); }
+
+/* 27-10-2026: Orden y filtros de Productos */
+.orden-prod-boton { white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.orden-prod-boton.activo { border-color: var(--gold); color: var(--gold); }
+.orden-prod-grupo { margin-top: 14px; }
+.orden-prod-grupo h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin: 0 0 8px; }
+.orden-prod-opciones { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.orden-prod-op { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-soft); color: inherit; cursor: pointer; text-align: left; font: inherit; font-size: 13px; transition: border-color var(--speed), transform var(--speed); }
+.orden-prod-op:hover { border-color: var(--border-strong); transform: translateY(-1px); }
+.orden-prod-op.activo { border-color: var(--gold); background: var(--tint-gold); }
+.orden-prod-op.vacio { opacity: .5; }
+.orden-prod-ico { font-size: 16px; width: 20px; text-align: center; }
+.orden-prod-texto { flex: 1; min-width: 0; }
+.orden-prod-num { font-weight: 800; font-variant-numeric: tabular-nums; padding: 1px 8px; border-radius: var(--radius-pill); background: var(--border); font-size: 12px; }
+.orden-prod-op.con-alerta .orden-prod-num { background: var(--tint-gold); color: var(--gold); }
+.orden-prod-op.tono-rojo .orden-prod-num { background: var(--tint-red); color: var(--red); }
+.orden-prod-op.tono-ambar .orden-prod-num { background: var(--tint-gold); color: var(--gold); }
+.orden-prod-op.tono-verde .orden-prod-num { background: var(--tint-green); color: var(--green); }
+
+/* 27-10-2026: Tipos de margen (Finanzas → Utilidades) */
+.mg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-top: 8px; }
+.mg-card { border: 1px solid var(--border); border-left: 4px solid var(--border-strong); border-radius: var(--radius); padding: 14px 16px; background: var(--surface-soft); display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.mg-card header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.mg-card h3 { margin: 0; font-size: 14px; }
+.mg-sigla { font-size: 10px; font-weight: 800; letter-spacing: .08em; padding: 2px 6px; border-radius: var(--radius-pill); background: var(--border); color: var(--text-muted); }
+.mg-pct { font-size: 32px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.mg-monto { font-weight: 700; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.mg-que { margin: 6px 0 0; font-size: 13px; }
+.mg-formula { margin: 4px 0 0; font-size: 12px; color: var(--text-muted); }
+.mg-verde { border-left-color: var(--green); } .mg-verde .mg-pct { color: var(--green); }
+.mg-ambar { border-left-color: var(--gold); } .mg-ambar .mg-pct { color: var(--gold); }
+.mg-rojo { border-left-color: var(--red); } .mg-rojo .mg-pct { color: var(--red); }
+.mg-equilibrio { margin-top: 14px; padding: 12px 14px; border-radius: var(--radius-sm); background: var(--tint-gold); font-size: 14px; }
+.mg-notas { margin-top: 12px; font-size: 13px; }
+.mg-notas summary { cursor: pointer; font-weight: 700; }
+.mg-notas li { margin: 4px 0; }

@@ -4457,6 +4457,20 @@ app.post('/api/productos/:id/compras', auth(true), async (req, res) => {
       if (listo.error) return enviarError(res, 400, listo.error);
     }
 
+    /* 27-10-2026: un doble clic en "Guardar" mandó la misma compra dos veces en
+       medio segundo (producto #551: stock 60 en vez de 30). Una compra igual del
+       mismo producto en los últimos 20 segundos se rechaza en vez de duplicarse. */
+    if (!dePadres) {
+      const hace20s = new Date(Date.now() - 20000).toISOString();
+      const { data: gemela, error: errGemela } = await db.from('ingresos_mercaderia')
+        .select('id').eq('producto_id', id).eq('cantidad', datos.cantidad)
+        .eq('costo_unitario', datos.costo_unitario).gte('creado_en', hace20s).limit(1);
+      if (errGemela) throw errGemela;
+      if (gemela?.length) {
+        return res.status(409).json({ error: 'Esta compra ya se registró hace unos segundos: no se volvió a sumar.', codigo: 'COMPRA_DUPLICADA' });
+      }
+    }
+
     const resultado = await registrarCompraDeProducto(producto, datos, {
       sinCompra: dePadres,
       enCamino: req.body?.en_camino === true,
@@ -11010,6 +11024,12 @@ app.get('/api/finanzas/utilidades', auth(true), async (req, res) => {
 
     const gastos = gastosRaw || [];
 
+    /* 27-10-2026: los gastos fijos que son cuotas de un crédito (BancoEstado, BCI…).
+       Se reconocen por el nombre; sirven para separar los intereses en "Tipos de margen". */
+    const { data: fijosRaw } = await db.from('gastos_fijos').select('id, nombre');
+    const fijosDeDeuda = new Set((fijosRaw || [])
+      .filter(f => /cr[eé]dito|pr[eé]stamo/i.test(f.nombre || '')).map(f => Number(f.id)));
+
     // --- Ventas ---
     const ingresos = ventas.reduce((a, v) => a + num(v.total), 0);
     const costoVendido = ventas.reduce((a, v) => a + num(v.costo_total), 0);
@@ -11143,7 +11163,9 @@ app.get('/api/finanzas/utilidades', auth(true), async (req, res) => {
         tipo: g.gasto_fijo_id ? 'FIJO' : 'VARIABLE',
         costo_total: num(g.costo_total),
         tiene_factura: !!g.tiene_factura,
-        iva_credito: num(g.iva_credito)
+        iva_credito: num(g.iva_credito),
+        // 27-10-2026: para "Tipos de margen" — la cuota de un crédito no es gasto operativo
+        es_cuota_credito: !!(g.gasto_fijo_id && fijosDeDeuda.has(Number(g.gasto_fijo_id)))
       }))
     });
   } catch (e) {

@@ -589,8 +589,10 @@ function acortar(texto, largo) {
 function badgeStock(p) {
   if (p.stock_ilimitado) return `<span class="stock-badge stock-ok">♾️ Ilimitado</span>`;
   const stock = Number(p.stock) || 0;
-  if (p.alerta_stock === false) return `<span class="stock-badge stock-ok">${stock}</span>`;
+  /* 27-10-2026: sin stock es "Agotado" siempre. Antes, con la alerta apagada
+     se mostraba un 0 verde y parecía otra cosa. */
   if (stock <= 0) return `<span class="stock-badge stock-agotado">Agotado</span>`;
+  if (p.alerta_stock === false) return `<span class="stock-badge stock-ok">${stock}</span>`;
   if (stock <= limiteStock(p)) return `<span class="stock-badge stock-bajo">⚠️ ${stock}</span>`;
   return `<span class="stock-badge stock-ok">${stock}</span>`;
 }
@@ -1113,23 +1115,8 @@ function urlProductoWeb(p) {
 }
 
 // ---------- Filtro de búsqueda + orden/filtro especial ----------
-function handleBuscarProductoTabla() {
-  const q = (elBuscarProductoTabla?.value || '').trim().toLowerCase();
-  const modo = elOrdenProductos ? elOrdenProductos.value : '';
-
-  // "Ver: Archivados" / "Ver: Borradores" no filtran productsList (ninguno
-  // de los dos está ahí) — piden su propia lista aparte.
-  if (modo === 'archivados') { renderProductosArchivados(q); return; }
-  if (modo === 'borradores') { renderProductosBorradores(q); return; }
-
-  let resultado = productsList.filter(p =>
-    cumpleTipoProducto(p) && (
-      (p.nombre || '').toLowerCase().includes(q) ||
-      (p.sku || '').toLowerCase().includes(q) ||
-      (p.codigo_barras || '').toLowerCase().includes(q)
-    )
-  );
-
+function aplicarModoProductos(lista, modo) {
+  let resultado = lista;
   switch (modo) {
     case 'precio_desc':
       resultado = resultado.slice().sort((a, b) => (b.precio_unitario || 0) - (a.precio_unitario || 0));
@@ -1177,6 +1164,53 @@ function handleBuscarProductoTabla() {
     case 'sin_sn':
       resultado = resultado.filter(p => !p.requiere_sn);
       break;
+    // 27-10-2026: ventana "Orden y filtros" (js/orden-productos.js)
+    case 'no_web':
+      resultado = resultado.filter(p => !p.publicado_web);
+      break;
+    case 'si_web':
+      resultado = resultado.filter(p => !!p.publicado_web);
+      break;
+    case 'no_facebook':
+      resultado = resultado.filter(p => !p.facebook_url && !p.es_servicio);
+      break;
+    case 'si_facebook':
+      resultado = resultado.filter(p => !!p.facebook_url);
+      break;
+    case 'sin_fotos':
+      resultado = resultado.filter(p => !(p.imagen_urls || []).length);
+      break;
+    case 'sin_descripcion':
+      resultado = resultado.filter(p => !String(p.descripcion || '').replace(/<[^>]*>/g, '').trim());
+      break;
+    // Los mismos tramos que el resumen de márgenes (tonoMargen): bajo 15%, 15–25%, desde 25%
+    case 'margen_poco':
+      resultado = resultado.filter(p => { const m = margenMenorDe(p); return m !== null && m < 15; })
+        .sort((a, b) => margenMenorDe(a) - margenMenorDe(b));
+      break;
+    case 'margen_medio':
+      resultado = resultado.filter(p => { const m = margenMenorDe(p); return m !== null && m >= 15 && m < 25; })
+        .sort((a, b) => margenMenorDe(a) - margenMenorDe(b));
+      break;
+    case 'margen_mucho':
+      resultado = resultado.filter(p => { const m = margenMenorDe(p); return m !== null && m >= 25; })
+        .sort((a, b) => margenMenorDe(b) - margenMenorDe(a));
+      break;
+    case 'con_stock':
+      resultado = resultado.filter(p => p.stock_ilimitado || (Number(p.stock) || 0) > 0);
+      break;
+    case 'agotados_lista':
+      resultado = resultado.filter(p => !p.stock_ilimitado && (Number(p.stock) || 0) <= 0);
+      break;
+    case 'por_llegar_lista':
+      resultado = resultado.filter(p => !!p.por_llegar);
+      break;
+    case 'en_oferta':
+      resultado = resultado.filter(p => typeof precioVigenteParaRedes === 'function' && !!precioVigenteParaRedes(p, todayISO()).antes);
+      break;
+    case 'stock_desc':
+      resultado = resultado.slice().sort((a, b) => (Number(b.stock) || 0) - (Number(a.stock) || 0));
+      break;
     case 'nombre_asc':
       resultado = resultado.slice().sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
       break;
@@ -1188,6 +1222,27 @@ function handleBuscarProductoTabla() {
       // a 0 y esos productos quedan al final en vez de romper el orden.
       resultado = resultado.slice().sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
   }
+  return resultado;
+}
+
+function handleBuscarProductoTabla() {
+  const q = (elBuscarProductoTabla?.value || '').trim().toLowerCase();
+  const modo = elOrdenProductos ? elOrdenProductos.value : '';
+
+  // "Ver: Archivados" / "Ver: Borradores" no filtran productsList (ninguno
+  // de los dos está ahí) — piden su propia lista aparte.
+  if (modo === 'archivados') { renderProductosArchivados(q); return; }
+  if (modo === 'borradores') { renderProductosBorradores(q); return; }
+
+  let resultado = productsList.filter(p =>
+    cumpleTipoProducto(p) && (
+      (p.nombre || '').toLowerCase().includes(q) ||
+      (p.sku || '').toLowerCase().includes(q) ||
+      (p.codigo_barras || '').toLowerCase().includes(q)
+    )
+  );
+
+  resultado = aplicarModoProductos(resultado, modo);
 
   renderResumenMargenes();
   renderProductosTabla(resultado);
@@ -1705,7 +1760,7 @@ async function armarTextoRedProducto(red) {
   const actual = caja.value.trim();
   if (actual && actual !== texto && !(await ventanaConfirmar(`¿Reemplazar el texto de ${instagram ? 'Instagram' : 'Facebook'} que ya está escrito?`, { textoSi: 'Sí, reemplazarlo' }))) return;
   caja.value = texto;
-  showToast(`Texto de ${instagram ? 'Instagram' : 'Facebook'} armado desde la descripción. Se guarda con Guardar Producto`, 'ok');
+  showToast(`Texto de ${instagram ? 'Instagram' : 'Facebook'} armado desde la descripción. Cópialo con 📋 (no se guarda)`, 'ok');
 }
 
 async function copiarTextoRedProducto(red) {
@@ -2186,9 +2241,10 @@ function abrirModalProducto(producto = null) {
      del anterior. Se limpia en los dos casos (crear y editar). */
   if (elProdDatosReales) elProdDatosReales.value = '';
   // v139 (sql/95): los textos para redes que el producto ya tiene guardados
-  if (elProdFacebookTexto) elProdFacebookTexto.value = producto?.facebook_texto || '';
-  if (elProdInstagramTexto) elProdInstagramTexto.value = producto?.instagram_texto || '';
-  { const redes = document.getElementById('prodRedes'); if (redes) redes.open = !!(producto?.facebook_texto || producto?.instagram_texto); }
+  // 27-10-2026: los textos de redes ya no se guardan; se arman al momento
+  if (elProdFacebookTexto) elProdFacebookTexto.value = '';
+  if (elProdInstagramTexto) elProdInstagramTexto.value = '';
+  { const redes = document.getElementById('prodRedes'); if (redes) redes.open = false; }
   sesionEditorProducto++;
   seoIAOfrecido = false;
   productoEnEdicionPublicado = !!(producto && producto.publicado_web && !producto.es_borrador);
@@ -2560,8 +2616,6 @@ function construirPayloadProducto() {
     // el nombre de quien midió (ver guardarMedidasProducto más abajo).
     descripcion: elProdDescripcion?.value.trim() || null,
     // v139: textos para redes. Solo viajan si la ficha tiene los cuadros (no se borran por accidente).
-    ...(elProdFacebookTexto ? { facebook_texto: elProdFacebookTexto.value.trim() || null } : {}),
-    ...(elProdInstagramTexto ? { instagram_texto: elProdInstagramTexto.value.trim() || null } : {}),
     // --- Tienda web (e-commerce Fase 0). imagen_urls NO va acá: se sube
     // aparte, foto por foto, con API.productos.subirImagen/quitarImagen. ---
     publicado_web: !!(elProdPublicadoWeb && elProdPublicadoWeb.checked),
@@ -2734,7 +2788,21 @@ async function guardarMedidasProducto() {
   }
 }
 
+/* 27-10-2026: un doble clic (o Enter + clic) guardaba dos veces y registraba la
+   compra dos veces. Mientras un guardado está en curso, los otros se ignoran. */
+let guardandoProductoAhora = false;
+
 async function guardarProducto() {
+  if (guardandoProductoAhora) return;
+  guardandoProductoAhora = true;
+  try {
+    await guardarProductoUnaVez();
+  } finally {
+    guardandoProductoAhora = false;
+  }
+}
+
+async function guardarProductoUnaVez() {
   const payload = construirPayloadProducto();
   if (!payload) { showToast('El nombre del producto es obligatorio', 'err'); return; }
 
@@ -4261,13 +4329,10 @@ function obtenerFilasProductosParaExportar() {
       (p.codigo_barras || '').toLowerCase().includes(q)
     )
   );
-  if (modo === 'precio_desc') base = base.slice().sort((a, b) => (b.precio_unitario || 0) - (a.precio_unitario || 0));
-  else if (modo === 'precio_asc') base = base.slice().sort((a, b) => (a.precio_unitario || 0) - (b.precio_unitario || 0));
-  else if (modo === 'sin_sku') base = base.filter(p => !p.sku || !p.sku.trim());
-  else if (modo === 'sin_barcode') base = base.filter(p => !p.codigo_barras || !p.codigo_barras.trim());
-  else if (modo === 'sin_costo') base = base.filter(p => !p.costo_unitario || Number(p.costo_unitario) === 0);
-  else if (modo === 'sin_medidas') base = base.filter(p => !Number(p.peso_kg) && !Number(p.alto_cm) && !Number(p.ancho_cm) && !Number(p.profundidad_cm));
-  else base = base.slice().sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+  // 27-10-2026: el mismo filtro de la lista; sin filtro, por nombre
+  base = modo && modo !== 'archivados' && modo !== 'borradores'
+    ? aplicarModoProductos(base, modo)
+    : base.slice().sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
 
   // Encabezados idénticos a Tiendanube para poder reimportar sin tocar nada
   return base.map(filaProductoParaExportar);
@@ -4945,7 +5010,15 @@ async function reflejarCompraRegistrada(r, datos) {
   if (typeof revisarCompletitudProducto === 'function') revisarCompletitudProducto();
 }
 
+let registrandoCompraAhora = false;
+
 async function agregarIngresoProducto() {
+  if (registrandoCompraAhora) return;
+  registrandoCompraAhora = true;
+  try { await agregarIngresoProductoUnaVez(); } finally { registrandoCompraAhora = false; }
+}
+
+async function agregarIngresoProductoUnaVez() {
   const compra = compraDelFormulario();
   if (!compra) { showToast('Indica cuántas unidades compraste', 'err'); return; }
   if (compra.error) { showToast(compra.error, 'err'); return; }
