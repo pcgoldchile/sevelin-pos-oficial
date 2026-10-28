@@ -742,7 +742,9 @@ function ipReal(req) {
    opción elegida por el dueño en vez de abrir una cuenta de Upstash). Si
    Redis o la base fallan en un momento puntual, cae al Map en memoria —
    "degradar, no romper": nunca se bloquea el login de un cajero real. */
-const redisIntentos = (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
+// 28-10-2026: también con los nombres KV_REST_API_* de la integración de Upstash en Vercel
+const redisIntentos = ((process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL) &&
+  (process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN))
   ? Redis.fromEnv()
   : null;
 
