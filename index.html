@@ -8052,8 +8052,34 @@
         </div>
         <button class="btn btn-primary btn-sm" id="btnMetasGuardar" type="button">💾 Guardar metas</button>
       </div>
+      <div id="metasNuevoEvento" class="metas-editar" hidden>
+        <h3 class="antes-seccion">Agregar al calendario</h3>
+        <div class="grid grid-2">
+          <div class="field"><label for="evTitulo">Qué *</label><input type="text" id="evTitulo" maxlength="140" placeholder="Ej: Reunión digital con los socios"></div>
+          <div class="field"><label for="evNegocio">De qué negocio</label>
+            <select id="evNegocio"><option value="TECNOLOGIA">Sevelin Tecnología</option><option value="AUTOMOTRIZ">Sevelin Automotriz</option><option value="PERSONAL">Personal (no se ve en el taller)</option></select></div>
+          <div class="field"><label for="evFecha">Día *</label><input type="date" id="evFecha"></div>
+          <div class="field"><label for="evDesde">Desde / hasta</label>
+            <div style="display:flex; gap:6px;"><input type="time" id="evDesde"><input type="time" id="evHasta"></div></div>
+          <div class="field"><label for="evLugar">Dónde</label><input type="text" id="evLugar" maxlength="120" placeholder="Ej: Google Meet, la casa, San Rafael 896"></div>
+          <div class="field"><label for="evDetalle">Detalle</label><input type="text" id="evDetalle" maxlength="1000"></div>
+        </div>
+        <button class="btn btn-primary btn-sm" id="btnMetasGuardarEvento" type="button">📅 Agregar</button>
+      </div>
+      <div id="metasEditarAuto" class="metas-editar" hidden>
+        <h3 class="antes-seccion">Metas de Sevelin Automotriz (se ven en la app del taller)</h3>
+        <div class="grid grid-2">
+          <div class="field"><label for="autoEtapa">Etapa</label><input type="text" id="autoEtapa" maxlength="140"></div>
+          <div class="field"><label for="autoServicios">Servicios al mes</label><input type="number" id="autoServicios" min="0"></div>
+          <div class="field"><label for="autoVenta">Venta del mes ($)</label><input type="number" id="autoVenta" min="0" step="10000"></div>
+        </div>
+        <div class="field"><label for="autoObjetivos">Objetivos, uno por línea (pon ✓ al principio de los que ya están listos)</label>
+          <textarea id="autoObjetivos" rows="7" maxlength="3000"></textarea></div>
+        <button class="btn btn-primary btn-sm" id="btnMetasGuardarAuto" type="button">💾 Guardar</button>
+      </div>
       <div class="modal-foot">
         <button class="btn btn-ghost" id="btnMetasEditar" type="button">✏️ Cambiar metas</button>
+        <button class="btn btn-ghost" id="btnMetasEditarAuto" type="button">🚗 Metas de Automotriz</button>
         <button class="btn btn-primary" id="btnMetasCerrar" type="button">¡A trabajar!</button>
       </div>
     </div>

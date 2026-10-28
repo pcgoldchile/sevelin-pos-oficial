@@ -228,6 +228,7 @@
     if (S.pestana === 'bodega') return cargarLugares();
     if (S.pestana === 'cuentas') return cargarCuentas();
     if (S.pestana === 'cotizar') { pintar(); return; }
+    if (S.pestana === 'metas') return cargarMetasTaller();
     S.cargandoLista = true;
     pintar();
     try {
@@ -429,6 +430,7 @@
     else if (S.pestana === 'bodega') contenido = vistaBodega();
     else if (S.pestana === 'cotizar') contenido = vistaCotizar();
     else if (S.pestana === 'cuentas') contenido = vistaCuentas();
+    else if (S.pestana === 'metas') contenido = vistaMetasTaller();
     else if (S.cargandoLista && !S.trabajos.length) contenido = '<p class="cargando">Cargando…</p>';
     else if (!S.trabajos.length) {
       contenido = S.pestana === 'pendientes'
@@ -438,7 +440,7 @@
 
     return barra('Taller Sevelin', { derecha: `<span class="barra-quien">${esc(S.yo.nombre)}</span><button type="button" class="barra-btn" data-a="salir">Salir</button>` }) +
       `<main class="cuerpo">
-        ${S.pestana === 'bodega' || S.pestana === 'cotizar' || S.pestana === 'caja' || !S.permisos.trabajos ? '' : `<button type="button" class="btn-principal" data-a="nuevo">＋ Nuevo trabajo</button>
+        ${S.pestana === 'bodega' || S.pestana === 'cotizar' || S.pestana === 'caja' || S.pestana === 'metas' || !S.permisos.trabajos ? '' : `<button type="button" class="btn-principal" data-a="nuevo">＋ Nuevo trabajo</button>
         ${faltaPapel}`}
         <div class="pestanas${pestanasVisibles().length > 4 ? ' muchas' : ''}" role="tablist">
           ${pestanasVisibles().map(t => `<button type="button" role="tab" class="${S.pestana === t.id ? 'on' : ''}" data-a="pestana" data-v="${t.id}">${t.texto}</button>`).join('')}
@@ -808,6 +810,45 @@
         <button type="button" class="op ancha${c.trabajo === 'todos' ? ' on' : ''}" data-a="cotizartrabajo" data-v="todos">Todos los trabajos</button>
       </div>
       ${resultados}`;
+  }
+
+  /* ---------- Metas y calendario (27-10-2026) ----------
+     Solo lectura: lo escribe el dueño en el POS ("Metas de hoy"). Nunca trae lo personal. */
+  async function cargarMetasTaller() {
+    S.metasTaller = S.metasTaller || null;
+    pintar();
+    try {
+      S.metasTaller = await pedir('/taller/metas');
+    } catch (err) {
+      aviso(err.message, true);
+    }
+    if (S.pestana === 'metas' && S.vista === 'inicio') pintar();
+  }
+
+  function vistaMetasTaller() {
+    const d = S.metasTaller;
+    if (!d) return '<p class="cargando">Cargando…</p>';
+    const m = d.metas || {};
+    const objetivos = m.objetivos || [];
+    const dia = (iso) => {
+      const f = new Date(iso + 'T12:00:00');
+      return ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'][f.getDay()] + ' ' + iso.slice(8, 10) + '-' + iso.slice(5, 7);
+    };
+    const hora = (h) => h ? String(h).slice(0, 5) : '';
+    return `<section class="tarjeta metas-taller">
+        <h2>🚗 Sevelin Automotriz</h2>
+        <p class="metas-etapa">${esc(m.etapa || '')}</p>
+        <p class="metas-num">Meta al mes: <b>${Number(m.servicios_mes) || 0} servicios</b> · <b>${plata(m.venta_mes)}</b></p>
+        ${objetivos.length ? `<ul class="metas-lista">${objetivos.map(o => `<li class="${o.hecho ? 'hecho' : ''}">${o.hecho ? '✅' : '⬜'} ${esc(o.texto)}</li>`).join('')}</ul>` : ''}
+      </section>
+      <section class="tarjeta metas-taller">
+        <h2>📅 Calendario</h2>
+        ${(d.eventos || []).length ? `<ul class="metas-cal">${d.eventos.map(e => `<li class="${e.fecha === d.hoy ? 'hoy' : ''}">
+            <span class="metas-cal-dia">${esc(dia(e.fecha))}${e.hora_inicio ? `<small>${esc([hora(e.hora_inicio), hora(e.hora_fin)].filter(Boolean).join('–'))}</small>` : ''}</span>
+            <span><span class="metas-neg ${e.negocio === 'AUTOMOTRIZ' ? 'auto' : 'tec'}">${e.negocio === 'AUTOMOTRIZ' ? 'Automotriz' : 'Tecnología'}</span> ${esc(e.titulo)}
+              ${e.lugar ? `<small>· ${esc(e.lugar)}</small>` : ''}${e.detalle ? `<small class="metas-det">${esc(e.detalle)}</small>` : ''}</span>
+          </li>`).join('')}</ul>` : '<div class="vacio"><b>Nada agendado</b>Las reuniones y capacitaciones aparecen aquí.</div>'}
+      </section>`;
   }
 
   async function cargarLugares() {
@@ -1678,7 +1719,8 @@
       { id: 'cobrados', texto: 'Cobrados' },
       p.cotizar && { id: 'cotizar', texto: 'Cotizar' },
       p.bodega && { id: 'bodega', texto: 'Bodega' },
-      p.cuentas && { id: 'cuentas', texto: 'Cuentas' }
+      p.cuentas && { id: 'cuentas', texto: 'Cuentas' },
+      { id: 'metas', texto: '🎯 Metas' }   // 27-10-2026: metas de Automotriz y calendario, para todos
     ].filter(Boolean);
   }
   const cajaNueva = () => ({ preparada: false, cajaId: null, verCostos: false, texto: '', buscando: false, resultados: null, carrito: [], cobro: null, guardando: false, ultima: null, frecuentes: null });

@@ -13665,6 +13665,96 @@ async function leerMetas() {
   return { ...METAS_POR_DEFECTO, ...(data?.contenido || {}) };
 }
 
+/* METAS DE SEVELIN AUTOMOTRIZ (27-10-2026). textos_editables('metas_automotriz').
+   objetivos: lista de { texto, hecho }. Se ven en el POS y en la app del taller. */
+const METAS_AUTOMOTRIZ_DEFECTO = {
+  etapa: 'Etapa 0 · Partir sin morir: taller liviano y electrónica en la casa (nov 2026 – feb 2027)',
+  servicios_mes: 20,
+  venta_mes: 600000,
+  objetivos: []
+};
+
+async function leerMetasAutomotriz() {
+  const { data } = await db.from('textos_editables').select('contenido').eq('clave', 'metas_automotriz').maybeSingle();
+  return { ...METAS_AUTOMOTRIZ_DEFECTO, ...(data?.contenido || {}) };
+}
+
+function sanearMetasAutomotriz(b) {
+  const entero = (v, min, max) => { const n = Math.round(Number(v)); return Number.isFinite(n) && n >= min && n <= max ? n : null; };
+  const servicios = entero(b?.servicios_mes, 0, 5000);
+  const venta = entero(b?.venta_mes, 0, 500000000);
+  if (servicios === null || venta === null) return { error: 'Revisa los servicios y la venta del mes' };
+  const objetivos = (Array.isArray(b?.objetivos) ? b.objetivos : []).slice(0, 15)
+    .map(o => ({ texto: String(o?.texto || '').trim().slice(0, 200), hecho: o?.hecho === true }))
+    .filter(o => o.texto.length >= 3);
+  return { metas: { etapa: String(b?.etapa || METAS_AUTOMOTRIZ_DEFECTO.etapa).trim().slice(0, 140), servicios_mes: servicios, venta_mes: venta, objetivos } };
+}
+
+/* CALENDARIO (sql/113). */
+const NEGOCIOS_CALENDARIO = ['TECNOLOGIA', 'AUTOMOTRIZ', 'PERSONAL'];
+
+function sumarDiasISO(iso, dias) {
+  const f = new Date(iso + 'T12:00:00Z');
+  f.setUTCDate(f.getUTCDate() + dias);
+  return f.toISOString().slice(0, 10);
+}
+
+async function eventosCalendario(desde, hasta, { soloTaller = false } = {}) {
+  let q = db.from('calendario_eventos').select('*').gte('fecha', desde).lte('fecha', hasta)
+    .order('fecha', { ascending: true }).order('hora_inicio', { ascending: true, nullsFirst: true });
+  if (soloTaller) q = q.eq('visible_taller', true).neq('negocio', 'PERSONAL');
+  const { data, error } = await q;
+  if (error) throw error;
+  return data || [];
+}
+
+function sanearEvento(b) {
+  const fecha = String(b?.fecha || '').trim();
+  if (!fechaValidaISO(fecha)) return { error: 'La fecha tiene que venir como AAAA-MM-DD' };
+  const hora = (v) => { const t = String(v || '').trim(); return /^\d{2}:\d{2}$/.test(t) ? t : null; };
+  const titulo = String(b?.titulo || '').trim();
+  if (titulo.length < 3 || titulo.length > 140) return { error: 'El título tiene que tener entre 3 y 140 letras' };
+  const negocio = NEGOCIOS_CALENDARIO.includes(b?.negocio) ? b.negocio : 'TECNOLOGIA';
+  return { evento: {
+    fecha, hora_inicio: hora(b?.hora_inicio), hora_fin: hora(b?.hora_fin), titulo,
+    detalle: String(b?.detalle || '').trim().slice(0, 1000) || null,
+    negocio, lugar: String(b?.lugar || '').trim().slice(0, 120) || null,
+    visible_taller: negocio !== 'PERSONAL' && b?.visible_taller !== false
+  } };
+}
+
+app.get('/api/calendario', auth(true), async (req, res) => {
+  const hoy = fechaHoyChile();
+  const desde = fechaValidaISO(req.query?.desde) ? req.query.desde : hoy;
+  const hasta = fechaValidaISO(req.query?.hasta) ? req.query.hasta : sumarDiasISO(desde, 60);
+  try { res.json(await eventosCalendario(desde, hasta)); } catch (error) { return enviarErrorBD(res, error, 'GET /api/calendario'); }
+});
+
+app.post('/api/calendario', auth(true), async (req, res) => {
+  const { evento, error } = sanearEvento(req.body);
+  if (error) return enviarError(res, 400, error);
+  const { data, error: errG } = await db.from('calendario_eventos').insert([evento]).select('*').single();
+  if (errG) return enviarErrorBD(res, errG, 'POST /api/calendario');
+  res.status(201).json(data);
+});
+
+app.delete('/api/calendario/:id', auth(true), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return enviarError(res, 400, 'Evento inválido');
+  const { error } = await db.from('calendario_eventos').delete().eq('id', id);
+  if (error) return enviarErrorBD(res, error, 'DELETE /api/calendario');
+  res.json({ ok: true });
+});
+
+app.put('/api/metas/automotriz', auth(true), async (req, res) => {
+  const { metas, error } = sanearMetasAutomotriz(req.body);
+  if (error) return enviarError(res, 400, error);
+  const { error: errG } = await db.from('textos_editables')
+    .upsert([{ clave: 'metas_automotriz', contenido: metas, actualizado_en: new Date().toISOString() }], { onConflict: 'clave' });
+  if (errG) return enviarErrorBD(res, errG, 'PUT /api/metas/automotriz');
+  res.json({ metas });
+});
+
 app.get('/api/metas/hoy', auth(true), async (req, res) => {
   try {
     const hoy = fechaHoyChile();
@@ -13703,8 +13793,9 @@ app.get('/api/metas/hoy', auth(true), async (req, res) => {
       .sort((x, y) => (pesoPrioridad[x.prioridad] ?? 1) - (pesoPrioridad[y.prioridad] ?? 1)
         || String(x.fecha_limite || '9999').localeCompare(String(y.fecha_limite || '9999')));
 
+    const [automotriz, eventos] = await Promise.all([leerMetasAutomotriz(), eventosCalendario(hoy, sumarDiasISO(hoy, 14))]);
     res.json({
-      hoy, dia: d, dias_mes: diasMes, dias_quedan: diasQuedan, metas,
+      hoy, dia: d, dias_mes: diasMes, dias_quedan: diasQuedan, metas, automotriz, eventos,
       mes: {
         venta: total, costo, cantidad: ventas.length, servicios,
         margen: total > 0 ? ((total - costo) / total) * 100 : null,
@@ -21001,6 +21092,18 @@ async function recordarLugaresTaller(repuestos, persona) {
 }
 
 /* Todo lo que la app necesita al abrir. */
+/* 27-10-2026: pestaña "🎯 Metas" de la app del taller. Solo lectura: metas de Automotriz y el
+   calendario de los próximos 45 días (nunca lo PERSONAL ni lo marcado como no visible). */
+app.get('/api/taller/metas', authTaller(), async (req, res) => {
+  try {
+    const hoy = fechaHoyChile();
+    const [metas, eventos] = await Promise.all([leerMetasAutomotriz(), eventosCalendario(hoy, sumarDiasISO(hoy, 45), { soloTaller: true })]);
+    res.json({ hoy, metas, eventos });
+  } catch (error) {
+    return enviarErrorBD(res, error, 'GET /api/taller/metas');
+  }
+});
+
 app.get('/api/taller/inicio', authTaller(), async (req, res) => {
   try {
     const ctx = await contextoTaller();

@@ -35,6 +35,18 @@ const srv = app.listen(0, async () => {
     const [st2, r2] = await pedir('GET', '/metas/hoy');
     const [st3] = await pedir('PUT', '/metas', { venta_mes: 'abc', margen_min: 35, servicios_mes: 40, ticket: 30000, origen_pct: 80 });
     console.log('2 guardar', st, '→ meta', r2.metas?.venta_mes, r2.metas?.etapa, '| inválida', st3);
-    console.log(ok1 && st === 200 && r2.metas.venta_mes === 5000000 && st3 === 400 ? 'OK' : 'FALLA');
+    // Calendario y metas de Automotriz
+    bases.pos.calendario_eventos = bases.pos.calendario_eventos || [];
+    const [c1, e1] = await pedir('POST', '/calendario', { fecha: hoy, hora_inicio: '20:00', titulo: 'Reunión digital socios', negocio: 'AUTOMOTRIZ', lugar: 'Meet' });
+    const [c2] = await pedir('POST', '/calendario', { fecha: hoy, titulo: 'Dentista', negocio: 'PERSONAL' });
+    const [c3] = await pedir('POST', '/calendario', { fecha: 'mañana', titulo: 'x' });
+    const [a1] = await pedir('PUT', '/metas/automotriz', { etapa: 'Etapa 0', servicios_mes: 20, venta_mes: 600000, objetivos: [{ texto: 'Ir a la Municipalidad', hecho: true }, { texto: 'ok' }] });
+    const [, r4] = await pedir('GET', '/metas/hoy');
+    console.log('3 calendario', c1, c2, c3, '| auto', a1, r4.automotriz?.objetivos?.length, '| eventos POS', r4.eventos?.length, e1.visible_taller);
+    const [d1] = await pedir('DELETE', '/calendario/' + e1.id);
+    const [, r5] = await pedir('GET', '/calendario');
+    console.log('4 borrar', d1, 'quedan', r5.length);
+    const okCal = c1 === 201 && c2 === 201 && c3 === 400 && a1 === 200 && r4.automotriz.objetivos.length === 1 && r4.eventos.length === 2 && d1 === 200 && r5.length === 1;
+    console.log(ok1 && st === 200 && r2.metas.venta_mes === 5000000 && st3 === 400 && okCal ? 'OK' : 'FALLA');
   } catch (e) { console.error(e); } finally { srv.close(); process.exit(0); }
 });

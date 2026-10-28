@@ -78,7 +78,14 @@ const API = {
   // Metas del día (27-10-2026): cómo va el mes contra la meta y qué toca hoy
   metas: {
     hoy: () => apiRequest('/metas/hoy', { silencioso: true }),
-    guardar: (datos) => apiRequest('/metas', { method: 'PUT', body: datos })
+    guardar: (datos) => apiRequest('/metas', { method: 'PUT', body: datos }),
+    guardarAutomotriz: (datos) => apiRequest('/metas/automotriz', { method: 'PUT', body: datos })
+  },
+  // Calendario de Tecnología y Automotriz (sql/113)
+  calendario: {
+    listar: (desde, hasta) => apiRequest(`/calendario?desde=${encodeURIComponent(desde || '')}&hasta=${encodeURIComponent(hasta || '')}`),
+    crear: (datos) => apiRequest('/calendario', { method: 'POST', body: datos }),
+    borrar: (id) => apiRequest(`/calendario/${id}`, { method: 'DELETE' })
   },
   // Registro de marketplaces: qué producto está en qué canal y cuánto queda (sql/112, v181)
   marketplaces: {

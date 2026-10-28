@@ -5552,3 +5552,22 @@ a.marca-fb:hover { text-decoration: underline; }
 .metas-reglas { margin-top: 12px; background: var(--tint-gold); }
 .metas-editar { margin-top: 12px; }
 @media (max-width: 560px) { .metas-pordia { text-align: left; } }
+
+/* 27-10-2026: Automotriz y calendario en "Metas de hoy" */
+.metas-auto { margin-top: 12px; border-left: 4px solid var(--blue); }
+.metas-auto-etapa { margin: 0 0 4px; font-weight: 700; }
+.metas-objetivos { list-style: none; padding-left: 0 !important; }
+.metas-objetivos li.hecho { color: var(--text-muted); text-decoration: line-through; }
+.metas-cal { list-style: none; padding-left: 0 !important; }
+.metas-cal li { display: grid; grid-template-columns: 78px 1fr auto; gap: 8px; align-items: start; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.metas-cal li.hoy { background: var(--tint-gold); border-radius: var(--radius-sm); padding-inline: 6px; }
+.metas-cal-dia { font-weight: 700; font-size: 12px; text-transform: capitalize; display: flex; flex-direction: column; }
+.metas-cal-dia small { font-weight: 400; color: var(--text-muted); }
+.metas-cal-txt { min-width: 0; }
+.metas-cal-txt small { color: var(--text-muted); }
+.metas-cal-det { display: block; }
+.metas-neg { font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; padding: 1px 6px; border-radius: var(--radius-pill); margin-right: 4px; }
+.metas-neg.tec { background: var(--tint-blue); color: var(--blue); }
+.metas-neg.auto { background: var(--tint-gold); color: var(--gold); }
+.metas-neg.per { background: var(--tint-violet); color: var(--text-muted); }
+.metas-columnas + .metas-auto, .metas-auto + .metas-bloque { margin-top: 12px; }
