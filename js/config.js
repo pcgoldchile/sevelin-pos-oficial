@@ -427,6 +427,35 @@ function llenarSelectOrigenCliente(select) {
 }
 
 /* Fecha de hoy en Chile (YYYY-MM-DD) */
+/* Repetir una consulta al servidor SOLO mientras la pestaña está a la vista (auditoría 28-10-2026).
+   Una pestaña del POS olvidada en segundo plano seguía preguntando cada pocos segundos todo el día,
+   y cada pregunta gasta cupo de Vercel y de Supabase. Al volver a la pestaña se pone al día
+   altiro si ya pasó el intervalo. Devuelve un id: se detiene con detenerRepetir(id). */
+const repeticionesVisibles = new Map();   // id → { fn, ms, ultima }
+
+function correrRepeticionVisible(r) {
+  r.ultima = Date.now();
+  try { r.fn(); } catch (_) { /* cada fn maneja sus errores */ }
+}
+
+function repetirSiVisible(fn, ms) {
+  const r = { fn, ms, ultima: Date.now() };
+  const id = setInterval(() => { if (!document.hidden) correrRepeticionVisible(r); }, ms);
+  repeticionesVisibles.set(id, r);
+  return id;
+}
+
+function detenerRepetir(id) {
+  if (!id) return;
+  clearInterval(id);
+  repeticionesVisibles.delete(id);
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  repeticionesVisibles.forEach(r => { if (Date.now() - r.ultima >= r.ms) correrRepeticionVisible(r); });
+});
+
 function todayISO() {
   const p = partesChile();
   return `${p.anio}-${p.mes}-${p.dia}`;

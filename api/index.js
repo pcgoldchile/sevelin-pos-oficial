@@ -748,7 +748,42 @@ const redisIntentos = (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH
 
 const intentosMemoria = new Map();
 const CLAVE_INTENTOS = ip => `sevelin-pos:intentos-pin:${ip}`;
-const REGISTRO_VACIO = () => ({ n: 0, hasta: 0, ts: 0 });
+const REGISTRO_VACIO = () => ({ n: 0, hasta: 0, ts: 0, bloqueos: 0, ultimoBloqueo: 0 });
+
+/* FRENO ESCALONADO (auditoría 28-10-2026). Antes: 5 PIN malos → 1 minuto, siempre igual: unos
+   7.000 intentos al día desde una sola IP, y un PIN de 4 dígitos caía en 1 o 2 días. Ahora cada
+   bloqueo dura más que el anterior (1, 5, 15 y 60 minutos) y la IP se recuerda 24 horas: desde el
+   cuarto bloqueo quedan 5 intentos por hora (~120 al día). Un PIN correcto lo reinicia todo.
+   Desde el tercer bloqueo queda una alerta en Registro de errores (Salud del sistema). */
+const ESCALONES_BLOQUEO_MIN = [1, 5, 15, 60];
+const MEMORIA_BLOQUEOS_MS = 24 * 60 * 60 * 1000;
+
+function registrarFalloPin(reg, ahora, ip, donde) {
+  if (ahora - (Number(reg.ultimoBloqueo) || 0) > MEMORIA_BLOQUEOS_MS) reg.bloqueos = 0;
+  reg.n = (Number(reg.n) || 0) + 1;
+  reg.ts = ahora;
+  if (reg.n < 5) return;
+  reg.bloqueos = (Number(reg.bloqueos) || 0) + 1;
+  const minutos = ESCALONES_BLOQUEO_MIN[Math.min(reg.bloqueos, ESCALONES_BLOQUEO_MIN.length) - 1];
+  reg.hasta = ahora + minutos * 60 * 1000;
+  reg.ultimoBloqueo = ahora;
+  reg.n = 0;
+  if (reg.bloqueos >= 3) {
+    registrarErrorSalud({
+      origen: 'POS', ruta: donde, estado_http: 429,
+      mensaje: `Posible intento de adivinar el PIN: la IP ${ip} lleva ${reg.bloqueos * 5} PIN equivocados en 24 h y quedó bloqueada ${minutos} min.`
+    });
+  }
+}
+
+function reiniciarIntentosPin(reg) {
+  reg.n = 0; reg.hasta = 0; reg.bloqueos = 0; reg.ultimoBloqueo = 0;
+}
+
+function textoEsperaPin(reg, ahora) {
+  const minutos = Math.max(1, Math.ceil(((Number(reg.hasta) || 0) - ahora) / 60000));
+  return minutos === 1 ? 'Espera un minuto.' : `Espera ${minutos} minutos.`;
+}
 
 /* Sin Redis, el conteo vive en la tabla intentos_pin (sql/67), compartida por todas las
    instancias. Si la base falla, cae a la memoria del proceso: nunca se deja afuera a un cajero. */
@@ -762,9 +797,12 @@ async function obtenerRegistroIntentos(ip) {
     }
     return REGISTRO_VACIO();
   }
-  const { data, error } = await db.from('intentos_pin').select('n, hasta, ts').eq('ip', ip).maybeSingle();
+  const { data, error } = await db.from('intentos_pin').select('n, hasta, ts, bloqueos, ultimo_bloqueo').eq('ip', ip).maybeSingle();
   if (!error) {
-    return data ? { n: Number(data.n) || 0, hasta: Number(data.hasta) || 0, ts: Number(data.ts) || 0 } : REGISTRO_VACIO();
+    return data ? {
+      n: Number(data.n) || 0, hasta: Number(data.hasta) || 0, ts: Number(data.ts) || 0,
+      bloqueos: Number(data.bloqueos) || 0, ultimoBloqueo: Number(data.ultimo_bloqueo) || 0
+    } : REGISTRO_VACIO();
   }
   console.error('[POS] intentos_pin no respondió al leer, se usa la memoria del proceso:', error.message);
   return intentosMemoria.get(ip) || REGISTRO_VACIO();
@@ -773,15 +811,16 @@ async function obtenerRegistroIntentos(ip) {
 async function guardarRegistroIntentos(ip, reg) {
   if (redisIntentos) {
     try {
-      // 15 min: cubre la ventana de reseteo de 10 min (ver frenoLogin) más margen
-      await redisIntentos.set(CLAVE_INTENTOS(ip), reg, { ex: 15 * 60 });
+      // 25 h: cubre la memoria de 24 h de los bloqueos escalonados (ver registrarFalloPin)
+      await redisIntentos.set(CLAVE_INTENTOS(ip), reg, { ex: 25 * 60 * 60 });
       return;
     } catch (err) {
       console.error('[POS] Redis (freno de intentos) no respondió al guardar:', err.message);
     }
   } else {
     const { error } = await db.from('intentos_pin').upsert({
-      ip, n: reg.n || 0, hasta: reg.hasta || 0, ts: reg.ts || 0, actualizado_en: new Date().toISOString()
+      ip, n: reg.n || 0, hasta: reg.hasta || 0, ts: reg.ts || 0,
+      bloqueos: reg.bloqueos || 0, ultimo_bloqueo: reg.ultimoBloqueo || 0, actualizado_en: new Date().toISOString()
     }, { onConflict: 'ip' });
     if (!error) {
       if (Math.random() < 0.02) {
@@ -801,7 +840,7 @@ async function frenoLogin(req, res, next) {
   const reg = await obtenerRegistroIntentos(ip);
 
   if (reg.hasta > ahora) {
-    return enviarError(res, 429, 'Demasiados intentos. Espera un minuto.');
+    return enviarError(res, 429, `Demasiados intentos. ${textoEsperaPin(reg, ahora)}`);
   }
   if (ahora - (reg.ts || 0) > 10 * 60 * 1000) reg.n = 0;
 
@@ -928,19 +967,17 @@ async function validarPinAdmin(req, pin) {
   const reg = await obtenerRegistroIntentos(ip);
 
   if (reg.hasta > ahora) {
-    return { status: 429, mensaje: 'Demasiados intentos fallidos. Espera un minuto antes de reintentar.' };
+    return { status: 429, mensaje: `Demasiados intentos fallidos. ${textoEsperaPin(reg, ahora)}` };
   }
   if (!pin) return { status: 403, mensaje: 'Esta acción requiere confirmar el PIN de administrador' };
 
-  if (pin !== String(ADMIN_PIN)) {
-    reg.n = (reg.n || 0) + 1;
-    reg.ts = ahora;
-    if (reg.n >= 5) { reg.hasta = ahora + 60 * 1000; reg.n = 0; }
+  if (!ADMIN_PIN || !secretosIguales(pin, String(ADMIN_PIN))) {
+    registrarFalloPin(reg, ahora, ip, req.originalUrl || 'pin-admin');
     await guardarRegistroIntentos(ip, reg);
     return { status: 403, mensaje: 'PIN de administrador incorrecto' };
   }
 
-  reg.n = 0;
+  reiniciarIntentosPin(reg);
   await guardarRegistroIntentos(ip, reg);
   return null;
 }
@@ -955,19 +992,18 @@ app.post('/api/login', frenoLogin, async (req, res) => {
   const { ip, reg } = req._registroIntento || {};
 
   let rol = null;
-  if (pin && pin === String(ADMIN_PIN)) rol = 'admin';
-  else if (pin && pin === String(WORKER_PIN)) rol = 'trabajador';
+  if (pin && ADMIN_PIN && secretosIguales(pin, String(ADMIN_PIN))) rol = 'admin';
+  else if (pin && WORKER_PIN && secretosIguales(pin, String(WORKER_PIN))) rol = 'trabajador';
 
   if (!rol) {
     if (reg) {
-      reg.n += 1;
-      if (reg.n >= 5) { reg.hasta = Date.now() + 60 * 1000; reg.n = 0; }
+      registrarFalloPin(reg, Date.now(), ip, '/api/login');
       await guardarRegistroIntentos(ip, reg);
     }
     return enviarError(res, 401, 'PIN incorrecto');
   }
 
-  if (reg) { reg.n = 0; await guardarRegistroIntentos(ip, reg); }
+  if (reg) { reiniciarIntentosPin(reg); await guardarRegistroIntentos(ip, reg); }
   res.json({ token: firmarToken(rol), rol, negocio: NEGOCIO_NOMBRE, expiraEn: TOKEN_TTL });
 });
 
@@ -20651,8 +20687,7 @@ async function loginDeUsuario(req, res) {
     const calza = pinDeUsuarioCalza(pin, usuario?.pin_hash || HASH_PIN_DE_RELLENO) && !!usuario?.pin_hash && PIN_USUARIO_RE.test(pin);
     if (!calza) {
       if (reg) {
-        reg.n += 1;
-        if (reg.n >= 5) { reg.hasta = Date.now() + 60 * 1000; reg.n = 0; }
+        registrarFalloPin(reg, Date.now(), ip, '/api/login (RUT)');
         await guardarRegistroIntentos(ip, reg);
       }
       if (usuario) {
@@ -20664,7 +20699,7 @@ async function loginDeUsuario(req, res) {
       return enviarError(res, 401, 'RUT o PIN incorrecto');
     }
 
-    if (reg) { reg.n = 0; await guardarRegistroIntentos(ip, reg); }
+    if (reg) { reiniciarIntentosPin(reg); await guardarRegistroIntentos(ip, reg); }
     await db.from('usuarios').update({ intentos_fallidos: 0, bloqueado_hasta: null, ultimo_ingreso_en: new Date().toISOString() }).eq('id', usuario.id);
     res.json({
       token: firmarToken(usuario.rol, usuario), rol: usuario.rol, negocio: NEGOCIO_NOMBRE, expiraEn: TOKEN_TTL,

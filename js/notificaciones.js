@@ -38,11 +38,11 @@ document.addEventListener('DOMContentLoaded', () => {
    el resto de los módulos empiezan a cargar sus datos. Un trabajador
    nunca ve el botón (admin-only) ni gasta llamadas al servidor por él. */
 document.addEventListener('pos:sesion-iniciada', () => {
-  if (intervaloNotificaciones) { clearInterval(intervaloNotificaciones); intervaloNotificaciones = null; }
+  if (intervaloNotificaciones) { detenerRepetir(intervaloNotificaciones); intervaloNotificaciones = null; }
   if (!esAdmin()) return;
 
   actualizarNotificaciones();
-  intervaloNotificaciones = setInterval(actualizarNotificaciones, INTERVALO_NOTIFICACIONES_MS);
+  intervaloNotificaciones = repetirSiVisible(actualizarNotificaciones, INTERVALO_NOTIFICACIONES_MS);
 });
 
 async function actualizarNotificaciones() {

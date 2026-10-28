@@ -62,7 +62,8 @@ document.addEventListener('DOMContentLoaded', () => {
   /* Sondeo automático: si se abre/cierra la caja desde otro dispositivo
      o sesión, esta pestaña lo refleja solo, sin esperar a que alguien
      cambie de vista. verificarCaja() ya ignora la llamada sin sesión. */
-  setInterval(verificarCaja, 12000);
+  // 28-10-2026: cada 60 s y solo con la pestaña a la vista (antes cada 12 s, siempre)
+  repetirSiVisible(verificarCaja, 60000);
 
   // Cargar el estado al iniciar (el POS es la vista por defecto)
   verificarCaja();

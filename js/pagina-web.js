@@ -471,11 +471,11 @@ let intervaloVisitantesActivos = null;
 
 function iniciarRefrescoVisitantesActivos() {
   detenerRefrescoVisitantesActivos();
-  intervaloVisitantesActivos = setInterval(cargarMetricasWeb, 20000);
+  intervaloVisitantesActivos = repetirSiVisible(cargarMetricasWeb, 30000);
 }
 
 function detenerRefrescoVisitantesActivos() {
-  if (intervaloVisitantesActivos) clearInterval(intervaloVisitantesActivos);
+  if (intervaloVisitantesActivos) detenerRepetir(intervaloVisitantesActivos);
   intervaloVisitantesActivos = null;
 }
 

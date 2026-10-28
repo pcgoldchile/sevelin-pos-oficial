@@ -17,7 +17,7 @@
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "node-forge": "^1.4.0",
-    "sharp": "^0.33.5"
+    "sharp": "^0.35.5"
   },
   "engines": {
     "node": ">=18"
@@ -27,5 +27,8 @@
   },
   "allowScripts": {
     "sharp@0.33.5": true
+  },
+  "overrides": {
+    "qs": "^6.16.2"
   }
 }
