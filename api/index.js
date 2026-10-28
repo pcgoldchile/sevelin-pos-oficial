@@ -18676,7 +18676,8 @@ app.get('/api/pos/metricas', auth(true), async (req, res) => {
   // visitas_activas / src/components/visit-tracker.tsx en la tienda —
   // manda un latido cada 25s, así que 90s tolera perder hasta 2 seguidos
   // antes de dar a esa persona por desconectada).
-  const hace90Segundos = new Date(Date.now() - 90 * 1000).toISOString();
+  // 150 s: la tienda manda un latido cada 60 s desde el 28-10-2026 (VENTANA_ACTIVO_MS de la tienda)
+  const hace150Segundos = new Date(Date.now() - 150 * 1000).toISOString();
 
   // Rango de período opcional: se valida acá (no solo con horaValida, que
   // es para HH:MM) y se convierte a los dos límites UTC reales del rango en
@@ -18711,7 +18712,7 @@ app.get('/api/pos/metricas', auth(true), async (req, res) => {
       contar('carritos_web', q => q.eq('origen', 'checkout').is('numero_pedido', null).or('correo.is.null,correo.not.ilike.*joonix.net')),
       contar('carritos_web', q => q.eq('origen', 'checkout').not('numero_pedido', 'is', null)),
       contar('perfiles_clientes'),
-      contar('visitas_activas', q => q.gte('ultima_actividad', hace90Segundos)),
+      contar('visitas_activas', q => q.gte('ultima_actividad', hace150Segundos)),
       ...(hayPeriodo ? [
         contar('eventos_web', q => q.eq('tipo', 'visita').gte('creado_en', desdeUTC).lte('creado_en', hastaUTC)),
         contar('perfiles_clientes', q => q.gte('creado_en', desdeUTC).lte('creado_en', hastaUTC)),
