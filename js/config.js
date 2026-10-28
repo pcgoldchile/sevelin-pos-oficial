@@ -413,6 +413,8 @@ const ORIGENES_CLIENTE = [
   { valor: 'RECOMENDACION', texto: 'Recomendación de alguien' },
   { valor: 'VUELVE', texto: 'Cliente que vuelve' },
   { valor: 'TIENDA', texto: 'Pasó por la tienda' },
+  { valor: 'ANUNCIO', texto: 'Anuncio pagado (Meta / Google)' },   // sql/116
+  { valor: 'VOLANTE', texto: 'Tarjeta o volante (Halloween, Navidad)' },   // sql/116
   { valor: 'OTRO', texto: 'Otro' },
   { valor: 'NO_SE', texto: 'No sé' }
 ];

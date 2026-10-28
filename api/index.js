@@ -7336,7 +7336,7 @@ function ajusteRedondeoValido(valor, descuentoMonto = 0) {
 /* ¿De dónde vino el cliente? (sql/96, v148). Opcional: cualquier cosa fuera
    de la lista queda en null, nunca frena el cobro. Las ventas de sevelin.cl
    llegan solas como WEB. La misma lista vive en ORIGENES_CLIENTE de js/config.js. */
-const ORIGENES_CLIENTE = ['MARKETPLACE', 'INSTAGRAM', 'WEB', 'WHATSAPP', 'GOOGLE', 'RECOMENDACION', 'VUELVE', 'TIENDA', 'OTRO', 'NO_SE'];
+const ORIGENES_CLIENTE = ['MARKETPLACE', 'INSTAGRAM', 'WEB', 'WHATSAPP', 'GOOGLE', 'RECOMENDACION', 'VUELVE', 'TIENDA', 'ANUNCIO', 'VOLANTE', 'OTRO', 'NO_SE'];   // sql/116 suma ANUNCIO y VOLANTE
 function origenClienteValido(valor) {
   const v = String(valor || '').trim().toUpperCase();
   return ORIGENES_CLIENTE.includes(v) ? v : null;

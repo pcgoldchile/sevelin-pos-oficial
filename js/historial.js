@@ -49,7 +49,19 @@ function enlaceWhatsappCliente(venta) {
     ? `+56 9 ${digitos.slice(3, 7)} ${digitos.slice(7)}`
     : `+${digitos}`;
   return ` · <a href="https://wa.me/${escHtml(digitos)}" target="_blank" rel="noopener noreferrer"
-      title="Escribirle por WhatsApp">📲 ${escHtml(legible)}</a>`;
+      title="Escribirle por WhatsApp">📲 ${escHtml(legible)}</a>`
+    + ` · <a href="https://wa.me/${escHtml(digitos)}?text=${encodeURIComponent(mensajePedirOpinion())}" target="_blank" rel="noopener noreferrer"
+      title="Abre WhatsApp con el mensaje y el link para dejar una opinión en Google">⭐ Pedir opinión</a>`;
+}
+
+/* Captación (28-10-2026): las opiniones en Google son lo que más pesa para aparecer en
+   "servicio técnico Arica" (Sevelin tiene 8; la competencia, 30 a 85). El mensaje sale
+   listo para mandarlo después de un servicio o una compra; el link es el de print.js. */
+function mensajePedirOpinion() {
+  const link = typeof URL_RESENA_GOOGLE !== 'undefined' ? URL_RESENA_GOOGLE : 'https://g.page/r/CZzFra1V3A9aEAE/review';
+  return 'Hola, te escribimos de Sevelin 👋 ¡Gracias por tu compra! '
+    + 'Si quedaste conforme, ¿nos ayudas con una opinión en Google? Toma 1 minuto y nos ayuda muchísimo a que más gente de Arica nos encuentre: '
+    + link;
 }
 
 /* ---------- DTE e IVA ----------
