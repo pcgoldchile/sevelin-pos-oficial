@@ -1,8 +1,12 @@
-/* Tarjeta de Halloween 2026 (31-10): arma la hoja para imprimir (PDF A4, 10 por hoja, frente y
-   dorso) y las dos caras sueltas en PNG para la imprenta.
+/* Tarjeta de Halloween 2026 (31-10): arma la hoja para imprimir en casa (PDF A4, 10 por hoja,
+   frente y dorso) y las dos caras sueltas en PNG.
    Uso: node scripts/tarjeta-halloween.js   → docs/marca/halloween-2026/
-   La oferta y los precios están arriba, en un solo lugar. Los precios salen del catálogo del POS
-   al 28-10-2026; si cambian allá, se cambian aquí. */
+
+   Pedido del dueño (28-10-2026): SIN descuentos, sin código y sin nada gratis. Frente para los
+   niños (Halloween en estilo pixel/bloques, original: nada de logos ni personajes de Roblox,
+   Minecraft o memes, que tienen dueño); dorso para los papás con lo importante del negocio:
+   teléfono, sevelin.cl, lo que vendemos y arreglamos, dirección y horario. Logo: la S hexagonal
+   (docs/marca/sevelin-s-neon.svg). */
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
@@ -10,71 +14,114 @@ const { execFileSync } = require('child_process');
 const QRCode = require(path.join(__dirname, '..', '..', 'sevelin-tienda', 'node_modules', 'qrcode'));
 
 const WHATSAPP = '56935750828';
-const CODIGO = 'DULCE';
-const VALIDA_HASTA = '30-11-2026';
-const OFERTA_TITULO = 'Diagnóstico GRATIS';
-const OFERTA_SUB = '+ 10% de descuento en tu servicio técnico';
-const SERVICIOS = [
-  ['Mantención PS4 / PS5', 'desde $30.000'],
-  ['Mantención PC o notebook gamer', '$40.000'],
-  ['Pantalla de celular', 'desde $25.000'],
-  ['Formateo PC / notebook', '$15.000'],
+const TELEFONO = '+56 9 3575 0828';
+const WEB = 'sevelin.cl';
+const HORARIO = 'Lun a dom · 10:00–13:00 y 14:00–20:00';
+const DIRECCION = 'San Rafael 896, Arica';
+const ENTRADA = 'entrada por Av. Robinson Rojas';
+const CATEGORIAS = [
+  ['🛠️', 'Servicio técnico', 'PC, notebook, consolas y celulares'],
+  ['🎮', 'Mundo gamer', 'teclados, mouse, audífonos y controles'],
+  ['🔋', 'Carga y energía', 'cargadores, cables y power banks'],
+  ['🖥️', 'Monitores y computadores', 'nuevos y reacondicionados'],
 ];
-const MENSAJE_QR = `Hola! Tengo la tarjeta de Halloween 🎃 (código ${CODIGO}). Quiero cotizar: `;
+// Así se sabe en WhatsApp de dónde vino (en la caja: origen "Tarjeta o volante").
+const MENSAJE_QR = 'Hola! Vi la tarjeta de Halloween de Sevelin 🎃 ';
 
 const SALIDA = path.join(__dirname, '..', 'docs', 'marca', 'halloween-2026');
 const CHROME = path.join(process.env.LOCALAPPDATA, 'ms-playwright', 'chromium-1234', 'chrome-win64', 'chrome.exe');
 
-const LOGO = `<svg class="logo" viewBox="140 250 1320 300" xmlns="http://www.w3.org/2000/svg" aria-label="Sevelin">
-  <g transform="translate(148.7 260) scale(1.4)"><rect width="200" height="200" rx="46" fill="#2563EB"/><g transform="translate(100 100) scale(1.2) translate(-100 -100)">
-    <path d="M132 66 H88 a17 17 0 0 0 0 34 H112 a17 17 0 0 1 0 34 H68" fill="none" stroke="#fff" stroke-width="19" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle cx="132" cy="66" r="14.5" fill="#fff"/><circle cx="132" cy="66" r="5.5" fill="#2563EB"/>
-    <circle cx="68" cy="134" r="14.5" fill="#fff"/><circle cx="68" cy="134" r="5.5" fill="#2563EB"/></g></g>
-  <g transform="translate(512.7 270) scale(2.6)"><g fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"><path d="M38 20 H17 a15 15 0 0 0 0 30 H23 a15 15 0 0 1 0 30 H2"/><path transform="translate(63 0)" d="M34 20 H0 V80 H34 M0 50 H27"/><path transform="translate(120 0)" d="M0 20 L22 80 L44 20"/><path transform="translate(187 0)" d="M34 20 H0 V80 H34 M0 50 H27"/><path transform="translate(244 0)" d="M0 20 V80 H31"/><path transform="translate(298 0)" d="M0 20 V80"/><path transform="translate(321 0)" d="M0 80 V20 L40 80 V20"/></g></g>
+/* La S de Sevelin, sin el fondo cuadrado del archivo original. */
+const S_HEX = `<svg class="s-hex" viewBox="230 190 790 860" xmlns="http://www.w3.org/2000/svg" aria-label="Sevelin">
+  <defs>
+    <linearGradient id="az" gradientUnits="userSpaceOnUse" x1="276.5" y1="415.3" x2="952.1" y2="866.0"><stop offset="0" stop-color="#73FCFD"/><stop offset="0.174" stop-color="#06E7FD"/><stop offset="0.36" stop-color="#019FFD"/><stop offset="0.547" stop-color="#007DFD"/><stop offset="0.733" stop-color="#0055FD"/><stop offset="1" stop-color="#0058FD"/></linearGradient>
+    <linearGradient id="fi" gradientUnits="userSpaceOnUse" x1="276.5" y1="415.3" x2="952.1" y2="866.0"><stop offset="0" stop-color="#F4FFFF"/><stop offset="0.45" stop-color="#B4F3FF"/><stop offset="1" stop-color="#6FA6FF"/></linearGradient>
+  </defs>
+  <path d="M626.0 213.5 L975.5 415.4 L975.5 601.8 L620.7 397.0 L504.6 464.0 L975.5 735.9 L975.5 830.1 L638.1 1024.9 L276.5 816.2 L276.5 622.0 L664.5 846.0 L744.8 799.6 L276.5 529.3 L276.5 415.3 Z" fill="url(#az)"/>
+  <path d="M276.5 529.3 L276.5 415.3 L626.0 213.5 L975.5 415.4 L975.5 601.8 M975.5 735.9 L975.5 830.1 L638.1 1024.9 L276.5 816.2 L276.5 622.0" fill="none" stroke="url(#fi)" stroke-width="10"/>
 </svg>`;
 
-/* Calabaza dibujada (no emoji: así se imprime igual en cualquier equipo). */
-const CALABAZA = `<svg class="calabaza" viewBox="0 0 120 110" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-  <path d="M58 22 C56 12 62 6 70 4" stroke="#3f7d2c" stroke-width="7" fill="none" stroke-linecap="round"/>
-  <ellipse cx="38" cy="64" rx="30" ry="40" fill="#e8620c"/><ellipse cx="82" cy="64" rx="30" ry="40" fill="#e8620c"/>
-  <ellipse cx="60" cy="64" rx="30" ry="42" fill="#ff7a1a"/>
-  <path d="M34 50 L46 40 L50 56 Z M86 50 L74 40 L70 56 Z" fill="#1a0f05"/>
-  <path d="M30 72 Q60 100 90 72 L82 76 L76 70 L68 80 L60 72 L52 80 L44 70 L38 76 Z" fill="#1a0f05"/>
-</svg>`;
+const marca = (clase = '') => `<div class="marca ${clase}">${S_HEX}<span>SEVELIN</span></div>`;
+
+/* Dibujos en pixeles hechos aquí (originales). Cada letra es un color; '.' es vacío. */
+const COLORES = { n: '#ff7a1a', o: '#e8590c', v: '#3f9b2c', k: '#1a0f05', a: '#ffd23f', b: '#8a6ad6', w: '#f4f1ff', p: '#8b5cf6' };
+const CALABAZA = [
+  '......vv.....',
+  '.....vv......',
+  '...nnoonnn...',
+  '..nnnnoonnnn.',
+  '.nnkknoonkknn',
+  '.nnkknoonkknn',
+  '.nnnnnoonnnnn',
+  '.nknnnnnnnknn',
+  '.nnkkkkkkknnn',
+  '.nnnkknkknnn.',
+  '..nnnnoonnnn.',
+  '...nnnnnnn...',
+];
+const MURCIELAGO = [
+  'b.........b',
+  'bb..b.b..bb',
+  'bbb.bbb.bbb',
+  'bbbbbabbbbb',
+  '.bbbbbbbbb.',
+  '..b..b..b..',
+];
+const FANTASMA = [
+  '..wwww..',
+  '.wwwwww.',
+  'wwkwwkww',
+  'wwkwwkww',
+  'wwwwwwww',
+  'wwwkkwww',
+  'wwwwwwww',
+  'w.ww.ww.',
+];
+
+function pixeles(mapa, celdaMm, clase) {
+  const ancho = mapa[0].length;
+  const celdas = mapa.join('').split('').map(c => `<i style="background:${COLORES[c] || 'transparent'}"></i>`).join('');
+  return `<div class="pix ${clase}" style="grid-template-columns:repeat(${ancho}, ${celdaMm}mm);grid-auto-rows:${celdaMm}mm">${celdas}</div>`;
+}
+
+/* Estrellitas fijas (no al azar: así las 10 tarjetas de la hoja salen iguales). */
+const ESTRELLAS = [[8, 10], [22, 6], [40, 14], [55, 5], [70, 11], [83, 7], [62, 40], [12, 44], [48, 44], [86, 38]]
+  .map(([x, y]) => `<b class="estrella" style="left:${x}mm;top:${y}mm"></b>`).join('');
 
 function frente() {
   return `<div class="tarjeta frente">
-    <div class="murcielagos">🦇</div>
-    ${CALABAZA}
+    ${ESTRELLAS}
+    ${pixeles(MURCIELAGO, 0.55, 'murcielago')}
+    ${pixeles(FANTASMA, 0.7, 'fantasma')}
+    ${pixeles(CALABAZA, 2.0, 'calabaza')}
     <div class="frente-texto">
-      <p class="chico">Feliz Halloween de parte de</p>
-      ${LOGO}
-      <h1>¿Dulce o truco?</h1>
-      <p class="sub">El dulce es para ti.<br>El truco lo ponemos nosotros:<br><b>tu consola, PC o celular como nuevo.</b></p>
+      <p class="pixel titulo">¡FELIZ<br>HALLOWEEN!</p>
+      <p class="frase">¿Tu consola o tu PC está <b>embrujada</b>? 👻<br>Nosotros la dejamos funcionando.</p>
+      <div class="de-parte"><small>de parte de</small>${marca('marca-frente')}</div>
     </div>
   </div>`;
 }
 
 function dorso(qrSvg) {
-  const filas = SERVICIOS.map(([s, p]) => `<li><span>${s}</span><b>${p}</b></li>`).join('');
+  const filas = CATEGORIAS.map(([icono, titulo, detalle]) => `<li><span class="ico">${icono}</span><span><b>${titulo}</b> · ${detalle}</span></li>`).join('');
   return `<div class="tarjeta dorso">
     <div class="dorso-izq">
-      <p class="cinta">🎃 Con esta tarjeta</p>
-      <p class="oferta">${OFERTA_TITULO}</p>
-      <p class="oferta-sub">${OFERTA_SUB}</p>
+      ${marca('marca-dorso')}
+      <p class="lema">Tecnología y servicio técnico en Arica</p>
       <ul>${filas}</ul>
-      <p class="datos"><b>San Rafael 896, Arica</b> · entrada por Robinson Rojas<br>Lun a dom 10:00–13:00 y 14:00–21:00</p>
+      <p class="datos"><b>${DIRECCION}</b> · ${ENTRADA}<br>${HORARIO}</p>
     </div>
     <div class="dorso-der">
       <div class="qr">${qrSvg}</div>
       <p class="escanea">Escanea y escríbenos</p>
-      <p class="fono">+56 9 3575 0828</p>
-      <p class="codigo">Código <b>${CODIGO}</b><br>hasta el ${VALIDA_HASTA}</p>
+      <p class="fono">${TELEFONO}</p>
+      <p class="web">${WEB}</p>
     </div>
   </div>`;
 }
 
 const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=block');
 @page { size: A4; margin: 0; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: "Segoe UI", Arial, sans-serif; background: #fff; }
@@ -83,34 +130,46 @@ body { font-family: "Segoe UI", Arial, sans-serif; background: #fff; }
 .hoja:last-child { page-break-after: auto; }
 .tarjeta { width: 90mm; height: 50mm; overflow: hidden; position: relative; outline: 0.2mm dashed #bbb;
   -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-.frente { background: radial-gradient(circle at 25% 60%, #3a1d05 0%, #120a1f 55%, #07050d 100%); color: #fff;
-  display: flex; align-items: center; gap: 2mm; padding: 3mm 4mm 3mm 2mm; }
-.calabaza { width: 30mm; flex: none; filter: drop-shadow(0 0 3mm rgba(255,122,26,.55)); }
-.murcielagos { position: absolute; top: 1.5mm; right: 3mm; font-size: 4mm; opacity: .7; }
-.frente-texto { display: flex; flex-direction: column; gap: 1.2mm; }
-.chico { font-size: 2.3mm; color: #ffb27a; letter-spacing: .2mm; text-transform: uppercase; }
-.logo { width: 30mm; height: auto; }
-.frente h1 { font-family: "Arial Black", "Segoe UI Black", sans-serif; font-size: 6.4mm; line-height: 1; color: #ff7a1a; }
-.sub { font-size: 2.55mm; line-height: 1.35; color: #e9e3f5; }
-.sub b { color: #fff; }
-.dorso { background: #fff7ef; color: #1b1424; display: flex; gap: 2.5mm; padding: 3mm 3.5mm; border-top: 1.6mm solid #ff7a1a; }
-.dorso-izq { flex: 1; display: flex; flex-direction: column; gap: .7mm; min-width: 0; }
-.cinta { font-size: 2.3mm; text-transform: uppercase; letter-spacing: .2mm; color: #c2410c; font-weight: 700; }
-.oferta { font-family: "Arial Black", sans-serif; font-size: 4.6mm; line-height: 1; color: #1b1424; }
-.oferta-sub { font-size: 2.45mm; font-weight: 700; color: #c2410c; }
-ul { list-style: none; margin-top: .6mm; display: flex; flex-direction: column; gap: .35mm; }
-li { display: flex; justify-content: space-between; gap: 1mm; font-size: 2.3mm; border-bottom: .15mm dotted #d6c4b2; }
-li b { white-space: nowrap; }
-.datos { margin-top: auto; font-size: 2.05mm; line-height: 1.3; color: #3b3346; }
-.dorso-der { width: 25mm; flex: none; display: flex; flex-direction: column; align-items: center; text-align: center; gap: .6mm; }
-.qr { width: 23mm; height: 23mm; background: #fff; padding: .6mm; border-radius: 1mm; }
+.pixel { font-family: "Press Start 2P", "Courier New", monospace; }
+.pix { display: grid; position: absolute; }
+.pix i { display: block; }
+
+.frente { background: linear-gradient(160deg, #1d0f3a 0%, #120a26 55%, #07040f 100%); color: #fff; }
+.estrella { position: absolute; width: .7mm; height: .7mm; background: #ffe9a8; box-shadow: 0 0 1mm #ffd23f; }
+.calabaza { left: 4mm; top: 13mm; filter: drop-shadow(0 0 2.5mm rgba(255,122,26,.6)); }
+.murcielago { left: 30mm; top: 3mm; }
+.fantasma { left: 6mm; top: 3.5mm; opacity: .95; }
+.frente-texto { position: absolute; left: 34mm; top: 9mm; right: 3mm; display: flex; flex-direction: column; gap: 2mm; }
+.titulo { font-size: 4.6mm; line-height: 1.25; color: #ff8a2b; text-shadow: .5mm .5mm 0 #6b2c00; }
+.frase { font-size: 2.45mm; line-height: 1.35; color: #e9e3f5; }
+.frase b { color: #b9f3ff; }
+.de-parte { display: flex; align-items: center; gap: 1.5mm; margin-top: .5mm; }
+.de-parte small { font-size: 2mm; color: #c4b5fd; }
+
+.marca { display: flex; align-items: center; gap: 1.4mm; }
+.marca span { font-family: "Arial Black", "Segoe UI Black", sans-serif; letter-spacing: .5mm; }
+.s-hex { height: 100%; width: auto; }
+.marca-frente { height: 6.5mm; }
+.marca-frente span { font-size: 4mm; color: #fff; }
+.marca-dorso { height: 7.5mm; }
+.marca-dorso span { font-size: 4.8mm; color: #0b1430; }
+
+.dorso { background: #f6f8ff; color: #0b1430; display: flex; gap: 2.5mm; padding: 3.2mm 3.5mm 3mm; border-top: 1.6mm solid #ff7a1a; }
+.dorso-izq { flex: 1; display: flex; flex-direction: column; gap: .9mm; min-width: 0; }
+.lema { font-size: 2.3mm; font-weight: 700; color: #1d4ed8; }
+ul { list-style: none; display: flex; flex-direction: column; gap: .55mm; margin-top: .3mm; }
+li { display: flex; gap: 1mm; font-size: 2.15mm; line-height: 1.2; align-items: baseline; }
+li .ico { width: 3mm; flex: none; }
+li b { color: #0b1430; }
+.datos { margin-top: auto; font-size: 2.05mm; line-height: 1.3; color: #33415c; }
+.dorso-der { width: 25mm; flex: none; display: flex; flex-direction: column; align-items: center; text-align: center; gap: .5mm; }
+.qr { width: 23mm; height: 23mm; background: #fff; padding: .6mm; border-radius: 1mm; border: .2mm solid #dbe3ff; }
 .qr svg { width: 100%; height: 100%; display: block; }
-.escanea { font-size: 2.1mm; font-weight: 700; color: #15803d; }
-.fono { font-size: 2.6mm; font-weight: 800; }
-.codigo { font-size: 2.1mm; line-height: 1.25; background: #1b1424; color: #fff; border-radius: 1mm; padding: .6mm 1.4mm; }
-.codigo b { color: #ff9a4d; letter-spacing: .3mm; }
-/* Para las PNG sueltas */
-.suelta { padding: 0; display: block; width: 90mm; height: 50mm; }
+.escanea { font-size: 2mm; font-weight: 700; color: #15803d; }
+.fono { font-size: 2.9mm; font-weight: 800; }
+.web { font-size: 3mm; font-weight: 800; color: #fff; background: #1d4ed8; border-radius: 1mm; padding: .5mm 2mm; }
+
+.suelta { width: 90mm; height: 50mm; }
 .suelta .tarjeta { outline: none; }
 `;
 
@@ -119,23 +178,24 @@ function pagina(cuerpo, titulo) {
 }
 
 function chrome(args) {
-  execFileSync(CHROME, ['--headless', '--disable-gpu', '--no-pdf-header-footer', '--hide-scrollbars', ...args], { stdio: 'ignore' });
+  // virtual-time-budget: espera la fuente pixel de Google Fonts antes de imprimir.
+  execFileSync(CHROME, ['--headless', '--disable-gpu', '--no-pdf-header-footer', '--hide-scrollbars', '--virtual-time-budget=8000', ...args], { stdio: 'ignore' });
 }
 
 (async () => {
   fs.mkdirSync(SALIDA, { recursive: true });
   const enlace = `https://wa.me/${WHATSAPP}?text=${encodeURIComponent(MENSAJE_QR)}`;
-  const qr = await QRCode.toString(enlace, { type: 'svg', margin: 0, errorCorrectionLevel: 'M', color: { dark: '#1b1424', light: '#ffffff' } });
+  const qr = await QRCode.toString(enlace, { type: 'svg', margin: 0, errorCorrectionLevel: 'M', color: { dark: '#0b1430', light: '#ffffff' } });
 
-  /* Hoja 1: 10 frentes. Hoja 2: 10 dorsos. En dos columnas, al imprimir doble faz por el borde
-     largo cada dorso cae detrás de su frente, porque las dos columnas tienen el mismo diseño. */
+  /* Hoja 1: 10 frentes. Hoja 2: 10 dorsos. Con 2 columnas iguales, al imprimir a doble cara por
+     el borde largo cada dorso cae detrás de su frente. */
   const diez = (html) => Array.from({ length: 10 }, () => html).join('');
   const hojas = `<div class="hoja">${diez(frente())}</div><div class="hoja">${diez(dorso(qr))}</div>`;
   const htmlHoja = path.join(SALIDA, 'tarjeta-halloween-hoja-A4.html');
   fs.writeFileSync(htmlHoja, pagina(hojas, 'Tarjeta Halloween Sevelin — hoja A4'));
   chrome([`--print-to-pdf=${path.join(SALIDA, 'tarjeta-halloween-hoja-A4.pdf')}`, 'file:///' + htmlHoja.replace(/\\/g, '/')]);
 
-  /* Caras sueltas a 300 ppp (90 x 50 mm = 1063 x 591 px) para la imprenta. */
+  /* Caras sueltas a 300 ppp (90 x 50 mm = 1063 x 591 px). */
   for (const [nombre, html] of [['frente', frente()], ['dorso', dorso(qr)]]) {
     const f = path.join(SALIDA, `tarjeta-halloween-${nombre}.html`);
     fs.writeFileSync(f, pagina(`<div class="suelta">${html}</div>`, `Tarjeta Halloween — ${nombre}`));
