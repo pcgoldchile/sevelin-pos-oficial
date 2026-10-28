@@ -300,6 +300,10 @@
       <button id="btnMetas" class="btn-notificaciones btn-facturas btn-metas admin-only" title="Metas del mes y lo que toca hoy" hidden>
         <span class="chip-punto" aria-hidden="true"></span><span>🎯 Metas</span>
       </button>
+      <!-- 28-10-2026: horario de atención para la web y lista de dónde más cambiarlo — js/horario.js -->
+      <button id="btnHorario" class="btn-notificaciones btn-facturas admin-only" title="Horario de atención: se cambia aquí y sevelin.cl lo muestra solo" hidden>
+        <span class="chip-punto" aria-hidden="true"></span><span>🕒 Horario</span>
+      </button>
       <!-- v101 (sql/72): pendientes del dueño y de Claude. Visible siempre para admin (aunque no
            haya nada), para poder anotar uno nuevo; rojo si alguno pasó su fecha límite. -->
       <button id="btnPendientes" class="btn-notificaciones btn-facturas btn-pendientes admin-only" title="Pendientes del dueño y de Claude" hidden>
@@ -4335,14 +4339,14 @@
        puede corregir una palabra antes de copiar, sin volver a generar.
        ============================================================ -->
   <div id="modalTextoFacebook" class="modal-overlay">
-    <div class="modal-box">
+    <div class="modal-box modal-ia">
       <h2>📣 Publicación para Facebook</h2>
       <p class="modal-hint">
         Revísala antes de publicar — sobre todo que no haya ninguna característica
         que el producto no tenga. Nada se publica solo: esto es solo el texto.
       </p>
       <div class="field" style="margin-top:14px;">
-        <textarea id="textoFacebookResultado" rows="16" spellcheck="true"
+        <textarea id="textoFacebookResultado" class="ficha-ia-texto" rows="16" spellcheck="true"
                   style="font-family:inherit; line-height:1.5;"></textarea>
       </div>
       <div class="modal-foot">
@@ -4363,13 +4367,16 @@
        viñeta acá mismo, y recién al aceptar se convierte y se aplica.
        ============================================================ -->
   <div id="modalFichaGenerada" class="modal-overlay">
-    <div class="modal-box">
+    <div class="modal-box modal-ia">
       <h2>🛒 Ficha generada para la tienda</h2>
       <p class="modal-hint">
         Revísala antes de aplicarla — sobre todo que no haya ninguna característica
         que el producto no tenga. Se aplica solo si aprietas "Usar esta ficha".
       </p>
 
+      <!-- 28-10-2026 (dueño): ventana ancha en dos columnas para ver todo sin hacer scroll. -->
+      <div class="ficha-ia-grid">
+      <div class="ficha-ia-col">
       <div class="field" id="fichaGeneradaTituloFila" style="margin-top:14px; display:none;">
         <label for="fichaGeneradaTitulo">Nombre que propone la IA</label>
         <input type="text" id="fichaGeneradaTitulo" maxlength="200">
@@ -4381,12 +4388,14 @@
 
       <div class="field" style="margin-top:12px;">
         <label for="fichaGeneradaTexto">Descripción</label>
-        <textarea id="fichaGeneradaTexto" rows="15" spellcheck="true"
+        <textarea id="fichaGeneradaTexto" class="ficha-ia-texto" rows="15" spellcheck="true"
                   style="font-family:inherit; line-height:1.5;"></textarea>
         <p class="subtitle">Los <strong>###</strong> son títulos de sección y los <strong>✅</strong> son viñetas:
           se convierten al aplicarla, no se ven así en la tienda.</p>
       </div>
 
+      </div>
+      <div class="ficha-ia-col ficha-ia-opciones">
       <!-- v113 (#54 pieza D): marca, categoría y condición que propone la IA. Cada una con su casilla;
            se llena desde js/productos.js y queda oculto si no hay nada que proponer. -->
       <div id="fichaGeneradaSugerencias" style="margin-top:12px; display:none;">
@@ -4414,6 +4423,8 @@
           <input type="checkbox" id="fichaGeneradaComplementosIA"> ✨ Agregar también "Complementa tu compra" con IA
         </label>
         <p class="subtitle" id="fichaGeneradaComplementosAviso">La IA elige entre tus productos publicados y con stock. Se agregan a la tarjeta y puedes quitar los que no te sirvan.</p>
+      </div>
+      </div>
       </div>
 
       <div class="modal-foot">
@@ -5569,7 +5580,7 @@
 
   <!-- v129: aviso "listo para retiro" de un pedido web (supabase/41 de la tienda). js/pedidos-web.js -->
   <div id="modalListoRetiro" class="modal-overlay">
-    <div class="modal-box" style="max-width:560px;">
+    <div class="modal-box" style="max-width:820px;">
       <h2>📣 Avisar: listo para retiro</h2>
       <p class="modal-hint" id="listoRetiroTexto">—</p>
       <div id="listoRetiroLista" style="display:flex; flex-direction:column; gap:8px; margin-top:12px;"></div>
@@ -7710,7 +7721,7 @@
 
   <!-- Productos a los que les falta algo (sql: ninguno, se calcula al leer) -->
   <div id="modalFichasIncompletas" class="modal-overlay">
-    <div class="modal-box" style="max-width:760px;">
+    <div class="modal-box" style="max-width:1000px;">
       <h2>📋 Productos por completar</h2>
       <p class="modal-hint" id="fichasIncompletasResumen">—</p>
       <div class="chip-group" id="fichasIncompletasFiltros" style="margin-bottom:12px;"></div>
@@ -7723,7 +7734,7 @@
 
   <!-- v162: "🔥 Reponer" — en tendencia en la tienda y con poco stock (js/reponer-tendencia.js) -->
   <div id="modalReponerTendencia" class="modal-overlay">
-    <div class="modal-box" style="max-width:760px;">
+    <div class="modal-box" style="max-width:1000px;">
       <h2>🔥 Se está moviendo y queda poco</h2>
       <p class="modal-hint">Productos que se venden (2 o más en el mes), que están entre los 10 más vistos de la semana en sevelin.cl o en Destacados, y tienen 3 o menos en stock (o menos que su mínimo). Para reponer antes de que se agoten. Se revisa cada 30 minutos.</p>
       <div class="table-wrapper" style="max-height:56vh; overflow:auto;">
@@ -7915,7 +7926,7 @@
 
   <!-- Mercadería en camino (sql/59) -->
   <div id="modalEnCamino" class="modal-overlay">
-    <div class="modal-box" style="max-width:740px;">
+    <div class="modal-box" style="max-width:1000px;">
       <h2>🚚 Mercadería por llegar</h2>
       <p class="modal-hint" id="enCaminoResumen">—</p>
       <!-- v134: marcar varias de una vez -->
@@ -8034,6 +8045,30 @@
     </div>
   </div>
 
+  <!-- 28-10-2026: Horario de atención — js/horario.js -->
+  <div id="modalHorario" class="modal-overlay">
+    <div class="modal-box horario-modal" style="max-width:980px;">
+      <h2>🕒 Horario de atención</h2>
+      <p class="modal-hint">Lo que guardes aquí aparece solo en sevelin.cl: pie de página, contacto, preguntas frecuentes, compra, correos y avisos de retiro. Google, Facebook, Instagram y WhatsApp hay que cambiarlos a mano: abajo está la lista.</p>
+      <div class="horario-grid">
+        <section>
+          <h3 class="antes-seccion">Horario</h3>
+          <div id="horarioTramos"></div>
+          <button type="button" class="btn btn-outline btn-sm" id="btnHorarioAgregarTramo">＋ Agregar tramo</button>
+          <div class="field"><label for="horarioDias">Días</label><input type="text" id="horarioDias" maxlength="60" placeholder="Lunes a domingo"></div>
+          <div class="field"><label for="horarioAvisoDomingo">Nota (opcional)</label><textarea id="horarioAvisoDomingo" rows="2" maxlength="200" placeholder="Los domingos atendemos, pero conviene escribirnos antes."></textarea></div>
+          <div class="horario-vista" id="horarioVista"></div>
+          <button type="button" class="btn btn-primary" id="btnHorarioGuardar">💾 Guardar y publicar en la web</button>
+        </section>
+        <section>
+          <h3 class="antes-seccion">Dónde más cambiarlo</h3>
+          <div id="horarioCanales"></div>
+        </section>
+      </div>
+      <div class="modal-actions"><button type="button" class="btn btn-ghost" id="btnHorarioCerrar">Cerrar</button></div>
+    </div>
+  </div>
+
   <!-- 27-10-2026: Metas de hoy — js/metas.js -->
   <div id="modalMetas" class="modal-overlay">
     <div class="modal-box metas-modal" style="max-width:900px;">
@@ -8111,7 +8146,7 @@
   </div>
 
   <div id="modalFacebookRapido" class="modal-overlay">
-    <div class="modal-box" style="max-width:760px;">
+    <div class="modal-box" style="max-width:1000px;">
       <h2>📘 Publicar en Facebook e Instagram</h2>
       <p class="modal-hint" id="fbRapidoNombre">—</p>
       <div id="fbRapidoPrecio" class="fb-rapido-precio"></div>
@@ -8150,7 +8185,7 @@
 
   <!-- v135 (sql/92): usuarios con RUT y PIN. Solo admin — js/usuarios.js -->
   <div id="modalUsuarios" class="modal-overlay">
-    <div class="modal-box" style="max-width:860px;">
+    <div class="modal-box" style="max-width:1040px;">
       <h2>👥 Usuarios</h2>
       <p class="modal-hint">Cada persona entra con su RUT y su PIN. Hoy sirven para la <a href="/taller/" target="_blank" rel="noopener">app del taller</a> del celular; al POS se sigue entrando con el PIN general. Solo un administrador crea usuarios y cambia un PIN.</p>
       <div id="usuariosAviso"></div>
@@ -8202,7 +8237,7 @@
 
   <!-- v134: confirmar una o varias llegadas, con cuántas unidades llegaron de cada una — js/ubicaciones.js -->
   <div id="modalLlegadas" class="modal-overlay" style="z-index:10050;">
-    <div class="modal-box" style="max-width:620px;">
+    <div class="modal-box" style="max-width:860px;">
       <div class="ventana-cabeza">
         <span class="ventana-icono" aria-hidden="true">📦</span>
         <h2 id="llegadasTitulo">¿Llegó esta mercadería?</h2>
@@ -8220,7 +8255,7 @@
 
   <!-- v132: corregir una compra que todavía está por llegar (solo admin) — js/ubicaciones.js -->
   <div id="modalEditarPorLlegar" class="modal-overlay">
-    <div class="modal-box" style="max-width:560px;">
+    <div class="modal-box" style="max-width:820px;">
       <h2>✏️ Corregir compra por llegar</h2>
       <p class="modal-hint" id="eplProducto">—</p>
       <input type="hidden" id="eplId">
@@ -8269,7 +8304,7 @@
 
   <!-- CORREGIR UNA COMPRA YA RECIBIDA (v145): pide la clave del dueño al guardar -->
   <div id="modalEditarCompra" class="modal-overlay">
-    <div class="modal-box" style="max-width:600px;">
+    <div class="modal-box" style="max-width:820px;">
       <h2>✏️ Corregir registro de compra</h2>
       <p class="modal-hint" id="ecoProducto">—</p>
       <input type="hidden" id="ecoId">
@@ -8369,7 +8404,7 @@
 
   <!-- SERVICIOS EN CURSO (sql/66) -->
   <div id="modalServiciosEnCurso" class="modal-overlay">
-    <div class="modal-box" style="max-width:740px;">
+    <div class="modal-box" style="max-width:1000px;">
       <h2>🔧 Servicios en curso</h2>
       <p class="modal-hint" id="serviciosResumen">—</p>
       <div id="servicioslista" style="max-height:52vh; overflow:auto;"></div>
@@ -8381,7 +8416,7 @@
 
   <!-- FACTURAS QUE EL PROVEEDOR TODAVÍA NO MANDA (sql/65) -->
   <div id="modalFacturasPendientes" class="modal-overlay">
-    <div class="modal-box" style="max-width:740px;">
+    <div class="modal-box" style="max-width:1000px;">
       <h2>🧾 Facturas que estás esperando</h2>
       <p class="modal-hint" id="facturasResumen">—</p>
       <div id="facturasLista" style="max-height:52vh; overflow:auto;"></div>
@@ -8398,7 +8433,7 @@
   <!-- FACTURAS POR ACEPTAR EN EL SII (v99) -->
   <!-- v103: aprobar, rechazar, suspender o reactivar una cuenta mayorista (js/mayoristas.js) -->
   <div id="modalEstadoMayorista" class="modal-overlay">
-    <div class="modal-box" style="max-width:560px;">
+    <div class="modal-box" style="max-width:820px;">
       <h2 id="estadoMayoristaTitulo">Aprobar cuenta mayorista</h2>
       <p class="modal-hint" id="estadoMayoristaCliente">—</p>
       <div class="field">
@@ -8415,7 +8450,7 @@
 
   <!-- v169: asociar a mano o crear el gasto de una factura (js/cuadre-sii.js) -->
   <div id="modalCuadreSii" class="modal-overlay">
-    <div class="modal-box" style="max-width:640px;">
+    <div class="modal-box" style="max-width:880px;">
       <h2 id="cuadreSiiModalTitulo">🧾 Cuadrar con el SII</h2>
       <div id="cuadreSiiModalCuerpo" style="max-height:62vh; overflow:auto;"></div>
       <div class="modal-foot">
@@ -8426,7 +8461,7 @@
   </div>
 
   <div id="modalSiiPorAceptar" class="modal-overlay">
-    <div class="modal-box" style="max-width:740px;">
+    <div class="modal-box" style="max-width:1000px;">
       <h2>🧾 Facturas por aceptar en el SII</h2>
       <p class="modal-hint" id="siiPorAceptarResumen">—</p>
       <div id="siiPorAceptarLista" style="max-height:52vh; overflow:auto;"></div>
@@ -8444,7 +8479,7 @@
 
   <!-- GASTOS FIJOS DEL MES SIN REGISTRAR (v99) -->
   <div id="modalFijosPorPagar" class="modal-overlay">
-    <div class="modal-box" style="max-width:600px;">
+    <div class="modal-box" style="max-width:820px;">
       <h2>📅 Gastos fijos por pagar</h2>
       <p class="modal-hint" id="fijosPorPagarResumen">—</p>
       <div id="fijosPorPagarLista" style="max-height:52vh; overflow:auto;"></div>
@@ -8520,7 +8555,7 @@
 
   <!-- v116 (sql/83): interruptor de ofertas web. Lo llena js/ofertas.js. -->
   <div id="modalOfertas" class="modal-overlay">
-    <div class="modal-box" style="max-width:760px;">
+    <div class="modal-box" style="max-width:1000px;">
       <h2>🏷️ Ofertas de la tienda web</h2>
       <p class="modal-hint" id="ofertasResumen">—</p>
       <div class="pendientes-filtros">
@@ -8536,7 +8571,7 @@
   </div>
 
   <div id="modalPendientes" class="modal-overlay">
-    <div class="modal-box" style="max-width:760px;">
+    <div class="modal-box" style="max-width:1000px;">
       <h2>📋 Pendientes</h2>
       <p class="modal-hint" id="pendientesResumen">—</p>
       <div class="pendientes-filtros" role="tablist" aria-label="Filtrar pendientes">
@@ -8661,7 +8696,7 @@
 
   <!-- v128: IVA a favor al día — js/utilidades.js -->
   <div id="modalIvaAlDia" class="modal-overlay">
-    <div class="modal-box" style="max-width:760px;">
+    <div class="modal-box" style="max-width:1000px;">
       <h2>🧾 IVA a favor al día</h2>
       <p class="modal-hint" id="ivaDiaEstado">—</p>
 
@@ -8696,7 +8731,7 @@
   </div>
 
   <div id="modalF29" class="modal-overlay">
-    <div class="modal-box" style="max-width:600px;">
+    <div class="modal-box" style="max-width:820px;">
       <h2>🧾 F29 pendiente</h2>
       <p class="modal-hint" id="f29Resumen">—</p>
 
@@ -8916,7 +8951,8 @@
 
   <script src="js/facebook-rapido.js"></script>
   <script src="js/orden-productos.js"></script>
-  <script src="js/metas.js"></script>   <!-- 27-10-2026: después de pendientes.js; usa abrirPendientes -->
+  <script src="js/metas.js"></script>
+  <script src="js/horario.js"></script>   <!-- 28-10-2026: horario de atención -->   <!-- 27-10-2026: después de pendientes.js; usa abrirPendientes -->
   <script src="js/marketplaces.js"></script>   <!-- v181 (sql/112): después de productos.js; usa productsList -->
 
   <script src="js/redes-contenido.js"></script>

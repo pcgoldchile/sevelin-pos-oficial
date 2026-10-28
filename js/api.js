@@ -81,6 +81,12 @@ const API = {
     guardar: (datos) => apiRequest('/metas', { method: 'PUT', body: datos }),
     guardarAutomotriz: (datos) => apiRequest('/metas/automotriz', { method: 'PUT', body: datos })
   },
+  // Horario de atención: se guarda en la base de la tienda (28-10-2026)
+  horario: {
+    leer: () => apiRequest('/horario', { silencioso: true }),
+    guardar: (horario) => apiRequest('/horario', { method: 'PUT', body: { horario } }),
+    marcar: (canal, hecho) => apiRequest('/horario/verificado', { method: 'PUT', body: { canal, hecho } })
+  },
   // Calendario de Tecnología y Automotriz (sql/113)
   calendario: {
     listar: (desde, hasta) => apiRequest(`/calendario?desde=${encodeURIComponent(desde || '')}&hasta=${encodeURIComponent(hasta || '')}`),

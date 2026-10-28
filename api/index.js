@@ -13784,6 +13784,98 @@ app.delete('/api/calendario/:id', auth(true), async (req, res) => {
   res.json({ ok: true });
 });
 
+/* ============================================================
+   HORARIO DE ATENCIÓN (28-10-2026, pedido del dueño)
+   ------------------------------------------------------------
+   El dueño cambia el horario aquí y la tienda lo muestra solo: el POS lo manda a
+   POST {tienda}/api/sync/horario (secreto compartido), que lo guarda en ajustes_tienda
+   (supabase/49 de sevelin-tienda) y refresca las páginas. Lo que no se puede cambiar
+   por código (Google, Facebook, Instagram, WhatsApp Business) queda como lista de
+   "dónde más cambiarlo", con la fecha en que él marcó cada uno.
+   La fuente de verdad es la base de la TIENDA (dbWeb): el POS no guarda copia.
+   ============================================================ */
+const HORARIO_RESPALDO = {
+  tramos: [{ desde: 10, hasta: 13 }, { desde: 14, hasta: 20 }],
+  dias: 'Lunes a domingo',
+  aviso_domingo: 'Los domingos atendemos, pero conviene escribirnos o llamarnos antes para confirmar.'
+};
+const CANALES_HORARIO = ['google', 'facebook', 'instagram', 'whatsapp', 'impresos'];
+
+/* Mismas reglas que sanearHorario() de la tienda (src/lib/horarios.ts): si cambian, en las dos. */
+function sanearHorarioPos(x) {
+  if (!x || typeof x !== 'object' || !Array.isArray(x.tramos)) return null;
+  if (x.tramos.length < 1 || x.tramos.length > 3) return null;
+  const tramos = [];
+  let ultimo = -1;
+  for (const t of x.tramos) {
+    const desde = Number(t?.desde), hasta = Number(t?.hasta);
+    if (!Number.isInteger(desde) || !Number.isInteger(hasta)) return null;
+    if (desde < 0 || hasta > 24 || desde >= hasta || desde < ultimo) return null;
+    ultimo = hasta;
+    tramos.push({ desde, hasta });
+  }
+  const dias = String(x.dias ?? '').trim().slice(0, 60) || HORARIO_RESPALDO.dias;
+  const aviso_domingo = String(x.aviso_domingo ?? '').trim().slice(0, 200);
+  return { tramos, dias, aviso_domingo };
+}
+
+async function leerAjusteTienda(clave) {
+  const { data, error } = await dbWeb.from('ajustes_tienda').select('valor, actualizado_en').eq('clave', clave).maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
+app.get('/api/horario', auth(true), async (req, res) => {
+  try {
+    const [h, v] = await Promise.all([leerAjusteTienda('horario'), leerAjusteTienda('horario_verificado')]);
+    res.json({
+      horario: sanearHorarioPos(h?.valor) || HORARIO_RESPALDO,
+      guardado_en: h?.actualizado_en || null,
+      en_la_web: !!h,
+      verificado: v?.valor && typeof v.valor === 'object' ? v.valor : {}
+    });
+  } catch (err) {
+    return enviarErrorBD(res, err, 'GET /api/horario');
+  }
+});
+
+app.put('/api/horario', auth(true), async (req, res) => {
+  const horario = sanearHorarioPos(req.body?.horario);
+  if (!horario) return enviarError(res, 400, 'Horario inválido: cada tramo tiene que empezar antes de terminar, ir en orden y sin cruzarse (máximo 3 tramos).');
+  if (!SYNC_SECRET) return enviarError(res, 500, 'Falta SYNC_SECRET en el POS: no se puede avisar a la tienda.');
+  const url = process.env.TIENDA_HORARIO_URL || 'https://www.sevelin.cl/api/sync/horario';
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-sync-secret': SYNC_SECRET },
+      body: JSON.stringify({ horario }),
+      signal: AbortSignal.timeout(20000)
+    });
+    const cuerpo = await r.json().catch(() => ({}));
+    if (!r.ok) return enviarError(res, 502, `La tienda no aceptó el horario (${r.status}): ${cuerpo?.error || 'sin detalle'}`);
+    // Horario nuevo = hay que volver a revisar los otros lugares.
+    await dbWeb.from('ajustes_tienda').upsert({ clave: 'horario_verificado', valor: {}, actualizado_en: new Date().toISOString() }, { onConflict: 'clave' });
+    res.json({ ok: true, horario });
+  } catch (err) {
+    return enviarError(res, 502, `No se pudo llegar a la tienda: ${err.message}`);
+  }
+});
+
+app.put('/api/horario/verificado', auth(true), async (req, res) => {
+  const canal = String(req.body?.canal || '');
+  if (!CANALES_HORARIO.includes(canal)) return enviarError(res, 400, 'Canal desconocido');
+  try {
+    const v = await leerAjusteTienda('horario_verificado');
+    const valor = { ...(v?.valor && typeof v.valor === 'object' ? v.valor : {}) };
+    if (req.body?.hecho === false) delete valor[canal]; else valor[canal] = fechaHoyChile();
+    const { error } = await dbWeb.from('ajustes_tienda').upsert({ clave: 'horario_verificado', valor, actualizado_en: new Date().toISOString() }, { onConflict: 'clave' });
+    if (error) throw error;
+    res.json({ ok: true, verificado: valor });
+  } catch (err) {
+    return enviarErrorBD(res, err, 'PUT /api/horario/verificado');
+  }
+});
+
 app.put('/api/metas/automotriz', auth(true), async (req, res) => {
   const { metas, error } = sanearMetasAutomotriz(req.body);
   if (error) return enviarError(res, 400, error);

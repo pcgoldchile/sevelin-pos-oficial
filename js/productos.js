@@ -2037,9 +2037,9 @@ function aplicarSugerenciasDeFicha() {
    Nombre vacío, y bastaba un nombre de paso o el "Borrador sin nombre" para
    que se descartara sin mostrarlo.
 
-   La casilla viene marcada, salvo en un producto que ya está publicado en
-   sevelin.cl con su nombre: ese nombre puede ser el de Marketplace o el que
-   conoce el cliente, así que cambiarlo se decide marcando la casilla. */
+   La casilla viene SIEMPRE marcada (dueño, 28-10-2026: "que la opción del título ya venga
+   marcada por defecto"), también en un producto ya publicado. Si ese producto no tiene SKU,
+   el aviso dice que cambiar el nombre le cambia el enlace en la tienda (CLAUDE.md, trampas). */
 function ofrecerTituloDeFicha(tituloPropuesto) {
   const titulo = String(tituloPropuesto || '').trim();
   if (elFichaGeneradaTituloFila) elFichaGeneradaTituloFila.style.display = titulo ? '' : 'none';
@@ -2049,14 +2049,15 @@ function ofrecerTituloDeFicha(tituloPropuesto) {
   const actual = elProdNombre?.value.trim() || '';
   const sinNombre = !actual || nombreProvisorioDeProducto(actual);
   const mismo = actual === titulo;
-  if (elFichaGeneradaUsarTitulo) elFichaGeneradaUsarTitulo.checked = sinNombre || mismo || !productoEnEdicionPublicado;
+  if (elFichaGeneradaUsarTitulo) elFichaGeneradaUsarTitulo.checked = true;
+  const sinSku = !(elProdSku?.value || '').trim();
   if (elFichaGeneradaTituloAviso) {
     elFichaGeneradaTituloAviso.textContent = sinNombre
       ? 'El producto todavía no tiene nombre, así que se va a usar este. Puedes corregirlo acá.'
       : mismo
         ? 'Es el mismo nombre que ya tiene el producto.'
         : productoEnEdicionPublicado
-          ? `Ya está publicado como "${actual}". Marca la casilla solo si quieres cambiarle el nombre.`
+          ? `Reemplaza al nombre publicado: "${actual}". Desmarca la casilla para dejar el que tiene.${sinSku ? ' ⚠️ Este producto no tiene SKU: cambiarle el nombre le cambia el enlace en sevelin.cl.' : ''}`
           : `Reemplaza al nombre actual: "${actual}". Desmarca la casilla para dejar el que tiene.`;
   }
 }

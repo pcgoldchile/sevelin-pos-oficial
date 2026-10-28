@@ -1608,6 +1608,22 @@ app.post('/api/bodega/propuestas/:id/descartar', (req, res) => {
   res.json({ ok: true });
 });
 
+// Horario de atención (28-10-2026): en producción vive en la base de la tienda; aquí, en memoria.
+let horarioMaqueta = { horario: { tramos: [{ desde: 10, hasta: 13 }, { desde: 14, hasta: 20 }], dias: 'Lunes a domingo', aviso_domingo: 'Los domingos atendemos, pero conviene escribirnos o llamarnos antes para confirmar.' }, guardado_en: null, en_la_web: false, verificado: {} };
+app.get('/api/horario', (_req, res) => res.json(horarioMaqueta));
+app.put('/api/horario', (req, res) => {
+  const h = req.body?.horario;
+  if (!h || !Array.isArray(h.tramos) || !h.tramos.length) return res.status(400).json({ error: 'Horario inválido' });
+  horarioMaqueta = { horario: h, guardado_en: new Date().toISOString(), en_la_web: true, verificado: {} };
+  res.json({ ok: true, horario: h });
+});
+app.put('/api/horario/verificado', (req, res) => {
+  const v = { ...horarioMaqueta.verificado };
+  if (req.body?.hecho === false) delete v[req.body.canal]; else v[req.body.canal] = '28-10-2026';
+  horarioMaqueta.verificado = v;
+  res.json({ ok: true, verificado: v });
+});
+
 app.use('/api', (req, res) => {
   const clave = `${req.method} ${req.path}`;
   if (!sinManejar.has(clave)) { sinManejar.add(clave); console.log('[maqueta] sin datos:', clave); }
