@@ -5670,7 +5670,7 @@ app.get('/api/bodega/stock', auth(true), async (req, res) => {
       ventasRecientesPorProducto(ids, 90),
       ids.length ? db.from('producto_ubicaciones').select('producto_id, ubicacion_id, principal').in('producto_id', ids) : vacio,
       db.from('ubicaciones').select('id, nombre').limit(2000),
-      ids.length ? db.from('bodega_propuestas').select('producto_id, lugar, caja, motivo, estado').in('producto_id', ids) : vacio
+      ids.length ? db.from('bodega_propuestas').select('producto_id, lugar, caja, motivo, estado, vitrina').in('producto_id', ids) : vacio
     ]);
     if (e1 || e2 || e3) return enviarErrorBD(res, e1 || e2 || e3, 'GET /api/bodega/stock');
     const nombreLugar = new Map((lugares || []).map(l => [Number(l.id), l.nombre]));
@@ -5690,7 +5690,7 @@ app.get('/api/bodega/stock', auth(true), async (req, res) => {
         foto: (p.imagen_urls || [])[0] || null,
         vendidos_90: num(ventas.get(Number(p.id))?.unidades),
         lugares: (lugaresDe.get(Number(p.id)) || []).sort((a, b) => b.principal - a.principal),
-        propuesta: prop ? { lugar: prop.lugar, caja: prop.caja, motivo: prop.motivo, estado: prop.estado } : null
+        propuesta: prop ? { lugar: prop.lugar, caja: prop.caja, motivo: prop.motivo, estado: prop.estado, vitrina: prop.vitrina || null } : null
       };
     });
     res.json({
@@ -5711,39 +5711,57 @@ app.get('/api/bodega/stock', auth(true), async (req, res) => {
 /* Nombre del lugar que se usa al aceptar: la repisa tal cual ("C3") o la
    caja con su repisa ("Caja Pilas · E3"), que se crea la primera vez. */
 function lugarDePropuesta(prop) {
-  return prop.caja ? { nombre: `Caja ${prop.caja} · ${prop.lugar}`.slice(0, 80), tipo: 'caja', descripcion: `Dentro de la repisa ${prop.lugar}` }
-    : { nombre: prop.lugar, tipo: 'estante', descripcion: null };
+  if (prop.caja) return { nombre: `Caja ${prop.caja} · ${prop.lugar}`.slice(0, 80), tipo: 'caja', descripcion: `Dentro de la repisa ${prop.lugar}` };
+  if (/^P\d$/.test(prop.lugar)) return { nombre: prop.lugar, tipo: 'bodega', descripcion: 'Piso, apilado junto al mueble G (sql/117)' };
+  return { nombre: prop.lugar, tipo: 'estante', descripcion: null };
+}
+
+/* Bodega v3 (sql/117): la unidad de muestra de la vitrina del local (V1..V5) o de la mini vitrina (M1..M6). */
+function lugarVitrinaDePropuesta(prop) {
+  if (!prop.vitrina) return null;
+  const n = prop.vitrina.slice(1);
+  return { nombre: prop.vitrina, tipo: 'vitrina', descripcion: prop.vitrina[0] === 'V' ? `Vitrina del local, repisa ${n}` : `Mini vitrina, espacio ${n}` };
+}
+
+/* Busca el lugar por nombre o lo crea, y lo agrega al producto si no lo tenía. Devuelve el error o null. */
+async function agregarLugarAProducto(productoId, destino) {
+  const { data: previo, error: errP } = await db.from('ubicaciones').select('id').ilike('nombre', destino.nombre).limit(1);
+  if (errP) return errP;
+  let ubicacionId = previo?.[0]?.id;
+  if (!ubicacionId) {
+    const { data: nuevo, error: errN } = await db.from('ubicaciones').insert([destino]).select('id').single();
+    if (errN) return errN;
+    ubicacionId = nuevo.id;
+  }
+  const { data: actuales, error: errA } = await db.from('producto_ubicaciones').select('ubicacion_id').eq('producto_id', productoId);
+  if (errA) return errA;
+  if ((actuales || []).some(a => Number(a.ubicacion_id) === Number(ubicacionId))) return null;
+  const { error: errI } = await db.from('producto_ubicaciones')
+    .insert([{ producto_id: productoId, ubicacion_id: ubicacionId, principal: !(actuales || []).length }]);
+  return errI || null;
 }
 
 app.post('/api/bodega/propuestas/:id/aceptar', auth(true), async (req, res) => {
   try {
     const productoId = Number(req.params.id);
     if (!Number.isInteger(productoId) || productoId <= 0) return enviarError(res, 400, 'Producto inválido');
-    const { data: prop, error } = await db.from('bodega_propuestas').select('producto_id, lugar, caja, estado').eq('producto_id', productoId).maybeSingle();
+    const { data: prop, error } = await db.from('bodega_propuestas').select('producto_id, lugar, caja, estado, vitrina').eq('producto_id', productoId).maybeSingle();
     if (error) return enviarErrorBD(res, error, 'POST /api/bodega/propuestas/:id/aceptar');
     if (!prop) return enviarError(res, 404, 'Ese producto no tiene propuesta');
     if (prop.estado === 'aceptada') return res.json({ ok: true, lugar: lugarDePropuesta(prop).nombre });
 
     const destino = lugarDePropuesta(prop);
-    const { data: previo, error: errP } = await db.from('ubicaciones').select('id').ilike('nombre', destino.nombre).limit(1);
-    if (errP) return enviarErrorBD(res, errP, 'POST /api/bodega/propuestas/:id/aceptar');
-    let ubicacionId = previo?.[0]?.id;
-    if (!ubicacionId) {
-      const { data: nuevo, error: errN } = await db.from('ubicaciones').insert([destino]).select('id').single();
-      if (errN) return enviarErrorBD(res, errN, 'POST /api/bodega/propuestas/:id/aceptar');
-      ubicacionId = nuevo.id;
-    }
-    const { data: actuales, error: errA } = await db.from('producto_ubicaciones').select('ubicacion_id').eq('producto_id', productoId);
-    if (errA) return enviarErrorBD(res, errA, 'POST /api/bodega/propuestas/:id/aceptar');
-    if (!(actuales || []).some(a => Number(a.ubicacion_id) === Number(ubicacionId))) {
-      const { error: errI } = await db.from('producto_ubicaciones')
-        .insert([{ producto_id: productoId, ubicacion_id: ubicacionId, principal: !(actuales || []).length }]);
-      if (errI) return enviarErrorBD(res, errI, 'POST /api/bodega/propuestas/:id/aceptar');
+    const errL = await agregarLugarAProducto(productoId, destino);
+    if (errL) return enviarErrorBD(res, errL, 'POST /api/bodega/propuestas/:id/aceptar');
+    const vitrina = lugarVitrinaDePropuesta(prop);
+    if (vitrina) {
+      const errV = await agregarLugarAProducto(productoId, vitrina);
+      if (errV) return enviarErrorBD(res, errV, 'POST /api/bodega/propuestas/:id/aceptar');
     }
     const { error: errU } = await db.from('bodega_propuestas')
       .update({ estado: 'aceptada', decidido_en: new Date().toISOString() }).eq('producto_id', productoId);
     if (errU) return enviarErrorBD(res, errU, 'POST /api/bodega/propuestas/:id/aceptar');
-    res.json({ ok: true, lugar: destino.nombre });
+    res.json({ ok: true, lugar: destino.nombre, vitrina: vitrina?.nombre || null });
   } catch (err) {
     return enviarErrorBD(res, err, 'POST /api/bodega/propuestas/:id/aceptar');
   }

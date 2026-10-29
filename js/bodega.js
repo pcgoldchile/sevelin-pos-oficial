@@ -78,7 +78,10 @@ async function abrirBodegaStock() {
 }
 
 function textoPropuestaBodega(p) {
-  return p.caja ? `📦 Caja "${p.caja}" en ${p.lugar}` : p.lugar;
+  const base = p.caja ? `📦 Caja "${p.caja}" en ${p.lugar}` : /^P\d$/.test(p.lugar) ? `🧱 Piso, apilado (${p.lugar})` : p.lugar;
+  // Bodega v3 (sql/117): una unidad de muestra en la vitrina del local o en la mini vitrina.
+  const vit = p.vitrina ? (p.vitrina[0] === 'V' ? ` + 🪟 vitrina ${p.vitrina}` : ` + 🪟 mini vitrina ${p.vitrina}`) : '';
+  return base + vit;
 }
 
 function pintarBodegaStock() {
@@ -149,6 +152,8 @@ async function decidirPropuestaBodega(productoId, aceptar, boton) {
     if (aceptar) {
       const r = await API.bodega.aceptar(productoId);
       if (!p.lugares.some(l => l.nombre === r.lugar)) p.lugares.push({ nombre: r.lugar, principal: !p.lugares.length });
+      if (r.vitrina && !p.lugares.some(l => l.nombre === r.vitrina)) p.lugares.push({ nombre: r.vitrina, principal: false });
+      if (r.vitrina) showToast(`Saca 1 unidad para la vitrina (${r.vitrina})`, 'info');
       p.propuesta.estado = 'aceptada';
       showToast(`Guardado en ${r.lugar}`, 'ok');
     } else {
